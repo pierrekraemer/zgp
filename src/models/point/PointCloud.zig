@@ -10,14 +10,14 @@ pub const Attribute = attributes.Attribute;
 pub const Point = u32;
 
 pub const PointIterator = struct {
-    graph: *const Self,
+    point_cloud: *const Self,
     current: Point,
     pub fn next(self: *PointIterator) ?Point {
-        if (self.current == self.graph.point_attributes.lastIndex()) {
+        if (self.current == self.point_cloud.point_attributes.lastIndex()) {
             return null;
         }
         const res = self.current;
-        self.current = self.graph.point_attributes.nextIndex(self.current);
+        self.current = self.point_cloud.point_attributes.nextIndex(self.current);
         return res;
     }
 };
@@ -71,7 +71,7 @@ pub fn removePoint(self: *Self, p: Point) void {
 
 pub fn points(self: *const Self) PointIterator {
     return PointIterator{
-        .graph = self,
+        .point_cloud = self,
         .current = self.point_attributes.firstIndex(),
     };
 }
