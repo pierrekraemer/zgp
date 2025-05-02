@@ -60,6 +60,11 @@ pub fn build(b: *std.Build) void {
     });
     exe_mod.addImport("gl", gl_bindings);
 
+    // ZMATH
+
+    const zmath = b.dependency("zmath", .{});
+    exe_mod.addImport("zmath", zmath.module("root"));
+
     // BUILD LIB
 
     const lib = b.addLibrary(.{

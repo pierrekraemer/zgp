@@ -1,25 +1,24 @@
 const std = @import("std");
-const attributes = @import("Attributes.zig");
+const data = @import("../../utils/Data.zig");
 
 const Self = @This();
 
-pub const AttributeContainer = attributes.AttributeContainer;
-pub const AttributeGen = attributes.AttributeGen;
-pub const Attribute = attributes.Attribute;
+pub const DataContainer = data.DataContainer;
+pub const DataGen = data.DataGen;
+pub const Data = data.Data;
 
-pub const Dart = u32;
-pub const HalfEdge = Dart;
-pub const Vertex = Dart;
-pub const Edge = Dart;
-pub const Face = Dart;
+pub const HalfEdge = u32;
+pub const Vertex = HalfEdge;
+pub const Edge = HalfEdge;
+pub const Face = HalfEdge;
 
-pub const CellTypes = enum {
+pub const CellType = enum {
     halfedge,
     vertex,
     edge,
     face,
 };
-pub const Cell = union(CellTypes) {
+pub const Cell = union(CellType) {
     halfedge: HalfEdge,
     vertex: Vertex,
     edge: Edge,
@@ -30,70 +29,70 @@ pub const Cell = union(CellTypes) {
 //     surface_mesh: *const Self,
 //     current: Vertex,
 //     pub fn next(self: *VertexIterator) ?Vertex {
-//         if (self.current == self.surface_mesh.vertex_attributes.lastIndex()) {
+//         if (self.current == self.surface_mesh.vertex_data.lastIndex()) {
 //             return null;
 //         }
 //         const res = self.current;
-//         self.current = self.surface_mesh.vertex_attributes.nextIndex(self.current);
+//         self.current = self.surface_mesh.vertex_data.nextIndex(self.current);
 //         return res;
 //     }
 // };
 
-allocator: std.mem.Allocator,
+// allocator: std.mem.Allocator,
 
-dart_attributes: AttributeContainer,
-vertex_attributes: AttributeContainer,
-edge_attributes: AttributeContainer,
-face_attributes: AttributeContainer,
+halfedge_data: DataContainer,
+vertex_data: DataContainer,
+edge_data: DataContainer,
+face_data: DataContainer,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     return .{
-        .allocator = allocator,
-        .dart_attributes = try AttributeContainer.init(allocator),
-        .vertex_attributes = try AttributeContainer.init(allocator),
-        .edge_attributes = try AttributeContainer.init(allocator),
-        .face_attributes = try AttributeContainer.init(allocator),
+        // .allocator = allocator,
+        .halfedge_data = try DataContainer.init(allocator),
+        .vertex_data = try DataContainer.init(allocator),
+        .edge_data = try DataContainer.init(allocator),
+        .face_data = try DataContainer.init(allocator),
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.dart_attributes.deinit();
-    self.vertex_attributes.deinit();
-    self.edge_attributes.deinit();
-    self.face_attributes.deinit();
+    self.halfedge_data.deinit();
+    self.vertex_data.deinit();
+    self.edge_data.deinit();
+    self.face_data.deinit();
 }
 
 pub fn clearRetainingCapacity(self: *Self) void {
-    self.dart_attributes.clearRetainingCapacity();
-    self.vertex_attributes.clearRetainingCapacity();
-    self.edge_attributes.clearRetainingCapacity();
-    self.face_attributes.clearRetainingCapacity();
+    self.halfedge_data.clearRetainingCapacity();
+    self.vertex_data.clearRetainingCapacity();
+    self.edge_data.clearRetainingCapacity();
+    self.face_data.clearRetainingCapacity();
 }
 
-pub fn addAttribute(self: *Self, cellType: CellTypes, comptime T: type, name: []const u8) !*Attribute(T) {
-    switch (cellType) {
-        .halfedge => return self.dart_attributes.addAttribute(T, name),
-        .vertex => return self.vertex_attributes.addAttribute(T, name),
-        .edge => return self.edge_attributes.addAttribute(T, name),
-        .face => return self.face_attributes.addAttribute(T, name),
+pub fn addData(self: *Self, cell_type: CellType, comptime T: type, name: []const u8) !*Data(T) {
+    switch (cell_type) {
+        .halfedge => return self.halfedge_data.addData(T, name),
+        .vertex => return self.vertex_data.addData(T, name),
+        .edge => return self.edge_data.addData(T, name),
+        .face => return self.face_data.addData(T, name),
     }
 }
 
-pub fn getAttribute(self: *Self, cellType: CellTypes, comptime T: type, name: []const u8) !*Attribute(T) {
-    switch (cellType) {
-        .halfedge => return self.dart_attributes.getAttribute(T, name),
-        .vertex => return self.vertex_attributes.getAttribute(T, name),
-        .edge => return self.edge_attributes.getAttribute(T, name),
-        .face => return self.face_attributes.getAttribute(T, name),
+pub fn getData(self: *Self, cell_type: CellType, comptime T: type, name: []const u8) !*Data(T) {
+    switch (cell_type) {
+        .halfedge => return self.halfedge_data.getData(T, name),
+        .vertex => return self.vertex_data.getData(T, name),
+        .edge => return self.edge_data.getData(T, name),
+        .face => return self.face_data.getData(T, name),
     }
 }
 
-pub fn removeAttribute(self: *Self, cellType: CellTypes, attribute_gen: *AttributeGen) void {
-    switch (cellType) {
-        .halfedge => self.dart_attributes.removeAttribute(attribute_gen),
-        .vertex => self.vertex_attributes.removeAttribute(attribute_gen),
-        .edge => self.edge_attributes.removeAttribute(attribute_gen),
-        .face => self.face_attributes.removeAttribute(attribute_gen),
+pub fn removeData(self: *Self, cell_type: CellType, attribute_gen: *DataGen) void {
+    switch (cell_type) {
+        .halfedge => self.halfedge_data.removeData(attribute_gen),
+        .vertex => self.vertex_data.removeData(attribute_gen),
+        .edge => self.edge_data.removeData(attribute_gen),
+        .face => self.face_data.removeData(attribute_gen),
     }
 }
 
@@ -106,18 +105,18 @@ pub fn indexOf(_: *const Self, c: Cell) u32 {
     }
 }
 
-pub fn nbCells(self: *const Self, cellType: CellTypes) u32 {
-    switch (cellType) {
-        .halfedge => return self.dart_attributes.nbElements(),
-        .vertex => return self.vertex_attributes.nbElements(),
-        .edge => return self.edge_attributes.nbElements(),
-        .face => return self.face_attributes.nbElements(),
+pub fn nbCells(self: *const Self, cell_type: CellType) u32 {
+    switch (cell_type) {
+        .halfedge => return self.halfedge_data.nbElements(),
+        .vertex => return self.vertex_data.nbElements(),
+        .edge => return self.edge_data.nbElements(),
+        .face => return self.face_data.nbElements(),
     }
 }
 
 // pub fn vertices(self: *const Self) VertexIterator {
 //     return VertexIterator{
 //         .surface_mesh = self,
-//         .current = self.vertex_attributes.firstIndex(),
+//         .current = self.vertex_data.firstIndex(),
 //     };
 // }

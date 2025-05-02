@@ -22,24 +22,33 @@ const gl_log = std.log.scoped(.gl);
 const imgui_log = std.log.scoped(.imgui);
 const zgp_log = std.log.scoped(.zgp);
 
-/// ```txt
-///               (5)
-///             ..'''..
-///         ..''       ''..
-/// (3) ._'_________________'_. (4)
-///     |\                   /|
-///     |  \               /  |
-///     |    \           /    |
-///     |     \         /     |
-/// (1) ''..    \     /    ..'' (2)
-///         ''..  \ /  ..''
-///             ''.V.''
-///               (0)
-/// ```
+var fully_initialized = false;
+
+var window: *c.SDL_Window = undefined;
+var gl_context: c.SDL_GLContext = undefined;
+var gl_procs: gl.ProcTable = undefined;
+
+var uptime: std.time.Timer = undefined;
+
+const Vec3 = @import("numerical/types.zig").Vec3;
+
+var registry: Registry = undefined;
+var pc: *Registry.PointCloud = undefined;
+var pc_position: *Registry.PointCloud.Data(Vec3) = undefined;
+var pc_color: *Registry.PointCloud.Data(Vec3) = undefined;
+var pc_indices: std.ArrayList(u32) = undefined;
+
+var program: c_uint = undefined;
+var vao: c_uint = undefined;
+var vbos: [2]c_uint = undefined;
+var ibo: c_uint = undefined;
+
+var camera_position = zm.f32x4(0, 0, 2, 1);
+
 const hexagon_mesh = struct {
     // zig fmt: off
     const vertices = [_]Vertex{
-        .{ .position = .{  0,                        -1   , 0 }, .color = .{ 0, 1, 1 } },
+        .{ .position = .{  0,                        -1  , 0 }, .color = .{ 0, 1, 1 } },
         .{ .position = .{ -(@sqrt(@as(f32, 3)) / 2), -0.5, 0 }, .color = .{ 0, 0, 1 } },
         .{ .position = .{  (@sqrt(@as(f32, 3)) / 2), -0.5, 0 }, .color = .{ 0, 1, 0 } },
         .{ .position = .{ -(@sqrt(@as(f32, 3)) / 2),  0.5, 0 }, .color = .{ 1, 0, 1 } },
@@ -61,36 +70,7 @@ const hexagon_mesh = struct {
     };
 };
 
-var fully_initialized = false;
-var uptime: std.time.Timer = undefined;
-
-var registry: Registry = undefined;
-
-var window: *c.SDL_Window = undefined;
-var window_width: c_int = 800;
-var window_height: c_int = 800;
-var gl_context: c.SDL_GLContext = undefined;
-var gl_procs: gl.ProcTable = undefined;
-
-var program: c_uint = undefined;
-
-var model_view_matrix_uniform: c_int = undefined;
-var projection_matrix_uniform: c_int = undefined;
-
-var vao: c_uint = undefined;
-var vbos: [2]c_uint = undefined;
-var ibo: c_uint = undefined;
-
-var camera = zm.lookAtRh(
-    zm.f32x4(0.0, 0.0, 2.0, 1.0),
-    zm.f32x4(0.0, 0.0, 0.0, 0.0),
-    zm.f32x4(0.0, 1.0, 0.0, 0.0),
-);
-const CameraProjectionType = enum {
-    perspective,
-    orthographic,
-};
-var camera_mode = CameraProjectionType.perspective;
+var framebuffer_size_uniform: c_int = undefined;
 
 fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = appstate;
@@ -137,7 +117,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         if (gl.info.api == .gl and gl.info.version_major >= 3) c.SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG else 0,
     ));
 
-    window = try errify(c.SDL_CreateWindow("zgp", window_width, window_height, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_RESIZABLE));
+    window = try errify(c.SDL_CreateWindow("zgp", 800, 800, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_RESIZABLE));
     errdefer c.SDL_DestroyWindow(window);
 
     gl_context = try errify(c.SDL_GL_CreateContext(window));
@@ -180,6 +160,31 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     imgui_log.debug("ImGui initialized\n", .{});
 
+    /////
+
+    pc = try registry.createPointCloud("test");
+    pc_position = try pc.addData(Vec3, "position");
+    pc_color = try pc.addData(Vec3, "color");
+    const p1 = try pc.addPoint();
+    const p2 = try pc.addPoint();
+    const p3 = try pc.addPoint();
+    const p4 = try pc.addPoint();
+    pc_position.value(pc.indexOf(p1)).* = .{ 0, 0, 0 };
+    pc_position.value(pc.indexOf(p2)).* = .{ 1, 0, 0 };
+    pc_position.value(pc.indexOf(p3)).* = .{ 0, 1, 0 };
+    pc_position.value(pc.indexOf(p4)).* = .{ -1, 0, 0 };
+    pc_color.value(pc.indexOf(p1)).* = .{ 1, 0, 0 };
+    pc_color.value(pc.indexOf(p2)).* = .{ 0, 1, 0 };
+    pc_color.value(pc.indexOf(p3)).* = .{ 0, 0, 1 };
+    pc_color.value(pc.indexOf(p4)).* = .{ 1, 1, 0 };
+    // try pc_indices.append(pc.indexOf(p1));
+    // try pc_indices.append(pc.indexOf(p2));
+    // try pc_indices.append(pc.indexOf(p3));
+    // try pc_indices.append(pc.indexOf(p4));
+    try pc_indices.append(0);
+    try pc_indices.append(1);
+    try pc_indices.append(2);
+
     program = gl.CreateProgram();
     if (program == 0) return error.GlCreateProgramFailed;
     errdefer gl.DeleteProgram(program);
@@ -206,6 +211,24 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             return error.GlCompileVertexShaderFailed;
         }
 
+        // const geometry_shader = gl.CreateShader(gl.GEOMETRY_SHADER);
+        // if (geometry_shader == 0) return error.GlCreateGeometryShaderFailed;
+        // defer gl.DeleteShader(geometry_shader);
+        // const geometry_shader_source = @embedFile("rendering/shaders/point_sprite/gs.glsl");
+        // gl.ShaderSource(
+        //     geometry_shader,
+        //     2,
+        //     &.{ shader_version, geometry_shader_source },
+        //     &.{ shader_version.len, geometry_shader_source.len },
+        // );
+        // gl.CompileShader(geometry_shader);
+        // gl.GetShaderiv(geometry_shader, gl.COMPILE_STATUS, &success);
+        // if (success == gl.FALSE) {
+        //     gl.GetShaderInfoLog(geometry_shader, info_log_buf.len, null, &info_log_buf);
+        //     gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
+        //     return error.GlCompileVertexShaderFailed;
+        // }
+
         const fragment_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
         if (fragment_shader == 0) return error.GlCreateFragmentShaderFailed;
         defer gl.DeleteShader(fragment_shader);
@@ -221,10 +244,11 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         if (success == gl.FALSE) {
             gl.GetShaderInfoLog(fragment_shader, info_log_buf.len, null, &info_log_buf);
             gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
-            return error.GlCompileFragmentShaderFailed;
+            return error.GlCompileVertexShaderFailed;
         }
 
         gl.AttachShader(program, vertex_shader);
+        // gl.AttachShader(program, geometry_shader);
         gl.AttachShader(program, fragment_shader);
         gl.LinkProgram(program);
         gl.GetProgramiv(program, gl.LINK_STATUS, &success);
@@ -235,8 +259,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         }
     }
 
-    model_view_matrix_uniform = gl.GetUniformLocation(program, "u_model_view_matrix");
-    projection_matrix_uniform = gl.GetUniformLocation(program, "u_projection_matrix");
+    framebuffer_size_uniform = gl.GetUniformLocation(program, "framebuffer_size");
 
     gl.GenVertexArrays(1, (&vao)[0..1]);
     errdefer gl.DeleteVertexArrays(1, (&vao)[0..1]);
@@ -255,49 +278,69 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             gl.BindBuffer(gl.ARRAY_BUFFER, vbos[0]);
             defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
 
-            const vec_size = @typeInfo(@FieldType(hexagon_mesh.Vertex, "position")).array.len;
-            const buf_size = hexagon_mesh.vertices.len * @sizeOf(@FieldType(hexagon_mesh.Vertex, "position"));
-
-            gl.BufferData(gl.ARRAY_BUFFER, buf_size, null, gl.STATIC_DRAW);
+            gl.BufferData(
+                gl.ARRAY_BUFFER,
+                hexagon_mesh.vertices.len * @sizeOf(@FieldType(hexagon_mesh.Vertex, "position")),
+                null,
+                gl.STATIC_DRAW,
+            );
             const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
             if (maybe_buffer) |buffer| {
-                const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
+                const buffer_f32 = @as([*]f32, @ptrCast(@alignCast(buffer)));
+                // var it = pc_position.data.constIterator(0);
+                // var index: usize = 0;
+                // while (it.next()) |value| {
+                //     const offset = index * 3;
+                //     @memcpy(buffer_f32[offset .. offset + 3], value);
+                //     index += 1;
+                // }
                 for (&hexagon_mesh.vertices, 0..) |*vertex, index| {
-                    const offset = index * vec_size;
-                    @memcpy(buffer_f32[offset .. offset + vec_size], &vertex.position);
+                    const offset = index * 3;
+                    @memcpy(buffer_f32[offset .. offset + 3], &vertex.position);
                 }
                 _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
             }
 
-            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(program, "a_position"));
+            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(program, "vertex_position"));
             gl.EnableVertexAttribArray(position_attrib);
-            gl.VertexAttribPointer(position_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
+            gl.VertexAttribPointer(position_attrib, 3, gl.FLOAT, gl.FALSE, 0, 0);
         }
 
         {
             gl.BindBuffer(gl.ARRAY_BUFFER, vbos[1]);
             defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
 
-            const vec_size = @typeInfo(@FieldType(hexagon_mesh.Vertex, "color")).array.len;
-            const buf_size = hexagon_mesh.vertices.len * @sizeOf(@FieldType(hexagon_mesh.Vertex, "color"));
-
-            gl.BufferData(gl.ARRAY_BUFFER, buf_size, null, gl.STATIC_DRAW);
+            gl.BufferData(
+                gl.ARRAY_BUFFER,
+                @intCast(pc_color.data.count() * @sizeOf(Vec3)),
+                null,
+                gl.STATIC_DRAW,
+            );
             const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
             if (maybe_buffer) |buffer| {
-                const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
+                const buffer_f32 = @as([*]f32, @ptrCast(@alignCast(buffer)));
+                // var it = pc_color.data.constIterator(0);
+                // var index: usize = 0;
+                // while (it.next()) |value| {
+                //     const offset = index * 3;
+                //     @memcpy(buffer_f32[offset .. offset + 3], value);
+                //     index += 1;
+                // }
                 for (&hexagon_mesh.vertices, 0..) |*vertex, index| {
-                    const offset = index * vec_size;
-                    @memcpy(buffer_f32[offset .. offset + vec_size], &vertex.color);
+                    const offset = index * 3;
+                    @memcpy(buffer_f32[offset .. offset + 3], &vertex.color);
                 }
                 _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
             }
 
-            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(program, "a_color"));
+            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(program, "vertex_color"));
             gl.EnableVertexAttribArray(color_attrib);
-            gl.VertexAttribPointer(color_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
+            gl.VertexAttribPointer(color_attrib, 3, gl.FLOAT, gl.FALSE, 0, 0);
         }
 
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+        defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
+
         gl.BufferData(
             gl.ELEMENT_ARRAY_BUFFER,
             @sizeOf(@TypeOf(hexagon_mesh.indices)),
@@ -305,6 +348,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             gl.STATIC_DRAW,
         );
     }
+
+    /////
 
     uptime = try .start();
 
@@ -321,61 +366,98 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         gl.ClearColor(0.2, 0.2, 0.2, 1);
         gl.Clear(gl.COLOR_BUFFER_BIT);
 
-        gl.Viewport(0, 0, window_width, window_height);
-        const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
+        var fb_width: c_int = undefined;
+        var fb_height: c_int = undefined;
+        try errify(c.SDL_GetWindowSizeInPixels(window, &fb_width, &fb_height));
+        gl.Viewport(0, 0, fb_width, fb_height);
+        // const aspect_ratio = @as(f32, @floatFromInt(fb_width)) / @as(f32, @floatFromInt(fb_height));
 
         gl.UseProgram(program);
         defer gl.UseProgram(0);
 
-        const object_to_world = zm.identity();
-        const object_to_view = zm.mul(object_to_world, camera);
-        gl.UniformMatrix4fv(
-            model_view_matrix_uniform,
-            1,
-            gl.FALSE,
-            zm.arrNPtr(&object_to_view),
-        );
+        // const object_to_world = zm.identity();
+        // const world_to_view = zm.lookAtRh(
+        //     camera_position,
+        //     zm.f32x4(0.0, 0.0, 0.0, 1.0),
+        //     zm.f32x4(0.0, 1.0, 0.0, 0.0),
+        // );
+        // const object_to_view = zm.mul(object_to_world, world_to_view);
+        // // const view_to_clip = zm.orthographicRhGl(3, 3, 0.1, 3);
+        // const view_to_clip = zm.perspectiveFovRhGl(0.33 * std.math.pi, aspect_ratio, 0.01, 5.0);
 
-        const view_to_clip = switch (camera_mode) {
-            CameraProjectionType.perspective => zm.perspectiveFovRhGl(0.5 * std.math.pi, aspect_ratio, 0.01, 50.0),
-            CameraProjectionType.orthographic => zm.orthographicRhGl(4.0, 4.0, 0.01, 50.0),
-        };
-        gl.UniformMatrix4fv(
-            projection_matrix_uniform,
-            1,
-            gl.FALSE,
-            zm.arrNPtr(&view_to_clip),
-        );
+        // var i = @as(u32, 0);
+        // while (i < 16) : (i += 1) {
+        //     const value = zm.arrNPtr(&object_to_view)[i];
+        //     if (i % 4 == 0) {
+        //         std.log.debug("\n", .{});
+        //     }
+        //     zgp_log.debug("object_to_view[{d:2}]: {d:3.3}", .{ i, value });
+        // }
+
+        // i = @as(u32, 0);
+        // while (i < 16) : (i += 1) {
+        //     const value = zm.arrNPtr(&view_to_clip)[i];
+        //     if (i % 4 == 0) {
+        //         std.log.debug("\n", .{});
+        //     }
+        //     zgp_log.debug("view_to_clip[{d:2}]: {d:3.3}", .{ i, value });
+        // }
+
+        // gl.UniformMatrix4fv(
+        //     gl.GetUniformLocation(program, "model_view_matrix"),
+        //     1,
+        //     gl.TRUE,
+        //     zm.arrNPtr(&object_to_view),
+        // );
+        // gl.UniformMatrix4fv(
+        //     gl.GetUniformLocation(program, "projection_matrix"),
+        //     1,
+        //     gl.TRUE,
+        //     zm.arrNPtr(&view_to_clip),
+        // );
+        // gl.Uniform1f(
+        //     gl.GetUniformLocation(program, "point_size"),
+        //     0.01,
+        // );
+        // const point_color: [4]f32 = .{ 1, 0, 0, 1 };
+        // gl.Uniform4fv(
+        //     gl.GetUniformLocation(program, "color"),
+        //     1,
+        //     &point_color,
+        // );
+        // const light_position: [3]f32 = .{ -10, 0, 0 };
+        // gl.Uniform3fv(
+        //     gl.GetUniformLocation(program, "light_position"),
+        //     1,
+        //     &light_position,
+        // );
+        // const ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 };
+        // gl.Uniform4fv(
+        //     gl.GetUniformLocation(program, "ambiant_color"),
+        //     1,
+        //     &ambiant_color,
+        // );
+
+        gl.Uniform2f(framebuffer_size_uniform, @floatFromInt(fb_width), @floatFromInt(fb_height));
 
         gl.BindVertexArray(vao);
+        defer gl.BindVertexArray(0);
+
         gl.DrawElements(gl.TRIANGLES, hexagon_mesh.indices.len, gl.UNSIGNED_BYTE, 0);
-        gl.BindVertexArray(0);
 
         c.cImGui_ImplOpenGL3_NewFrame();
         c.cImGui_ImplSDL3_NewFrame();
         c.ImGui_NewFrame();
 
         const data = struct {
-            var show_demo_window: bool = false;
+            var show_demo_window: bool = true;
         };
-        _ = c.ImGui_Begin("Rendering", null, c.ImGuiWindowFlags_NoSavedSettings);
-        c.ImGui_Text("Camera mode");
-        if (c.ImGui_RadioButton("Perspective", camera_mode == CameraProjectionType.perspective)) {
-            camera_mode = CameraProjectionType.perspective;
-        }
-        c.ImGui_SameLine();
-        if (c.ImGui_RadioButton("Orthographic", camera_mode == CameraProjectionType.orthographic)) {
-            camera_mode = CameraProjectionType.orthographic;
-        }
-        _ = c.ImGui_Checkbox("show demo", &data.show_demo_window);
-        c.ImGui_End();
-        if (data.show_demo_window) {
-            c.ImGui_ShowDemoWindow(null);
-        }
+        c.ImGui_ShowDemoWindow(&data.show_demo_window);
         c.ImGui_Render();
         c.cImGui_ImplOpenGL3_RenderDrawData(c.ImGui_GetDrawData());
     }
 
+    // Display the drawn content.
     try errify(c.SDL_GL_SwapWindow(window));
 
     return c.SDL_APP_CONTINUE;
@@ -386,55 +468,48 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
 
     _ = c.cImGui_ImplSDL3_ProcessEvent(event);
 
+    const forward = zm.f32x4(0.0, 0.0, 1.0, 0.0);
+    const right = zm.f32x4(1.0, 0.0, 0.0, 0.0);
+    const speed = zm.f32x4s(0.01);
+
     switch (event.type) {
         c.SDL_EVENT_QUIT => {
             return c.SDL_APP_SUCCESS;
         },
-        c.SDL_EVENT_WINDOW_RESIZED => {
-            try errify(c.SDL_GetWindowSizeInPixels(window, &window_width, &window_height));
-        },
-        c.SDL_EVENT_KEY_DOWN => {
-            // const down = event.type == c.SDL_EVENT_KEY_DOWN;
+        c.SDL_EVENT_KEY_DOWN, c.SDL_EVENT_KEY_UP => {
+            const down = event.type == c.SDL_EVENT_KEY_DOWN;
             switch (event.key.key) {
-                c.SDLK_ESCAPE => return c.SDL_APP_SUCCESS,
+                c.SDLK_Q => sdl_log.info("key pressed: Q ({s})", .{if (down) "down" else "up"}),
                 else => {},
+            }
+            if (down) {
+                switch (event.key.key) {
+                    c.SDLK_ESCAPE => return c.SDL_APP_SUCCESS,
+                    c.SDLK_LEFT => {
+                        camera_position -= speed * right;
+                    },
+                    c.SDLK_RIGHT => {
+                        camera_position += speed * right;
+                    },
+                    c.SDLK_UP => {
+                        camera_position += speed * forward;
+                    },
+                    c.SDLK_DOWN => {
+                        camera_position -= speed * forward;
+                    },
+                    else => {},
+                }
             }
         },
         c.SDL_EVENT_MOUSE_BUTTON_DOWN, c.SDL_EVENT_MOUSE_BUTTON_UP => {
-            // const down = event.type == c.SDL_EVENT_MOUSE_BUTTON_DOWN;
+            const down = event.type == c.SDL_EVENT_MOUSE_BUTTON_DOWN;
             switch (event.button.button) {
-                // c.SDL_BUTTON_LEFT => sdl_log.info("mouse button: left ({s})", .{if (down) "down" else "up"}),
-                // c.SDL_BUTTON_RIGHT => sdl_log.info("mouse button: right ({s})", .{if (down) "down" else "up"}),
+                c.SDL_BUTTON_LEFT => sdl_log.info("mouse button: left ({s})", .{if (down) "down" else "up"}),
                 else => {},
             }
         },
         c.SDL_EVENT_MOUSE_MOTION => {
-            switch (event.motion.state) {
-                c.SDL_BUTTON_LMASK => {
-                    const axis = zm.f32x4(event.motion.yrel, event.motion.xrel, 0.0, 0.0);
-                    const speed = zm.length3(axis)[0] * 0.01;
-                    const rot = zm.matFromAxisAngle(axis, speed);
-                    const tr = camera[3]; // save translation
-                    camera[3] = zm.f32x4(0.0, 0.0, 0.0, 1.0); // set translation to zero
-                    camera = zm.mul(rot, camera); // apply rotation
-                    camera[3] = tr; // restore translation
-                },
-                c.SDL_BUTTON_RMASK => {
-                    const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
-                    const nx = event.motion.xrel / @as(f32, @floatFromInt(window_width)) * if (aspect_ratio > 1.0) aspect_ratio else 1.0;
-                    const ny = -1.0 * event.motion.yrel / @as(f32, @floatFromInt(window_height)) * if (aspect_ratio > 1.0) 1.0 else 1.0 / aspect_ratio;
-                    camera[3][0] += 2 * nx;
-                    camera[3][1] += 2 * ny;
-                },
-                else => {},
-            }
-        },
-        c.SDL_EVENT_MOUSE_WHEEL => {
-            const wheel = event.wheel.y;
-            if (wheel != 0) {
-                const forward = zm.f32x4(0.0, 0.0, -1.0, 0.0);
-                camera[3] += zm.splat(zm.Vec, wheel * 0.01) * forward;
-            }
+            // event.motion.xrel
         },
         else => {},
     }
@@ -453,10 +528,6 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         c.cImGui_ImplOpenGL3_Shutdown();
         c.cImGui_ImplSDL3_Shutdown();
         c.ImGui_DestroyContext(null);
-        gl.DeleteBuffers(1, (&ibo)[0..1]);
-        gl.DeleteBuffers(2, &vbos);
-        gl.DeleteVertexArrays(1, (&vao)[0..1]);
-        gl.DeleteProgram(program);
         gl.makeProcTableCurrent(null);
         errify(c.SDL_GL_MakeCurrent(window, null)) catch {};
         errify(c.SDL_GL_DestroyContext(gl_context)) catch {};
@@ -476,6 +547,9 @@ pub fn main() !u8 {
 
     registry = Registry.init(allocator);
     defer registry.deinit();
+
+    pc_indices = std.ArrayList(u32).init(allocator);
+    defer pc_indices.deinit();
 
     const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(empty_argv.len, @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;
