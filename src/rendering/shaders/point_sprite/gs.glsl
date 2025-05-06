@@ -1,28 +1,28 @@
 layout (points) in;
 layout (triangle_strip, max_vertices=4) out;
 
-uniform mat4 projection_matrix;
-uniform mat4 model_view_matrix;
-uniform float point_size;
+uniform mat4 u_model_view_matrix;
+uniform mat4 u_projection_matrix;
+uniform float u_point_size;
 
-out vec2 spriteCoord;
-out vec3 sphereCenter;
+out vec3 sphere_center;
+out vec2 sprite_coord;
 
 void corner(vec4 center, float x, float y)
 {
-  spriteCoord = vec2(x, y);
-  vec4 pos = center + vec4(point_size * x, point_size * y, 0.0, 0.0);
-  gl_Position = projection_matrix * pos;
+  sprite_coord = vec2(x, y);
+  vec4 pos = center + vec4(u_point_size * x, u_point_size * y, 0.0, 0.0);
+  gl_Position = u_projection_matrix * pos;
   EmitVertex();
 }
 
 void main()
 {
-  vec4 posCenter = model_view_matrix * gl_in[0].gl_Position;
-  sphereCenter = posCenter.xyz;
-  corner(posCenter, -1.4,  1.4);
-  corner(posCenter, -1.4, -1.4);
-  corner(posCenter,  1.4,  1.4);
-  corner(posCenter,  1.4, -1.4);
+  vec4 pos_center = u_model_view_matrix * gl_in[0].gl_Position;
+  sphere_center = pos_center.xyz;
+  corner(pos_center, -1.4,  1.4);
+  corner(pos_center, -1.4, -1.4);
+  corner(pos_center,  1.4,  1.4);
+  corner(pos_center,  1.4, -1.4);
   EndPrimitive();
 }

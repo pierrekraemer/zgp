@@ -69,6 +69,15 @@ pub fn clearRetainingCapacity(self: *Self) void {
     self.face_data.clearRetainingCapacity();
 }
 
+pub fn newDataIndex(self: *Self, cell_type: CellType) !u32 {
+    switch (cell_type) {
+        .halfedge => return self.halfedge_data.newIndex(),
+        .vertex => return self.vertex_data.newIndex(),
+        .edge => return self.edge_data.newIndex(),
+        .face => return self.face_data.newIndex(),
+    }
+}
+
 pub fn addData(self: *Self, cell_type: CellType, comptime T: type, name: []const u8) !*Data(T) {
     switch (cell_type) {
         .halfedge => return self.halfedge_data.addData(T, name),

@@ -5,6 +5,8 @@ const Self = @This();
 pub const PointCloud = @import("point/PointCloud.zig");
 pub const SurfaceMesh = @import("surface/SurfaceMesh.zig");
 
+const Vec3 = @import("../numerical/types.zig").Vec3;
+
 allocator: std.mem.Allocator,
 
 point_clouds: std.StringHashMap(*PointCloud),
@@ -46,12 +48,6 @@ pub fn createPointCloud(self: *Self, name: []const u8) !*PointCloud {
     return pc;
 }
 
-pub fn loadPointCloudFromFile(self: *Self, filename: []const u8) !*PointCloud {
-    const pc = try self.createPointCloud(filename);
-    // read the file and fill the point cloud
-    return pc;
-}
-
 pub fn createSurfaceMesh(self: *Self, name: []const u8) !*SurfaceMesh {
     const maybe_surface_mesh = self.surface_meshes.get(name);
     if (maybe_surface_mesh) |_| {
@@ -63,8 +59,186 @@ pub fn createSurfaceMesh(self: *Self, name: []const u8) !*SurfaceMesh {
     return sm;
 }
 
+pub fn loadPointCloudFromFile(self: *Self, filename: []const u8) !*PointCloud {
+    const pc = try self.createPointCloud(filename);
+    // read the file and fill the point cloud
+    return pc;
+}
+
+const SurfaceMeshImportData = struct {
+    vertices_position: std.ArrayList(Vec3),
+    faces_nb_vertices: std.ArrayList(u32),
+    faces_vertex_indices: std.ArrayList(u32),
+
+    pub fn init(allocator: std.mem.Allocator) SurfaceMeshImportData {
+        return .{
+            .vertices_position = std.ArrayList(Vec3).init(allocator),
+            .faces_nb_vertices = std.ArrayList(u32).init(allocator),
+            .faces_vertex_indices = std.ArrayList(u32).init(allocator),
+        };
+    }
+    pub fn deinit(self: *SurfaceMeshImportData) void {
+        self.vertices_position.deinit();
+        self.faces_nb_vertices.deinit();
+        self.faces_vertex_indices.deinit();
+    }
+    pub fn ensureTotalCapacity(self: *SurfaceMeshImportData, nb_vertices: u32, nb_faces: u32) !void {
+        try self.vertices_position.ensureTotalCapacity(nb_vertices);
+        try self.faces_nb_vertices.ensureTotalCapacity(nb_faces);
+        try self.faces_vertex_indices.ensureTotalCapacity(nb_faces * 4);
+    }
+};
+
 pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh {
-    const sm = try self.createSurfaceMesh(filename);
-    // read the file and fill the surface mesh
+    var file = try std.fs.cwd().openFile(filename, .{});
+    defer file.close();
+
+    var buf_reader = std.io.bufferedReader(file.reader());
+    const reader = buf_reader.reader();
+
+    var line = std.ArrayList(u8).init(self.allocator);
+    defer line.deinit();
+    const line_writer = line.writer();
+
+    const supported_filetypes = enum {
+        off,
+        obj,
+        ply,
+    };
+
+    var ext = std.fs.path.extension(filename);
+    if (ext.len == 0) {
+        return error.UnsupportedFile;
+    } else {
+        ext = ext[1..]; // remove the starting dot
+    }
+    const filetype = std.meta.stringToEnum(supported_filetypes, ext) orelse {
+        return error.UnsupportedFile;
+    };
+
+    var import_data = SurfaceMeshImportData.init(self.allocator);
+    defer import_data.deinit();
+
+    switch (filetype) {
+        .off => {
+            std.debug.print("reading OFF file\n", .{});
+
+            while (reader.streamUntilDelimiter(line_writer, '\n', null)) {
+                if (line.items.len == 0) continue; // skip empty lines
+                defer line.clearRetainingCapacity();
+                if (std.mem.startsWith(u8, line.items, "OFF")) break;
+            } else |err| switch (err) {
+                error.EndOfStream => {
+                    std.debug.print("reached end of file before finding the header\n", .{});
+                    return error.InvalidFileFormat;
+                },
+                else => return err,
+            }
+
+            var nb_cells: [3]u32 = undefined; // [vertices, faces, edges]
+            while (reader.streamUntilDelimiter(line_writer, '\n', null)) {
+                if (line.items.len == 0) continue; // skip empty lines
+                defer line.clearRetainingCapacity();
+                var tokens = std.mem.tokenizeScalar(u8, line.items, ' ');
+                var i: usize = 0;
+                while (tokens.next()) |token| : (i += 1) {
+                    if (i >= nb_cells.len) return error.InvalidFileFormat;
+                    const value = try std.fmt.parseInt(u32, token, 10);
+                    nb_cells[i] = value;
+                }
+                if (i != nb_cells.len) {
+                    std.debug.print("failed to read the number of cells\n", .{});
+                    return error.InvalidFileFormat;
+                }
+                break;
+            } else |err| switch (err) {
+                error.EndOfStream => {
+                    std.debug.print("reached end of file before reading the number of cells\n", .{});
+                    return error.InvalidFileFormat;
+                },
+                else => return err,
+            }
+            std.debug.print("nb_cells: {d} {d} {d}\n", .{ nb_cells[0], nb_cells[1], nb_cells[2] });
+
+            try import_data.ensureTotalCapacity(nb_cells[0], nb_cells[1]);
+
+            var i: usize = 0;
+            while (i < nb_cells[0]) : (i += 1) {
+                while (reader.streamUntilDelimiter(line_writer, '\n', null)) {
+                    if (line.items.len == 0) continue; // skip empty lines
+                    defer line.clearRetainingCapacity();
+                    var tokens = std.mem.tokenizeScalar(u8, line.items, ' ');
+                    var pos: Vec3 = undefined;
+                    var j: usize = 0;
+                    while (tokens.next()) |token| : (j += 1) {
+                        if (j >= 3) {
+                            std.debug.print("vertex {d} position has more than 3 coordinates\n", .{i});
+                            return error.InvalidFileFormat;
+                        }
+                        const value = try std.fmt.parseFloat(f32, token);
+                        pos[j] = value;
+                    }
+                    if (j != 3) {
+                        std.debug.print("vertex {d} position has less than 3 coordinates\n", .{i});
+                        return error.InvalidFileFormat;
+                    }
+                    try import_data.vertices_position.append(pos);
+                    break;
+                } else |err| switch (err) {
+                    error.EndOfStream => {
+                        std.debug.print("reached end of file before reading all vertices\n", .{});
+                        return error.InvalidFileFormat;
+                    },
+                    else => return err,
+                }
+            }
+            std.debug.print("read {d} vertices\n", .{import_data.vertices_position.items.len});
+
+            i = 0;
+            while (i < nb_cells[1]) : (i += 1) {
+                while (reader.streamUntilDelimiter(line_writer, '\n', null)) {
+                    if (line.items.len == 0) continue; // skip empty lines
+                    defer line.clearRetainingCapacity();
+                    var tokens = std.mem.tokenizeScalar(u8, line.items, ' ');
+                    var face_nb_vertices: u32 = undefined;
+                    var j: usize = 0;
+                    while (tokens.next()) |token| : (j += 1) {
+                        if (j == 0) {
+                            face_nb_vertices = try std.fmt.parseInt(u32, token, 10);
+                        } else if (j > face_nb_vertices + 1) {
+                            std.debug.print("face {d} has more than {d} vertices\n", .{ i, face_nb_vertices });
+                            return error.InvalidFileFormat;
+                        } else {
+                            const index = try std.fmt.parseInt(u32, token, 10);
+                            try import_data.faces_vertex_indices.append(index);
+                        }
+                    }
+                    if (j != face_nb_vertices + 1) {
+                        std.debug.print("face {d} has less than {d} vertices\n", .{ i, face_nb_vertices });
+                        return error.InvalidFileFormat;
+                    }
+                    try import_data.faces_nb_vertices.append(face_nb_vertices);
+                    break;
+                } else |err| switch (err) {
+                    error.EndOfStream => {
+                        std.debug.print("reached end of file before reading all faces\n", .{});
+                        return error.InvalidFileFormat;
+                    },
+                    else => return err,
+                }
+            }
+            std.debug.print("read {d} faces\n", .{import_data.faces_nb_vertices.items.len});
+        },
+        else => return error.InvalidFileExtension,
+    }
+
+    const sm = try self.createSurfaceMesh(std.fs.path.basename(filename));
+
+    const vertex_position = try sm.addData(.vertex, Vec3, "vertex_position");
+    for (import_data.vertices_position.items) |pos| {
+        const vertex_index = try sm.newDataIndex(.vertex);
+        vertex_position.value(vertex_index).* = pos;
+    }
+
     return sm;
 }

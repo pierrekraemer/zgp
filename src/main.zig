@@ -14,6 +14,8 @@ const c = @cImport({
 const zm = @import("zmath");
 
 const Registry = @import("models/Registry.zig");
+const Vec3 = @import("numerical/types.zig").Vec3;
+const Vec4 = @import("numerical/types.zig").Vec4;
 
 pub const std_options: std.Options = .{ .log_level = .debug };
 
@@ -65,6 +67,10 @@ var fully_initialized = false;
 var uptime: std.time.Timer = undefined;
 
 var registry: Registry = undefined;
+var pc: *Registry.PointCloud = undefined;
+var pc_position: *Registry.PointCloud.Data(Vec3) = undefined;
+var pc_color: *Registry.PointCloud.Data(Vec3) = undefined;
+var pc_indices: std.ArrayList(u32) = undefined;
 
 var window: *c.SDL_Window = undefined;
 var window_width: c_int = 800;
@@ -72,14 +78,23 @@ var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
 
-var program: c_uint = undefined;
+const Shader = struct {
+    program: c_uint = undefined,
 
-var model_view_matrix_uniform: c_int = undefined;
-var projection_matrix_uniform: c_int = undefined;
+    model_view_matrix_uniform: c_int = undefined,
+    projection_matrix_uniform: c_int = undefined,
+    point_size_uniform: c_int = undefined,
+    color_uniform: c_int = undefined,
+    ambiant_color_uniform: c_int = undefined,
+    light_position_uniform: c_int = undefined,
 
-var vao: c_uint = undefined;
-var vbos: [2]c_uint = undefined;
-var ibo: c_uint = undefined;
+    vao: c_uint = undefined,
+    vbos: [2]c_uint = undefined,
+    ibo: c_uint = undefined,
+};
+
+var no_light_color_shader: Shader = .{};
+var point_sprite_shader: Shader = .{};
 
 var camera = zm.lookAtRh(
     zm.f32x4(0.0, 0.0, 2.0, 1.0),
@@ -180,9 +195,33 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     imgui_log.debug("ImGui initialized\n", .{});
 
-    program = gl.CreateProgram();
-    if (program == 0) return error.GlCreateProgramFailed;
-    errdefer gl.DeleteProgram(program);
+    pc = try registry.createPointCloud("test");
+    pc_position = try pc.addData(Vec3, "position");
+    pc_color = try pc.addData(Vec3, "color");
+    const p1 = try pc.addPoint();
+    const p2 = try pc.addPoint();
+    const p3 = try pc.addPoint();
+    const p4 = try pc.addPoint();
+    pc_position.value(pc.indexOf(p1)).* = .{ 0, 0, 0 };
+    pc_position.value(pc.indexOf(p2)).* = .{ 1, 0, 0 };
+    pc_position.value(pc.indexOf(p3)).* = .{ 0, 1, 0 };
+    pc_position.value(pc.indexOf(p4)).* = .{ -1, 0, 0 };
+    pc_color.value(pc.indexOf(p1)).* = .{ 1, 0, 0 };
+    pc_color.value(pc.indexOf(p2)).* = .{ 0, 1, 0 };
+    pc_color.value(pc.indexOf(p3)).* = .{ 0, 0, 1 };
+    pc_color.value(pc.indexOf(p4)).* = .{ 1, 1, 0 };
+    try pc_indices.append(pc.indexOf(p1));
+    try pc_indices.append(pc.indexOf(p2));
+    try pc_indices.append(pc.indexOf(p3));
+    try pc_indices.append(pc.indexOf(p4));
+
+    _ = try registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/duck_163.off");
+
+    // no light color shader
+
+    no_light_color_shader.program = gl.CreateProgram();
+    if (no_light_color_shader.program == 0) return error.GlCreateProgramFailed;
+    errdefer gl.DeleteProgram(no_light_color_shader.program);
 
     {
         var success: c_int = undefined;
@@ -224,35 +263,120 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             return error.GlCompileFragmentShaderFailed;
         }
 
-        gl.AttachShader(program, vertex_shader);
-        gl.AttachShader(program, fragment_shader);
-        gl.LinkProgram(program);
-        gl.GetProgramiv(program, gl.LINK_STATUS, &success);
+        gl.AttachShader(no_light_color_shader.program, vertex_shader);
+        gl.AttachShader(no_light_color_shader.program, fragment_shader);
+        gl.LinkProgram(no_light_color_shader.program);
+        gl.GetProgramiv(no_light_color_shader.program, gl.LINK_STATUS, &success);
         if (success == gl.FALSE) {
-            gl.GetProgramInfoLog(program, info_log_buf.len, null, &info_log_buf);
+            gl.GetProgramInfoLog(no_light_color_shader.program, info_log_buf.len, null, &info_log_buf);
             gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
             return error.LinkProgramFailed;
         }
     }
 
-    model_view_matrix_uniform = gl.GetUniformLocation(program, "u_model_view_matrix");
-    projection_matrix_uniform = gl.GetUniformLocation(program, "u_projection_matrix");
+    no_light_color_shader.model_view_matrix_uniform = gl.GetUniformLocation(no_light_color_shader.program, "u_model_view_matrix");
+    no_light_color_shader.projection_matrix_uniform = gl.GetUniformLocation(no_light_color_shader.program, "u_projection_matrix");
 
-    gl.GenVertexArrays(1, (&vao)[0..1]);
-    errdefer gl.DeleteVertexArrays(1, (&vao)[0..1]);
+    // point sprite shader
 
-    gl.GenBuffers(2, &vbos);
-    errdefer gl.DeleteBuffers(2, &vbos);
-
-    gl.GenBuffers(1, (&ibo)[0..1]);
-    errdefer gl.DeleteBuffers(1, (&ibo)[0..1]);
+    point_sprite_shader.program = gl.CreateProgram();
+    if (point_sprite_shader.program == 0) return error.GlCreateProgramFailed;
+    errdefer gl.DeleteProgram(point_sprite_shader.program);
 
     {
-        gl.BindVertexArray(vao);
+        var success: c_int = undefined;
+        var info_log_buf: [512:0]u8 = undefined;
+
+        const vertex_shader = gl.CreateShader(gl.VERTEX_SHADER);
+        if (vertex_shader == 0) return error.GlCreateVertexShaderFailed;
+        defer gl.DeleteShader(vertex_shader);
+        const vertex_shader_source = @embedFile("rendering/shaders/point_sprite/vs.glsl");
+        gl.ShaderSource(
+            vertex_shader,
+            2,
+            &.{ shader_version, vertex_shader_source },
+            &.{ shader_version.len, vertex_shader_source.len },
+        );
+        gl.CompileShader(vertex_shader);
+        gl.GetShaderiv(vertex_shader, gl.COMPILE_STATUS, &success);
+        if (success == gl.FALSE) {
+            gl.GetShaderInfoLog(vertex_shader, info_log_buf.len, null, &info_log_buf);
+            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
+            return error.GlCompileVertexShaderFailed;
+        }
+
+        const geometry_shader = gl.CreateShader(gl.GEOMETRY_SHADER);
+        if (geometry_shader == 0) return error.GlCreateFragmentShaderFailed;
+        defer gl.DeleteShader(geometry_shader);
+        const geometry_shader_source = @embedFile("rendering/shaders/point_sprite/gs.glsl");
+        gl.ShaderSource(
+            geometry_shader,
+            2,
+            &.{ shader_version, geometry_shader_source },
+            &.{ shader_version.len, geometry_shader_source.len },
+        );
+        gl.CompileShader(geometry_shader);
+        gl.GetShaderiv(geometry_shader, gl.COMPILE_STATUS, &success);
+        if (success == gl.FALSE) {
+            gl.GetShaderInfoLog(geometry_shader, info_log_buf.len, null, &info_log_buf);
+            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
+            return error.GlCompileGeoemtryShaderFailed;
+        }
+
+        const fragment_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
+        if (fragment_shader == 0) return error.GlCreateFragmentShaderFailed;
+        defer gl.DeleteShader(fragment_shader);
+        const fragment_shader_source = @embedFile("rendering/shaders/point_sprite/fs.glsl");
+        gl.ShaderSource(
+            fragment_shader,
+            2,
+            &.{ shader_version, fragment_shader_source },
+            &.{ shader_version.len, fragment_shader_source.len },
+        );
+        gl.CompileShader(fragment_shader);
+        gl.GetShaderiv(fragment_shader, gl.COMPILE_STATUS, &success);
+        if (success == gl.FALSE) {
+            gl.GetShaderInfoLog(fragment_shader, info_log_buf.len, null, &info_log_buf);
+            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
+            return error.GlCompileFragmentShaderFailed;
+        }
+
+        gl.AttachShader(point_sprite_shader.program, vertex_shader);
+        gl.AttachShader(point_sprite_shader.program, geometry_shader);
+        gl.AttachShader(point_sprite_shader.program, fragment_shader);
+        gl.LinkProgram(point_sprite_shader.program);
+        gl.GetProgramiv(point_sprite_shader.program, gl.LINK_STATUS, &success);
+        if (success == gl.FALSE) {
+            gl.GetProgramInfoLog(point_sprite_shader.program, info_log_buf.len, null, &info_log_buf);
+            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
+            return error.LinkProgramFailed;
+        }
+    }
+
+    point_sprite_shader.model_view_matrix_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_model_view_matrix");
+    point_sprite_shader.projection_matrix_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_projection_matrix");
+    point_sprite_shader.point_size_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_point_size");
+    point_sprite_shader.color_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_color");
+    point_sprite_shader.ambiant_color_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_ambiant_color");
+    point_sprite_shader.light_position_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_light_position");
+
+    // no light color shader VAO/VBO/IBO
+
+    gl.GenVertexArrays(1, (&no_light_color_shader.vao)[0..1]);
+    errdefer gl.DeleteVertexArrays(1, (&no_light_color_shader.vao)[0..1]);
+
+    gl.GenBuffers(2, &no_light_color_shader.vbos);
+    errdefer gl.DeleteBuffers(2, &no_light_color_shader.vbos);
+
+    gl.GenBuffers(1, (&no_light_color_shader.ibo)[0..1]);
+    errdefer gl.DeleteBuffers(1, (&no_light_color_shader.ibo)[0..1]);
+
+    {
+        gl.BindVertexArray(no_light_color_shader.vao);
         defer gl.BindVertexArray(0);
 
         {
-            gl.BindBuffer(gl.ARRAY_BUFFER, vbos[0]);
+            gl.BindBuffer(gl.ARRAY_BUFFER, no_light_color_shader.vbos[0]);
             defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
 
             const vec_size = @typeInfo(@FieldType(hexagon_mesh.Vertex, "position")).array.len;
@@ -269,13 +393,13 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
                 _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
             }
 
-            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(program, "a_position"));
+            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(no_light_color_shader.program, "a_position"));
             gl.EnableVertexAttribArray(position_attrib);
             gl.VertexAttribPointer(position_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
         }
 
         {
-            gl.BindBuffer(gl.ARRAY_BUFFER, vbos[1]);
+            gl.BindBuffer(gl.ARRAY_BUFFER, no_light_color_shader.vbos[1]);
             defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
 
             const vec_size = @typeInfo(@FieldType(hexagon_mesh.Vertex, "color")).array.len;
@@ -292,16 +416,66 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
                 _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
             }
 
-            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(program, "a_color"));
+            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(no_light_color_shader.program, "a_color"));
             gl.EnableVertexAttribArray(color_attrib);
             gl.VertexAttribPointer(color_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
         }
 
-        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, no_light_color_shader.ibo);
         gl.BufferData(
             gl.ELEMENT_ARRAY_BUFFER,
             @sizeOf(@TypeOf(hexagon_mesh.indices)),
             &hexagon_mesh.indices,
+            gl.STATIC_DRAW,
+        );
+    }
+
+    // point sprite shader VAO/VBO/IBO
+
+    gl.GenVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
+    errdefer gl.DeleteVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
+
+    gl.GenBuffers(1, &point_sprite_shader.vbos);
+    errdefer gl.DeleteBuffers(1, &point_sprite_shader.vbos);
+
+    gl.GenBuffers(1, (&point_sprite_shader.ibo)[0..1]);
+    errdefer gl.DeleteBuffers(1, (&point_sprite_shader.ibo)[0..1]);
+
+    {
+        gl.BindVertexArray(point_sprite_shader.vao);
+        defer gl.BindVertexArray(0);
+
+        {
+            gl.BindBuffer(gl.ARRAY_BUFFER, point_sprite_shader.vbos[0]);
+            defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
+
+            const vec_size = @typeInfo(Vec3).array.len;
+            const buf_size = pc_position.data.count() * @sizeOf(Vec3);
+
+            gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
+            const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
+            if (maybe_buffer) |buffer| {
+                const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
+                var it = pc_position.data.constIterator(0);
+                var index: usize = 0;
+                while (it.next()) |value| {
+                    const offset = index * vec_size;
+                    @memcpy(buffer_f32[offset .. offset + 3], value);
+                    index += 1;
+                }
+                _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
+            }
+
+            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(point_sprite_shader.program, "a_position"));
+            gl.EnableVertexAttribArray(position_attrib);
+            gl.VertexAttribPointer(position_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
+        }
+
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, point_sprite_shader.ibo);
+        gl.BufferData(
+            gl.ELEMENT_ARRAY_BUFFER,
+            @intCast(pc_indices.items.len * @sizeOf(u32)),
+            pc_indices.items.ptr,
             gl.STATIC_DRAW,
         );
     }
@@ -324,32 +498,79 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         gl.Viewport(0, 0, window_width, window_height);
         const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
 
-        gl.UseProgram(program);
-        defer gl.UseProgram(0);
-
         const object_to_world = zm.identity();
         const object_to_view = zm.mul(object_to_world, camera);
-        gl.UniformMatrix4fv(
-            model_view_matrix_uniform,
-            1,
-            gl.FALSE,
-            zm.arrNPtr(&object_to_view),
-        );
 
         const view_to_clip = switch (camera_mode) {
             CameraProjectionType.perspective => zm.perspectiveFovRhGl(0.5 * std.math.pi, aspect_ratio, 0.01, 50.0),
             CameraProjectionType.orthographic => zm.orthographicRhGl(4.0, 4.0, 0.01, 50.0),
         };
-        gl.UniformMatrix4fv(
-            projection_matrix_uniform,
-            1,
-            gl.FALSE,
-            zm.arrNPtr(&view_to_clip),
-        );
 
-        gl.BindVertexArray(vao);
-        gl.DrawElements(gl.TRIANGLES, hexagon_mesh.indices.len, gl.UNSIGNED_BYTE, 0);
-        gl.BindVertexArray(0);
+        {
+            gl.UseProgram(no_light_color_shader.program);
+            defer gl.UseProgram(0);
+
+            gl.UniformMatrix4fv(
+                no_light_color_shader.model_view_matrix_uniform,
+                1,
+                gl.FALSE,
+                zm.arrNPtr(&object_to_view),
+            );
+            gl.UniformMatrix4fv(
+                no_light_color_shader.projection_matrix_uniform,
+                1,
+                gl.FALSE,
+                zm.arrNPtr(&view_to_clip),
+            );
+
+            gl.BindVertexArray(no_light_color_shader.vao);
+            gl.DrawElements(gl.TRIANGLES, hexagon_mesh.indices.len, gl.UNSIGNED_BYTE, 0);
+            gl.BindVertexArray(0);
+        }
+
+        {
+            gl.UseProgram(point_sprite_shader.program);
+            defer gl.UseProgram(0);
+
+            gl.UniformMatrix4fv(
+                point_sprite_shader.model_view_matrix_uniform,
+                1,
+                gl.FALSE,
+                zm.arrNPtr(&object_to_view),
+            );
+            gl.UniformMatrix4fv(
+                point_sprite_shader.projection_matrix_uniform,
+                1,
+                gl.FALSE,
+                zm.arrNPtr(&view_to_clip),
+            );
+            gl.Uniform1f(
+                point_sprite_shader.point_size_uniform,
+                0.05,
+            );
+            const point_color: [4]f32 = .{ 1, 0, 0, 1 };
+            gl.Uniform4fv(
+                point_sprite_shader.color_uniform,
+                1,
+                &point_color,
+            );
+            const ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 };
+            gl.Uniform4fv(
+                point_sprite_shader.ambiant_color_uniform,
+                1,
+                &ambiant_color,
+            );
+            const light_position: [3]f32 = .{ -100, 0, 100 };
+            gl.Uniform3fv(
+                point_sprite_shader.light_position_uniform,
+                1,
+                &light_position,
+            );
+
+            gl.BindVertexArray(point_sprite_shader.vao);
+            gl.DrawElements(gl.POINTS, @intCast(pc_indices.items.len), gl.UNSIGNED_INT, 0);
+            gl.BindVertexArray(0);
+        }
 
         c.cImGui_ImplOpenGL3_NewFrame();
         c.cImGui_ImplSDL3_NewFrame();
@@ -385,6 +606,9 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
     _ = appstate;
 
     _ = c.cImGui_ImplSDL3_ProcessEvent(event);
+    if (c.ImGui_GetIO().*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow)) {
+        return c.SDL_APP_CONTINUE;
+    }
 
     switch (event.type) {
         c.SDL_EVENT_QUIT => {
@@ -453,10 +677,17 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         c.cImGui_ImplOpenGL3_Shutdown();
         c.cImGui_ImplSDL3_Shutdown();
         c.ImGui_DestroyContext(null);
-        gl.DeleteBuffers(1, (&ibo)[0..1]);
-        gl.DeleteBuffers(2, &vbos);
-        gl.DeleteVertexArrays(1, (&vao)[0..1]);
-        gl.DeleteProgram(program);
+
+        gl.DeleteBuffers(1, (&no_light_color_shader.ibo)[0..1]);
+        gl.DeleteBuffers(2, &no_light_color_shader.vbos);
+        gl.DeleteVertexArrays(1, (&no_light_color_shader.vao)[0..1]);
+        gl.DeleteProgram(no_light_color_shader.program);
+
+        gl.DeleteBuffers(1, (&point_sprite_shader.ibo)[0..1]);
+        gl.DeleteBuffers(1, &point_sprite_shader.vbos);
+        gl.DeleteVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
+        gl.DeleteProgram(point_sprite_shader.program);
+
         gl.makeProcTableCurrent(null);
         errify(c.SDL_GL_MakeCurrent(window, null)) catch {};
         errify(c.SDL_GL_DestroyContext(gl_context)) catch {};
@@ -476,6 +707,9 @@ pub fn main() !u8 {
 
     registry = Registry.init(allocator);
     defer registry.deinit();
+
+    pc_indices = std.ArrayList(u32).init(allocator);
+    defer pc_indices.deinit();
 
     const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(empty_argv.len, @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;
