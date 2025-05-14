@@ -17,6 +17,8 @@ const Registry = @import("models/Registry.zig");
 const Vec3 = @import("numerical/types.zig").Vec3;
 const Vec4 = @import("numerical/types.zig").Vec4;
 
+const halfEdge = Registry.SurfaceMesh.halfEdge;
+
 pub const std_options: std.Options = .{ .log_level = .debug };
 
 const sdl_log = std.log.scoped(.sdl);
@@ -24,53 +26,20 @@ const gl_log = std.log.scoped(.gl);
 const imgui_log = std.log.scoped(.imgui);
 const zgp_log = std.log.scoped(.zgp);
 
-/// ```txt
-///               (5)
-///             ..'''..
-///         ..''       ''..
-/// (3) ._'_________________'_. (4)
-///     |\                   /|
-///     |  \               /  |
-///     |    \           /    |
-///     |     \         /     |
-/// (1) ''..    \     /    ..'' (2)
-///         ''..  \ /  ..''
-///             ''.V.''
-///               (0)
-/// ```
-const hexagon_mesh = struct {
-    // zig fmt: off
-    const vertices = [_]Vertex{
-        .{ .position = .{  0,                        -1   , 0 }, .color = .{ 0, 1, 1 } },
-        .{ .position = .{ -(@sqrt(@as(f32, 3)) / 2), -0.5, 0 }, .color = .{ 0, 0, 1 } },
-        .{ .position = .{  (@sqrt(@as(f32, 3)) / 2), -0.5, 0 }, .color = .{ 0, 1, 0 } },
-        .{ .position = .{ -(@sqrt(@as(f32, 3)) / 2),  0.5, 0 }, .color = .{ 1, 0, 1 } },
-        .{ .position = .{  (@sqrt(@as(f32, 3)) / 2),  0.5, 0 }, .color = .{ 1, 1, 0 } },
-        .{ .position = .{  0,                         1  , 0 }, .color = .{ 1, 0, 0 } },
-    };
-    // zig fmt: on
-
-    const indices = [_]u8{
-        0, 3, 1,
-        0, 4, 3,
-        0, 2, 4,
-        3, 4, 5,
-    };
-
-    const Vertex = extern struct {
-        position: [3]f32,
-        color: [3]f32,
-    };
-};
-
 var fully_initialized = false;
 var uptime: std.time.Timer = undefined;
 
 var registry: Registry = undefined;
+
 var pc: *Registry.PointCloud = undefined;
 var pc_position: *Registry.PointCloud.Data(Vec3) = undefined;
 var pc_color: *Registry.PointCloud.Data(Vec3) = undefined;
 var pc_indices: std.ArrayList(u32) = undefined;
+
+var sm: *Registry.SurfaceMesh = undefined;
+var sm_position: *Registry.SurfaceMesh.Data(Vec3) = undefined;
+var sm_color: *Registry.SurfaceMesh.Data(Vec3) = undefined;
+var sm_indices: std.ArrayList(u32) = undefined;
 
 var window: *c.SDL_Window = undefined;
 var window_width: c_int = 800;
@@ -84,7 +53,6 @@ const Shader = struct {
     model_view_matrix_uniform: c_int = undefined,
     projection_matrix_uniform: c_int = undefined,
     point_size_uniform: c_int = undefined,
-    color_uniform: c_int = undefined,
     ambiant_color_uniform: c_int = undefined,
     light_position_uniform: c_int = undefined,
 
@@ -93,7 +61,7 @@ const Shader = struct {
     ibo: c_uint = undefined,
 };
 
-var no_light_color_shader: Shader = .{};
+var flat_color_shader: Shader = .{};
 var point_sprite_shader: Shader = .{};
 
 var camera = zm.lookAtRh(
@@ -195,6 +163,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     imgui_log.debug("ImGui initialized\n", .{});
 
+    // ****************************************************************
+
     pc = try registry.createPointCloud("test");
     pc_position = try pc.addData(Vec3, "position");
     pc_color = try pc.addData(Vec3, "color");
@@ -205,7 +175,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     pc_position.value(pc.indexOf(p1)).* = .{ 0, 0, 0 };
     pc_position.value(pc.indexOf(p2)).* = .{ 1, 0, 0 };
     pc_position.value(pc.indexOf(p3)).* = .{ 0, 1, 0 };
-    pc_position.value(pc.indexOf(p4)).* = .{ -1, 0, 0 };
+    pc_position.value(pc.indexOf(p4)).* = .{ 0, 0, 1 };
     pc_color.value(pc.indexOf(p1)).* = .{ 1, 0, 0 };
     pc_color.value(pc.indexOf(p2)).* = .{ 0, 1, 0 };
     pc_color.value(pc.indexOf(p3)).* = .{ 0, 0, 1 };
@@ -215,13 +185,28 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try pc_indices.append(pc.indexOf(p3));
     try pc_indices.append(pc.indexOf(p4));
 
-    _ = try registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/duck_163.off");
+    sm = try registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/armadillo_160k.off");
+    sm_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
+    sm_color = try sm.addData(.vertex, Vec3, "color");
+    var f_it = try Registry.SurfaceMesh.CellIterator(.face).init(sm);
+    while (f_it.next()) |f| {
+        var it: Registry.SurfaceMesh.CellHalfEdgeIterator = .{
+            .surface_mesh = sm,
+            .cell = f,
+            .current = Registry.SurfaceMesh.halfEdge(f),
+        };
+        while (it.next()) |he| {
+            try sm_indices.append(sm.indexOf(.{ .vertex = he }));
+        }
+    }
 
-    // no light color shader
+    // try sm.dump(std.io.getStdErr().writer().any());
 
-    no_light_color_shader.program = gl.CreateProgram();
-    if (no_light_color_shader.program == 0) return error.GlCreateProgramFailed;
-    errdefer gl.DeleteProgram(no_light_color_shader.program);
+    // flat color shader
+
+    flat_color_shader.program = gl.CreateProgram();
+    if (flat_color_shader.program == 0) return error.GlCreateProgramFailed;
+    errdefer gl.DeleteProgram(flat_color_shader.program);
 
     {
         var success: c_int = undefined;
@@ -230,7 +215,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const vertex_shader = gl.CreateShader(gl.VERTEX_SHADER);
         if (vertex_shader == 0) return error.GlCreateVertexShaderFailed;
         defer gl.DeleteShader(vertex_shader);
-        const vertex_shader_source = @embedFile("rendering/shaders/no_light_color_per_vertex/vs.glsl");
+        const vertex_shader_source = @embedFile("rendering/shaders/flat_color_per_vertex/vs.glsl");
         gl.ShaderSource(
             vertex_shader,
             2,
@@ -248,7 +233,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const fragment_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
         if (fragment_shader == 0) return error.GlCreateFragmentShaderFailed;
         defer gl.DeleteShader(fragment_shader);
-        const fragment_shader_source = @embedFile("rendering/shaders/no_light_color_per_vertex/fs.glsl");
+        const fragment_shader_source = @embedFile("rendering/shaders/flat_color_per_vertex/fs.glsl");
         gl.ShaderSource(
             fragment_shader,
             2,
@@ -263,19 +248,21 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             return error.GlCompileFragmentShaderFailed;
         }
 
-        gl.AttachShader(no_light_color_shader.program, vertex_shader);
-        gl.AttachShader(no_light_color_shader.program, fragment_shader);
-        gl.LinkProgram(no_light_color_shader.program);
-        gl.GetProgramiv(no_light_color_shader.program, gl.LINK_STATUS, &success);
+        gl.AttachShader(flat_color_shader.program, vertex_shader);
+        gl.AttachShader(flat_color_shader.program, fragment_shader);
+        gl.LinkProgram(flat_color_shader.program);
+        gl.GetProgramiv(flat_color_shader.program, gl.LINK_STATUS, &success);
         if (success == gl.FALSE) {
-            gl.GetProgramInfoLog(no_light_color_shader.program, info_log_buf.len, null, &info_log_buf);
+            gl.GetProgramInfoLog(flat_color_shader.program, info_log_buf.len, null, &info_log_buf);
             gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
             return error.LinkProgramFailed;
         }
     }
 
-    no_light_color_shader.model_view_matrix_uniform = gl.GetUniformLocation(no_light_color_shader.program, "u_model_view_matrix");
-    no_light_color_shader.projection_matrix_uniform = gl.GetUniformLocation(no_light_color_shader.program, "u_projection_matrix");
+    flat_color_shader.model_view_matrix_uniform = gl.GetUniformLocation(flat_color_shader.program, "u_model_view_matrix");
+    flat_color_shader.projection_matrix_uniform = gl.GetUniformLocation(flat_color_shader.program, "u_projection_matrix");
+    flat_color_shader.ambiant_color_uniform = gl.GetUniformLocation(flat_color_shader.program, "u_ambiant_color");
+    flat_color_shader.light_position_uniform = gl.GetUniformLocation(flat_color_shader.program, "u_light_position");
 
     // point sprite shader
 
@@ -356,76 +343,82 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     point_sprite_shader.model_view_matrix_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_model_view_matrix");
     point_sprite_shader.projection_matrix_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_projection_matrix");
     point_sprite_shader.point_size_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_point_size");
-    point_sprite_shader.color_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_color");
     point_sprite_shader.ambiant_color_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_ambiant_color");
     point_sprite_shader.light_position_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_light_position");
 
-    // no light color shader VAO/VBO/IBO
+    // flat color shader VAO/VBO/IBO
 
-    gl.GenVertexArrays(1, (&no_light_color_shader.vao)[0..1]);
-    errdefer gl.DeleteVertexArrays(1, (&no_light_color_shader.vao)[0..1]);
+    gl.GenVertexArrays(1, (&flat_color_shader.vao)[0..1]);
+    errdefer gl.DeleteVertexArrays(1, (&flat_color_shader.vao)[0..1]);
 
-    gl.GenBuffers(2, &no_light_color_shader.vbos);
-    errdefer gl.DeleteBuffers(2, &no_light_color_shader.vbos);
+    gl.GenBuffers(2, &flat_color_shader.vbos);
+    errdefer gl.DeleteBuffers(2, &flat_color_shader.vbos);
 
-    gl.GenBuffers(1, (&no_light_color_shader.ibo)[0..1]);
-    errdefer gl.DeleteBuffers(1, (&no_light_color_shader.ibo)[0..1]);
+    gl.GenBuffers(1, (&flat_color_shader.ibo)[0..1]);
+    errdefer gl.DeleteBuffers(1, (&flat_color_shader.ibo)[0..1]);
 
     {
-        gl.BindVertexArray(no_light_color_shader.vao);
+        gl.BindVertexArray(flat_color_shader.vao);
         defer gl.BindVertexArray(0);
 
         {
-            gl.BindBuffer(gl.ARRAY_BUFFER, no_light_color_shader.vbos[0]);
+            gl.BindBuffer(gl.ARRAY_BUFFER, flat_color_shader.vbos[0]);
             defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
 
-            const vec_size = @typeInfo(@FieldType(hexagon_mesh.Vertex, "position")).array.len;
-            const buf_size = hexagon_mesh.vertices.len * @sizeOf(@FieldType(hexagon_mesh.Vertex, "position"));
+            const vec_size = @typeInfo(Vec3).array.len;
+            const buf_size = sm_position.rawSize();
 
-            gl.BufferData(gl.ARRAY_BUFFER, buf_size, null, gl.STATIC_DRAW);
+            gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
             const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
             if (maybe_buffer) |buffer| {
                 const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
-                for (&hexagon_mesh.vertices, 0..) |*vertex, index| {
+                var it = sm_position.rawConstIterator();
+                var index: u32 = 0;
+                while (it.next()) |value| {
+                    defer index += 1;
                     const offset = index * vec_size;
-                    @memcpy(buffer_f32[offset .. offset + vec_size], &vertex.position);
+                    @memcpy(buffer_f32[offset .. offset + vec_size], value);
                 }
                 _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
             }
 
-            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(no_light_color_shader.program, "a_position"));
+            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(flat_color_shader.program, "a_position"));
             gl.EnableVertexAttribArray(position_attrib);
             gl.VertexAttribPointer(position_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
         }
 
         {
-            gl.BindBuffer(gl.ARRAY_BUFFER, no_light_color_shader.vbos[1]);
+            gl.BindBuffer(gl.ARRAY_BUFFER, flat_color_shader.vbos[1]);
             defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
 
-            const vec_size = @typeInfo(@FieldType(hexagon_mesh.Vertex, "color")).array.len;
-            const buf_size = hexagon_mesh.vertices.len * @sizeOf(@FieldType(hexagon_mesh.Vertex, "color"));
+            const vec_size = @typeInfo(Vec3).array.len;
+            const buf_size = sm_color.rawSize();
 
-            gl.BufferData(gl.ARRAY_BUFFER, buf_size, null, gl.STATIC_DRAW);
+            gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
             const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
             if (maybe_buffer) |buffer| {
                 const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
-                for (&hexagon_mesh.vertices, 0..) |*vertex, index| {
+                var it = sm_color.rawConstIterator();
+                var index: u32 = 0;
+                while (it.next()) |value| {
+                    defer index += 1;
                     const offset = index * vec_size;
-                    @memcpy(buffer_f32[offset .. offset + vec_size], &vertex.color);
+                    @memcpy(buffer_f32[offset .. offset + vec_size], value);
                 }
                 _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
             }
 
-            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(no_light_color_shader.program, "a_color"));
-            gl.EnableVertexAttribArray(color_attrib);
-            gl.VertexAttribPointer(color_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
+            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(flat_color_shader.program, "a_color"));
+            gl.VertexAttrib3f(color_attrib, 0.2, 0.3, 0.7);
+            // gl.EnableVertexAttribArray(color_attrib);
+            // gl.VertexAttribPointer(color_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
         }
 
-        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, no_light_color_shader.ibo);
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, flat_color_shader.ibo);
         gl.BufferData(
             gl.ELEMENT_ARRAY_BUFFER,
-            @sizeOf(@TypeOf(hexagon_mesh.indices)),
-            &hexagon_mesh.indices,
+            @intCast(sm_indices.items.len * @sizeOf(u32)),
+            sm_indices.items.ptr,
             gl.STATIC_DRAW,
         );
     }
@@ -435,7 +428,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     gl.GenVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
     errdefer gl.DeleteVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
 
-    gl.GenBuffers(1, &point_sprite_shader.vbos);
+    gl.GenBuffers(2, &point_sprite_shader.vbos);
     errdefer gl.DeleteBuffers(1, &point_sprite_shader.vbos);
 
     gl.GenBuffers(1, (&point_sprite_shader.ibo)[0..1]);
@@ -450,18 +443,18 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
 
             const vec_size = @typeInfo(Vec3).array.len;
-            const buf_size = pc_position.data.count() * @sizeOf(Vec3);
+            const buf_size = pc_position.rawSize();
 
             gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
             const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
             if (maybe_buffer) |buffer| {
                 const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
-                var it = pc_position.data.constIterator(0);
-                var index: usize = 0;
+                var it = pc_position.rawConstIterator();
+                var index: u32 = 0;
                 while (it.next()) |value| {
+                    defer index += 1;
                     const offset = index * vec_size;
-                    @memcpy(buffer_f32[offset .. offset + 3], value);
-                    index += 1;
+                    @memcpy(buffer_f32[offset .. offset + vec_size], value);
                 }
                 _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
             }
@@ -469,6 +462,33 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             const position_attrib: c_uint = @intCast(gl.GetAttribLocation(point_sprite_shader.program, "a_position"));
             gl.EnableVertexAttribArray(position_attrib);
             gl.VertexAttribPointer(position_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
+        }
+
+        {
+            gl.BindBuffer(gl.ARRAY_BUFFER, point_sprite_shader.vbos[1]);
+            defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
+
+            const vec_size = @typeInfo(Vec3).array.len;
+            const buf_size = pc_color.rawSize();
+
+            gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
+            const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
+            if (maybe_buffer) |buffer| {
+                const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
+                var it = pc_color.rawConstIterator();
+                var index: u32 = 0;
+                while (it.next()) |value| {
+                    defer index += 1;
+                    const offset = index * vec_size;
+                    @memcpy(buffer_f32[offset .. offset + vec_size], value);
+                }
+                _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
+            }
+
+            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(point_sprite_shader.program, "a_color"));
+            // gl.VertexAttrib3f(color_attrib, 0.0, 1.0, 0.0);
+            gl.EnableVertexAttribArray(color_attrib);
+            gl.VertexAttribPointer(color_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
         }
 
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, point_sprite_shader.ibo);
@@ -493,7 +513,11 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
     {
         gl.ClearColor(0.2, 0.2, 0.2, 1);
-        gl.Clear(gl.COLOR_BUFFER_BIT);
+        gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+        gl.Enable(gl.CULL_FACE);
+        gl.CullFace(gl.BACK);
+        gl.Enable(gl.DEPTH_TEST);
 
         gl.Viewport(0, 0, window_width, window_height);
         const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
@@ -507,24 +531,36 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         };
 
         {
-            gl.UseProgram(no_light_color_shader.program);
+            gl.UseProgram(flat_color_shader.program);
             defer gl.UseProgram(0);
 
             gl.UniformMatrix4fv(
-                no_light_color_shader.model_view_matrix_uniform,
+                flat_color_shader.model_view_matrix_uniform,
                 1,
                 gl.FALSE,
                 zm.arrNPtr(&object_to_view),
             );
             gl.UniformMatrix4fv(
-                no_light_color_shader.projection_matrix_uniform,
+                flat_color_shader.projection_matrix_uniform,
                 1,
                 gl.FALSE,
                 zm.arrNPtr(&view_to_clip),
             );
+            const ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 };
+            gl.Uniform4fv(
+                flat_color_shader.ambiant_color_uniform,
+                1,
+                &ambiant_color,
+            );
+            const light_position: [3]f32 = .{ 10, 0, 100 };
+            gl.Uniform3fv(
+                flat_color_shader.light_position_uniform,
+                1,
+                &light_position,
+            );
 
-            gl.BindVertexArray(no_light_color_shader.vao);
-            gl.DrawElements(gl.TRIANGLES, hexagon_mesh.indices.len, gl.UNSIGNED_BYTE, 0);
+            gl.BindVertexArray(flat_color_shader.vao);
+            gl.DrawElements(gl.TRIANGLES, @intCast(sm_indices.items.len), gl.UNSIGNED_INT, 0);
             gl.BindVertexArray(0);
         }
 
@@ -547,12 +583,6 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             gl.Uniform1f(
                 point_sprite_shader.point_size_uniform,
                 0.05,
-            );
-            const point_color: [4]f32 = .{ 1, 0, 0, 1 };
-            gl.Uniform4fv(
-                point_sprite_shader.color_uniform,
-                1,
-                &point_color,
             );
             const ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 };
             gl.Uniform4fv(
@@ -678,13 +708,13 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         c.cImGui_ImplSDL3_Shutdown();
         c.ImGui_DestroyContext(null);
 
-        gl.DeleteBuffers(1, (&no_light_color_shader.ibo)[0..1]);
-        gl.DeleteBuffers(2, &no_light_color_shader.vbos);
-        gl.DeleteVertexArrays(1, (&no_light_color_shader.vao)[0..1]);
-        gl.DeleteProgram(no_light_color_shader.program);
+        gl.DeleteBuffers(1, (&flat_color_shader.ibo)[0..1]);
+        gl.DeleteBuffers(2, &flat_color_shader.vbos);
+        gl.DeleteVertexArrays(1, (&flat_color_shader.vao)[0..1]);
+        gl.DeleteProgram(flat_color_shader.program);
 
         gl.DeleteBuffers(1, (&point_sprite_shader.ibo)[0..1]);
-        gl.DeleteBuffers(1, &point_sprite_shader.vbos);
+        gl.DeleteBuffers(2, &point_sprite_shader.vbos);
         gl.DeleteVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
         gl.DeleteProgram(point_sprite_shader.program);
 
@@ -710,6 +740,9 @@ pub fn main() !u8 {
 
     pc_indices = std.ArrayList(u32).init(allocator);
     defer pc_indices.deinit();
+
+    sm_indices = std.ArrayList(u32).init(allocator);
+    defer sm_indices.deinit();
 
     const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(empty_argv.len, @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;

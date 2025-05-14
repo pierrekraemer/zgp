@@ -31,7 +31,7 @@ pub fn build(b: *std.Build) void {
         //.preferred_linkage = .static,
         //.strip = null,
         //.pic = null,
-        .lto = optimize != .Debug,
+        //.lto = optimize != .Debug,
         //.emscripten_pthreads = false,
         //.install_build_config_h = false,
     });
@@ -80,7 +80,7 @@ pub fn build(b: *std.Build) void {
         .name = "zgp",
         .root_module = exe_mod,
     });
-    exe.want_lto = optimize != .Debug;
+    // exe.want_lto = optimize != .Debug;
     b.installArtifact(exe);
 
     // RUN CMD

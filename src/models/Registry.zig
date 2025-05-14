@@ -140,7 +140,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                 if (line.items.len == 0) continue; // skip empty lines
                 defer line.clearRetainingCapacity();
                 var tokens = std.mem.tokenizeScalar(u8, line.items, ' ');
-                var i: usize = 0;
+                var i: u32 = 0;
                 while (tokens.next()) |token| : (i += 1) {
                     if (i >= nb_cells.len) return error.InvalidFileFormat;
                     const value = try std.fmt.parseInt(u32, token, 10);
@@ -162,27 +162,27 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
 
             try import_data.ensureTotalCapacity(nb_cells[0], nb_cells[1]);
 
-            var i: usize = 0;
+            var i: u32 = 0;
             while (i < nb_cells[0]) : (i += 1) {
                 while (reader.streamUntilDelimiter(line_writer, '\n', null)) {
                     if (line.items.len == 0) continue; // skip empty lines
                     defer line.clearRetainingCapacity();
                     var tokens = std.mem.tokenizeScalar(u8, line.items, ' ');
-                    var pos: Vec3 = undefined;
-                    var j: usize = 0;
+                    var position: Vec3 = undefined;
+                    var j: u32 = 0;
                     while (tokens.next()) |token| : (j += 1) {
                         if (j >= 3) {
                             std.debug.print("vertex {d} position has more than 3 coordinates\n", .{i});
                             return error.InvalidFileFormat;
                         }
                         const value = try std.fmt.parseFloat(f32, token);
-                        pos[j] = value;
+                        position[j] = value;
                     }
                     if (j != 3) {
                         std.debug.print("vertex {d} position has less than 3 coordinates\n", .{i});
                         return error.InvalidFileFormat;
                     }
-                    try import_data.vertices_position.append(pos);
+                    try import_data.vertices_position.append(position);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
@@ -201,7 +201,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                     defer line.clearRetainingCapacity();
                     var tokens = std.mem.tokenizeScalar(u8, line.items, ' ');
                     var face_nb_vertices: u32 = undefined;
-                    var j: usize = 0;
+                    var j: u32 = 0;
                     while (tokens.next()) |token| : (j += 1) {
                         if (j == 0) {
                             face_nb_vertices = try std.fmt.parseInt(u32, token, 10);
@@ -234,10 +234,48 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
 
     const sm = try self.createSurfaceMesh(std.fs.path.basename(filename));
 
-    const vertex_position = try sm.addData(.vertex, Vec3, "vertex_position");
+    const vertex_position = try sm.addData(.vertex, Vec3, "position");
+    const halfedges_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.HalfEdge), "halfedges_of_vertex");
+    defer sm.removeData(.vertex, &halfedges_of_vertex.gen);
+
     for (import_data.vertices_position.items) |pos| {
         const vertex_index = try sm.newDataIndex(.vertex);
         vertex_position.value(vertex_index).* = pos;
+        halfedges_of_vertex.value(vertex_index).* = std.ArrayList(SurfaceMesh.HalfEdge).init(halfedges_of_vertex.arena());
+    }
+
+    var i: u32 = 0;
+    for (import_data.faces_nb_vertices.items) |face_nb_vertices| {
+        const face = try sm.addUnboundedFace(face_nb_vertices);
+        var he = SurfaceMesh.halfEdge(face);
+        for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
+            sm.vertex_index.value(he).* = index;
+            try halfedges_of_vertex.value(index).append(he);
+            he = sm.phi1.value(he).*;
+        }
+        i += face_nb_vertices;
+    }
+
+    var nb_boundary_edges: u32 = 0;
+
+    var halfedge_it = try SurfaceMesh.CellIterator(.halfedge).init(sm);
+    defer halfedge_it.deinit();
+    while (halfedge_it.next()) |he| {
+        if (sm.phi2.value(he).* == he) {
+            const vertex_index = sm.indexOf(.{ .vertex = he });
+            const next_vertex_index = sm.indexOf(.{ .vertex = sm.phi1.value(he).* });
+            const next_vertex_halfedges = halfedges_of_vertex.value(next_vertex_index).*;
+            const opposite_halfedge = for (next_vertex_halfedges.items) |he2| {
+                if (sm.indexOf(.{ .vertex = sm.phi1.value(he2).* }) == vertex_index) {
+                    break he2;
+                }
+            } else null;
+            if (opposite_halfedge) |he2| {
+                sm.phi2Sew(he, he2);
+            } else {
+                nb_boundary_edges += 1;
+            }
+        }
     }
 
     return sm;

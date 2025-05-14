@@ -9,16 +9,16 @@
             .hash = "zigglgen-0.4.0-bmyqLX_gLQDFXilQ5VQ9fJeOHKU1RFrggOzRqTGBX79W",
         },
         .sdl = .{
-            .url = "git+https://github.com/castholm/SDL.git#f6bbe8ac5e7b901db69ba62f017596090c362d84",
-            .hash = "sdl-0.2.1+3.2.10-7uIn9PLkfQHKJO7TvSXbVa0VnySCHbLz28PDZIlKWF4Y",
+            .url = "git+https://github.com/castholm/SDL.git#fce122b6b1e963285b3359f95a1bfe876afc20a6",
+            .hash = "sdl-0.2.2+3.2.12-7uIn9EpsfgG_BF1uqSfix5rkc6EsZCZY35sQxAjVVO7a",
         },
         .cimgui_zig = .{
-            .url = "git+https://github.com/tiawl/cimgui.zig#a0d72a53b308d9d6ece9f4ccb147fd577581e34c",
-            .hash = "cimgui_zig-1.0.0-2XubkhxkUAD-7Ka5rF4H64K_6nVLF56M86_Nt_DgAaXS",
+            .url = "git+https://github.com/tiawl/cimgui.zig#dc55e553de44b2753eb92e4abfdfc766e05dbcfd",
+            .hash = "cimgui_zig-1.0.0-2XubkhxkUADiueiiQSrFlcM2cAByTW1DFU7J7VfK9sUi",
         },
         .zmath = .{
-            .url = "git+https://github.com/zig-gamedev/zmath.git#ccf7297ef6c01e21b2d51ad81b5b6ce929e86a00",
-            .hash = "zmath-0.11.0-dev-wjwivZY1AwDO7yxNmZ5HWoU03f9mFBet8LN9-oYc3i29",
+            .url = "git+https://github.com/zig-gamedev/zmath.git#6a0747fe6834e58793500e05953c4c6ca045d3e1",
+            .hash = "zmath-0.11.0-dev-wjwivTArAwDIkHSuSiU3KuBvxh7igjJjJMqYRfy3hihO",
         },
     },
     .paths = .{
