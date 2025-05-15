@@ -17,6 +17,8 @@ const Registry = @import("models/Registry.zig");
 const Vec3 = @import("numerical/types.zig").Vec3;
 const Vec4 = @import("numerical/types.zig").Vec4;
 
+var rng: std.Random.DefaultPrng = undefined;
+
 const halfEdge = Registry.SurfaceMesh.halfEdge;
 
 pub const std_options: std.Options = .{ .log_level = .debug };
@@ -31,15 +33,17 @@ var uptime: std.time.Timer = undefined;
 
 var registry: Registry = undefined;
 
-var pc: *Registry.PointCloud = undefined;
-var pc_position: *Registry.PointCloud.Data(Vec3) = undefined;
-var pc_color: *Registry.PointCloud.Data(Vec3) = undefined;
-var pc_indices: std.ArrayList(u32) = undefined;
-
 var sm: *Registry.SurfaceMesh = undefined;
+
 var sm_position: *Registry.SurfaceMesh.Data(Vec3) = undefined;
 var sm_color: *Registry.SurfaceMesh.Data(Vec3) = undefined;
-var sm_indices: std.ArrayList(u32) = undefined;
+var sm_triangles_indices: std.ArrayList(u32) = undefined;
+var sm_points_indices: std.ArrayList(u32) = undefined;
+
+var sm_position_vbo: c_uint = undefined;
+var sm_color_vbo: c_uint = undefined;
+var sm_triangles_ibo: c_uint = undefined;
+var sm_points_ibo: c_uint = undefined;
 
 var window: *c.SDL_Window = undefined;
 var window_width: c_int = 800;
@@ -57,8 +61,6 @@ const Shader = struct {
     light_position_uniform: c_int = undefined,
 
     vao: c_uint = undefined,
-    vbos: [2]c_uint = undefined,
-    ibo: c_uint = undefined,
 };
 
 var flat_color_shader: Shader = .{};
@@ -165,44 +167,73 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     // ****************************************************************
 
-    pc = try registry.createPointCloud("test");
-    pc_position = try pc.addData(Vec3, "position");
-    pc_color = try pc.addData(Vec3, "color");
-    const p1 = try pc.addPoint();
-    const p2 = try pc.addPoint();
-    const p3 = try pc.addPoint();
-    const p4 = try pc.addPoint();
-    pc_position.value(pc.indexOf(p1)).* = .{ 0, 0, 0 };
-    pc_position.value(pc.indexOf(p2)).* = .{ 1, 0, 0 };
-    pc_position.value(pc.indexOf(p3)).* = .{ 0, 1, 0 };
-    pc_position.value(pc.indexOf(p4)).* = .{ 0, 0, 1 };
-    pc_color.value(pc.indexOf(p1)).* = .{ 1, 0, 0 };
-    pc_color.value(pc.indexOf(p2)).* = .{ 0, 1, 0 };
-    pc_color.value(pc.indexOf(p3)).* = .{ 0, 0, 1 };
-    pc_color.value(pc.indexOf(p4)).* = .{ 1, 1, 0 };
-    try pc_indices.append(pc.indexOf(p1));
-    try pc_indices.append(pc.indexOf(p2));
-    try pc_indices.append(pc.indexOf(p3));
-    try pc_indices.append(pc.indexOf(p4));
+    sm = try registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/david_25k.off");
 
-    sm = try registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/armadillo_160k.off");
     sm_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
+    // scale the mesh position in the range [0, 1]
+    var pos_it = sm_position.rawIterator(); // TODO: use an iterator that only iterates over active indices
+    var bb_min = zm.f32x4(std.math.floatMax(f32), std.math.floatMax(f32), std.math.floatMax(f32), 0.0);
+    var bb_max = zm.f32x4(std.math.floatMin(f32), std.math.floatMin(f32), std.math.floatMin(f32), 0.0);
+    while (pos_it.next()) |value| {
+        bb_min[0] = @min(bb_min[0], value[0]);
+        bb_min[1] = @min(bb_min[1], value[1]);
+        bb_min[2] = @min(bb_min[2], value[2]);
+        bb_max[0] = @max(bb_max[0], value[0]);
+        bb_max[1] = @max(bb_max[1], value[1]);
+        bb_max[2] = @max(bb_max[2], value[2]);
+    }
+    const range = bb_max - bb_min;
+    const max = @reduce(.Max, range);
+    const scale = range / zm.f32x4s(max);
+    pos_it.set(0);
+    while (pos_it.next()) |value| {
+        value[0] = (value[0] - bb_min[0]) / range[0] * scale[0];
+        value[1] = (value[1] - bb_min[1]) / range[1] * scale[1];
+        value[2] = (value[2] - bb_min[2]) / range[2] * scale[2];
+    }
+    // center the mesh position on the origin
+    var centroid = zm.f32x4s(0.0);
+    pos_it.set(0);
+    while (pos_it.next()) |value| {
+        centroid += zm.f32x4(value[0], value[1], value[2], 0.0);
+    }
+    centroid /= zm.f32x4s(@floatFromInt(sm_position.rawLength()));
+    pos_it.set(0);
+    while (pos_it.next()) |value| {
+        value[0] = value[0] - centroid[0];
+        value[1] = value[1] - centroid[1];
+        value[2] = value[2] - centroid[2];
+    }
+
     sm_color = try sm.addData(.vertex, Vec3, "color");
-    var f_it = try Registry.SurfaceMesh.CellIterator(.face).init(sm);
+    var col_it = sm_color.rawIterator();
+    const r = rng.random();
+    while (col_it.next()) |value| {
+        value[0] = r.float(f32);
+        value[1] = r.float(f32);
+        value[2] = r.float(f32);
+    }
+
+    var v_it = try Registry.SurfaceMesh.CellIterator(.vertex).init(sm); // TODO: replace with a more user friendly iterator initializer
+    while (v_it.next()) |v| {
+        try sm_points_indices.append(sm.indexOf(v));
+    }
+
+    var f_it = try Registry.SurfaceMesh.CellIterator(.face).init(sm); // TODO: replace with a more user friendly iterator initializer
     while (f_it.next()) |f| {
-        var it: Registry.SurfaceMesh.CellHalfEdgeIterator = .{
+        var he_it: Registry.SurfaceMesh.CellHalfEdgeIterator = .{ // TODO: replace with a more user friendly local iterator
             .surface_mesh = sm,
             .cell = f,
             .current = Registry.SurfaceMesh.halfEdge(f),
         };
-        while (it.next()) |he| {
-            try sm_indices.append(sm.indexOf(.{ .vertex = he }));
+        while (he_it.next()) |he| {
+            try sm_triangles_indices.append(sm.indexOf(.{ .vertex = he }));
         }
     }
 
     // try sm.dump(std.io.getStdErr().writer().any());
 
-    // flat color shader
+    // compile flat color shader
 
     flat_color_shader.program = gl.CreateProgram();
     if (flat_color_shader.program == 0) return error.GlCreateProgramFailed;
@@ -264,7 +295,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     flat_color_shader.ambiant_color_uniform = gl.GetUniformLocation(flat_color_shader.program, "u_ambiant_color");
     flat_color_shader.light_position_uniform = gl.GetUniformLocation(flat_color_shader.program, "u_light_position");
 
-    // point sprite shader
+    // compile point sprite shader
 
     point_sprite_shader.program = gl.CreateProgram();
     if (point_sprite_shader.program == 0) return error.GlCreateProgramFailed;
@@ -346,158 +377,127 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     point_sprite_shader.ambiant_color_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_ambiant_color");
     point_sprite_shader.light_position_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_light_position");
 
-    // flat color shader VAO/VBO/IBO
+    // create VBOs & fill them with data
 
-    gl.GenVertexArrays(1, (&flat_color_shader.vao)[0..1]);
-    errdefer gl.DeleteVertexArrays(1, (&flat_color_shader.vao)[0..1]);
-
-    gl.GenBuffers(2, &flat_color_shader.vbos);
-    errdefer gl.DeleteBuffers(2, &flat_color_shader.vbos);
-
-    gl.GenBuffers(1, (&flat_color_shader.ibo)[0..1]);
-    errdefer gl.DeleteBuffers(1, (&flat_color_shader.ibo)[0..1]);
-
+    gl.GenBuffers(1, (&sm_position_vbo)[0..1]);
+    errdefer gl.DeleteBuffers(1, (&sm_position_vbo)[0..1]);
     {
-        gl.BindVertexArray(flat_color_shader.vao);
-        defer gl.BindVertexArray(0);
-
-        {
-            gl.BindBuffer(gl.ARRAY_BUFFER, flat_color_shader.vbos[0]);
-            defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-
-            const vec_size = @typeInfo(Vec3).array.len;
-            const buf_size = sm_position.rawSize();
-
-            gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
-            const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
-            if (maybe_buffer) |buffer| {
-                const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
-                var it = sm_position.rawConstIterator();
-                var index: u32 = 0;
-                while (it.next()) |value| {
-                    defer index += 1;
-                    const offset = index * vec_size;
-                    @memcpy(buffer_f32[offset .. offset + vec_size], value);
-                }
-                _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
+        gl.BindBuffer(gl.ARRAY_BUFFER, sm_position_vbo);
+        defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
+        const vec_size = @typeInfo(Vec3).array.len;
+        const buf_size = sm_position.rawSize();
+        gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
+        const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
+        if (maybe_buffer) |buffer| {
+            const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
+            var it = sm_position.rawConstIterator();
+            var index: u32 = 0;
+            while (it.next()) |value| {
+                defer index += 1;
+                const offset = index * vec_size;
+                @memcpy(buffer_f32[offset .. offset + vec_size], value);
             }
-
-            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(flat_color_shader.program, "a_position"));
-            gl.EnableVertexAttribArray(position_attrib);
-            gl.VertexAttribPointer(position_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
+            _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
         }
+    }
 
-        {
-            gl.BindBuffer(gl.ARRAY_BUFFER, flat_color_shader.vbos[1]);
-            defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-
-            const vec_size = @typeInfo(Vec3).array.len;
-            const buf_size = sm_color.rawSize();
-
-            gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
-            const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
-            if (maybe_buffer) |buffer| {
-                const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
-                var it = sm_color.rawConstIterator();
-                var index: u32 = 0;
-                while (it.next()) |value| {
-                    defer index += 1;
-                    const offset = index * vec_size;
-                    @memcpy(buffer_f32[offset .. offset + vec_size], value);
-                }
-                _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
+    gl.GenBuffers(1, (&sm_color_vbo)[0..1]);
+    errdefer gl.DeleteBuffers(1, (&sm_color_vbo)[0..1]);
+    {
+        gl.BindBuffer(gl.ARRAY_BUFFER, sm_color_vbo);
+        defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
+        const vec_size = @typeInfo(Vec3).array.len;
+        const buf_size = sm_color.rawSize();
+        gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
+        const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
+        if (maybe_buffer) |buffer| {
+            const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
+            var it = sm_color.rawConstIterator();
+            var index: u32 = 0;
+            while (it.next()) |value| {
+                defer index += 1;
+                const offset = index * vec_size;
+                @memcpy(buffer_f32[offset .. offset + vec_size], value);
             }
-
-            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(flat_color_shader.program, "a_color"));
-            gl.VertexAttrib3f(color_attrib, 0.2, 0.3, 0.7);
-            // gl.EnableVertexAttribArray(color_attrib);
-            // gl.VertexAttribPointer(color_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
+            _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
         }
+    }
 
-        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, flat_color_shader.ibo);
+    // create IBOs && fill them with data
+
+    gl.GenBuffers(1, (&sm_triangles_ibo)[0..1]);
+    errdefer gl.DeleteBuffers(1, (&sm_triangles_ibo)[0..1]);
+    {
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, sm_triangles_ibo);
+        defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
         gl.BufferData(
             gl.ELEMENT_ARRAY_BUFFER,
-            @intCast(sm_indices.items.len * @sizeOf(u32)),
-            sm_indices.items.ptr,
+            @intCast(sm_triangles_indices.items.len * @sizeOf(u32)),
+            sm_triangles_indices.items.ptr,
             gl.STATIC_DRAW,
         );
     }
 
-    // point sprite shader VAO/VBO/IBO
+    gl.GenBuffers(1, (&sm_points_ibo)[0..1]);
+    errdefer gl.DeleteBuffers(1, (&sm_points_ibo)[0..1]);
+    {
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, sm_points_ibo);
+        defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
+        gl.BufferData(
+            gl.ELEMENT_ARRAY_BUFFER,
+            @intCast(sm_points_indices.items.len * @sizeOf(u32)),
+            sm_points_indices.items.ptr,
+            gl.STATIC_DRAW,
+        );
+    }
+
+    // create & configure VAO for flat color shader
+
+    gl.GenVertexArrays(1, (&flat_color_shader.vao)[0..1]);
+    errdefer gl.DeleteVertexArrays(1, (&flat_color_shader.vao)[0..1]);
+    {
+        gl.BindVertexArray(flat_color_shader.vao);
+        defer gl.BindVertexArray(0);
+        {
+            gl.BindBuffer(gl.ARRAY_BUFFER, sm_position_vbo);
+            defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
+            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(flat_color_shader.program, "a_position"));
+            gl.EnableVertexAttribArray(position_attrib);
+            gl.VertexAttribPointer(position_attrib, @typeInfo(Vec3).array.len, gl.FLOAT, gl.FALSE, 0, 0);
+        }
+        {
+            // gl.BindBuffer(gl.ARRAY_BUFFER, sm_color_vbo);
+            // defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
+            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(flat_color_shader.program, "a_color"));
+            gl.VertexAttrib3f(color_attrib, 0.2, 0.3, 0.7);
+            // gl.EnableVertexAttribArray(color_attrib);
+            // gl.VertexAttribPointer(color_attrib, @typeInfo(Vec3).array.len, gl.FLOAT, gl.FALSE, 0, 0);
+        }
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, sm_triangles_ibo);
+    }
+
+    // create & configure VAO for point sprite shader
 
     gl.GenVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
     errdefer gl.DeleteVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
-
-    gl.GenBuffers(2, &point_sprite_shader.vbos);
-    errdefer gl.DeleteBuffers(1, &point_sprite_shader.vbos);
-
-    gl.GenBuffers(1, (&point_sprite_shader.ibo)[0..1]);
-    errdefer gl.DeleteBuffers(1, (&point_sprite_shader.ibo)[0..1]);
-
     {
         gl.BindVertexArray(point_sprite_shader.vao);
         defer gl.BindVertexArray(0);
-
         {
-            gl.BindBuffer(gl.ARRAY_BUFFER, point_sprite_shader.vbos[0]);
+            gl.BindBuffer(gl.ARRAY_BUFFER, sm_position_vbo);
             defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-
-            const vec_size = @typeInfo(Vec3).array.len;
-            const buf_size = pc_position.rawSize();
-
-            gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
-            const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
-            if (maybe_buffer) |buffer| {
-                const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
-                var it = pc_position.rawConstIterator();
-                var index: u32 = 0;
-                while (it.next()) |value| {
-                    defer index += 1;
-                    const offset = index * vec_size;
-                    @memcpy(buffer_f32[offset .. offset + vec_size], value);
-                }
-                _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
-            }
-
             const position_attrib: c_uint = @intCast(gl.GetAttribLocation(point_sprite_shader.program, "a_position"));
             gl.EnableVertexAttribArray(position_attrib);
-            gl.VertexAttribPointer(position_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
+            gl.VertexAttribPointer(position_attrib, @typeInfo(Vec3).array.len, gl.FLOAT, gl.FALSE, 0, 0);
         }
-
         {
-            gl.BindBuffer(gl.ARRAY_BUFFER, point_sprite_shader.vbos[1]);
+            gl.BindBuffer(gl.ARRAY_BUFFER, sm_color_vbo);
             defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-
-            const vec_size = @typeInfo(Vec3).array.len;
-            const buf_size = pc_color.rawSize();
-
-            gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
-            const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
-            if (maybe_buffer) |buffer| {
-                const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
-                var it = pc_color.rawConstIterator();
-                var index: u32 = 0;
-                while (it.next()) |value| {
-                    defer index += 1;
-                    const offset = index * vec_size;
-                    @memcpy(buffer_f32[offset .. offset + vec_size], value);
-                }
-                _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
-            }
-
             const color_attrib: c_uint = @intCast(gl.GetAttribLocation(point_sprite_shader.program, "a_color"));
-            // gl.VertexAttrib3f(color_attrib, 0.0, 1.0, 0.0);
             gl.EnableVertexAttribArray(color_attrib);
-            gl.VertexAttribPointer(color_attrib, vec_size, gl.FLOAT, gl.FALSE, 0, 0);
+            gl.VertexAttribPointer(color_attrib, @typeInfo(Vec3).array.len, gl.FLOAT, gl.FALSE, 0, 0);
         }
-
-        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, point_sprite_shader.ibo);
-        gl.BufferData(
-            gl.ELEMENT_ARRAY_BUFFER,
-            @intCast(pc_indices.items.len * @sizeOf(u32)),
-            pc_indices.items.ptr,
-            gl.STATIC_DRAW,
-        );
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, sm_points_ibo);
     }
 
     uptime = try .start();
@@ -522,11 +522,16 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         gl.Viewport(0, 0, window_width, window_height);
         const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
 
+        const field_of_view: f32 = 0.33 * std.math.pi;
+        // const scene_radius: f32 = 1.0;
+        // const focal_distance: f32 = scene_radius / @tan(field_of_view / 2.0);
+        // const pivot_point = zm.f32x4(0.0, 0.0, 0.0, 1.0);
+
         const object_to_world = zm.identity();
         const object_to_view = zm.mul(object_to_world, camera);
 
         const view_to_clip = switch (camera_mode) {
-            CameraProjectionType.perspective => zm.perspectiveFovRhGl(0.5 * std.math.pi, aspect_ratio, 0.01, 50.0),
+            CameraProjectionType.perspective => zm.perspectiveFovRhGl(field_of_view, aspect_ratio, 0.01, 50.0),
             CameraProjectionType.orthographic => zm.orthographicRhGl(4.0, 4.0, 0.01, 50.0),
         };
 
@@ -560,8 +565,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             );
 
             gl.BindVertexArray(flat_color_shader.vao);
-            gl.DrawElements(gl.TRIANGLES, @intCast(sm_indices.items.len), gl.UNSIGNED_INT, 0);
-            gl.BindVertexArray(0);
+            defer gl.BindVertexArray(0);
+            gl.DrawElements(gl.TRIANGLES, @intCast(sm_triangles_indices.items.len), gl.UNSIGNED_INT, 0);
         }
 
         {
@@ -582,7 +587,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             );
             gl.Uniform1f(
                 point_sprite_shader.point_size_uniform,
-                0.05,
+                0.001,
             );
             const ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 };
             gl.Uniform4fv(
@@ -598,8 +603,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             );
 
             gl.BindVertexArray(point_sprite_shader.vao);
-            gl.DrawElements(gl.POINTS, @intCast(pc_indices.items.len), gl.UNSIGNED_INT, 0);
-            gl.BindVertexArray(0);
+            defer gl.BindVertexArray(0);
+            gl.DrawElements(gl.POINTS, @intCast(sm_points_indices.items.len), gl.UNSIGNED_INT, 0);
         }
 
         c.cImGui_ImplOpenGL3_NewFrame();
@@ -670,7 +675,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                     const rot = zm.matFromAxisAngle(axis, speed);
                     const tr = camera[3]; // save translation
                     camera[3] = zm.f32x4(0.0, 0.0, 0.0, 1.0); // set translation to zero
-                    camera = zm.mul(rot, camera); // apply rotation
+                    camera = zm.mul(camera, rot); // apply rotation
                     camera[3] = tr; // restore translation
                 },
                 c.SDL_BUTTON_RMASK => {
@@ -708,14 +713,13 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         c.cImGui_ImplSDL3_Shutdown();
         c.ImGui_DestroyContext(null);
 
-        gl.DeleteBuffers(1, (&flat_color_shader.ibo)[0..1]);
-        gl.DeleteBuffers(2, &flat_color_shader.vbos);
+        gl.DeleteBuffers(1, (&sm_triangles_ibo)[0..1]);
+        gl.DeleteBuffers(1, (&sm_points_ibo)[0..1]);
+        gl.DeleteBuffers(1, (&sm_position_vbo)[0..1]);
+        gl.DeleteBuffers(1, (&sm_color_vbo)[0..1]);
         gl.DeleteVertexArrays(1, (&flat_color_shader.vao)[0..1]);
-        gl.DeleteProgram(flat_color_shader.program);
-
-        gl.DeleteBuffers(1, (&point_sprite_shader.ibo)[0..1]);
-        gl.DeleteBuffers(2, &point_sprite_shader.vbos);
         gl.DeleteVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
+        gl.DeleteProgram(flat_color_shader.program);
         gl.DeleteProgram(point_sprite_shader.program);
 
         gl.makeProcTableCurrent(null);
@@ -735,14 +739,16 @@ pub fn main() !u8 {
     const allocator = da.allocator();
     // const allocator = std.heap.raw_c_allocator;
 
+    rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
+
     registry = Registry.init(allocator);
     defer registry.deinit();
 
-    pc_indices = std.ArrayList(u32).init(allocator);
-    defer pc_indices.deinit();
+    sm_triangles_indices = std.ArrayList(u32).init(allocator);
+    defer sm_triangles_indices.deinit();
 
-    sm_indices = std.ArrayList(u32).init(allocator);
-    defer sm_indices.deinit();
+    sm_points_indices = std.ArrayList(u32).init(allocator);
+    defer sm_points_indices.deinit();
 
     const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(empty_argv.len, @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;
