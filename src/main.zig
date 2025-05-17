@@ -17,6 +17,9 @@ const Registry = @import("models/Registry.zig");
 const Vec3 = @import("numerical/types.zig").Vec3;
 const Vec4 = @import("numerical/types.zig").Vec4;
 
+const FlatColorPerVertex = @import("rendering/shaders/flat_color_per_vertex/FlatColorPerVertex.zig");
+const PointSprite = @import("rendering/shaders/point_sprite/PointSprite.zig");
+
 var rng: std.Random.DefaultPrng = undefined;
 
 const halfEdge = Registry.SurfaceMesh.halfEdge;
@@ -51,20 +54,10 @@ var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
 
-const Shader = struct {
-    program: c_uint = undefined,
-
-    model_view_matrix_uniform: c_int = undefined,
-    projection_matrix_uniform: c_int = undefined,
-    point_size_uniform: c_int = undefined,
-    ambiant_color_uniform: c_int = undefined,
-    light_position_uniform: c_int = undefined,
-
-    vao: c_uint = undefined,
-};
-
-var flat_color_shader: Shader = .{};
-var point_sprite_shader: Shader = .{};
+var flat_color_shader: FlatColorPerVertex = undefined;
+var flat_color_shader_parameters: FlatColorPerVertex.Parameters = undefined;
+var point_sprite_shader: PointSprite = undefined;
+var point_sprite_shader_parameters: PointSprite.Parameters = undefined;
 
 var camera = zm.lookAtRh(
     zm.f32x4(0.0, 0.0, 2.0, 1.0),
@@ -168,6 +161,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // ****************************************************************
 
     sm = try registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/david_25k.off");
+    errdefer sm.deinit();
 
     sm_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
     // scale the mesh position in the range [0, 1]
@@ -214,10 +208,9 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         value[2] = r.float(f32);
     }
 
-    var v_it = try Registry.SurfaceMesh.CellIterator(.vertex).init(sm); // TODO: replace with a more user friendly iterator initializer
-    while (v_it.next()) |v| {
-        try sm_points_indices.append(sm.indexOf(v));
-    }
+    // try sm.dump(std.io.getStdErr().writer().any());
+
+    // create indices for the triangles and points
 
     var f_it = try Registry.SurfaceMesh.CellIterator(.face).init(sm); // TODO: replace with a more user friendly iterator initializer
     while (f_it.next()) |f| {
@@ -231,151 +224,10 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         }
     }
 
-    // try sm.dump(std.io.getStdErr().writer().any());
-
-    // compile flat color shader
-
-    flat_color_shader.program = gl.CreateProgram();
-    if (flat_color_shader.program == 0) return error.GlCreateProgramFailed;
-    errdefer gl.DeleteProgram(flat_color_shader.program);
-
-    {
-        var success: c_int = undefined;
-        var info_log_buf: [512:0]u8 = undefined;
-
-        const vertex_shader = gl.CreateShader(gl.VERTEX_SHADER);
-        if (vertex_shader == 0) return error.GlCreateVertexShaderFailed;
-        defer gl.DeleteShader(vertex_shader);
-        const vertex_shader_source = @embedFile("rendering/shaders/flat_color_per_vertex/vs.glsl");
-        gl.ShaderSource(
-            vertex_shader,
-            2,
-            &.{ shader_version, vertex_shader_source },
-            &.{ shader_version.len, vertex_shader_source.len },
-        );
-        gl.CompileShader(vertex_shader);
-        gl.GetShaderiv(vertex_shader, gl.COMPILE_STATUS, &success);
-        if (success == gl.FALSE) {
-            gl.GetShaderInfoLog(vertex_shader, info_log_buf.len, null, &info_log_buf);
-            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
-            return error.GlCompileVertexShaderFailed;
-        }
-
-        const fragment_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
-        if (fragment_shader == 0) return error.GlCreateFragmentShaderFailed;
-        defer gl.DeleteShader(fragment_shader);
-        const fragment_shader_source = @embedFile("rendering/shaders/flat_color_per_vertex/fs.glsl");
-        gl.ShaderSource(
-            fragment_shader,
-            2,
-            &.{ shader_version, fragment_shader_source },
-            &.{ shader_version.len, fragment_shader_source.len },
-        );
-        gl.CompileShader(fragment_shader);
-        gl.GetShaderiv(fragment_shader, gl.COMPILE_STATUS, &success);
-        if (success == gl.FALSE) {
-            gl.GetShaderInfoLog(fragment_shader, info_log_buf.len, null, &info_log_buf);
-            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
-            return error.GlCompileFragmentShaderFailed;
-        }
-
-        gl.AttachShader(flat_color_shader.program, vertex_shader);
-        gl.AttachShader(flat_color_shader.program, fragment_shader);
-        gl.LinkProgram(flat_color_shader.program);
-        gl.GetProgramiv(flat_color_shader.program, gl.LINK_STATUS, &success);
-        if (success == gl.FALSE) {
-            gl.GetProgramInfoLog(flat_color_shader.program, info_log_buf.len, null, &info_log_buf);
-            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
-            return error.LinkProgramFailed;
-        }
+    var v_it = try Registry.SurfaceMesh.CellIterator(.vertex).init(sm); // TODO: replace with a more user friendly iterator initializer
+    while (v_it.next()) |v| {
+        try sm_points_indices.append(sm.indexOf(v));
     }
-
-    flat_color_shader.model_view_matrix_uniform = gl.GetUniformLocation(flat_color_shader.program, "u_model_view_matrix");
-    flat_color_shader.projection_matrix_uniform = gl.GetUniformLocation(flat_color_shader.program, "u_projection_matrix");
-    flat_color_shader.ambiant_color_uniform = gl.GetUniformLocation(flat_color_shader.program, "u_ambiant_color");
-    flat_color_shader.light_position_uniform = gl.GetUniformLocation(flat_color_shader.program, "u_light_position");
-
-    // compile point sprite shader
-
-    point_sprite_shader.program = gl.CreateProgram();
-    if (point_sprite_shader.program == 0) return error.GlCreateProgramFailed;
-    errdefer gl.DeleteProgram(point_sprite_shader.program);
-
-    {
-        var success: c_int = undefined;
-        var info_log_buf: [512:0]u8 = undefined;
-
-        const vertex_shader = gl.CreateShader(gl.VERTEX_SHADER);
-        if (vertex_shader == 0) return error.GlCreateVertexShaderFailed;
-        defer gl.DeleteShader(vertex_shader);
-        const vertex_shader_source = @embedFile("rendering/shaders/point_sprite/vs.glsl");
-        gl.ShaderSource(
-            vertex_shader,
-            2,
-            &.{ shader_version, vertex_shader_source },
-            &.{ shader_version.len, vertex_shader_source.len },
-        );
-        gl.CompileShader(vertex_shader);
-        gl.GetShaderiv(vertex_shader, gl.COMPILE_STATUS, &success);
-        if (success == gl.FALSE) {
-            gl.GetShaderInfoLog(vertex_shader, info_log_buf.len, null, &info_log_buf);
-            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
-            return error.GlCompileVertexShaderFailed;
-        }
-
-        const geometry_shader = gl.CreateShader(gl.GEOMETRY_SHADER);
-        if (geometry_shader == 0) return error.GlCreateFragmentShaderFailed;
-        defer gl.DeleteShader(geometry_shader);
-        const geometry_shader_source = @embedFile("rendering/shaders/point_sprite/gs.glsl");
-        gl.ShaderSource(
-            geometry_shader,
-            2,
-            &.{ shader_version, geometry_shader_source },
-            &.{ shader_version.len, geometry_shader_source.len },
-        );
-        gl.CompileShader(geometry_shader);
-        gl.GetShaderiv(geometry_shader, gl.COMPILE_STATUS, &success);
-        if (success == gl.FALSE) {
-            gl.GetShaderInfoLog(geometry_shader, info_log_buf.len, null, &info_log_buf);
-            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
-            return error.GlCompileGeoemtryShaderFailed;
-        }
-
-        const fragment_shader = gl.CreateShader(gl.FRAGMENT_SHADER);
-        if (fragment_shader == 0) return error.GlCreateFragmentShaderFailed;
-        defer gl.DeleteShader(fragment_shader);
-        const fragment_shader_source = @embedFile("rendering/shaders/point_sprite/fs.glsl");
-        gl.ShaderSource(
-            fragment_shader,
-            2,
-            &.{ shader_version, fragment_shader_source },
-            &.{ shader_version.len, fragment_shader_source.len },
-        );
-        gl.CompileShader(fragment_shader);
-        gl.GetShaderiv(fragment_shader, gl.COMPILE_STATUS, &success);
-        if (success == gl.FALSE) {
-            gl.GetShaderInfoLog(fragment_shader, info_log_buf.len, null, &info_log_buf);
-            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
-            return error.GlCompileFragmentShaderFailed;
-        }
-
-        gl.AttachShader(point_sprite_shader.program, vertex_shader);
-        gl.AttachShader(point_sprite_shader.program, geometry_shader);
-        gl.AttachShader(point_sprite_shader.program, fragment_shader);
-        gl.LinkProgram(point_sprite_shader.program);
-        gl.GetProgramiv(point_sprite_shader.program, gl.LINK_STATUS, &success);
-        if (success == gl.FALSE) {
-            gl.GetProgramInfoLog(point_sprite_shader.program, info_log_buf.len, null, &info_log_buf);
-            gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
-            return error.LinkProgramFailed;
-        }
-    }
-
-    point_sprite_shader.model_view_matrix_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_model_view_matrix");
-    point_sprite_shader.projection_matrix_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_projection_matrix");
-    point_sprite_shader.point_size_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_point_size");
-    point_sprite_shader.ambiant_color_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_ambiant_color");
-    point_sprite_shader.light_position_uniform = gl.GetUniformLocation(point_sprite_shader.program, "u_light_position");
 
     // create VBOs & fill them with data
 
@@ -451,54 +303,24 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         );
     }
 
-    // create & configure VAO for flat color shader
+    // init shaders & their parameters
 
-    gl.GenVertexArrays(1, (&flat_color_shader.vao)[0..1]);
-    errdefer gl.DeleteVertexArrays(1, (&flat_color_shader.vao)[0..1]);
-    {
-        gl.BindVertexArray(flat_color_shader.vao);
-        defer gl.BindVertexArray(0);
-        {
-            gl.BindBuffer(gl.ARRAY_BUFFER, sm_position_vbo);
-            defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(flat_color_shader.program, "a_position"));
-            gl.EnableVertexAttribArray(position_attrib);
-            gl.VertexAttribPointer(position_attrib, @typeInfo(Vec3).array.len, gl.FLOAT, gl.FALSE, 0, 0);
-        }
-        {
-            // gl.BindBuffer(gl.ARRAY_BUFFER, sm_color_vbo);
-            // defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(flat_color_shader.program, "a_color"));
-            gl.VertexAttrib3f(color_attrib, 0.2, 0.3, 0.7);
-            // gl.EnableVertexAttribArray(color_attrib);
-            // gl.VertexAttribPointer(color_attrib, @typeInfo(Vec3).array.len, gl.FLOAT, gl.FALSE, 0, 0);
-        }
-        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, sm_triangles_ibo);
-    }
+    flat_color_shader = try FlatColorPerVertex.init();
+    errdefer flat_color_shader.deinit();
+    point_sprite_shader = try PointSprite.init();
+    errdefer point_sprite_shader.deinit();
 
-    // create & configure VAO for point sprite shader
+    flat_color_shader_parameters = try FlatColorPerVertex.Parameters.init(&flat_color_shader);
+    errdefer flat_color_shader_parameters.deinit();
+    flat_color_shader_parameters.setVBO(.position, sm_position_vbo);
+    flat_color_shader_parameters.setVBO(.color, sm_color_vbo);
+    flat_color_shader_parameters.setIBO(sm_triangles_ibo);
 
-    gl.GenVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
-    errdefer gl.DeleteVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
-    {
-        gl.BindVertexArray(point_sprite_shader.vao);
-        defer gl.BindVertexArray(0);
-        {
-            gl.BindBuffer(gl.ARRAY_BUFFER, sm_position_vbo);
-            defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-            const position_attrib: c_uint = @intCast(gl.GetAttribLocation(point_sprite_shader.program, "a_position"));
-            gl.EnableVertexAttribArray(position_attrib);
-            gl.VertexAttribPointer(position_attrib, @typeInfo(Vec3).array.len, gl.FLOAT, gl.FALSE, 0, 0);
-        }
-        {
-            gl.BindBuffer(gl.ARRAY_BUFFER, sm_color_vbo);
-            defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-            const color_attrib: c_uint = @intCast(gl.GetAttribLocation(point_sprite_shader.program, "a_color"));
-            gl.EnableVertexAttribArray(color_attrib);
-            gl.VertexAttribPointer(color_attrib, @typeInfo(Vec3).array.len, gl.FLOAT, gl.FALSE, 0, 0);
-        }
-        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, sm_points_ibo);
-    }
+    point_sprite_shader_parameters = try PointSprite.Parameters.init(&point_sprite_shader);
+    errdefer point_sprite_shader_parameters.deinit();
+    point_sprite_shader_parameters.setVBO(.position, sm_position_vbo);
+    point_sprite_shader_parameters.setVBO(.color, sm_color_vbo);
+    point_sprite_shader_parameters.setIBO(sm_points_ibo);
 
     uptime = try .start();
 
@@ -536,7 +358,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         };
 
         {
-            gl.UseProgram(flat_color_shader.program);
+            gl.UseProgram(flat_color_shader.shader.program);
             defer gl.UseProgram(0);
 
             gl.UniformMatrix4fv(
@@ -564,13 +386,13 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                 &light_position,
             );
 
-            gl.BindVertexArray(flat_color_shader.vao);
+            gl.BindVertexArray(flat_color_shader_parameters.vao);
             defer gl.BindVertexArray(0);
             gl.DrawElements(gl.TRIANGLES, @intCast(sm_triangles_indices.items.len), gl.UNSIGNED_INT, 0);
         }
 
         {
-            gl.UseProgram(point_sprite_shader.program);
+            gl.UseProgram(point_sprite_shader.shader.program);
             defer gl.UseProgram(0);
 
             gl.UniformMatrix4fv(
@@ -602,7 +424,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                 &light_position,
             );
 
-            gl.BindVertexArray(point_sprite_shader.vao);
+            gl.BindVertexArray(point_sprite_shader_parameters.vao);
             defer gl.BindVertexArray(0);
             gl.DrawElements(gl.POINTS, @intCast(sm_points_indices.items.len), gl.UNSIGNED_INT, 0);
         }
@@ -692,7 +514,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
             const wheel = event.wheel.y;
             if (wheel != 0) {
                 const forward = zm.f32x4(0.0, 0.0, -1.0, 0.0);
-                camera[3] += zm.splat(zm.Vec, wheel * 0.01) * forward;
+                camera[3] += zm.splat(zm.Vec, -wheel * 0.01) * forward;
             }
         },
         else => {},
@@ -717,10 +539,10 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         gl.DeleteBuffers(1, (&sm_points_ibo)[0..1]);
         gl.DeleteBuffers(1, (&sm_position_vbo)[0..1]);
         gl.DeleteBuffers(1, (&sm_color_vbo)[0..1]);
-        gl.DeleteVertexArrays(1, (&flat_color_shader.vao)[0..1]);
-        gl.DeleteVertexArrays(1, (&point_sprite_shader.vao)[0..1]);
-        gl.DeleteProgram(flat_color_shader.program);
-        gl.DeleteProgram(point_sprite_shader.program);
+        flat_color_shader_parameters.deinit();
+        point_sprite_shader_parameters.deinit();
+        flat_color_shader.deinit();
+        point_sprite_shader.deinit();
 
         gl.makeProcTableCurrent(null);
         errify(c.SDL_GL_MakeCurrent(window, null)) catch {};

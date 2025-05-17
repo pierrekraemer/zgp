@@ -39,6 +39,20 @@ pub fn cellType(cell: Cell) CellType {
 
 const invalid_index = std.math.maxInt(u32);
 
+/// data containers for the different cell types
+halfedge_data: DataContainer,
+vertex_data: DataContainer,
+edge_data: DataContainer,
+face_data: DataContainer,
+
+/// halfedge data: connectivity & cell indices
+phi1: *Data(HalfEdge) = undefined,
+phi_1: *Data(HalfEdge) = undefined,
+phi2: *Data(HalfEdge) = undefined,
+vertex_index: *Data(u32) = undefined,
+edge_index: *Data(u32) = undefined,
+face_index: *Data(u32) = undefined,
+
 pub fn CellIterator(comptime cell_type: CellType) type {
     return struct {
         const ThisCellIterator = @This();
@@ -117,20 +131,6 @@ pub const CellHalfEdgeIterator = struct {
         return self.current;
     }
 };
-
-/// data containers for the different cell types
-halfedge_data: DataContainer,
-vertex_data: DataContainer,
-edge_data: DataContainer,
-face_data: DataContainer,
-
-/// halfedge data: connectivity & cell indices
-phi1: *Data(HalfEdge) = undefined,
-phi_1: *Data(HalfEdge) = undefined,
-phi2: *Data(HalfEdge) = undefined,
-vertex_index: *Data(u32) = undefined,
-edge_index: *Data(u32) = undefined,
-face_index: *Data(u32) = undefined,
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     var sm: Self = .{
