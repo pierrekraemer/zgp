@@ -105,11 +105,11 @@ pub fn Data(comptime T: type) type {
             }
         }
 
-        pub fn rawLength(self: *Self) usize {
+        pub fn rawLength(self: *const Self) usize {
             return self.data.len;
         }
 
-        pub fn rawSize(self: *Self) usize {
+        pub fn rawSize(self: *const Self) usize {
             return self.data.len * @sizeOf(T);
         }
 

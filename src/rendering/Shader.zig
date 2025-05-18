@@ -22,13 +22,11 @@ pub const ShaderType = enum {
     fragment,
 };
 
-pub const VertexAttrib = struct {
+pub const VertexAttribInfo = struct {
     index: u32,
     size: i32,
     type: u32,
     normalized: bool,
-    stride: isize,
-    pointer: usize,
 };
 
 program: c_uint = 0,
@@ -60,7 +58,7 @@ pub fn setShader(self: *Self, shader_type: ShaderType, shader_source: []const u8
     });
     if (shader == 0)
         return error.GlCreateShaderFailed;
-    defer gl.DeleteShader(shader); // attached shader will only be tagged for deletion when program is deleted
+    defer gl.DeleteShader(shader); // attached shader will only be _tagged_ for deletion
     gl.ShaderSource(
         shader,
         2,
@@ -86,6 +84,16 @@ pub fn linkProgram(self: *Self) !void {
         gl.GetProgramInfoLog(self.program, info_log_buf.len, null, &info_log_buf);
         gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
         return error.LinkProgramFailed;
+    }
+    var nb_attached_shaders: c_int = undefined;
+    gl.GetProgramiv(self.program, gl.ATTACHED_SHADERS, &nb_attached_shaders);
+    if (nb_attached_shaders > 0) {
+        var attached_shaders: [16]c_uint = undefined;
+        gl.GetAttachedShaders(self.program, attached_shaders.len, &nb_attached_shaders, &attached_shaders);
+        var i: u32 = 0;
+        while (i < nb_attached_shaders) : (i += 1) {
+            gl.DetachShader(self.program, attached_shaders[i]);
+        }
     }
     self.ready = true;
 }

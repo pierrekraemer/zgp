@@ -17,12 +17,12 @@ const Registry = @import("models/Registry.zig");
 const Vec3 = @import("numerical/types.zig").Vec3;
 const Vec4 = @import("numerical/types.zig").Vec4;
 
+const VBO = @import("rendering/VBO.zig");
+const IBO = @import("rendering/IBO.zig");
 const FlatColorPerVertex = @import("rendering/shaders/flat_color_per_vertex/FlatColorPerVertex.zig");
 const PointSprite = @import("rendering/shaders/point_sprite/PointSprite.zig");
 
 var rng: std.Random.DefaultPrng = undefined;
-
-const halfEdge = Registry.SurfaceMesh.halfEdge;
 
 pub const std_options: std.Options = .{ .log_level = .debug };
 
@@ -40,24 +40,21 @@ var sm: *Registry.SurfaceMesh = undefined;
 
 var sm_position: *Registry.SurfaceMesh.Data(Vec3) = undefined;
 var sm_color: *Registry.SurfaceMesh.Data(Vec3) = undefined;
-var sm_triangles_indices: std.ArrayList(u32) = undefined;
-var sm_points_indices: std.ArrayList(u32) = undefined;
+var sm_position_vbo: VBO = undefined;
+var sm_color_vbo: VBO = undefined;
+var sm_triangles_ibo: IBO = undefined;
+var sm_points_ibo: IBO = undefined;
 
-var sm_position_vbo: c_uint = undefined;
-var sm_color_vbo: c_uint = undefined;
-var sm_triangles_ibo: c_uint = undefined;
-var sm_points_ibo: c_uint = undefined;
+var flat_color_shader: FlatColorPerVertex = undefined;
+var flat_color_shader_parameters: FlatColorPerVertex.Parameters = undefined;
+var point_sprite_shader: PointSprite = undefined;
+var point_sprite_shader_parameters: PointSprite.Parameters = undefined;
 
 var window: *c.SDL_Window = undefined;
 var window_width: c_int = 800;
 var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
-
-var flat_color_shader: FlatColorPerVertex = undefined;
-var flat_color_shader_parameters: FlatColorPerVertex.Parameters = undefined;
-var point_sprite_shader: PointSprite = undefined;
-var point_sprite_shader_parameters: PointSprite.Parameters = undefined;
 
 var camera = zm.lookAtRh(
     zm.f32x4(0.0, 0.0, 2.0, 1.0),
@@ -210,98 +207,25 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     // try sm.dump(std.io.getStdErr().writer().any());
 
-    // create indices for the triangles and points
-
-    var f_it = try Registry.SurfaceMesh.CellIterator(.face).init(sm); // TODO: replace with a more user friendly iterator initializer
-    while (f_it.next()) |f| {
-        var he_it: Registry.SurfaceMesh.CellHalfEdgeIterator = .{ // TODO: replace with a more user friendly local iterator
-            .surface_mesh = sm,
-            .cell = f,
-            .current = Registry.SurfaceMesh.halfEdge(f),
-        };
-        while (he_it.next()) |he| {
-            try sm_triangles_indices.append(sm.indexOf(.{ .vertex = he }));
-        }
-    }
-
-    var v_it = try Registry.SurfaceMesh.CellIterator(.vertex).init(sm); // TODO: replace with a more user friendly iterator initializer
-    while (v_it.next()) |v| {
-        try sm_points_indices.append(sm.indexOf(v));
-    }
-
     // create VBOs & fill them with data
 
-    gl.GenBuffers(1, (&sm_position_vbo)[0..1]);
-    errdefer gl.DeleteBuffers(1, (&sm_position_vbo)[0..1]);
-    {
-        gl.BindBuffer(gl.ARRAY_BUFFER, sm_position_vbo);
-        defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-        const vec_size = @typeInfo(Vec3).array.len;
-        const buf_size = sm_position.rawSize();
-        gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
-        const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
-        if (maybe_buffer) |buffer| {
-            const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
-            var it = sm_position.rawConstIterator();
-            var index: u32 = 0;
-            while (it.next()) |value| {
-                defer index += 1;
-                const offset = index * vec_size;
-                @memcpy(buffer_f32[offset .. offset + vec_size], value);
-            }
-            _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
-        }
-    }
+    sm_position_vbo = VBO.init();
+    errdefer sm_position_vbo.deinit();
+    try sm_position_vbo.copyData(Vec3, sm_position);
 
-    gl.GenBuffers(1, (&sm_color_vbo)[0..1]);
-    errdefer gl.DeleteBuffers(1, (&sm_color_vbo)[0..1]);
-    {
-        gl.BindBuffer(gl.ARRAY_BUFFER, sm_color_vbo);
-        defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-        const vec_size = @typeInfo(Vec3).array.len;
-        const buf_size = sm_color.rawSize();
-        gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
-        const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);
-        if (maybe_buffer) |buffer| {
-            const buffer_f32: [*]f32 = @ptrCast(@alignCast(buffer));
-            var it = sm_color.rawConstIterator();
-            var index: u32 = 0;
-            while (it.next()) |value| {
-                defer index += 1;
-                const offset = index * vec_size;
-                @memcpy(buffer_f32[offset .. offset + vec_size], value);
-            }
-            _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
-        }
-    }
+    sm_color_vbo = VBO.init();
+    errdefer sm_color_vbo.deinit();
+    try sm_color_vbo.copyData(Vec3, sm_color);
 
-    // create IBOs && fill them with data
+    // create IBOs & fill them with data
 
-    gl.GenBuffers(1, (&sm_triangles_ibo)[0..1]);
-    errdefer gl.DeleteBuffers(1, (&sm_triangles_ibo)[0..1]);
-    {
-        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, sm_triangles_ibo);
-        defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
-        gl.BufferData(
-            gl.ELEMENT_ARRAY_BUFFER,
-            @intCast(sm_triangles_indices.items.len * @sizeOf(u32)),
-            sm_triangles_indices.items.ptr,
-            gl.STATIC_DRAW,
-        );
-    }
+    sm_triangles_ibo = IBO.init();
+    errdefer sm_triangles_ibo.deinit();
+    try sm_triangles_ibo.fillFrom(sm, .face, registry.allocator);
 
-    gl.GenBuffers(1, (&sm_points_ibo)[0..1]);
-    errdefer gl.DeleteBuffers(1, (&sm_points_ibo)[0..1]);
-    {
-        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, sm_points_ibo);
-        defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
-        gl.BufferData(
-            gl.ELEMENT_ARRAY_BUFFER,
-            @intCast(sm_points_indices.items.len * @sizeOf(u32)),
-            sm_points_indices.items.ptr,
-            gl.STATIC_DRAW,
-        );
-    }
+    sm_points_ibo = IBO.init();
+    errdefer sm_points_ibo.deinit();
+    try sm_points_ibo.fillFrom(sm, .vertex, registry.allocator);
 
     // init shaders & their parameters
 
@@ -312,14 +236,14 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     flat_color_shader_parameters = try FlatColorPerVertex.Parameters.init(&flat_color_shader);
     errdefer flat_color_shader_parameters.deinit();
-    flat_color_shader_parameters.setVBO(.position, sm_position_vbo);
-    flat_color_shader_parameters.setVBO(.color, sm_color_vbo);
+    flat_color_shader_parameters.setVertexAttrib(.position, sm_position_vbo, 0, 0);
+    flat_color_shader_parameters.setVertexAttrib(.color, sm_color_vbo, 0, 0);
     flat_color_shader_parameters.setIBO(sm_triangles_ibo);
 
     point_sprite_shader_parameters = try PointSprite.Parameters.init(&point_sprite_shader);
     errdefer point_sprite_shader_parameters.deinit();
-    point_sprite_shader_parameters.setVBO(.position, sm_position_vbo);
-    point_sprite_shader_parameters.setVBO(.color, sm_color_vbo);
+    point_sprite_shader_parameters.setVertexAttrib(.position, sm_position_vbo, 0, 0);
+    point_sprite_shader_parameters.setVertexAttrib(.color, sm_color_vbo, 0, 0);
     point_sprite_shader_parameters.setIBO(sm_points_ibo);
 
     uptime = try .start();
@@ -388,7 +312,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
             gl.BindVertexArray(flat_color_shader_parameters.vao);
             defer gl.BindVertexArray(0);
-            gl.DrawElements(gl.TRIANGLES, @intCast(sm_triangles_indices.items.len), gl.UNSIGNED_INT, 0);
+            gl.DrawElements(gl.TRIANGLES, @intCast(sm_triangles_ibo.nb_indices), gl.UNSIGNED_INT, 0);
         }
 
         {
@@ -426,7 +350,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
             gl.BindVertexArray(point_sprite_shader_parameters.vao);
             defer gl.BindVertexArray(0);
-            gl.DrawElements(gl.POINTS, @intCast(sm_points_indices.items.len), gl.UNSIGNED_INT, 0);
+            gl.DrawElements(gl.POINTS, @intCast(sm_points_ibo.nb_indices), gl.UNSIGNED_INT, 0);
         }
 
         c.cImGui_ImplOpenGL3_NewFrame();
@@ -535,10 +459,10 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         c.cImGui_ImplSDL3_Shutdown();
         c.ImGui_DestroyContext(null);
 
-        gl.DeleteBuffers(1, (&sm_triangles_ibo)[0..1]);
-        gl.DeleteBuffers(1, (&sm_points_ibo)[0..1]);
-        gl.DeleteBuffers(1, (&sm_position_vbo)[0..1]);
-        gl.DeleteBuffers(1, (&sm_color_vbo)[0..1]);
+        sm_triangles_ibo.deinit();
+        sm_points_ibo.deinit();
+        sm_position_vbo.deinit();
+        sm_color_vbo.deinit();
         flat_color_shader_parameters.deinit();
         point_sprite_shader_parameters.deinit();
         flat_color_shader.deinit();
@@ -565,12 +489,6 @@ pub fn main() !u8 {
 
     registry = Registry.init(allocator);
     defer registry.deinit();
-
-    sm_triangles_indices = std.ArrayList(u32).init(allocator);
-    defer sm_triangles_indices.deinit();
-
-    sm_points_indices = std.ArrayList(u32).init(allocator);
-    defer sm_points_indices.deinit();
 
     const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(empty_argv.len, @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;

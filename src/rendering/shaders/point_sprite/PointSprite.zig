@@ -2,6 +2,8 @@ const std = @import("std");
 const gl = @import("gl");
 
 const Shader = @import("../../Shader.zig");
+const VBO = @import("../../VBO.zig");
+const IBO = @import("../../IBO.zig");
 
 const Self = @This();
 
@@ -13,8 +15,8 @@ ambiant_color_uniform: c_int = undefined,
 light_position_uniform: c_int = undefined,
 point_size_uniform: c_int = undefined,
 
-position_attrib: Shader.VertexAttrib = undefined,
-color_attrib: Shader.VertexAttrib = undefined,
+position_attrib: Shader.VertexAttribInfo = undefined,
+color_attrib: Shader.VertexAttribInfo = undefined,
 
 pub fn init() !Self {
     var s: Self = .{
@@ -41,16 +43,12 @@ pub fn init() !Self {
         .size = 3,
         .type = gl.FLOAT,
         .normalized = false,
-        .stride = 0,
-        .pointer = 0,
     };
     s.color_attrib = .{
         .index = @intCast(gl.GetAttribLocation(s.shader.program, "a_color")),
         .size = 3,
         .type = gl.FLOAT,
         .normalized = false,
-        .stride = 0,
-        .pointer = 0,
     };
 
     return s;
@@ -69,7 +67,7 @@ pub const Parameters = struct {
     light_position: [4]f32 = .{ 0, 0, 0, 1 },
     point_size: f32 = 1.0,
 
-    const VertexAttribs = enum {
+    const VertexAttrib = enum {
         position,
         color,
     };
@@ -89,10 +87,10 @@ pub const Parameters = struct {
         }
     }
 
-    pub fn setVBO(self: *Parameters, attrib: VertexAttribs, vbo: c_uint) void {
+    pub fn setVertexAttrib(self: *Parameters, attrib: VertexAttrib, vbo: VBO, stride: isize, pointer: usize) void {
         gl.BindVertexArray(self.vao);
         defer gl.BindVertexArray(0);
-        gl.BindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.BindBuffer(gl.ARRAY_BUFFER, vbo.index);
         defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
         const attrib_info = switch (attrib) {
             .position => self.shader.position_attrib,
@@ -103,15 +101,15 @@ pub const Parameters = struct {
             attrib_info.size,
             attrib_info.type,
             if (attrib_info.normalized) gl.TRUE else gl.FALSE,
-            @intCast(attrib_info.stride),
-            attrib_info.pointer,
+            @intCast(stride),
+            pointer,
         );
         gl.EnableVertexAttribArray(attrib_info.index);
     }
 
-    pub fn setIBO(self: *Parameters, ibo: c_uint) void {
+    pub fn setIBO(self: *Parameters, ibo: IBO) void {
         gl.BindVertexArray(self.vao);
         defer gl.BindVertexArray(0);
-        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);
     }
 };
