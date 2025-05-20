@@ -71,6 +71,9 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = appstate;
     _ = argv;
 
+    // SDL initialization
+    // ******************
+
     sdl_log.debug("SDL build time version: {d}.{d}.{d}", .{
         c.SDL_MAJOR_VERSION,
         c.SDL_MINOR_VERSION,
@@ -93,7 +96,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try errify(c.SDL_Init(c.SDL_INIT_VIDEO));
     // We don't need to call 'SDL_Quit()' when using main callbacks.
 
-    // Set relevant OpenGL context attributes before creating the window.
     try errify(c.SDL_GL_SetAttribute(c.SDL_GL_CONTEXT_MAJOR_VERSION, gl.info.version_major));
     try errify(c.SDL_GL_SetAttribute(c.SDL_GL_CONTEXT_MINOR_VERSION, gl.info.version_minor));
     try errify(c.SDL_GL_SetAttribute(
@@ -139,6 +141,9 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         ),
     };
 
+    // ImGui initialization
+    // ********************
+
     _ = c.CIMGUI_CHECKVERSION();
     _ = c.ImGui_CreateContext(null);
     errdefer c.ImGui_DestroyContext(null);
@@ -155,7 +160,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     imgui_log.debug("ImGui initialized\n", .{});
 
-    // ****************************************************************
+    // Example surface mesh initialization
+    // ***********************************
 
     sm = try registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/david_25k.off");
     errdefer sm.deinit();
@@ -208,6 +214,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // try sm.dump(std.io.getStdErr().writer().any());
 
     // create VBOs & fill them with data
+    // *********************************
 
     sm_position_vbo = VBO.init();
     errdefer sm_position_vbo.deinit();
@@ -218,6 +225,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try sm_color_vbo.copyData(Vec3, sm_color);
 
     // create IBOs & fill them with data
+    // *********************************
 
     sm_triangles_ibo = IBO.init();
     errdefer sm_triangles_ibo.deinit();
@@ -227,24 +235,26 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer sm_points_ibo.deinit();
     try sm_points_ibo.fillFrom(sm, .vertex, registry.allocator);
 
-    // init shaders & their parameters
+    // Init shaders
+    // ************
 
     flat_color_shader = try FlatColorPerVertex.init();
     errdefer flat_color_shader.deinit();
     point_sprite_shader = try PointSprite.init();
     errdefer point_sprite_shader.deinit();
 
-    flat_color_shader_parameters = try FlatColorPerVertex.Parameters.init(&flat_color_shader);
+    // Init shaders parameters
+    // ***********************
+
+    flat_color_shader_parameters = try flat_color_shader.createParameter();
     errdefer flat_color_shader_parameters.deinit();
     flat_color_shader_parameters.setVertexAttrib(.position, sm_position_vbo, 0, 0);
     flat_color_shader_parameters.setVertexAttrib(.color, sm_color_vbo, 0, 0);
-    flat_color_shader_parameters.setIBO(sm_triangles_ibo);
 
-    point_sprite_shader_parameters = try PointSprite.Parameters.init(&point_sprite_shader);
+    point_sprite_shader_parameters = try point_sprite_shader.createParameter();
     errdefer point_sprite_shader_parameters.deinit();
     point_sprite_shader_parameters.setVertexAttrib(.position, sm_position_vbo, 0, 0);
     point_sprite_shader_parameters.setVertexAttrib(.color, sm_color_vbo, 0, 0);
-    point_sprite_shader_parameters.setIBO(sm_points_ibo);
 
     uptime = try .start();
 
@@ -282,75 +292,26 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         };
 
         {
-            gl.UseProgram(flat_color_shader.shader.program);
+            zm.storeMat(&flat_color_shader_parameters.model_view_matrix, object_to_view);
+            zm.storeMat(&flat_color_shader_parameters.projection_matrix, view_to_clip);
+            flat_color_shader_parameters.ambiant_color = .{ 0.1, 0.1, 0.1, 1 };
+            flat_color_shader_parameters.light_position = .{ 10, 0, 100 };
+
+            flat_color_shader_parameters.useShader();
             defer gl.UseProgram(0);
-
-            gl.UniformMatrix4fv(
-                flat_color_shader.model_view_matrix_uniform,
-                1,
-                gl.FALSE,
-                zm.arrNPtr(&object_to_view),
-            );
-            gl.UniformMatrix4fv(
-                flat_color_shader.projection_matrix_uniform,
-                1,
-                gl.FALSE,
-                zm.arrNPtr(&view_to_clip),
-            );
-            const ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 };
-            gl.Uniform4fv(
-                flat_color_shader.ambiant_color_uniform,
-                1,
-                &ambiant_color,
-            );
-            const light_position: [3]f32 = .{ 10, 0, 100 };
-            gl.Uniform3fv(
-                flat_color_shader.light_position_uniform,
-                1,
-                &light_position,
-            );
-
-            gl.BindVertexArray(flat_color_shader_parameters.vao);
-            defer gl.BindVertexArray(0);
-            gl.DrawElements(gl.TRIANGLES, @intCast(sm_triangles_ibo.nb_indices), gl.UNSIGNED_INT, 0);
+            flat_color_shader_parameters.drawElements(gl.TRIANGLES, sm_triangles_ibo);
         }
 
         {
-            gl.UseProgram(point_sprite_shader.shader.program);
+            zm.storeMat(&point_sprite_shader_parameters.model_view_matrix, object_to_view);
+            zm.storeMat(&point_sprite_shader_parameters.projection_matrix, view_to_clip);
+            point_sprite_shader_parameters.ambiant_color = .{ 0.1, 0.1, 0.1, 1 };
+            point_sprite_shader_parameters.light_position = .{ -100, 0, 100 };
+            point_sprite_shader_parameters.point_size = 0.001;
+
+            point_sprite_shader_parameters.useShader();
             defer gl.UseProgram(0);
-
-            gl.UniformMatrix4fv(
-                point_sprite_shader.model_view_matrix_uniform,
-                1,
-                gl.FALSE,
-                zm.arrNPtr(&object_to_view),
-            );
-            gl.UniformMatrix4fv(
-                point_sprite_shader.projection_matrix_uniform,
-                1,
-                gl.FALSE,
-                zm.arrNPtr(&view_to_clip),
-            );
-            gl.Uniform1f(
-                point_sprite_shader.point_size_uniform,
-                0.001,
-            );
-            const ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 };
-            gl.Uniform4fv(
-                point_sprite_shader.ambiant_color_uniform,
-                1,
-                &ambiant_color,
-            );
-            const light_position: [3]f32 = .{ -100, 0, 100 };
-            gl.Uniform3fv(
-                point_sprite_shader.light_position_uniform,
-                1,
-                &light_position,
-            );
-
-            gl.BindVertexArray(point_sprite_shader_parameters.vao);
-            defer gl.BindVertexArray(0);
-            gl.DrawElements(gl.POINTS, @intCast(sm_points_ibo.nb_indices), gl.UNSIGNED_INT, 0);
+            point_sprite_shader_parameters.drawElements(gl.POINTS, sm_points_ibo);
         }
 
         c.cImGui_ImplOpenGL3_NewFrame();
