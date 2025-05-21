@@ -19,8 +19,9 @@ const Vec4 = @import("numerical/types.zig").Vec4;
 
 const VBO = @import("rendering/VBO.zig");
 const IBO = @import("rendering/IBO.zig");
-const FlatColorPerVertex = @import("rendering/shaders/flat_color_per_vertex/FlatColorPerVertex.zig");
-const PointSprite = @import("rendering/shaders/point_sprite/PointSprite.zig");
+const TriFlatColorPerVertex = @import("rendering/shaders/tri_flat_color_per_vertex/TriFlatColorPerVertex.zig");
+const LineBold = @import("rendering/shaders/line_bold/LineBold.zig");
+const PointSphere = @import("rendering/shaders/point_sphere/PointSphere.zig");
 
 var rng: std.Random.DefaultPrng = undefined;
 
@@ -43,12 +44,15 @@ var sm_color: *Registry.SurfaceMesh.Data(Vec3) = undefined;
 var sm_position_vbo: VBO = undefined;
 var sm_color_vbo: VBO = undefined;
 var sm_triangles_ibo: IBO = undefined;
+var sm_lines_ibo: IBO = undefined;
 var sm_points_ibo: IBO = undefined;
 
-var flat_color_shader: FlatColorPerVertex = undefined;
-var flat_color_shader_parameters: FlatColorPerVertex.Parameters = undefined;
-var point_sprite_shader: PointSprite = undefined;
-var point_sprite_shader_parameters: PointSprite.Parameters = undefined;
+var tri_flat_color_per_vertex_shader: TriFlatColorPerVertex = undefined;
+var tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters = undefined;
+var line_bold_shader: LineBold = undefined;
+var line_bold_shader_parameters: LineBold.Parameters = undefined;
+var point_sphere_shader: PointSphere = undefined;
+var point_sphere_shader_parameters: PointSphere.Parameters = undefined;
 
 var window: *c.SDL_Window = undefined;
 var window_width: c_int = 800;
@@ -231,6 +235,10 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer sm_triangles_ibo.deinit();
     try sm_triangles_ibo.fillFrom(sm, .face, registry.allocator);
 
+    sm_lines_ibo = IBO.init();
+    errdefer sm_lines_ibo.deinit();
+    try sm_lines_ibo.fillFrom(sm, .edge, registry.allocator);
+
     sm_points_ibo = IBO.init();
     errdefer sm_points_ibo.deinit();
     try sm_points_ibo.fillFrom(sm, .vertex, registry.allocator);
@@ -238,23 +246,32 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // Init shaders
     // ************
 
-    flat_color_shader = try FlatColorPerVertex.init();
-    errdefer flat_color_shader.deinit();
-    point_sprite_shader = try PointSprite.init();
-    errdefer point_sprite_shader.deinit();
+    tri_flat_color_per_vertex_shader = try TriFlatColorPerVertex.init();
+    errdefer tri_flat_color_per_vertex_shader.deinit();
+
+    line_bold_shader = try LineBold.init();
+    errdefer line_bold_shader.deinit();
+
+    point_sphere_shader = try PointSphere.init();
+    errdefer point_sphere_shader.deinit();
 
     // Init shaders parameters
     // ***********************
 
-    flat_color_shader_parameters = try flat_color_shader.createParameter();
-    errdefer flat_color_shader_parameters.deinit();
-    flat_color_shader_parameters.setVertexAttrib(.position, sm_position_vbo, 0, 0);
-    flat_color_shader_parameters.setVertexAttrib(.color, sm_color_vbo, 0, 0);
+    tri_flat_color_per_vertex_shader_parameters = tri_flat_color_per_vertex_shader.createParameters();
+    errdefer tri_flat_color_per_vertex_shader_parameters.deinit();
+    tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, sm_position_vbo, 0, 0);
+    tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, sm_color_vbo, 0, 0);
+    // tri_flat_color_per_vertex_shader_parameters.setVertexAttribValue(.color, Vec3, .{ 1.0, 0.0, 0.6 });
 
-    point_sprite_shader_parameters = try point_sprite_shader.createParameter();
-    errdefer point_sprite_shader_parameters.deinit();
-    point_sprite_shader_parameters.setVertexAttrib(.position, sm_position_vbo, 0, 0);
-    point_sprite_shader_parameters.setVertexAttrib(.color, sm_color_vbo, 0, 0);
+    line_bold_shader_parameters = line_bold_shader.createParameters();
+    errdefer line_bold_shader_parameters.deinit();
+    line_bold_shader_parameters.setVertexAttribArray(.position, sm_position_vbo, 0, 0);
+
+    point_sphere_shader_parameters = point_sphere_shader.createParameters();
+    errdefer point_sphere_shader_parameters.deinit();
+    point_sphere_shader_parameters.setVertexAttribArray(.position, sm_position_vbo, 0, 0);
+    point_sphere_shader_parameters.setVertexAttribArray(.color, sm_color_vbo, 0, 0);
 
     uptime = try .start();
 
@@ -268,12 +285,21 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     _ = appstate;
 
     {
+        const ui_data = struct {
+            var show_demo_window: bool = false;
+            var draw_vertices: bool = true;
+            var draw_edges: bool = true;
+            var draw_faces: bool = true;
+        };
+
         gl.ClearColor(0.2, 0.2, 0.2, 1);
         gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
         gl.Enable(gl.CULL_FACE);
         gl.CullFace(gl.BACK);
         gl.Enable(gl.DEPTH_TEST);
+        gl.Enable(gl.POLYGON_OFFSET_FILL);
+        gl.PolygonOffset(1.0, 1.5);
 
         gl.Viewport(0, 0, window_width, window_height);
         const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
@@ -291,36 +317,44 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             CameraProjectionType.orthographic => zm.orthographicRhGl(4.0, 4.0, 0.01, 50.0),
         };
 
-        {
-            zm.storeMat(&flat_color_shader_parameters.model_view_matrix, object_to_view);
-            zm.storeMat(&flat_color_shader_parameters.projection_matrix, view_to_clip);
-            flat_color_shader_parameters.ambiant_color = .{ 0.1, 0.1, 0.1, 1 };
-            flat_color_shader_parameters.light_position = .{ 10, 0, 100 };
+        if (ui_data.draw_faces) {
+            zm.storeMat(&tri_flat_color_per_vertex_shader_parameters.model_view_matrix, object_to_view);
+            zm.storeMat(&tri_flat_color_per_vertex_shader_parameters.projection_matrix, view_to_clip);
+            tri_flat_color_per_vertex_shader_parameters.ambiant_color = .{ 0.1, 0.1, 0.1, 1 };
+            tri_flat_color_per_vertex_shader_parameters.light_position = .{ 10, 0, 100 };
 
-            flat_color_shader_parameters.useShader();
+            tri_flat_color_per_vertex_shader_parameters.useShader();
             defer gl.UseProgram(0);
-            flat_color_shader_parameters.drawElements(gl.TRIANGLES, sm_triangles_ibo);
+            tri_flat_color_per_vertex_shader_parameters.drawElements(gl.TRIANGLES, sm_triangles_ibo);
         }
 
-        {
-            zm.storeMat(&point_sprite_shader_parameters.model_view_matrix, object_to_view);
-            zm.storeMat(&point_sprite_shader_parameters.projection_matrix, view_to_clip);
-            point_sprite_shader_parameters.ambiant_color = .{ 0.1, 0.1, 0.1, 1 };
-            point_sprite_shader_parameters.light_position = .{ -100, 0, 100 };
-            point_sprite_shader_parameters.point_size = 0.001;
+        if (ui_data.draw_edges) {
+            zm.storeMat(&line_bold_shader_parameters.model_view_matrix, object_to_view);
+            zm.storeMat(&line_bold_shader_parameters.projection_matrix, view_to_clip);
+            line_bold_shader_parameters.line_color = .{ 0.0, 0.0, 0.1, 1 };
+            line_bold_shader_parameters.line_width = 1.0;
 
-            point_sprite_shader_parameters.useShader();
+            line_bold_shader_parameters.useShader();
             defer gl.UseProgram(0);
-            point_sprite_shader_parameters.drawElements(gl.POINTS, sm_points_ibo);
+            line_bold_shader_parameters.drawElements(gl.LINES, sm_lines_ibo);
+        }
+
+        if (ui_data.draw_vertices) {
+            zm.storeMat(&point_sphere_shader_parameters.model_view_matrix, object_to_view);
+            zm.storeMat(&point_sphere_shader_parameters.projection_matrix, view_to_clip);
+            point_sphere_shader_parameters.ambiant_color = .{ 0.1, 0.1, 0.1, 1 };
+            point_sphere_shader_parameters.light_position = .{ -100, 0, 100 };
+            point_sphere_shader_parameters.point_size = 0.001;
+
+            point_sphere_shader_parameters.useShader();
+            defer gl.UseProgram(0);
+            point_sphere_shader_parameters.drawElements(gl.POINTS, sm_points_ibo);
         }
 
         c.cImGui_ImplOpenGL3_NewFrame();
         c.cImGui_ImplSDL3_NewFrame();
         c.ImGui_NewFrame();
 
-        const data = struct {
-            var show_demo_window: bool = false;
-        };
         _ = c.ImGui_Begin("Rendering", null, c.ImGuiWindowFlags_NoSavedSettings);
         c.ImGui_Text("Camera mode");
         if (c.ImGui_RadioButton("Perspective", camera_mode == CameraProjectionType.perspective)) {
@@ -330,11 +364,19 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         if (c.ImGui_RadioButton("Orthographic", camera_mode == CameraProjectionType.orthographic)) {
             camera_mode = CameraProjectionType.orthographic;
         }
-        _ = c.ImGui_Checkbox("show demo", &data.show_demo_window);
+        c.ImGui_Separator();
+        c.ImGui_Text("Surface mesh");
+        _ = c.ImGui_Checkbox("draw vertices", &ui_data.draw_vertices);
+        _ = c.ImGui_Checkbox("draw edges", &ui_data.draw_edges);
+        _ = c.ImGui_Checkbox("draw faces", &ui_data.draw_faces);
+
+        c.ImGui_Separator();
+        _ = c.ImGui_Checkbox("show demo", &ui_data.show_demo_window);
         c.ImGui_End();
-        if (data.show_demo_window) {
+        if (ui_data.show_demo_window) {
             c.ImGui_ShowDemoWindow(null);
         }
+
         c.ImGui_Render();
         c.cImGui_ImplOpenGL3_RenderDrawData(c.ImGui_GetDrawData());
     }
@@ -424,10 +466,10 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         sm_points_ibo.deinit();
         sm_position_vbo.deinit();
         sm_color_vbo.deinit();
-        flat_color_shader_parameters.deinit();
-        point_sprite_shader_parameters.deinit();
-        flat_color_shader.deinit();
-        point_sprite_shader.deinit();
+        tri_flat_color_per_vertex_shader_parameters.deinit();
+        point_sphere_shader_parameters.deinit();
+        tri_flat_color_per_vertex_shader.deinit();
+        point_sphere_shader.deinit();
 
         gl.makeProcTableCurrent(null);
         errify(c.SDL_GL_MakeCurrent(window, null)) catch {};

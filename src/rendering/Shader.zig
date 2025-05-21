@@ -22,28 +22,21 @@ pub const ShaderType = enum {
     fragment,
 };
 
-pub const VertexAttribInfo = struct {
-    index: u32,
-    size: i32,
-    type: u32,
-    normalized: bool,
-};
-
-program: c_uint = 0,
+index: c_uint = 0,
 ready: bool = false,
 
 pub fn init() !Self {
     var s: Self = .{};
-    s.program = gl.CreateProgram();
-    if (s.program == 0)
+    s.index = gl.CreateProgram();
+    if (s.index == 0)
         return error.GlCreateProgramFailed;
     return s;
 }
 
 pub fn deinit(self: *Self) void {
-    if (self.program != 0) {
-        gl.DeleteProgram(self.program);
-        self.program = 0;
+    if (self.index != 0) {
+        gl.DeleteProgram(self.index);
+        self.index = 0;
         self.ready = false;
     }
 }
@@ -72,27 +65,27 @@ pub fn setShader(self: *Self, shader_type: ShaderType, shader_source: []const u8
         gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
         return error.GlCompileShaderFailed;
     }
-    gl.AttachShader(self.program, shader);
+    gl.AttachShader(self.index, shader);
 }
 
 pub fn linkProgram(self: *Self) !void {
     var success: c_int = undefined;
     var info_log_buf: [512:0]u8 = undefined;
-    gl.LinkProgram(self.program);
-    gl.GetProgramiv(self.program, gl.LINK_STATUS, &success);
+    gl.LinkProgram(self.index);
+    gl.GetProgramiv(self.index, gl.LINK_STATUS, &success);
     if (success == gl.FALSE) {
-        gl.GetProgramInfoLog(self.program, info_log_buf.len, null, &info_log_buf);
+        gl.GetProgramInfoLog(self.index, info_log_buf.len, null, &info_log_buf);
         gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
         return error.LinkProgramFailed;
     }
     var nb_attached_shaders: c_int = undefined;
-    gl.GetProgramiv(self.program, gl.ATTACHED_SHADERS, &nb_attached_shaders);
+    gl.GetProgramiv(self.index, gl.ATTACHED_SHADERS, &nb_attached_shaders);
     if (nb_attached_shaders > 0) {
         var attached_shaders: [16]c_uint = undefined;
-        gl.GetAttachedShaders(self.program, attached_shaders.len, &nb_attached_shaders, &attached_shaders);
+        gl.GetAttachedShaders(self.index, attached_shaders.len, &nb_attached_shaders, &attached_shaders);
         var i: u32 = 0;
         while (i < nb_attached_shaders) : (i += 1) {
-            gl.DetachShader(self.program, attached_shaders[i]);
+            gl.DetachShader(self.index, attached_shaders[i]);
         }
     }
     self.ready = true;
