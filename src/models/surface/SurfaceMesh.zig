@@ -46,20 +46,19 @@ edge_data: DataContainer,
 face_data: DataContainer,
 
 /// halfedge data: connectivity & cell indices
-phi1: *Data(HalfEdge) = undefined,
-phi_1: *Data(HalfEdge) = undefined,
-phi2: *Data(HalfEdge) = undefined,
-vertex_index: *Data(u32) = undefined,
-edge_index: *Data(u32) = undefined,
-face_index: *Data(u32) = undefined,
+he_phi1: *Data(HalfEdge) = undefined,
+he_phi_1: *Data(HalfEdge) = undefined,
+he_phi2: *Data(HalfEdge) = undefined,
+he_vertex_index: *Data(u32) = undefined,
+he_edge_index: *Data(u32) = undefined,
+he_face_index: *Data(u32) = undefined,
 
 pub fn CellIterator(comptime cell_type: CellType) type {
     return struct {
-        const ThisCellIterator = @This();
         surface_mesh: *Self,
         current_halfedge: HalfEdge,
         marker: ?*Data(bool),
-        pub fn init(surface_mesh: *Self) !ThisCellIterator {
+        pub fn init(surface_mesh: *Self) !@This() {
             return .{
                 .surface_mesh = surface_mesh,
                 // no marker needed for halfedge iterator
@@ -67,12 +66,12 @@ pub fn CellIterator(comptime cell_type: CellType) type {
                 .current_halfedge = surface_mesh.halfedge_data.firstIndex(),
             };
         }
-        pub fn deinit(self: *ThisCellIterator) void {
+        pub fn deinit(self: *@This()) void {
             if (self.marker) |marker| {
                 self.surface_mesh.halfedge_data.releaseMarker(marker);
             }
         }
-        pub fn next(self: *ThisCellIterator) ?(if (cell_type == .halfedge) HalfEdge else Cell) {
+        pub fn next(self: *@This()) ?(if (cell_type == .halfedge) HalfEdge else Cell) {
             if (self.current_halfedge == self.surface_mesh.halfedge_data.lastIndex()) {
                 return null;
             }
@@ -105,6 +104,9 @@ pub fn CellIterator(comptime cell_type: CellType) type {
             }
             return cell;
         }
+        pub fn reset(self: *@This()) void {
+            self.current_halfedge = self.surface_mesh.halfedge_data.firstIndex();
+        }
     };
 }
 
@@ -118,9 +120,9 @@ pub const CellHalfEdgeIterator = struct {
             if (self.current) |current| {
                 self.current = switch (self.cell) {
                     .halfedge => current,
-                    .vertex => self.surface_mesh.phi2.value(self.surface_mesh.phi_1.value(current).*).*,
-                    .edge => self.surface_mesh.phi2.value(current).*,
-                    .face => self.surface_mesh.phi1.value(current).*,
+                    .vertex => self.surface_mesh.phi2(self.surface_mesh.phi_1(current)),
+                    .edge => self.surface_mesh.phi2(current),
+                    .face => self.surface_mesh.phi1(current),
                 };
                 // the next current becomes null when we get back to the starting halfedge
                 if (self.current == halfEdge(self.cell)) {
@@ -139,12 +141,12 @@ pub fn init(allocator: std.mem.Allocator) !Self {
         .edge_data = try DataContainer.init(allocator),
         .face_data = try DataContainer.init(allocator),
     };
-    sm.phi1 = try sm.halfedge_data.addData(HalfEdge, "phi1");
-    sm.phi_1 = try sm.halfedge_data.addData(HalfEdge, "phi_1");
-    sm.phi2 = try sm.halfedge_data.addData(HalfEdge, "phi2");
-    sm.vertex_index = try sm.halfedge_data.addData(u32, "vertex_index");
-    sm.edge_index = try sm.halfedge_data.addData(u32, "edge_index");
-    sm.face_index = try sm.halfedge_data.addData(u32, "face_index");
+    sm.he_phi1 = try sm.halfedge_data.addData(HalfEdge, "phi1");
+    sm.he_phi_1 = try sm.halfedge_data.addData(HalfEdge, "phi_1");
+    sm.he_phi2 = try sm.halfedge_data.addData(HalfEdge, "phi2");
+    sm.he_vertex_index = try sm.halfedge_data.addData(u32, "vertex_index");
+    sm.he_edge_index = try sm.halfedge_data.addData(u32, "edge_index");
+    sm.he_face_index = try sm.halfedge_data.addData(u32, "face_index");
     return sm;
 }
 
@@ -213,68 +215,78 @@ pub fn nbCells(self: *const Self, cell_type: CellType) u32 {
 
 fn addHalfEdge(self: *Self) !HalfEdge {
     const he = try self.halfedge_data.newIndex();
-    self.phi1.value(he).* = he;
-    self.phi_1.value(he).* = he;
-    self.phi2.value(he).* = he;
-    self.vertex_index.value(he).* = invalid_index;
-    self.edge_index.value(he).* = invalid_index;
-    self.face_index.value(he).* = invalid_index;
+    self.he_phi1.value(he).* = he;
+    self.he_phi_1.value(he).* = he;
+    self.he_phi2.value(he).* = he;
+    self.he_vertex_index.value(he).* = invalid_index;
+    self.he_edge_index.value(he).* = invalid_index;
+    self.he_face_index.value(he).* = invalid_index;
     return he;
 }
 
 fn removeHalfEdge(self: *Self, he: HalfEdge) void {
-    const vertex_index = self.vertex_index.value(he).*;
+    const vertex_index = self.he_vertex_index.value(he).*;
     if (vertex_index != invalid_index) {
         self.vertex_data.unrefIndex(vertex_index);
     }
-    const edge_index = self.edge_index.value(he).*;
+    const edge_index = self.he_edge_index.value(he).*;
     if (edge_index != invalid_index) {
         self.edge_data.unrefIndex(edge_index);
     }
-    const face_index = self.face_index.value(he).*;
+    const face_index = self.he_face_index.value(he).*;
     if (face_index != invalid_index) {
         self.face_data.unrefIndex(face_index);
     }
     self.halfedge_data.freeIndex(he);
 }
 
+pub fn phi1(self: *const Self, he: HalfEdge) HalfEdge {
+    return self.he_phi1.value(he).*;
+}
+pub fn phi_1(self: *const Self, he: HalfEdge) HalfEdge {
+    return self.he_phi_1.value(he).*;
+}
+pub fn phi2(self: *const Self, he: HalfEdge) HalfEdge {
+    return self.he_phi2.value(he).*;
+}
+
 pub fn phi1Sew(self: *Self, he1: HalfEdge, he2: HalfEdge) void {
     std.debug.assert(he1 != he2);
-    const he3 = self.phi1.value(he1).*;
-    const he4 = self.phi1.value(he2).*;
-    self.phi1.value(he1).* = he4;
-    self.phi1.value(he2).* = he3;
-    self.phi_1.value(he4).* = he1;
-    self.phi_1.value(he3).* = he2;
+    const he3 = self.phi1(he1);
+    const he4 = self.phi1(he2);
+    self.he_phi1.value(he1).* = he4;
+    self.he_phi1.value(he2).* = he3;
+    self.he_phi_1.value(he4).* = he1;
+    self.he_phi_1.value(he3).* = he2;
 }
 
 pub fn phi2Sew(self: *Self, he1: HalfEdge, he2: HalfEdge) void {
     std.debug.assert(he1 != he2);
-    std.debug.assert(self.phi2.value(he1).* == he1);
-    std.debug.assert(self.phi2.value(he2).* == he2);
-    self.phi2.value(he1).* = he2;
-    self.phi2.value(he2).* = he1;
+    std.debug.assert(self.phi2(he1) == he1);
+    std.debug.assert(self.phi2(he2) == he2);
+    self.he_phi2.value(he1).* = he2;
+    self.he_phi2.value(he2).* = he1;
 }
 
 pub fn phi2Unsew(self: *Self, he: HalfEdge) void {
-    std.debug.assert(self.phi2.value(he).* != he);
-    const he2 = self.phi2.value(he).*;
-    self.phi2.value(he).* = he;
-    self.phi2.value(he2).* = he2;
+    std.debug.assert(self.phi2(he) != he);
+    const he2 = self.phi2(he);
+    self.he_phi2.value(he).* = he;
+    self.he_phi2.value(he2).* = he2;
 }
 
 pub fn setHalfEdgeIndex(self: *Self, he: HalfEdge, cell_type: CellType, index: u32) void {
     var index_data = switch (cell_type) {
         .halfedge => unreachable,
-        .vertex => self.vertex_index,
-        .edge => self.edge_index,
-        .face => self.face_index,
+        .vertex => self.he_vertex_index,
+        .edge => self.he_edge_index,
+        .face => self.he_face_index,
     };
     var data_container = switch (cell_type) {
         .halfedge => unreachable,
-        .vertex => self.vertex_data,
-        .edge => self.edge_data,
-        .face => self.face_data,
+        .vertex => self.he_vertex_data,
+        .edge => self.he_edge_data,
+        .face => self.he_face_data,
     };
     const old_index: u32 = index_data.value(he).*;
     if (index != invalid_index) {
@@ -309,11 +321,12 @@ pub fn indexCells(self: *Self, comptime cell_type: CellType) !void {
 }
 
 pub fn indexOf(self: *const Self, c: Cell) u32 {
+    const he = halfEdge(c);
     switch (c) {
-        .halfedge => return c.halfedge,
-        .vertex => return self.vertex_index.value(c.vertex).*,
-        .edge => return self.edge_index.value(c.edge).*,
-        .face => return self.face_index.value(c.face).*,
+        .halfedge => return he,
+        .vertex => return self.he_vertex_index.value(he).*,
+        .edge => return self.he_edge_index.value(he).*,
+        .face => return self.he_face_index.value(he).*,
     }
 }
 
@@ -323,12 +336,12 @@ pub fn dump(self: *Self, writer: std.io.AnyWriter) !void {
     while (it.next()) |he| {
         try writer.print("halfedge {d}: (phi1: {d}, phi_1: {d}, phi2: {d}) (v: {d}, e: {d}, f: {d})\n", .{
             he,
-            self.phi1.value(he).*,
-            self.phi_1.value(he).*,
-            self.phi2.value(he).*,
-            self.vertex_index.value(he).*,
-            self.edge_index.value(he).*,
-            self.face_index.value(he).*,
+            self.phi1(he),
+            self.phi_1(he),
+            self.phi2(he),
+            self.indexOf(.{ .vertex = he }),
+            self.indexOf(.{ .edge = he }),
+            self.indexOf(.{ .face = he }),
         });
     }
 }
@@ -346,7 +359,7 @@ pub fn addUnboundedFace(self: *Self, nb_vertices: u32) !Cell {
     }
     var it = he1;
     while (true) {
-        it = self.phi1.value(it).*;
+        it = self.phi1(it);
         if (it == he1) {
             break;
         }

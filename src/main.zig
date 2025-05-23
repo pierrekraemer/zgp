@@ -172,7 +172,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     sm_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
     // scale the mesh position in the range [0, 1]
-    var pos_it = sm_position.rawIterator(); // TODO: use an iterator that only iterates over active indices
+    var pos_it = sm_position.iterator();
     var bb_min = zm.f32x4(std.math.floatMax(f32), std.math.floatMax(f32), std.math.floatMax(f32), 0.0);
     var bb_max = zm.f32x4(std.math.floatMin(f32), std.math.floatMin(f32), std.math.floatMin(f32), 0.0);
     while (pos_it.next()) |value| {
@@ -186,7 +186,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     const range = bb_max - bb_min;
     const max = @reduce(.Max, range);
     const scale = range / zm.f32x4s(max);
-    pos_it.set(0);
+    pos_it.reset();
     while (pos_it.next()) |value| {
         value[0] = (value[0] - bb_min[0]) / range[0] * scale[0];
         value[1] = (value[1] - bb_min[1]) / range[1] * scale[1];
@@ -194,12 +194,12 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     }
     // center the mesh position on the origin
     var centroid = zm.f32x4s(0.0);
-    pos_it.set(0);
+    pos_it.reset();
     while (pos_it.next()) |value| {
         centroid += zm.f32x4(value[0], value[1], value[2], 0.0);
     }
-    centroid /= zm.f32x4s(@floatFromInt(sm_position.rawLength()));
-    pos_it.set(0);
+    centroid /= zm.f32x4s(@floatFromInt(sm_position.nbElements()));
+    pos_it.reset();
     while (pos_it.next()) |value| {
         value[0] = value[0] - centroid[0];
         value[1] = value[1] - centroid[1];
@@ -207,7 +207,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     }
 
     sm_color = try sm.addData(.vertex, Vec3, "color");
-    var col_it = sm_color.rawIterator();
+    var col_it = sm_color.iterator();
     const r = rng.random();
     while (col_it.next()) |value| {
         value[0] = r.float(f32);
@@ -304,7 +304,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         gl.Viewport(0, 0, window_width, window_height);
         const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
 
-        const field_of_view: f32 = 0.33 * std.math.pi;
+        const field_of_view: f32 = 0.2 * std.math.pi;
         // const scene_radius: f32 = 1.0;
         // const focal_distance: f32 = scene_radius / @tan(field_of_view / 2.0);
         // const pivot_point = zm.f32x4(0.0, 0.0, 0.0, 1.0);

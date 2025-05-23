@@ -9,6 +9,8 @@ pub const Data = data.Data;
 
 pub const Point = u32;
 
+point_data: DataContainer,
+
 pub const PointIterator = struct {
     point_cloud: *const Self,
     current: Point,
@@ -22,13 +24,8 @@ pub const PointIterator = struct {
     }
 };
 
-// allocator: std.mem.Allocator,
-
-point_data: DataContainer,
-
 pub fn init(allocator: std.mem.Allocator) !Self {
     return .{
-        // .allocator = allocator,
         .point_data = try DataContainer.init(allocator),
     };
 }
@@ -53,25 +50,18 @@ pub fn removeData(self: *Self, data_gen: *DataGen) void {
     self.point_data.removeData(data_gen);
 }
 
-pub fn indexOf(_: *const Self, p: Point) u32 {
-    return @intCast(p);
-}
-
 pub fn nbPoints(self: *const Self) u32 {
     return self.point_data.nbElements();
 }
 
 pub fn addPoint(self: *Self) !Point {
-    return try self.point_data.newIndex();
+    return self.point_data.newIndex();
 }
 
 pub fn removePoint(self: *Self, p: Point) void {
     self.point_data.freeIndex(p);
 }
 
-pub fn points(self: *const Self) PointIterator {
-    return PointIterator{
-        .point_cloud = self,
-        .current = self.point_data.firstIndex(),
-    };
+pub fn indexOf(_: *const Self, p: Point) u32 {
+    return @intCast(p);
 }

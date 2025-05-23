@@ -249,9 +249,9 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
         const face = try sm.addUnboundedFace(face_nb_vertices);
         var he = SurfaceMesh.halfEdge(face);
         for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
-            sm.vertex_index.value(he).* = index;
+            sm.he_vertex_index.value(he).* = index;
             try halfedges_of_vertex.value(index).append(he);
-            he = sm.phi1.value(he).*;
+            he = sm.phi1(he);
         }
         i += face_nb_vertices;
     }
@@ -261,12 +261,12 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
     var halfedge_it = try SurfaceMesh.CellIterator(.halfedge).init(sm);
     defer halfedge_it.deinit();
     while (halfedge_it.next()) |he| {
-        if (sm.phi2.value(he).* == he) {
+        if (sm.phi2(he) == he) {
             const vertex_index = sm.indexOf(.{ .vertex = he });
-            const next_vertex_index = sm.indexOf(.{ .vertex = sm.phi1.value(he).* });
+            const next_vertex_index = sm.indexOf(.{ .vertex = sm.phi1(he) });
             const next_vertex_halfedges = halfedges_of_vertex.value(next_vertex_index).*;
             const opposite_halfedge = for (next_vertex_halfedges.items) |he2| {
-                if (sm.indexOf(.{ .vertex = sm.phi1.value(he2).* }) == vertex_index) {
+                if (sm.indexOf(.{ .vertex = sm.phi1(he2) }) == vertex_index) {
                     break he2;
                 }
             } else null;

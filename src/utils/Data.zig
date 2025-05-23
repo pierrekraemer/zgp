@@ -10,7 +10,7 @@ pub const DataGen = struct {
     vtable: *const VTable,
 
     const VTable = struct {
-        ensureSize: *const fn (ptr: *anyopaque, size: u32) anyerror!void,
+        ensureLength: *const fn (ptr: *anyopaque, size: u32) anyerror!void,
         clearRetainingCapacity: *const fn (ptr: *anyopaque) void,
     };
 
@@ -23,9 +23,9 @@ pub const DataGen = struct {
         arena: std.heap.ArenaAllocator,
     ) DataGen {
         const gen = struct {
-            fn ensureSize(ptr: *anyopaque, size: u32) !void {
+            fn ensureLength(ptr: *anyopaque, size: u32) !void {
                 const impl: *Data(T) = @ptrCast(@alignCast(ptr));
-                try impl.ensureSize(size);
+                try impl.ensureLength(size);
             }
             fn clearRetainingCapacity(ptr: *anyopaque) void {
                 const impl: *Data(T) = @ptrCast(@alignCast(ptr));
@@ -40,7 +40,7 @@ pub const DataGen = struct {
             .ptr = pointer,
             .container = container,
             .vtable = &.{
-                .ensureSize = gen.ensureSize,
+                .ensureLength = gen.ensureLength,
                 .clearRetainingCapacity = gen.clearRetainingCapacity,
             },
         };
@@ -50,8 +50,8 @@ pub const DataGen = struct {
         self.arena.deinit();
     }
 
-    pub inline fn ensureSize(self: *DataGen, size: u32) !void {
-        try self.vtable.ensureSize(self.ptr, size);
+    pub inline fn ensureLength(self: *DataGen, size: u32) !void {
+        try self.vtable.ensureLength(self.ptr, size);
     }
 
     pub inline fn clearRetainingCapacity(self: *DataGen) void {
@@ -76,7 +76,7 @@ pub fn Data(comptime T: type) type {
             return self.gen.arena.allocator();
         }
 
-        pub fn ensureSize(self: *Self, size: u32) !void {
+        pub fn ensureLength(self: *Self, size: u32) !void {
             while (self.data.len < size) {
                 _ = try self.data.addOne(self.arena());
             }
@@ -121,7 +121,42 @@ pub fn Data(comptime T: type) type {
             return self.data.constIterator(0);
         }
 
-        // TODO: iterator & constIterator (filtered to active indices of the container)
+        pub fn nbElements(self: *const Self) usize {
+            return self.gen.container.nbElements();
+        }
+
+        pub const Iterator = BaseIterator(*Self, *T);
+        pub const ConstIterator = BaseIterator(*const Self, *const T);
+        fn BaseIterator(comptime SelfType: type, comptime ElementPtr: type) type {
+            return struct {
+                data: SelfType,
+                index: u32,
+                pub fn next(it: *@This()) ?ElementPtr {
+                    if (it.index == it.data.gen.container.lastIndex()) {
+                        return null;
+                    }
+                    defer it.index = it.data.gen.container.nextIndex(it.index);
+                    return it.data.data.at(it.index);
+                }
+                pub fn reset(it: *@This()) void {
+                    it.index = it.data.gen.container.firstIndex();
+                }
+            };
+        }
+
+        pub fn iterator(self: *Self) Iterator {
+            return .{
+                .data = self,
+                .index = self.gen.container.firstIndex(),
+            };
+        }
+
+        pub fn constIterator(self: *const Self) ConstIterator {
+            return .{
+                .data = self,
+                .index = self.gen.container.firstIndex(),
+            };
+        }
     };
 }
 
@@ -194,7 +229,7 @@ pub const DataContainer = struct {
         data.* = .init;
         const owned_name = try data_arena.allocator().dupe(u8, name);
         data.gen = DataGen.init(T, owned_name, comptime typeId(T), data, self, data_arena);
-        try data.ensureSize(self.capacity);
+        try data.ensureLength(self.capacity);
         try self.datas.put(owned_name, &data.gen);
         return data;
     }
@@ -230,7 +265,7 @@ pub const DataContainer = struct {
         const marker = try marker_arena.allocator().create(Data(bool));
         marker.* = .init;
         marker.gen = DataGen.init(bool, "", comptime typeId(bool), marker, self, marker_arena);
-        try marker.ensureSize(self.capacity);
+        try marker.ensureLength(self.capacity);
         marker.fill(false); // marker is filled with false before use
         try self.markers.append(marker);
         return marker;
@@ -255,7 +290,7 @@ pub const DataContainer = struct {
         var it = self.datas.iterator();
         while (it.next()) |entry| {
             const data_gen = entry.value_ptr.*;
-            try data_gen.ensureSize(index + 1);
+            try data_gen.ensureLength(index + 1);
         }
         self.is_active.value(index).* = true; // after newIndex, the index is active
         self.nb_refs.value(index).* = 0; // but has no reference yet
