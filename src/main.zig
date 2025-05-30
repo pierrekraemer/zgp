@@ -13,7 +13,13 @@ const c = @cImport({
 });
 const zm = @import("zmath");
 
-const Registry = @import("models/Registry.zig");
+const ModelsRegistry = @import("models/ModelsRegistry.zig");
+const SurfaceMesh = ModelsRegistry.SurfaceMesh;
+const PointCloud = ModelsRegistry.PointCloud;
+
+const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
+const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
+
 const Vec3 = @import("numerical/types.zig").Vec3;
 const Vec4 = @import("numerical/types.zig").Vec4;
 
@@ -35,12 +41,15 @@ const zgp_log = std.log.scoped(.zgp);
 var fully_initialized = false;
 var uptime: std.time.Timer = undefined;
 
-var registry: Registry = undefined;
+var models_registry: ModelsRegistry = undefined;
 
-var sm: *Registry.SurfaceMesh = undefined;
+var point_cloud_renderer: PointCloudRenderer = undefined;
+var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 
-var sm_position: *Registry.SurfaceMesh.Data(Vec3) = undefined;
-var sm_color: *Registry.SurfaceMesh.Data(Vec3) = undefined;
+var sm: *SurfaceMesh = undefined;
+
+var sm_position: *SurfaceMesh.Data(Vec3) = undefined;
+var sm_color: *SurfaceMesh.Data(Vec3) = undefined;
 var sm_position_vbo: VBO = undefined;
 var sm_color_vbo: VBO = undefined;
 var sm_triangles_ibo: IBO = undefined;
@@ -167,7 +176,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // Example surface mesh initialization
     // ***********************************
 
-    sm = try registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/david_25k.off");
+    sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/david_25k.off");
     errdefer sm.deinit();
 
     sm_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
@@ -233,15 +242,15 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     sm_triangles_ibo = IBO.init();
     errdefer sm_triangles_ibo.deinit();
-    try sm_triangles_ibo.fillFrom(sm, .face, registry.allocator);
+    try sm_triangles_ibo.fillFrom(sm, .face, models_registry.allocator);
 
     sm_lines_ibo = IBO.init();
     errdefer sm_lines_ibo.deinit();
-    try sm_lines_ibo.fillFrom(sm, .edge, registry.allocator);
+    try sm_lines_ibo.fillFrom(sm, .edge, models_registry.allocator);
 
     sm_points_ibo = IBO.init();
     errdefer sm_points_ibo.deinit();
-    try sm_points_ibo.fillFrom(sm, .vertex, registry.allocator);
+    try sm_points_ibo.fillFrom(sm, .vertex, models_registry.allocator);
 
     // Init shaders
     // ************
@@ -262,7 +271,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer tri_flat_color_per_vertex_shader_parameters.deinit();
     tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, sm_position_vbo, 0, 0);
     tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, sm_color_vbo, 0, 0);
-    // tri_flat_color_per_vertex_shader_parameters.setVertexAttribValue(.color, Vec3, .{ 1.0, 0.0, 0.6 });
+    // tri_flat_color_per_vertex_shader_parameters.setVertexAttribValue(.color, Vec3, .{ 0.3, 0.3, 0.9 });
 
     line_bold_shader_parameters = line_bold_shader.createParameters();
     errdefer line_bold_shader_parameters.deinit();
@@ -272,6 +281,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer point_sphere_shader_parameters.deinit();
     point_sphere_shader_parameters.setVertexAttribArray(.position, sm_position_vbo, 0, 0);
     point_sphere_shader_parameters.setVertexAttribArray(.color, sm_color_vbo, 0, 0);
+    // point_sphere_shader_parameters.setVertexAttribValue(.color, Vec3, .{ 1.0, 0.0, 0.6 });
 
     uptime = try .start();
 
@@ -354,6 +364,9 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         c.cImGui_ImplOpenGL3_NewFrame();
         c.cImGui_ImplSDL3_NewFrame();
         c.ImGui_NewFrame();
+
+        point_cloud_renderer.ui_panel();
+        surface_mesh_renderer.ui_panel();
 
         _ = c.ImGui_Begin("Rendering", null, c.ImGuiWindowFlags_NoSavedSettings);
         c.ImGui_Text("Camera mode");
@@ -490,8 +503,11 @@ pub fn main() !u8 {
 
     rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
 
-    registry = Registry.init(allocator);
-    defer registry.deinit();
+    models_registry = ModelsRegistry.init(allocator);
+    defer models_registry.deinit();
+
+    point_cloud_renderer = .{ .models_registry = &models_registry };
+    surface_mesh_renderer = .{ .models_registry = &models_registry };
 
     const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(empty_argv.len, @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;

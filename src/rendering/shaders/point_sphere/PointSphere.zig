@@ -97,14 +97,6 @@ pub const Parameters = struct {
         self.vao.setVertexAttribArray(attrib_info, vbo, stride, pointer);
     }
 
-    pub fn setVertexAttribValue(self: *Parameters, attrib: VertexAttrib, comptime T: type, value: T) void {
-        const attrib_info = switch (attrib) {
-            .position => self.shader.position_attrib,
-            .color => self.shader.color_attrib,
-        };
-        self.vao.setVertexAttribValue(attrib_info, T, value);
-    }
-
     pub fn useShader(self: *Parameters) void {
         gl.UseProgram(self.shader.program.index);
         gl.UniformMatrix4fv(self.shader.model_view_matrix_uniform, 1, gl.FALSE, &self.model_view_matrix);
