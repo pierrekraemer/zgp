@@ -20,7 +20,7 @@ pub fn deinit(self: *Self) void {
     }
 }
 
-pub fn copyData(self: *Self, comptime T: type, data: *const Data(T)) !void {
+pub fn fillFrom(self: *Self, comptime T: type, data: *const Data(T)) !void {
     gl.BindBuffer(gl.ARRAY_BUFFER, self.index);
     defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
     const vec_size = @typeInfo(T).array.len;

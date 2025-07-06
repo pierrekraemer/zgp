@@ -1,40 +1,177 @@
 const std = @import("std");
 
+const c = @cImport({
+    @cInclude("dcimgui.h");
+    @cInclude("backends/dcimgui_impl_sdl3.h");
+    @cInclude("backends/dcimgui_impl_opengl3.h");
+});
+
 const Self = @This();
 
 pub const PointCloud = @import("point/PointCloud.zig");
 pub const SurfaceMesh = @import("surface/SurfaceMesh.zig");
 
+const Data = @import("../utils/Data.zig").Data;
+const DataGen = @import("../utils/Data.zig").DataGen;
+const VBO = @import("../rendering/VBO.zig");
+const IBO = @import("../rendering/IBO.zig");
+
 const Vec3 = @import("../numerical/types.zig").Vec3;
+
+const PointCloudData = struct {
+    v_position: ?*Data(Vec3) = null,
+    v_normal: ?*Data(Vec3) = null,
+    v_color: ?*Data(Vec3) = null,
+
+    points_ibo: IBO,
+};
+
+const SurfaceMeshData = struct {
+    v_position: ?*Data(Vec3) = null,
+    v_normal: ?*Data(Vec3) = null,
+    v_color: ?*Data(Vec3) = null,
+
+    triangles_ibo: IBO,
+    lines_ibo: IBO,
+    points_ibo: IBO,
+};
 
 allocator: std.mem.Allocator,
 
 point_clouds: std.StringHashMap(*PointCloud),
 surface_meshes: std.StringHashMap(*SurfaceMesh),
 
+point_clouds_data: std.AutoHashMap(*const PointCloud, PointCloudData),
+surface_meshes_data: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshData),
+
+vbo_registry: std.AutoHashMap(*const DataGen, VBO),
+
 pub fn init(allocator: std.mem.Allocator) Self {
     return .{
         .allocator = allocator,
         .point_clouds = std.StringHashMap(*PointCloud).init(allocator),
         .surface_meshes = std.StringHashMap(*SurfaceMesh).init(allocator),
+        .point_clouds_data = std.AutoHashMap(*const PointCloud, PointCloudData).init(allocator),
+        .surface_meshes_data = std.AutoHashMap(*const SurfaceMesh, SurfaceMeshData).init(allocator),
+        .vbo_registry = std.AutoHashMap(*const DataGen, VBO).init(allocator),
     };
 }
 
 pub fn deinit(self: *Self) void {
+    var pc_data_it = self.point_clouds_data.iterator();
+    while (pc_data_it.next()) |entry| {
+        var data = entry.value_ptr.*;
+        data.points_ibo.deinit();
+    }
+    self.point_clouds_data.deinit();
     var pc_it = self.point_clouds.iterator();
     while (pc_it.next()) |entry| {
-        const pc = entry.value_ptr.*;
+        var pc = entry.value_ptr.*;
         pc.deinit();
         self.allocator.destroy(pc);
     }
     self.point_clouds.deinit();
+
+    var sm_data_it = self.surface_meshes_data.iterator();
+    while (sm_data_it.next()) |entry| {
+        var data = entry.value_ptr.*;
+        data.triangles_ibo.deinit();
+        data.lines_ibo.deinit();
+        data.points_ibo.deinit();
+    }
+    self.surface_meshes_data.deinit();
     var sm_it = self.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
-        const sm = entry.value_ptr.*;
+        var sm = entry.value_ptr.*;
         sm.deinit();
         self.allocator.destroy(sm);
     }
     self.surface_meshes.deinit();
+
+    var vbo_it = self.vbo_registry.iterator();
+    while (vbo_it.next()) |entry| {
+        var vbo = entry.value_ptr.*;
+        vbo.deinit();
+    }
+    self.vbo_registry.deinit();
+}
+
+pub fn connectivityUpdated(self: *Self, surface_mesh: *SurfaceMesh) !void {
+    const maybe_data = self.surface_meshes_data.getPtr(surface_mesh);
+    if (maybe_data) |data| {
+        try data.triangles_ibo.fillFrom(surface_mesh, .face, self.allocator);
+        try data.lines_ibo.fillFrom(surface_mesh, .edge, self.allocator);
+        try data.points_ibo.fillFrom(surface_mesh, .vertex, self.allocator);
+    }
+}
+
+pub fn dataUpdated(self: *Self, comptime T: type, data: *const Data(T)) !void {
+    const vbo = try self.vbo_registry.getOrPut(&data.gen);
+    if (!vbo.found_existing) {
+        vbo.value_ptr.* = VBO.init();
+    }
+    try vbo.value_ptr.*.fillFrom(T, data);
+}
+
+pub fn setSurfaceMeshVertexPosition(self: *Self, surface_mesh: *const SurfaceMesh, v_position: *Data(Vec3)) !void {
+    const maybe_data = self.surface_meshes_data.getPtr(surface_mesh);
+    if (maybe_data) |data| {
+        data.v_position = v_position;
+        try self.dataUpdated(Vec3, v_position);
+    }
+}
+pub fn setSurfaceMeshVertexNormal(self: *Self, surface_mesh: *const SurfaceMesh, v_normal: *Data(Vec3)) !void {
+    const maybe_data = self.surface_meshes_data.getPtr(surface_mesh);
+    if (maybe_data) |data| {
+        data.v_normal = v_normal;
+        try self.dataUpdated(Vec3, v_normal);
+    }
+}
+pub fn setSurfaceMeshVertexColor(self: *Self, surface_mesh: *const SurfaceMesh, v_color: *Data(Vec3)) !void {
+    const maybe_data = self.surface_meshes_data.getPtr(surface_mesh);
+    if (maybe_data) |data| {
+        data.v_color = v_color;
+        try self.dataUpdated(Vec3, v_color);
+    }
+}
+
+pub fn uiPanel(self: *const Self) void {
+    const UiData = struct {
+        var selected_point_cloud: ?*PointCloud = null;
+        var selected_surface_mesh: ?*SurfaceMesh = null;
+    };
+
+    _ = c.ImGui_Begin("Models Registry", null, c.ImGuiWindowFlags_NoSavedSettings);
+
+    if (c.ImGui_BeginListBox("Surface Meshes", c.ImVec2{ .x = 0, .y = 200 })) {
+        var sm_it = self.surface_meshes.iterator();
+        while (sm_it.next()) |entry| {
+            const surface_mesh = entry.value_ptr.*;
+            const name = entry.key_ptr.*;
+            var selected = if (UiData.selected_surface_mesh == surface_mesh) true else false;
+            if (c.ImGui_SelectableBoolPtr(name.ptr, &selected, 0)) {
+                UiData.selected_surface_mesh = surface_mesh;
+            }
+        }
+        c.ImGui_EndListBox();
+    }
+
+    c.ImGui_Separator();
+
+    if (c.ImGui_BeginListBox("Point Clouds", c.ImVec2{ .x = 0, .y = 200 })) {
+        var pc_it = self.point_clouds.iterator();
+        while (pc_it.next()) |entry| {
+            const point_cloud = entry.value_ptr.*;
+            const name = entry.key_ptr.*;
+            var selected = if (UiData.selected_point_cloud == point_cloud) true else false;
+            if (c.ImGui_SelectableBoolPtr(name.ptr, &selected, 0)) {
+                UiData.selected_point_cloud = point_cloud;
+            }
+        }
+        c.ImGui_EndListBox();
+    }
+
+    c.ImGui_End();
 }
 
 pub fn createPointCloud(self: *Self, name: []const u8) !*PointCloud {
@@ -45,6 +182,9 @@ pub fn createPointCloud(self: *Self, name: []const u8) !*PointCloud {
     const pc = try self.allocator.create(PointCloud);
     pc.* = try PointCloud.init(self.allocator);
     try self.point_clouds.put(name, pc);
+    try self.point_clouds_data.put(pc, .{
+        .points_ibo = IBO.init(),
+    });
     return pc;
 }
 
@@ -56,6 +196,11 @@ pub fn createSurfaceMesh(self: *Self, name: []const u8) !*SurfaceMesh {
     const sm = try self.allocator.create(SurfaceMesh);
     sm.* = try SurfaceMesh.init(self.allocator);
     try self.surface_meshes.put(name, sm);
+    try self.surface_meshes_data.put(sm, .{
+        .triangles_ibo = IBO.init(),
+        .lines_ibo = IBO.init(),
+        .points_ibo = IBO.init(),
+    });
     return sm;
 }
 

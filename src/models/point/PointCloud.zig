@@ -3,9 +3,9 @@ const data = @import("../../utils/Data.zig");
 
 const Self = @This();
 
-pub const DataContainer = data.DataContainer;
-pub const DataGen = data.DataGen;
-pub const Data = data.Data;
+const DataContainer = data.DataContainer;
+const DataGen = data.DataGen;
+const Data = data.Data;
 
 pub const Point = u32;
 

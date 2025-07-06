@@ -17,18 +17,15 @@ const ModelsRegistry = @import("models/ModelsRegistry.zig");
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
 const PointCloud = ModelsRegistry.PointCloud;
 
-const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
+const Data = @import("utils/Data.zig").Data;
+
+// const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 
 const Vec3 = @import("numerical/types.zig").Vec3;
 const Vec4 = @import("numerical/types.zig").Vec4;
 
-const VBO = @import("rendering/VBO.zig");
-const IBO = @import("rendering/IBO.zig");
-const TriFlatColorPerVertex = @import("rendering/shaders/tri_flat_color_per_vertex/TriFlatColorPerVertex.zig");
-const LineBold = @import("rendering/shaders/line_bold/LineBold.zig");
-const PointSphere = @import("rendering/shaders/point_sphere/PointSphere.zig");
-
+var allocator: std.mem.Allocator = undefined;
 var rng: std.Random.DefaultPrng = undefined;
 
 pub const std_options: std.Options = .{ .log_level = .debug };
@@ -43,25 +40,13 @@ var uptime: std.time.Timer = undefined;
 
 var models_registry: ModelsRegistry = undefined;
 
-var point_cloud_renderer: PointCloudRenderer = undefined;
+// var point_cloud_renderer: PointCloudRenderer = undefined;
 var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 
 var sm: *SurfaceMesh = undefined;
 
-var sm_position: *SurfaceMesh.Data(Vec3) = undefined;
-var sm_color: *SurfaceMesh.Data(Vec3) = undefined;
-var sm_position_vbo: VBO = undefined;
-var sm_color_vbo: VBO = undefined;
-var sm_triangles_ibo: IBO = undefined;
-var sm_lines_ibo: IBO = undefined;
-var sm_points_ibo: IBO = undefined;
-
-var tri_flat_color_per_vertex_shader: TriFlatColorPerVertex = undefined;
-var tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters = undefined;
-var line_bold_shader: LineBold = undefined;
-var line_bold_shader_parameters: LineBold.Parameters = undefined;
-var point_sphere_shader: PointSphere = undefined;
-var point_sphere_shader_parameters: PointSphere.Parameters = undefined;
+var sm_position: *Data(Vec3) = undefined;
+var sm_color: *Data(Vec3) = undefined;
 
 var window: *c.SDL_Window = undefined;
 var window_width: c_int = 800;
@@ -69,7 +54,7 @@ var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
 
-var camera = zm.lookAtRh(
+var view_matrix = zm.lookAtRh(
     zm.f32x4(0.0, 0.0, 2.0, 1.0),
     zm.f32x4(0.0, 0.0, 0.0, 0.0),
     zm.f32x4(0.0, 1.0, 0.0, 0.0),
@@ -84,8 +69,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = appstate;
     _ = argv;
 
-    // SDL initialization
-    // ******************
+    // SDL & GL initialization
+    // ***********************
 
     sdl_log.debug("SDL build time version: {d}.{d}.{d}", .{
         c.SDL_MAJOR_VERSION,
@@ -173,6 +158,20 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     imgui_log.debug("ImGui initialized\n", .{});
 
+    // Models registry initialization
+    // *****************************************
+
+    models_registry = ModelsRegistry.init(allocator);
+    errdefer models_registry.deinit();
+
+    // Modules initialization
+    // **********************
+
+    // point_cloud_renderer = try PointCloudRenderer.init(&models_registry, allocator);
+    // errdefer point_cloud_renderer.deinit();
+    surface_mesh_renderer = try SurfaceMeshRenderer.init(&models_registry, allocator);
+    errdefer surface_mesh_renderer.deinit();
+
     // Example surface mesh initialization
     // ***********************************
 
@@ -224,64 +223,19 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         value[2] = r.float(f32);
     }
 
+    try models_registry.setSurfaceMeshVertexPosition(sm, sm_position);
+    try models_registry.setSurfaceMeshVertexColor(sm, sm_color);
+    try models_registry.connectivityUpdated(sm);
+
     // try sm.dump(std.io.getStdErr().writer().any());
-
-    // create VBOs & fill them with data
-    // *********************************
-
-    sm_position_vbo = VBO.init();
-    errdefer sm_position_vbo.deinit();
-    try sm_position_vbo.copyData(Vec3, sm_position);
-
-    sm_color_vbo = VBO.init();
-    errdefer sm_color_vbo.deinit();
-    try sm_color_vbo.copyData(Vec3, sm_color);
-
-    // create IBOs & fill them with data
-    // *********************************
-
-    sm_triangles_ibo = IBO.init();
-    errdefer sm_triangles_ibo.deinit();
-    try sm_triangles_ibo.fillFrom(sm, .face, models_registry.allocator);
-
-    sm_lines_ibo = IBO.init();
-    errdefer sm_lines_ibo.deinit();
-    try sm_lines_ibo.fillFrom(sm, .edge, models_registry.allocator);
-
-    sm_points_ibo = IBO.init();
-    errdefer sm_points_ibo.deinit();
-    try sm_points_ibo.fillFrom(sm, .vertex, models_registry.allocator);
-
-    // Init shaders
-    // ************
-
-    tri_flat_color_per_vertex_shader = try TriFlatColorPerVertex.init();
-    errdefer tri_flat_color_per_vertex_shader.deinit();
-
-    line_bold_shader = try LineBold.init();
-    errdefer line_bold_shader.deinit();
-
-    point_sphere_shader = try PointSphere.init();
-    errdefer point_sphere_shader.deinit();
 
     // Init shaders parameters
     // ***********************
 
-    tri_flat_color_per_vertex_shader_parameters = tri_flat_color_per_vertex_shader.createParameters();
-    errdefer tri_flat_color_per_vertex_shader_parameters.deinit();
-    tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, sm_position_vbo, 0, 0);
-    tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, sm_color_vbo, 0, 0);
-    // tri_flat_color_per_vertex_shader_parameters.setVertexAttribValue(.color, Vec3, .{ 0.3, 0.3, 0.9 });
+    try surface_mesh_renderer.initParameters(sm);
 
-    line_bold_shader_parameters = line_bold_shader.createParameters();
-    errdefer line_bold_shader_parameters.deinit();
-    line_bold_shader_parameters.setVertexAttribArray(.position, sm_position_vbo, 0, 0);
-
-    point_sphere_shader_parameters = point_sphere_shader.createParameters();
-    errdefer point_sphere_shader_parameters.deinit();
-    point_sphere_shader_parameters.setVertexAttribArray(.position, sm_position_vbo, 0, 0);
-    point_sphere_shader_parameters.setVertexAttribArray(.color, sm_color_vbo, 0, 0);
-    // point_sphere_shader_parameters.setVertexAttribValue(.color, Vec3, .{ 1.0, 0.0, 0.6 });
+    // Init end
+    // ********
 
     uptime = try .start();
 
@@ -295,11 +249,11 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     _ = appstate;
 
     {
-        const ui_data = struct {
+        const UiData = struct {
             var show_demo_window: bool = false;
-            var draw_vertices: bool = true;
-            var draw_edges: bool = true;
-            var draw_faces: bool = true;
+            // var draw_vertices: bool = true;
+            // var draw_edges: bool = true;
+            // var draw_faces: bool = true;
         };
 
         gl.ClearColor(0.2, 0.2, 0.2, 1);
@@ -319,54 +273,21 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         // const focal_distance: f32 = scene_radius / @tan(field_of_view / 2.0);
         // const pivot_point = zm.f32x4(0.0, 0.0, 0.0, 1.0);
 
-        const object_to_world = zm.identity();
-        const object_to_view = zm.mul(object_to_world, camera);
-
-        const view_to_clip = switch (camera_mode) {
+        const projection_matrix = switch (camera_mode) {
             CameraProjectionType.perspective => zm.perspectiveFovRhGl(field_of_view, aspect_ratio, 0.01, 50.0),
             CameraProjectionType.orthographic => zm.orthographicRhGl(4.0, 4.0, 0.01, 50.0),
         };
 
-        if (ui_data.draw_faces) {
-            zm.storeMat(&tri_flat_color_per_vertex_shader_parameters.model_view_matrix, object_to_view);
-            zm.storeMat(&tri_flat_color_per_vertex_shader_parameters.projection_matrix, view_to_clip);
-            tri_flat_color_per_vertex_shader_parameters.ambiant_color = .{ 0.1, 0.1, 0.1, 1 };
-            tri_flat_color_per_vertex_shader_parameters.light_position = .{ 10, 0, 100 };
-
-            tri_flat_color_per_vertex_shader_parameters.useShader();
-            defer gl.UseProgram(0);
-            tri_flat_color_per_vertex_shader_parameters.drawElements(gl.TRIANGLES, sm_triangles_ibo);
-        }
-
-        if (ui_data.draw_edges) {
-            zm.storeMat(&line_bold_shader_parameters.model_view_matrix, object_to_view);
-            zm.storeMat(&line_bold_shader_parameters.projection_matrix, view_to_clip);
-            line_bold_shader_parameters.line_color = .{ 0.0, 0.0, 0.1, 1 };
-            line_bold_shader_parameters.line_width = 1.0;
-
-            line_bold_shader_parameters.useShader();
-            defer gl.UseProgram(0);
-            line_bold_shader_parameters.drawElements(gl.LINES, sm_lines_ibo);
-        }
-
-        if (ui_data.draw_vertices) {
-            zm.storeMat(&point_sphere_shader_parameters.model_view_matrix, object_to_view);
-            zm.storeMat(&point_sphere_shader_parameters.projection_matrix, view_to_clip);
-            point_sphere_shader_parameters.ambiant_color = .{ 0.1, 0.1, 0.1, 1 };
-            point_sphere_shader_parameters.light_position = .{ -100, 0, 100 };
-            point_sphere_shader_parameters.point_size = 0.001;
-
-            point_sphere_shader_parameters.useShader();
-            defer gl.UseProgram(0);
-            point_sphere_shader_parameters.drawElements(gl.POINTS, sm_points_ibo);
-        }
+        // point_cloud_renderer.draw(view_matrix, projection_matrix);
+        surface_mesh_renderer.draw(view_matrix, projection_matrix);
 
         c.cImGui_ImplOpenGL3_NewFrame();
         c.cImGui_ImplSDL3_NewFrame();
         c.ImGui_NewFrame();
 
-        point_cloud_renderer.ui_panel();
-        surface_mesh_renderer.ui_panel();
+        models_registry.uiPanel();
+        // point_cloud_renderer.uiPanel();
+        surface_mesh_renderer.uiPanel();
 
         _ = c.ImGui_Begin("Rendering", null, c.ImGuiWindowFlags_NoSavedSettings);
         c.ImGui_Text("Camera mode");
@@ -377,16 +298,11 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         if (c.ImGui_RadioButton("Orthographic", camera_mode == CameraProjectionType.orthographic)) {
             camera_mode = CameraProjectionType.orthographic;
         }
-        c.ImGui_Separator();
-        c.ImGui_Text("Surface mesh");
-        _ = c.ImGui_Checkbox("draw vertices", &ui_data.draw_vertices);
-        _ = c.ImGui_Checkbox("draw edges", &ui_data.draw_edges);
-        _ = c.ImGui_Checkbox("draw faces", &ui_data.draw_faces);
 
         c.ImGui_Separator();
-        _ = c.ImGui_Checkbox("show demo", &ui_data.show_demo_window);
+        _ = c.ImGui_Checkbox("show demo", &UiData.show_demo_window);
         c.ImGui_End();
-        if (ui_data.show_demo_window) {
+        if (UiData.show_demo_window) {
             c.ImGui_ShowDemoWindow(null);
         }
 
@@ -435,17 +351,17 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                     const axis = zm.f32x4(event.motion.yrel, event.motion.xrel, 0.0, 0.0);
                     const speed = zm.length3(axis)[0] * 0.01;
                     const rot = zm.matFromAxisAngle(axis, speed);
-                    const tr = camera[3]; // save translation
-                    camera[3] = zm.f32x4(0.0, 0.0, 0.0, 1.0); // set translation to zero
-                    camera = zm.mul(camera, rot); // apply rotation
-                    camera[3] = tr; // restore translation
+                    const tr = view_matrix[3]; // save translation
+                    view_matrix[3] = zm.f32x4(0.0, 0.0, 0.0, 1.0); // set translation to zero
+                    view_matrix = zm.mul(view_matrix, rot); // apply rotation
+                    view_matrix[3] = tr; // restore translation
                 },
                 c.SDL_BUTTON_RMASK => {
                     const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
                     const nx = event.motion.xrel / @as(f32, @floatFromInt(window_width)) * if (aspect_ratio > 1.0) aspect_ratio else 1.0;
                     const ny = -1.0 * event.motion.yrel / @as(f32, @floatFromInt(window_height)) * if (aspect_ratio > 1.0) 1.0 else 1.0 / aspect_ratio;
-                    camera[3][0] += 2 * nx;
-                    camera[3][1] += 2 * ny;
+                    view_matrix[3][0] += 2 * nx;
+                    view_matrix[3][1] += 2 * ny;
                 },
                 else => {},
             }
@@ -454,7 +370,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
             const wheel = event.wheel.y;
             if (wheel != 0) {
                 const forward = zm.f32x4(0.0, 0.0, -1.0, 0.0);
-                camera[3] += zm.splat(zm.Vec, -wheel * 0.01) * forward;
+                view_matrix[3] += zm.splat(zm.Vec, -wheel * 0.01) * forward;
             }
         },
         else => {},
@@ -475,14 +391,9 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         c.cImGui_ImplSDL3_Shutdown();
         c.ImGui_DestroyContext(null);
 
-        sm_triangles_ibo.deinit();
-        sm_points_ibo.deinit();
-        sm_position_vbo.deinit();
-        sm_color_vbo.deinit();
-        tri_flat_color_per_vertex_shader_parameters.deinit();
-        point_sphere_shader_parameters.deinit();
-        tri_flat_color_per_vertex_shader.deinit();
-        point_sphere_shader.deinit();
+        models_registry.deinit();
+        // point_cloud_renderer.deinit();
+        surface_mesh_renderer.deinit();
 
         gl.makeProcTableCurrent(null);
         errify(c.SDL_GL_MakeCurrent(window, null)) catch {};
@@ -498,16 +409,10 @@ pub fn main() !u8 {
 
     var da: std.heap.DebugAllocator(.{}) = .init;
     defer _ = da.deinit();
-    const allocator = da.allocator();
-    // const allocator = std.heap.raw_c_allocator;
+    allocator = da.allocator();
+    // allocator = std.heap.raw_c_allocator;
 
     rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
-
-    models_registry = ModelsRegistry.init(allocator);
-    defer models_registry.deinit();
-
-    point_cloud_renderer = .{ .models_registry = &models_registry };
-    surface_mesh_renderer = .{ .models_registry = &models_registry };
 
     const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(empty_argv.len, @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;
