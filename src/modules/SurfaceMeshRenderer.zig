@@ -8,15 +8,19 @@ const c = @cImport({
     @cInclude("backends/dcimgui_impl_opengl3.h");
 });
 
+const Self = @This();
+const zgp = @import("../main.zig");
+
+const Module = @import("Module.zig");
+
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
+const SurfaceMeshStandardData = ModelsRegistry.SurfaceMeshStandardData;
 
 const TriFlatColorPerVertex = @import("../rendering/shaders/tri_flat_color_per_vertex/TriFlatColorPerVertex.zig");
 const LineBold = @import("../rendering/shaders/line_bold/LineBold.zig");
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const VBO = @import("../rendering/VBO.zig");
-
-const Self = @This();
 
 const SurfaceMeshRenderParameters = struct {
     tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters,
@@ -42,41 +46,20 @@ const SurfaceMeshRenderParameters = struct {
     }
 };
 
-models_registry: *ModelsRegistry,
-
 tri_flat_color_per_vertex_shader: TriFlatColorPerVertex,
 line_bold_shader: LineBold,
 point_sphere_shader: PointSphere,
 
 parameters: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRenderParameters),
 
-pub fn init(models_registry: *ModelsRegistry, allocator: std.mem.Allocator) !Self {
+pub fn init(allocator: std.mem.Allocator) !Self {
     const s: Self = .{
-        .models_registry = models_registry,
         .tri_flat_color_per_vertex_shader = try TriFlatColorPerVertex.init(),
         .line_bold_shader = try LineBold.init(),
         .point_sphere_shader = try PointSphere.init(),
         .parameters = std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRenderParameters).init(allocator),
     };
-
     return s;
-}
-
-pub fn initParameters(self: *Self, surface_mesh: *const SurfaceMesh) !void {
-    var p = SurfaceMeshRenderParameters.init(self);
-    const sm_data = self.models_registry.surface_meshes_data.getPtr(surface_mesh).?;
-    if (sm_data.v_position) |v_position| {
-        const position_vbo = self.models_registry.vbo_registry.get(&v_position.gen).?;
-        p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
-        p.line_bold_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
-        p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
-    }
-    if (sm_data.v_color) |v_color| {
-        const color_vbo = self.models_registry.vbo_registry.get(&v_color.gen).?;
-        p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
-        p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
-    }
-    try self.parameters.put(surface_mesh, p);
 }
 
 pub fn deinit(self: *Self) void {
@@ -91,12 +74,45 @@ pub fn deinit(self: *Self) void {
     self.parameters.deinit();
 }
 
+pub fn module(self: *Self) Module {
+    return Module.init(self);
+}
+
+pub fn surfaceMeshAdded(self: *Self, surface_mesh: *SurfaceMesh) !void {
+    try self.parameters.put(surface_mesh, SurfaceMeshRenderParameters.init(self));
+}
+
+pub fn surfaceMeshStandardDataChanged(
+    self: *Self,
+    surface_mesh: *SurfaceMesh,
+    data: SurfaceMeshStandardData,
+) void {
+    const p = self.parameters.getPtr(surface_mesh) orelse return;
+    const surface_mesh_info = zgp.models_registry.surface_meshes_info.getPtr(surface_mesh) orelse return;
+    switch (data) {
+        .vertex_position => {
+            const vertex_position = surface_mesh_info.vertex_position orelse return;
+            const position_vbo = zgp.models_registry.vbo_registry.get(&vertex_position.gen).?;
+            p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+            p.line_bold_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+            p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+        },
+        .vertex_color => {
+            const vertex_color = surface_mesh_info.vertex_color orelse return;
+            const color_vbo = zgp.models_registry.vbo_registry.get(&vertex_color.gen).?;
+            p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
+            p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
+        },
+        else => return, // Ignore other data changes
+    }
+}
+
 pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
-    var sm_it = self.models_registry.surface_meshes.iterator();
+    var sm_it = zgp.models_registry.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const surface_mesh = entry.value_ptr.*;
-        const surface_mesh_data = self.models_registry.surface_meshes_data.getPtr(surface_mesh);
-        if (surface_mesh_data) |d| {
+        const surface_mesh_info = zgp.models_registry.surface_meshes_info.getPtr(surface_mesh);
+        if (surface_mesh_info) |info| {
             const surface_mesh_render_parameters = self.parameters.getPtr(surface_mesh);
             if (surface_mesh_render_parameters) |p| {
                 if (p.draw_faces) {
@@ -107,7 +123,7 @@ pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
 
                     p.tri_flat_color_per_vertex_shader_parameters.useShader();
                     defer gl.UseProgram(0);
-                    p.tri_flat_color_per_vertex_shader_parameters.drawElements(gl.TRIANGLES, d.triangles_ibo);
+                    p.tri_flat_color_per_vertex_shader_parameters.drawElements(gl.TRIANGLES, info.triangles_ibo);
                 }
                 if (p.draw_edges) {
                     zm.storeMat(&p.line_bold_shader_parameters.model_view_matrix, view_matrix);
@@ -117,7 +133,7 @@ pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
 
                     p.line_bold_shader_parameters.useShader();
                     defer gl.UseProgram(0);
-                    p.line_bold_shader_parameters.drawElements(gl.LINES, d.lines_ibo);
+                    p.line_bold_shader_parameters.drawElements(gl.LINES, info.lines_ibo);
                 }
                 if (p.draw_vertices) {
                     zm.storeMat(&p.point_sphere_shader_parameters.model_view_matrix, view_matrix);
@@ -128,7 +144,7 @@ pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
 
                     p.point_sphere_shader_parameters.useShader();
                     defer gl.UseProgram(0);
-                    p.point_sphere_shader_parameters.drawElements(gl.POINTS, d.points_ibo);
+                    p.point_sphere_shader_parameters.drawElements(gl.POINTS, info.points_ibo);
                 }
             }
         }
@@ -140,15 +156,17 @@ pub fn uiPanel(self: *Self) void {
         var selected_surface_mesh: ?*SurfaceMesh = null;
     };
 
-    _ = c.ImGui_Begin("Surface Mesh Renderer", null, c.ImGuiWindowFlags_NoSavedSettings);
+    _ = c.ImGui_Begin("Surface Mesh Renderer", null, 0);
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 
-    if (c.ImGui_BeginListBox("Surface Mesh", c.ImVec2{ .x = 0, .y = 200 })) {
-        var sm_it = self.models_registry.surface_meshes.iterator();
+    c.ImGui_SeparatorText("Surface Meshes");
+    if (c.ImGui_BeginListBox("##Surface Meshes", c.ImVec2{ .x = 0, .y = 0 })) {
+        var sm_it = zgp.models_registry.surface_meshes.iterator();
         while (sm_it.next()) |entry| {
             const surface_mesh = entry.value_ptr.*;
             const name = entry.key_ptr.*;
-            var selected = if (UiData.selected_surface_mesh == surface_mesh) true else false;
-            if (c.ImGui_SelectableBoolPtr(name.ptr, &selected, 0)) {
+            const selected = if (UiData.selected_surface_mesh == surface_mesh) true else false;
+            if (c.ImGui_SelectableEx(name.ptr, selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 UiData.selected_surface_mesh = surface_mesh;
             }
         }
@@ -168,5 +186,6 @@ pub fn uiPanel(self: *Self) void {
         c.ImGui_Text("No Surface Mesh selected");
     }
 
+    c.ImGui_PopItemWidth();
     c.ImGui_End();
 }

@@ -7,6 +7,7 @@ const c = @cImport({
 });
 
 const Self = @This();
+const zgp = @import("../main.zig");
 
 pub const PointCloud = @import("point/PointCloud.zig");
 pub const SurfaceMesh = @import("surface/SurfaceMesh.zig");
@@ -18,18 +19,30 @@ const IBO = @import("../rendering/IBO.zig");
 
 const Vec3 = @import("../numerical/types.zig").Vec3;
 
-const PointCloudData = struct {
-    v_position: ?*Data(Vec3) = null,
-    v_normal: ?*Data(Vec3) = null,
-    v_color: ?*Data(Vec3) = null,
+pub const PointCloudStandardData = enum {
+    vertex_position,
+    vertex_normal,
+    vertex_color,
+};
+
+const PointCloudInfo = struct {
+    vertex_position: ?*Data(Vec3) = null,
+    vertex_normal: ?*Data(Vec3) = null,
+    vertex_color: ?*Data(Vec3) = null,
 
     points_ibo: IBO,
 };
 
-const SurfaceMeshData = struct {
-    v_position: ?*Data(Vec3) = null,
-    v_normal: ?*Data(Vec3) = null,
-    v_color: ?*Data(Vec3) = null,
+pub const SurfaceMeshStandardData = enum {
+    vertex_position,
+    vertex_normal,
+    vertex_color,
+};
+
+const SurfaceMeshInfo = struct {
+    vertex_position: ?*Data(Vec3) = null,
+    vertex_normal: ?*Data(Vec3) = null,
+    vertex_color: ?*Data(Vec3) = null,
 
     triangles_ibo: IBO,
     lines_ibo: IBO,
@@ -41,8 +54,8 @@ allocator: std.mem.Allocator,
 point_clouds: std.StringHashMap(*PointCloud),
 surface_meshes: std.StringHashMap(*SurfaceMesh),
 
-point_clouds_data: std.AutoHashMap(*const PointCloud, PointCloudData),
-surface_meshes_data: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshData),
+point_clouds_info: std.AutoHashMap(*const PointCloud, PointCloudInfo),
+surface_meshes_info: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshInfo),
 
 vbo_registry: std.AutoHashMap(*const DataGen, VBO),
 
@@ -51,19 +64,19 @@ pub fn init(allocator: std.mem.Allocator) Self {
         .allocator = allocator,
         .point_clouds = std.StringHashMap(*PointCloud).init(allocator),
         .surface_meshes = std.StringHashMap(*SurfaceMesh).init(allocator),
-        .point_clouds_data = std.AutoHashMap(*const PointCloud, PointCloudData).init(allocator),
-        .surface_meshes_data = std.AutoHashMap(*const SurfaceMesh, SurfaceMeshData).init(allocator),
+        .point_clouds_info = std.AutoHashMap(*const PointCloud, PointCloudInfo).init(allocator),
+        .surface_meshes_info = std.AutoHashMap(*const SurfaceMesh, SurfaceMeshInfo).init(allocator),
         .vbo_registry = std.AutoHashMap(*const DataGen, VBO).init(allocator),
     };
 }
 
 pub fn deinit(self: *Self) void {
-    var pc_data_it = self.point_clouds_data.iterator();
-    while (pc_data_it.next()) |entry| {
-        var data = entry.value_ptr.*;
-        data.points_ibo.deinit();
+    var pc_info_it = self.point_clouds_info.iterator();
+    while (pc_info_it.next()) |entry| {
+        var info = entry.value_ptr.*;
+        info.points_ibo.deinit();
     }
-    self.point_clouds_data.deinit();
+    self.point_clouds_info.deinit();
     var pc_it = self.point_clouds.iterator();
     while (pc_it.next()) |entry| {
         var pc = entry.value_ptr.*;
@@ -72,14 +85,14 @@ pub fn deinit(self: *Self) void {
     }
     self.point_clouds.deinit();
 
-    var sm_data_it = self.surface_meshes_data.iterator();
-    while (sm_data_it.next()) |entry| {
-        var data = entry.value_ptr.*;
-        data.triangles_ibo.deinit();
-        data.lines_ibo.deinit();
-        data.points_ibo.deinit();
+    var sm_info_it = self.surface_meshes_info.iterator();
+    while (sm_info_it.next()) |entry| {
+        var info = entry.value_ptr.*;
+        info.triangles_ibo.deinit();
+        info.lines_ibo.deinit();
+        info.points_ibo.deinit();
     }
-    self.surface_meshes_data.deinit();
+    self.surface_meshes_info.deinit();
     var sm_it = self.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         var sm = entry.value_ptr.*;
@@ -97,11 +110,11 @@ pub fn deinit(self: *Self) void {
 }
 
 pub fn connectivityUpdated(self: *Self, surface_mesh: *SurfaceMesh) !void {
-    const maybe_data = self.surface_meshes_data.getPtr(surface_mesh);
-    if (maybe_data) |data| {
-        try data.triangles_ibo.fillFrom(surface_mesh, .face, self.allocator);
-        try data.lines_ibo.fillFrom(surface_mesh, .edge, self.allocator);
-        try data.points_ibo.fillFrom(surface_mesh, .vertex, self.allocator);
+    const maybe_info = self.surface_meshes_info.getPtr(surface_mesh);
+    if (maybe_info) |info| {
+        try info.points_ibo.fillFrom(surface_mesh, .vertex, self.allocator);
+        try info.lines_ibo.fillFrom(surface_mesh, .edge, self.allocator);
+        try info.triangles_ibo.fillFrom(surface_mesh, .face, self.allocator);
     }
 }
 
@@ -113,52 +126,126 @@ pub fn dataUpdated(self: *Self, comptime T: type, data: *const Data(T)) !void {
     try vbo.value_ptr.*.fillFrom(T, data);
 }
 
-pub fn setSurfaceMeshVertexPosition(self: *Self, surface_mesh: *const SurfaceMesh, v_position: *Data(Vec3)) !void {
-    const maybe_data = self.surface_meshes_data.getPtr(surface_mesh);
-    if (maybe_data) |data| {
-        data.v_position = v_position;
-        try self.dataUpdated(Vec3, v_position);
+pub fn setSurfaceMeshStandardData(
+    self: *Self,
+    surface_mesh: *SurfaceMesh,
+    std_data: SurfaceMeshStandardData,
+    comptime T: type,
+    data: ?*Data(T),
+) !void {
+    const maybe_info = self.surface_meshes_info.getPtr(surface_mesh);
+    if (maybe_info) |info| {
+        switch (std_data) {
+            .vertex_position => info.vertex_position = data,
+            .vertex_normal => info.vertex_normal = data,
+            .vertex_color => info.vertex_color = data,
+        }
+        if (data) |d| {
+            try self.dataUpdated(T, d);
+        }
     }
-}
-pub fn setSurfaceMeshVertexNormal(self: *Self, surface_mesh: *const SurfaceMesh, v_normal: *Data(Vec3)) !void {
-    const maybe_data = self.surface_meshes_data.getPtr(surface_mesh);
-    if (maybe_data) |data| {
-        data.v_normal = v_normal;
-        try self.dataUpdated(Vec3, v_normal);
-    }
-}
-pub fn setSurfaceMeshVertexColor(self: *Self, surface_mesh: *const SurfaceMesh, v_color: *Data(Vec3)) !void {
-    const maybe_data = self.surface_meshes_data.getPtr(surface_mesh);
-    if (maybe_data) |data| {
-        data.v_color = v_color;
-        try self.dataUpdated(Vec3, v_color);
+
+    for (zgp.modules.items) |*module| {
+        module.surfaceMeshStandardDataChanged(surface_mesh, std_data);
     }
 }
 
-pub fn uiPanel(self: *const Self) void {
+pub fn uiPanel(self: *Self) void {
     const UiData = struct {
         var selected_point_cloud: ?*PointCloud = null;
         var selected_surface_mesh: ?*SurfaceMesh = null;
     };
 
-    _ = c.ImGui_Begin("Models Registry", null, c.ImGuiWindowFlags_NoSavedSettings);
+    _ = c.ImGui_Begin("Models Registry", null, 0);
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 
-    if (c.ImGui_BeginListBox("Surface Meshes", c.ImVec2{ .x = 0, .y = 200 })) {
+    c.ImGui_SeparatorText("Surface Meshes");
+    if (c.ImGui_BeginListBox("##Surface Meshes", c.ImVec2{ .x = 0, .y = 0 })) {
         var sm_it = self.surface_meshes.iterator();
         while (sm_it.next()) |entry| {
             const surface_mesh = entry.value_ptr.*;
             const name = entry.key_ptr.*;
-            var selected = if (UiData.selected_surface_mesh == surface_mesh) true else false;
-            if (c.ImGui_SelectableBoolPtr(name.ptr, &selected, 0)) {
+            const selected = if (UiData.selected_surface_mesh == surface_mesh) true else false;
+            if (c.ImGui_SelectableEx(name.ptr, selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 UiData.selected_surface_mesh = surface_mesh;
+            }
+            if (selected) {
+                c.ImGui_SetItemDefaultFocus();
             }
         }
         c.ImGui_EndListBox();
     }
 
+    if (UiData.selected_surface_mesh) |surface_mesh| {
+        const maybe_info = self.surface_meshes_info.getPtr(surface_mesh);
+        if (maybe_info) |info| {
+            c.ImGui_Text("Vertex Position");
+            if (c.ImGui_BeginCombo("##Vertex Position", if (info.vertex_position) |pos| pos.gen.name.ptr else "--none--", 0)) {
+                const none_selected = if (info.vertex_position) |_| false else true;
+                if (c.ImGui_SelectableEx("--none--", none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                    if (!none_selected) {
+                        self.setSurfaceMeshStandardData(surface_mesh, .vertex_position, Vec3, null) catch |err| {
+                            zgp.imgui_log.err("Error setting vertex position data: {}\n", .{err});
+                        };
+                    }
+                }
+                if (none_selected) {
+                    c.ImGui_SetItemDefaultFocus();
+                }
+                var vec3_data_it = surface_mesh.vertex_data.typedIterator(Vec3);
+                while (vec3_data_it.next()) |data| {
+                    const is_selected = if (info.vertex_position == data) true else false;
+                    if (c.ImGui_SelectableEx(data.gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                        if (!is_selected) {
+                            self.setSurfaceMeshStandardData(surface_mesh, .vertex_position, Vec3, data) catch |err| {
+                                zgp.imgui_log.err("Error setting vertex position data: {}", .{err});
+                            };
+                        }
+                    }
+                    if (is_selected) {
+                        c.ImGui_SetItemDefaultFocus();
+                    }
+                }
+                c.ImGui_EndCombo();
+            }
+            c.ImGui_Text("Vertex Color");
+            if (c.ImGui_BeginCombo("##Vertex Color", if (info.vertex_color) |pos| pos.gen.name.ptr else "--none--", 0)) {
+                const none_selected = if (info.vertex_color) |_| false else true;
+                if (c.ImGui_SelectableEx("--none--", none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                    if (!none_selected) {
+                        self.setSurfaceMeshStandardData(surface_mesh, .vertex_color, Vec3, null) catch |err| {
+                            zgp.imgui_log.err("Error setting vertex color data: {}\n", .{err});
+                        };
+                    }
+                }
+                if (none_selected) {
+                    c.ImGui_SetItemDefaultFocus();
+                }
+                var vec3_data_it = surface_mesh.vertex_data.typedIterator(Vec3);
+                while (vec3_data_it.next()) |data| {
+                    const is_selected = if (info.vertex_color == data) true else false;
+                    if (c.ImGui_SelectableEx(data.gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                        if (!is_selected) {
+                            self.setSurfaceMeshStandardData(surface_mesh, .vertex_color, Vec3, data) catch |err| {
+                                zgp.imgui_log.err("Error setting vertex color data: {}", .{err});
+                            };
+                        }
+                    }
+                    if (is_selected) {
+                        c.ImGui_SetItemDefaultFocus();
+                    }
+                }
+                c.ImGui_EndCombo();
+            }
+        }
+    } else {
+        c.ImGui_Text("No Surface Mesh selected");
+    }
+
     c.ImGui_Separator();
 
-    if (c.ImGui_BeginListBox("Point Clouds", c.ImVec2{ .x = 0, .y = 200 })) {
+    c.ImGui_SeparatorText("Point Clouds");
+    if (c.ImGui_BeginListBox("##Point Clouds", c.ImVec2{ .x = 0, .y = 0 })) {
         var pc_it = self.point_clouds.iterator();
         while (pc_it.next()) |entry| {
             const point_cloud = entry.value_ptr.*;
@@ -171,6 +258,7 @@ pub fn uiPanel(self: *const Self) void {
         c.ImGui_EndListBox();
     }
 
+    c.ImGui_PopItemWidth();
     c.ImGui_End();
 }
 
@@ -182,9 +270,14 @@ pub fn createPointCloud(self: *Self, name: []const u8) !*PointCloud {
     const pc = try self.allocator.create(PointCloud);
     pc.* = try PointCloud.init(self.allocator);
     try self.point_clouds.put(name, pc);
-    try self.point_clouds_data.put(pc, .{
+    try self.point_clouds_info.put(pc, .{
         .points_ibo = IBO.init(),
     });
+
+    for (zgp.modules.items) |*module| {
+        try module.pointCloudAdded(pc);
+    }
+
     return pc;
 }
 
@@ -196,11 +289,16 @@ pub fn createSurfaceMesh(self: *Self, name: []const u8) !*SurfaceMesh {
     const sm = try self.allocator.create(SurfaceMesh);
     sm.* = try SurfaceMesh.init(self.allocator);
     try self.surface_meshes.put(name, sm);
-    try self.surface_meshes_data.put(sm, .{
+    try self.surface_meshes_info.put(sm, .{
         .triangles_ibo = IBO.init(),
         .lines_ibo = IBO.init(),
         .points_ibo = IBO.init(),
     });
+
+    for (zgp.modules.items) |*module| {
+        try module.surfaceMeshAdded(sm);
+    }
+
     return sm;
 }
 

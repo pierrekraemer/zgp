@@ -9,18 +9,13 @@ const Data = data.Data;
 
 pub const HalfEdge = u32;
 
-pub const CellType = enum {
-    halfedge,
-    vertex,
-    edge,
-    face,
-};
-pub const Cell = union(CellType) {
+pub const Cell = union(enum) {
     halfedge: HalfEdge,
     vertex: HalfEdge,
     edge: HalfEdge,
     face: HalfEdge,
 };
+pub const CellType = std.meta.Tag(Cell);
 
 pub fn halfEdge(cell: Cell) HalfEdge {
     const he, _ = switch (cell) {

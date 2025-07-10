@@ -14,16 +14,13 @@ const c = @cImport({
 const zm = @import("zmath");
 
 const ModelsRegistry = @import("models/ModelsRegistry.zig");
-const SurfaceMesh = ModelsRegistry.SurfaceMesh;
-const PointCloud = ModelsRegistry.PointCloud;
 
-const Data = @import("utils/Data.zig").Data;
-
+const Module = @import("modules/Module.zig");
 // const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 
 const Vec3 = @import("numerical/types.zig").Vec3;
-const Vec4 = @import("numerical/types.zig").Vec4;
+const Vec2 = [2]f32;
 
 var allocator: std.mem.Allocator = undefined;
 var rng: std.Random.DefaultPrng = undefined;
@@ -31,22 +28,18 @@ var rng: std.Random.DefaultPrng = undefined;
 pub const std_options: std.Options = .{ .log_level = .debug };
 
 const sdl_log = std.log.scoped(.sdl);
-const gl_log = std.log.scoped(.gl);
-const imgui_log = std.log.scoped(.imgui);
-const zgp_log = std.log.scoped(.zgp);
+pub const gl_log = std.log.scoped(.gl);
+pub const imgui_log = std.log.scoped(.imgui);
+pub const zgp_log = std.log.scoped(.zgp);
 
 var fully_initialized = false;
 var uptime: std.time.Timer = undefined;
 
-var models_registry: ModelsRegistry = undefined;
+/// Global models registry accessible from all modules.
+pub var models_registry: ModelsRegistry = undefined;
+pub var modules: std.ArrayList(Module) = undefined;
 
-// var point_cloud_renderer: PointCloudRenderer = undefined;
 var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
-
-var sm: *SurfaceMesh = undefined;
-
-var sm_position: *Data(Vec3) = undefined;
-var sm_color: *Data(Vec3) = undefined;
 
 var window: *c.SDL_Window = undefined;
 var window_width: c_int = 800;
@@ -167,72 +160,127 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // Modules initialization
     // **********************
 
-    // point_cloud_renderer = try PointCloudRenderer.init(&models_registry, allocator);
+    modules = std.ArrayList(Module).init(allocator);
+    errdefer modules.deinit();
+
+    // point_cloud_renderer = try PointCloudRenderer.init(allocator);
     // errdefer point_cloud_renderer.deinit();
-    surface_mesh_renderer = try SurfaceMeshRenderer.init(&models_registry, allocator);
+    surface_mesh_renderer = try SurfaceMeshRenderer.init(allocator);
     errdefer surface_mesh_renderer.deinit();
+    try modules.append(surface_mesh_renderer.module());
 
     // Example surface mesh initialization
     // ***********************************
 
-    sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/david_25k.off");
-    errdefer sm.deinit();
+    {
+        const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/david_25k.off");
+        errdefer sm.deinit();
 
-    sm_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
-    // scale the mesh position in the range [0, 1]
-    var pos_it = sm_position.iterator();
-    var bb_min = zm.f32x4(std.math.floatMax(f32), std.math.floatMax(f32), std.math.floatMax(f32), 0.0);
-    var bb_max = zm.f32x4(std.math.floatMin(f32), std.math.floatMin(f32), std.math.floatMin(f32), 0.0);
-    while (pos_it.next()) |value| {
-        bb_min[0] = @min(bb_min[0], value[0]);
-        bb_min[1] = @min(bb_min[1], value[1]);
-        bb_min[2] = @min(bb_min[2], value[2]);
-        bb_max[0] = @max(bb_max[0], value[0]);
-        bb_max[1] = @max(bb_max[1], value[1]);
-        bb_max[2] = @max(bb_max[2], value[2]);
-    }
-    const range = bb_max - bb_min;
-    const max = @reduce(.Max, range);
-    const scale = range / zm.f32x4s(max);
-    pos_it.reset();
-    while (pos_it.next()) |value| {
-        value[0] = (value[0] - bb_min[0]) / range[0] * scale[0];
-        value[1] = (value[1] - bb_min[1]) / range[1] * scale[1];
-        value[2] = (value[2] - bb_min[2]) / range[2] * scale[2];
-    }
-    // center the mesh position on the origin
-    var centroid = zm.f32x4s(0.0);
-    pos_it.reset();
-    while (pos_it.next()) |value| {
-        centroid += zm.f32x4(value[0], value[1], value[2], 0.0);
-    }
-    centroid /= zm.f32x4s(@floatFromInt(sm_position.nbElements()));
-    pos_it.reset();
-    while (pos_it.next()) |value| {
-        value[0] = value[0] - centroid[0];
-        value[1] = value[1] - centroid[1];
-        value[2] = value[2] - centroid[2];
-    }
+        const sm_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
+        // scale the mesh position in the range [0, 1]
+        var pos_it = sm_position.iterator();
+        var bb_min = zm.f32x4(std.math.floatMax(f32), std.math.floatMax(f32), std.math.floatMax(f32), 0.0);
+        var bb_max = zm.f32x4(std.math.floatMin(f32), std.math.floatMin(f32), std.math.floatMin(f32), 0.0);
+        while (pos_it.next()) |value| {
+            bb_min[0] = @min(bb_min[0], value[0]);
+            bb_min[1] = @min(bb_min[1], value[1]);
+            bb_min[2] = @min(bb_min[2], value[2]);
+            bb_max[0] = @max(bb_max[0], value[0]);
+            bb_max[1] = @max(bb_max[1], value[1]);
+            bb_max[2] = @max(bb_max[2], value[2]);
+        }
+        const range = bb_max - bb_min;
+        const max = @reduce(.Max, range);
+        const scale = range / zm.f32x4s(max);
+        pos_it.reset();
+        while (pos_it.next()) |value| {
+            value[0] = (value[0] - bb_min[0]) / range[0] * scale[0];
+            value[1] = (value[1] - bb_min[1]) / range[1] * scale[1];
+            value[2] = (value[2] - bb_min[2]) / range[2] * scale[2];
+        }
+        // center the mesh position on the origin
+        var centroid = zm.f32x4s(0.0);
+        pos_it.reset();
+        while (pos_it.next()) |value| {
+            centroid += zm.f32x4(value[0], value[1], value[2], 0.0);
+        }
+        centroid /= zm.f32x4s(@floatFromInt(sm_position.nbElements()));
+        pos_it.reset();
+        while (pos_it.next()) |value| {
+            value[0] = value[0] - centroid[0];
+            value[1] = value[1] - centroid[1];
+            value[2] = value[2] - centroid[2];
+        }
 
-    sm_color = try sm.addData(.vertex, Vec3, "color");
-    var col_it = sm_color.iterator();
-    const r = rng.random();
-    while (col_it.next()) |value| {
-        value[0] = r.float(f32);
-        value[1] = r.float(f32);
-        value[2] = r.float(f32);
-    }
+        const sm_color = try sm.addData(.vertex, Vec3, "color");
+        var col_it = sm_color.iterator();
+        const r = rng.random();
+        while (col_it.next()) |value| {
+            value[0] = r.float(f32);
+            value[1] = r.float(f32);
+            value[2] = r.float(f32);
+        }
 
-    try models_registry.setSurfaceMeshVertexPosition(sm, sm_position);
-    try models_registry.setSurfaceMeshVertexColor(sm, sm_color);
-    try models_registry.connectivityUpdated(sm);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_position);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, Vec3, sm_color);
+        try models_registry.connectivityUpdated(sm);
+    }
 
     // try sm.dump(std.io.getStdErr().writer().any());
 
-    // Init shaders parameters
-    // ***********************
+    {
+        const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/elephant_isotropic_25k.off");
+        errdefer sm.deinit();
 
-    try surface_mesh_renderer.initParameters(sm);
+        const sm_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
+        // scale the mesh position in the range [0, 1]
+        var pos_it = sm_position.iterator();
+        var bb_min = zm.f32x4(std.math.floatMax(f32), std.math.floatMax(f32), std.math.floatMax(f32), 0.0);
+        var bb_max = zm.f32x4(std.math.floatMin(f32), std.math.floatMin(f32), std.math.floatMin(f32), 0.0);
+        while (pos_it.next()) |value| {
+            bb_min[0] = @min(bb_min[0], value[0]);
+            bb_min[1] = @min(bb_min[1], value[1]);
+            bb_min[2] = @min(bb_min[2], value[2]);
+            bb_max[0] = @max(bb_max[0], value[0]);
+            bb_max[1] = @max(bb_max[1], value[1]);
+            bb_max[2] = @max(bb_max[2], value[2]);
+        }
+        const range = bb_max - bb_min;
+        const max = @reduce(.Max, range);
+        const scale = range / zm.f32x4s(max);
+        pos_it.reset();
+        while (pos_it.next()) |value| {
+            value[0] = (value[0] - bb_min[0]) / range[0] * scale[0];
+            value[1] = (value[1] - bb_min[1]) / range[1] * scale[1];
+            value[2] = (value[2] - bb_min[2]) / range[2] * scale[2];
+        }
+        // center the mesh position on the origin
+        var centroid = zm.f32x4s(0.0);
+        pos_it.reset();
+        while (pos_it.next()) |value| {
+            centroid += zm.f32x4(value[0], value[1], value[2], 0.0);
+        }
+        centroid /= zm.f32x4s(@floatFromInt(sm_position.nbElements()));
+        pos_it.reset();
+        while (pos_it.next()) |value| {
+            value[0] = value[0] - centroid[0];
+            value[1] = value[1] - centroid[1];
+            value[2] = value[2] - centroid[2];
+        }
+
+        const sm_color = try sm.addData(.vertex, Vec3, "color");
+        var col_it = sm_color.iterator();
+        const r = rng.random();
+        while (col_it.next()) |value| {
+            value[0] = r.float(f32);
+            value[1] = r.float(f32);
+            value[2] = r.float(f32);
+        }
+
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_position);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, Vec3, sm_color);
+        try models_registry.connectivityUpdated(sm);
+    }
 
     // Init end
     // ********
@@ -251,9 +299,6 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     {
         const UiData = struct {
             var show_demo_window: bool = false;
-            // var draw_vertices: bool = true;
-            // var draw_edges: bool = true;
-            // var draw_faces: bool = true;
         };
 
         gl.ClearColor(0.2, 0.2, 0.2, 1);
@@ -278,18 +323,20 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             CameraProjectionType.orthographic => zm.orthographicRhGl(4.0, 4.0, 0.01, 50.0),
         };
 
-        // point_cloud_renderer.draw(view_matrix, projection_matrix);
-        surface_mesh_renderer.draw(view_matrix, projection_matrix);
+        for (modules.items) |*module| {
+            module.draw(view_matrix, projection_matrix);
+        }
 
         c.cImGui_ImplOpenGL3_NewFrame();
         c.cImGui_ImplSDL3_NewFrame();
         c.ImGui_NewFrame();
 
         models_registry.uiPanel();
-        // point_cloud_renderer.uiPanel();
-        surface_mesh_renderer.uiPanel();
+        for (modules.items) |*module| {
+            module.uiPanel();
+        }
 
-        _ = c.ImGui_Begin("Rendering", null, c.ImGuiWindowFlags_NoSavedSettings);
+        _ = c.ImGui_Begin("Rendering", null, 0);
         c.ImGui_Text("Camera mode");
         if (c.ImGui_RadioButton("Perspective", camera_mode == CameraProjectionType.perspective)) {
             camera_mode = CameraProjectionType.perspective;
@@ -392,6 +439,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         c.ImGui_DestroyContext(null);
 
         models_registry.deinit();
+        modules.deinit();
         // point_cloud_renderer.deinit();
         surface_mesh_renderer.deinit();
 

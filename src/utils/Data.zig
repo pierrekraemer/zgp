@@ -254,6 +254,45 @@ pub const DataContainer = struct {
         }
     }
 
+    const DataGenIterator = struct {
+        iterator: std.StringHashMap(*DataGen).Iterator,
+        pub fn next(it: *@This()) ?*DataGen {
+            if (it.iterator.next()) |entry| {
+                return entry.value_ptr.*;
+            }
+            return null;
+        }
+    };
+
+    pub fn iterator(self: *const DataContainer) DataGenIterator {
+        return .{
+            .iterator = self.datas.iterator(),
+        };
+    }
+
+    fn DataIterator(comptime T: type) type {
+        return struct {
+            iterator: std.StringHashMap(*DataGen).Iterator,
+            pub fn next(it: *@This()) ?*Data(T) {
+                while (it.iterator.next()) |entry| {
+                    const data_gen = entry.value_ptr.*;
+                    if (data_gen.type_id == comptime typeId(T)) {
+                        // const data: *Data(T) = @alignCast(@fieldParentPtr("gen", data_gen));
+                        const data: *Data(T) = @alignCast(@ptrCast(data_gen.ptr));
+                        return data;
+                    }
+                }
+                return null;
+            }
+        };
+    }
+
+    pub fn typedIterator(self: *const DataContainer, comptime T: type) DataIterator(T) {
+        return .{
+            .iterator = self.datas.iterator(),
+        };
+    }
+
     pub fn getMarker(self: *DataContainer) !*Data(bool) {
         const index = self.available_markers_indices.pop();
         if (index) |i| {
