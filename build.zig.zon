@@ -13,8 +13,8 @@
             .hash = "sdl-0.2.4+3.2.16-7uIn9DPhfgH29yAIJqHLc69hNb4IW0q-AngtKCFoT92b",
         },
         .cimgui_zig = .{
-            .url = "git+https://github.com/tiawl/cimgui.zig#45424ed3361b16cf5db44e3f1f95bff6b0bd1594",
-            .hash = "cimgui_zig-1.0.0-2XubkmNIVQBFdnwHWAfXForjnzGnk3mjXHfqmfVeaeT6",
+            .url = "git+https://github.com/tiawl/cimgui.zig#489d6a57a96b6230674331dd0e3755e404b3cbc2",
+            .hash = "cimgui_zig-1.0.0-2XubkrhrVQBCa2AtRaTLnVQnF58Su_l4uBEpCttI1FtN",
         },
         .zmath = .{
             .url = "git+https://github.com/zig-gamedev/zmath.git#5128dc8a8068aab398f844c1f5fddc8132310146",

@@ -12,12 +12,12 @@ program: Shader,
 
 model_view_matrix_uniform: c_int = undefined,
 projection_matrix_uniform: c_int = undefined,
-ambiant_color_uniform: c_int = undefined,
-light_position_uniform: c_int = undefined,
-point_size_uniform: c_int = undefined,
+vector_scale_uniform: c_int = undefined,
+vector_color_uniform: c_int = undefined,
+// vector_width_uniform: c_int = undefined,
 
 position_attrib: VAO.VertexAttribInfo = undefined,
-color_attrib: VAO.VertexAttribInfo = undefined,
+vector_attrib: VAO.VertexAttribInfo = undefined,
 
 pub fn init() !Self {
     var s: Self = .{
@@ -35,9 +35,9 @@ pub fn init() !Self {
 
     s.model_view_matrix_uniform = gl.GetUniformLocation(s.program.index, "u_model_view_matrix");
     s.projection_matrix_uniform = gl.GetUniformLocation(s.program.index, "u_projection_matrix");
-    s.ambiant_color_uniform = gl.GetUniformLocation(s.program.index, "u_ambiant_color");
-    s.light_position_uniform = gl.GetUniformLocation(s.program.index, "u_light_position");
-    s.point_size_uniform = gl.GetUniformLocation(s.program.index, "u_point_size");
+    s.vector_scale_uniform = gl.GetUniformLocation(s.program.index, "u_vector_scale");
+    s.vector_color_uniform = gl.GetUniformLocation(s.program.index, "u_vector_color");
+    // s.vector_width_uniform = gl.GetUniformLocation(s.program.index, "u_vector_width");
 
     s.position_attrib = .{
         .index = @intCast(gl.GetAttribLocation(s.program.index, "a_position")),
@@ -45,8 +45,8 @@ pub fn init() !Self {
         .type = gl.FLOAT,
         .normalized = false,
     };
-    s.color_attrib = .{
-        .index = @intCast(gl.GetAttribLocation(s.program.index, "a_color")),
+    s.vector_attrib = .{
+        .index = @intCast(gl.GetAttribLocation(s.program.index, "a_vector")),
         .size = 3,
         .type = gl.FLOAT,
         .normalized = false,
@@ -69,13 +69,13 @@ pub const Parameters = struct {
 
     model_view_matrix: [16]f32 = undefined,
     projection_matrix: [16]f32 = undefined,
-    ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
-    light_position: [3]f32 = .{ -100, 0, 100 },
-    point_size: f32 = 0.001,
+    vector_scale: f32 = 0.005,
+    vector_color: [4]f32 = .{ 0, 0, 0, 0 },
+    vector_width: f32 = 1.0,
 
     const VertexAttrib = enum {
         position,
-        color,
+        vector,
     };
 
     pub fn init(shader: *const Self) Parameters {
@@ -92,7 +92,7 @@ pub const Parameters = struct {
     pub fn setVertexAttribArray(self: *Parameters, attrib: VertexAttrib, vbo: VBO, stride: isize, pointer: usize) void {
         const attrib_info = switch (attrib) {
             .position => self.shader.position_attrib,
-            .color => self.shader.color_attrib,
+            .vector => self.shader.vector_attrib,
         };
         self.vao.setVertexAttribArray(attrib_info, vbo, stride, pointer);
     }
@@ -101,9 +101,12 @@ pub const Parameters = struct {
         gl.UseProgram(self.shader.program.index);
         gl.UniformMatrix4fv(self.shader.model_view_matrix_uniform, 1, gl.FALSE, &self.model_view_matrix);
         gl.UniformMatrix4fv(self.shader.projection_matrix_uniform, 1, gl.FALSE, &self.projection_matrix);
-        gl.Uniform4fv(self.shader.ambiant_color_uniform, 1, &self.ambiant_color);
-        gl.Uniform3fv(self.shader.light_position_uniform, 1, &self.light_position);
-        gl.Uniform1f(self.shader.point_size_uniform, self.point_size);
+        gl.Uniform1f(self.shader.vector_scale_uniform, self.vector_scale);
+        gl.Uniform4fv(self.shader.vector_color_uniform, 1, &self.vector_color);
+        // var viewport: [4]i32 = .{ 0, 0, 0, 0 };
+        // gl.GetIntegerv(gl.VIEWPORT, &viewport);
+        // gl.Uniform2f(self.shader.vector_width_uniform, self.vector_width / @as(f32, @floatFromInt(viewport[2])), self.vector_width / @as(f32, @floatFromInt(viewport[3])));
+        gl.LineWidth(self.vector_width);
     }
 
     pub fn drawElements(self: *Parameters, ibo: IBO) void {

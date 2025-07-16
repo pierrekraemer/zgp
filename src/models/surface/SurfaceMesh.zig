@@ -279,9 +279,9 @@ pub fn setHalfEdgeIndex(self: *Self, he: HalfEdge, cell_type: CellType, index: u
     };
     var data_container = switch (cell_type) {
         .halfedge => unreachable,
-        .vertex => self.he_vertex_data,
-        .edge => self.he_edge_data,
-        .face => self.he_face_data,
+        .vertex => &self.vertex_data,
+        .edge => &self.edge_data,
+        .face => &self.face_data,
     };
     const old_index: u32 = index_data.value(he).*;
     if (index != invalid_index) {

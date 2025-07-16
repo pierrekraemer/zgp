@@ -4,100 +4,136 @@ const gl = @import("gl");
 
 const c = @cImport({
     @cInclude("dcimgui.h");
-    @cInclude("backends/dcimgui_impl_sdl3.h");
-    @cInclude("backends/dcimgui_impl_opengl3.h");
 });
+const imgui_utils = @import("../utils/imgui.zig");
+
+const Self = @This();
+const zgp = @import("../main.zig");
+
+const Module = @import("Module.zig");
 
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const PointCloud = ModelsRegistry.PointCloud;
+const PointCloudStandardData = ModelsRegistry.PointCloudStandardData;
+
+const Data = @import("../utils/Data.zig").Data;
+const Vec3 = @import("../numerical/types.zig").Vec3;
 
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
+const VBO = @import("../rendering/VBO.zig");
 
-const Self = @This();
-
-const PointCloudRenderParameters = struct {
+const PointCloudRendererParameters = struct {
     point_sphere_shader_parameters: PointSphere.Parameters,
     draw_points: bool = true,
-};
 
-models_registry: *ModelsRegistry,
+    pub fn init(point_cloud_renderer: *const Self) PointCloudRendererParameters {
+        return .{
+            .point_sphere_shader_parameters = point_cloud_renderer.point_sphere_shader.createParameters(),
+        };
+    }
+
+    pub fn deinit(self: *PointCloudRendererParameters) void {
+        self.point_sphere_shader_parameters.deinit();
+    }
+};
 
 point_sphere_shader: PointSphere,
 
-parameters: std.AutoHashMap(*PointCloud, PointCloudRenderParameters),
+parameters: std.AutoHashMap(*const PointCloud, PointCloudRendererParameters),
 
-pub fn init(models_registry: *ModelsRegistry, allocator: std.mem.Allocator) !Self {
-    var s: Self = .{
-        .models_registry = models_registry,
+pub fn init(allocator: std.mem.Allocator) !Self {
+    return .{
         .point_sphere_shader = try PointSphere.init(),
-        .parameters = std.AutoHashMap(*PointCloud, PointCloudRenderParameters).init(allocator),
+        .parameters = std.AutoHashMap(*const PointCloud, PointCloudRendererParameters).init(allocator),
     };
-
-    var pc_it = models_registry.point_clouds.iterator();
-    while (pc_it.next()) |entry| {
-        const point_cloud = entry.value_ptr.*;
-        try s.parameters.put(point_cloud, .{
-            .point_sphere_shader_parameters = s.point_sphere_shader.createParameters(),
-        });
-    }
-
-    return s;
 }
 
 pub fn deinit(self: *Self) void {
     self.point_sphere_shader.deinit();
+    var p_it = self.parameters.iterator();
+    while (p_it.next()) |entry| {
+        var p = entry.value_ptr.*;
+        p.deinit();
+    }
     self.parameters.deinit();
 }
 
-pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
-    var pc_it = self.models_registry.point_clouds.iterator();
-    while (pc_it.next()) |entry| {
-        const point_cloud = entry.value_ptr.*;
-        const parameters = self.parameters.get(point_cloud);
-        if (parameters) |p| {
-            if (p.draw_points) {
-                zm.storeMat(&p.point_sphere_shader_parameters.model_view_matrix, view_matrix);
-                zm.storeMat(&p.point_sphere_shader_parameters.projection_matrix, projection_matrix);
-                p.point_sphere_shader_parameters.ambiant_color = .{ 0.1, 0.1, 0.1, 1 };
-                p.point_sphere_shader_parameters.light_position = .{ -100, 0, 100 };
-                p.point_sphere_shader_parameters.point_size = 0.001;
+pub fn module(self: *Self) Module {
+    return Module.init(self);
+}
 
-                p.point_sphere_shader_parameters.useShader();
-                defer gl.UseProgram(0);
-                p.point_sphere_shader_parameters.drawElements(gl.POINTS, sm_points_ibo);
-            }
+pub fn pointCloudAdded(self: *Self, point_cloud: *PointCloud) !void {
+    try self.parameters.put(point_cloud, PointCloudRendererParameters.init(self));
+}
+
+pub fn pointCloudStandardDataChanged(
+    self: *Self,
+    point_cloud: *PointCloud,
+    data: PointCloudStandardData,
+) void {
+    const p = self.parameters.getPtr(point_cloud) orelse return;
+    const point_cloud_info = zgp.models_registry.point_clouds_info.getPtr(point_cloud) orelse return;
+    switch (data) {
+        .vertex_position => {
+            const vertex_position = point_cloud_info.vertex_position orelse return;
+            const position_vbo = zgp.models_registry.vbo_registry.get(&vertex_position.gen).?;
+            p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+        },
+        .vertex_color => {
+            const vertex_color = point_cloud_info.vertex_color orelse return;
+            const color_vbo = zgp.models_registry.vbo_registry.get(&vertex_color.gen).?;
+            p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
+        },
+        else => return, // Ignore other data changes
+    }
+}
+
+pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
+    var pc_it = zgp.models_registry.point_clouds.iterator();
+    while (pc_it.next()) |entry| {
+        const pc = entry.value_ptr.*;
+        const info = zgp.models_registry.point_clouds_info.getPtr(pc) orelse continue;
+        const p = self.parameters.getPtr(pc) orelse continue;
+        if (p.draw_points) {
+            zm.storeMat(&p.point_sphere_shader_parameters.model_view_matrix, view_matrix);
+            zm.storeMat(&p.point_sphere_shader_parameters.projection_matrix, projection_matrix);
+            p.point_sphere_shader_parameters.useShader();
+            defer gl.UseProgram(0);
+            p.point_sphere_shader_parameters.drawElements(info.points_ibo);
         }
     }
 }
 
 pub fn uiPanel(self: *Self) void {
-    const ui_data = struct {
+    const UiData = struct {
         var selected_point_cloud: ?*PointCloud = null;
     };
 
-    _ = c.ImGui_Begin("Point Cloud Renderer", null, c.ImGuiWindowFlags_NoSavedSettings);
-
-    if (c.ImGui_BeginListBox("Point Cloud", c.ImVec2{ .x = 0, .y = 200 })) {
-        var pc_it = self.models_registry.point_clouds.iterator();
-        while (pc_it.next()) |entry| {
-            const point_cloud = entry.value_ptr.*;
-            const name = entry.key_ptr.*;
-            var selected = if (ui_data.selected_point_cloud == point_cloud) true else false;
-            if (c.ImGui_SelectableBoolPtr(name.ptr, &selected, 0)) {
-                ui_data.selected_point_cloud = point_cloud;
-            }
+    const UiCB = struct {
+        fn onPointCloudSelected(pc: ?*PointCloud) void {
+            UiData.selected_point_cloud = pc;
         }
-        c.ImGui_EndListBox();
-    }
-    if (ui_data.selected_point_cloud) |point_cloud| {
-        const nb_points = point_cloud.nbPoints();
-        c.ImGui_Text("Number of points: %d", nb_points);
-        if (c.ImGui_Button("Clear")) {
-            point_cloud.clearRetainingCapacity();
+    };
+
+    _ = c.ImGui_Begin("Point Cloud Renderer", null, c.ImGuiWindowFlags_NoSavedSettings);
+    defer c.ImGui_End();
+
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
+
+    c.ImGui_SeparatorText("Point Clouds");
+    imgui_utils.pointCloudListBox(UiData.selected_point_cloud, &UiCB.onPointCloudSelected);
+
+    if (UiData.selected_point_cloud) |pc| {
+        const surface_mesh_renderer_parameters = self.parameters.getPtr(pc);
+        if (surface_mesh_renderer_parameters) |p| {
+            _ = c.ImGui_Checkbox("draw points", &p.draw_points);
+            if (p.draw_points) {
+                _ = c.ImGui_SliderFloatEx("point size", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic);
+            }
+        } else {
+            c.ImGui_Text("No parameters found for the selected Surface Mesh");
         }
     } else {
         c.ImGui_Text("No Point Cloud selected");
     }
-
-    c.ImGui_End();
 }

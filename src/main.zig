@@ -16,11 +16,13 @@ const zm = @import("zmath");
 const ModelsRegistry = @import("models/ModelsRegistry.zig");
 
 const Module = @import("modules/Module.zig");
-// const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
+const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
+const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
+
+const normal = @import("models/surface/normal.zig");
 
 const Vec3 = @import("numerical/types.zig").Vec3;
-const Vec2 = [2]f32;
 
 var allocator: std.mem.Allocator = undefined;
 var rng: std.Random.DefaultPrng = undefined;
@@ -39,7 +41,9 @@ var uptime: std.time.Timer = undefined;
 pub var models_registry: ModelsRegistry = undefined;
 pub var modules: std.ArrayList(Module) = undefined;
 
+var point_cloud_renderer: PointCloudRenderer = undefined;
 var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
+var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
 
 var window: *c.SDL_Window = undefined;
 var window_width: c_int = 800;
@@ -163,11 +167,15 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     modules = std.ArrayList(Module).init(allocator);
     errdefer modules.deinit();
 
-    // point_cloud_renderer = try PointCloudRenderer.init(allocator);
-    // errdefer point_cloud_renderer.deinit();
+    point_cloud_renderer = try PointCloudRenderer.init(allocator);
+    errdefer point_cloud_renderer.deinit();
+    try modules.append(point_cloud_renderer.module());
     surface_mesh_renderer = try SurfaceMeshRenderer.init(allocator);
     errdefer surface_mesh_renderer.deinit();
     try modules.append(surface_mesh_renderer.module());
+    vector_per_vertex_renderer = try VectorPerVertexRenderer.init(allocator);
+    errdefer vector_per_vertex_renderer.deinit();
+    try modules.append(vector_per_vertex_renderer.module());
 
     // Example surface mesh initialization
     // ***********************************
@@ -176,53 +184,60 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/david_25k.off");
         errdefer sm.deinit();
 
-        const sm_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
+        const sm_vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
         // scale the mesh position in the range [0, 1]
-        var pos_it = sm_position.iterator();
-        var bb_min = zm.f32x4(std.math.floatMax(f32), std.math.floatMax(f32), std.math.floatMax(f32), 0.0);
-        var bb_max = zm.f32x4(std.math.floatMin(f32), std.math.floatMin(f32), std.math.floatMin(f32), 0.0);
-        while (pos_it.next()) |value| {
-            bb_min[0] = @min(bb_min[0], value[0]);
-            bb_min[1] = @min(bb_min[1], value[1]);
-            bb_min[2] = @min(bb_min[2], value[2]);
-            bb_max[0] = @max(bb_max[0], value[0]);
-            bb_max[1] = @max(bb_max[1], value[1]);
-            bb_max[2] = @max(bb_max[2], value[2]);
+        var pos_it = sm_vertex_position.iterator();
+        var bb_min = zm.f32x4s(std.math.floatMax(f32));
+        var bb_max = zm.f32x4s(std.math.floatMin(f32));
+        while (pos_it.next()) |pos| {
+            bb_min[0] = @min(bb_min[0], pos[0]);
+            bb_min[1] = @min(bb_min[1], pos[1]);
+            bb_min[2] = @min(bb_min[2], pos[2]);
+            bb_max[0] = @max(bb_max[0], pos[0]);
+            bb_max[1] = @max(bb_max[1], pos[1]);
+            bb_max[2] = @max(bb_max[2], pos[2]);
         }
         const range = bb_max - bb_min;
         const max = @reduce(.Max, range);
         const scale = range / zm.f32x4s(max);
         pos_it.reset();
-        while (pos_it.next()) |value| {
-            value[0] = (value[0] - bb_min[0]) / range[0] * scale[0];
-            value[1] = (value[1] - bb_min[1]) / range[1] * scale[1];
-            value[2] = (value[2] - bb_min[2]) / range[2] * scale[2];
+        while (pos_it.next()) |pos| {
+            pos[0] = (pos[0] - bb_min[0]) / range[0] * scale[0];
+            pos[1] = (pos[1] - bb_min[1]) / range[1] * scale[1];
+            pos[2] = (pos[2] - bb_min[2]) / range[2] * scale[2];
         }
         // center the mesh position on the origin
         var centroid = zm.f32x4s(0.0);
         pos_it.reset();
-        while (pos_it.next()) |value| {
-            centroid += zm.f32x4(value[0], value[1], value[2], 0.0);
+        while (pos_it.next()) |pos| {
+            centroid += zm.f32x4(pos[0], pos[1], pos[2], 0.0);
         }
-        centroid /= zm.f32x4s(@floatFromInt(sm_position.nbElements()));
+        centroid /= zm.f32x4s(@floatFromInt(sm_vertex_position.nbElements()));
         pos_it.reset();
-        while (pos_it.next()) |value| {
-            value[0] = value[0] - centroid[0];
-            value[1] = value[1] - centroid[1];
-            value[2] = value[2] - centroid[2];
+        while (pos_it.next()) |pos| {
+            pos[0] = pos[0] - centroid[0];
+            pos[1] = pos[1] - centroid[1];
+            pos[2] = pos[2] - centroid[2];
         }
 
-        const sm_color = try sm.addData(.vertex, Vec3, "color");
-        var col_it = sm_color.iterator();
+        const sm_vertex_color = try sm.addData(.vertex, Vec3, "color");
+        var col_it = sm_vertex_color.iterator();
         const r = rng.random();
-        while (col_it.next()) |value| {
-            value[0] = r.float(f32);
-            value[1] = r.float(f32);
-            value[2] = r.float(f32);
+        while (col_it.next()) |col| {
+            col[0] = r.float(f32);
+            col[1] = r.float(f32);
+            col[2] = r.float(f32);
         }
 
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_position);
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, Vec3, sm_color);
+        const sm_face_normal = try sm.addData(.face, Vec3, "normal");
+        try normal.computeFaceNormals(sm, sm_vertex_position, sm_face_normal);
+
+        const sm_vertex_normal = try sm.addData(.vertex, Vec3, "normal");
+        try normal.computeVertexNormals(sm, sm_vertex_position, sm_vertex_normal);
+
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_vertex_position);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, Vec3, sm_vertex_normal);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, Vec3, sm_vertex_color);
         try models_registry.connectivityUpdated(sm);
     }
 
@@ -232,53 +247,60 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/elephant_isotropic_25k.off");
         errdefer sm.deinit();
 
-        const sm_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
+        const sm_vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
         // scale the mesh position in the range [0, 1]
-        var pos_it = sm_position.iterator();
-        var bb_min = zm.f32x4(std.math.floatMax(f32), std.math.floatMax(f32), std.math.floatMax(f32), 0.0);
-        var bb_max = zm.f32x4(std.math.floatMin(f32), std.math.floatMin(f32), std.math.floatMin(f32), 0.0);
-        while (pos_it.next()) |value| {
-            bb_min[0] = @min(bb_min[0], value[0]);
-            bb_min[1] = @min(bb_min[1], value[1]);
-            bb_min[2] = @min(bb_min[2], value[2]);
-            bb_max[0] = @max(bb_max[0], value[0]);
-            bb_max[1] = @max(bb_max[1], value[1]);
-            bb_max[2] = @max(bb_max[2], value[2]);
+        var pos_it = sm_vertex_position.iterator();
+        var bb_min = zm.f32x4s(std.math.floatMax(f32));
+        var bb_max = zm.f32x4s(std.math.floatMin(f32));
+        while (pos_it.next()) |pos| {
+            bb_min[0] = @min(bb_min[0], pos[0]);
+            bb_min[1] = @min(bb_min[1], pos[1]);
+            bb_min[2] = @min(bb_min[2], pos[2]);
+            bb_max[0] = @max(bb_max[0], pos[0]);
+            bb_max[1] = @max(bb_max[1], pos[1]);
+            bb_max[2] = @max(bb_max[2], pos[2]);
         }
         const range = bb_max - bb_min;
         const max = @reduce(.Max, range);
         const scale = range / zm.f32x4s(max);
         pos_it.reset();
-        while (pos_it.next()) |value| {
-            value[0] = (value[0] - bb_min[0]) / range[0] * scale[0];
-            value[1] = (value[1] - bb_min[1]) / range[1] * scale[1];
-            value[2] = (value[2] - bb_min[2]) / range[2] * scale[2];
+        while (pos_it.next()) |pos| {
+            pos[0] = (pos[0] - bb_min[0]) / range[0] * scale[0];
+            pos[1] = (pos[1] - bb_min[1]) / range[1] * scale[1];
+            pos[2] = (pos[2] - bb_min[2]) / range[2] * scale[2];
         }
         // center the mesh position on the origin
         var centroid = zm.f32x4s(0.0);
         pos_it.reset();
-        while (pos_it.next()) |value| {
-            centroid += zm.f32x4(value[0], value[1], value[2], 0.0);
+        while (pos_it.next()) |pos| {
+            centroid += zm.f32x4(pos[0], pos[1], pos[2], 0.0);
         }
-        centroid /= zm.f32x4s(@floatFromInt(sm_position.nbElements()));
+        centroid /= zm.f32x4s(@floatFromInt(sm_vertex_position.nbElements()));
         pos_it.reset();
-        while (pos_it.next()) |value| {
-            value[0] = value[0] - centroid[0];
-            value[1] = value[1] - centroid[1];
-            value[2] = value[2] - centroid[2];
+        while (pos_it.next()) |pos| {
+            pos[0] = pos[0] - centroid[0];
+            pos[1] = pos[1] - centroid[1];
+            pos[2] = pos[2] - centroid[2];
         }
 
-        const sm_color = try sm.addData(.vertex, Vec3, "color");
-        var col_it = sm_color.iterator();
+        const sm_vertex_color = try sm.addData(.vertex, Vec3, "color");
+        var col_it = sm_vertex_color.iterator();
         const r = rng.random();
-        while (col_it.next()) |value| {
-            value[0] = r.float(f32);
-            value[1] = r.float(f32);
-            value[2] = r.float(f32);
+        while (col_it.next()) |col| {
+            col[0] = r.float(f32);
+            col[1] = r.float(f32);
+            col[2] = r.float(f32);
         }
 
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_position);
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, Vec3, sm_color);
+        const sm_face_normal = try sm.addData(.face, Vec3, "normal");
+        try normal.computeFaceNormals(sm, sm_vertex_position, sm_face_normal);
+
+        const sm_vertex_normal = try sm.addData(.vertex, Vec3, "normal");
+        try normal.computeVertexNormals(sm, sm_vertex_position, sm_vertex_normal);
+
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_vertex_position);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, Vec3, sm_vertex_normal);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, Vec3, sm_vertex_color);
         try models_registry.connectivityUpdated(sm);
     }
 
@@ -299,9 +321,10 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     {
         const UiData = struct {
             var show_demo_window: bool = false;
+            var background_color: [4]f32 = .{ 0.45, 0.45, 0.45, 1 };
         };
 
-        gl.ClearColor(0.2, 0.2, 0.2, 1);
+        gl.ClearColor(UiData.background_color[0], UiData.background_color[1], UiData.background_color[2], UiData.background_color[3]);
         gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
         gl.Enable(gl.CULL_FACE);
@@ -331,24 +354,34 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         c.cImGui_ImplSDL3_NewFrame();
         c.ImGui_NewFrame();
 
+        if (c.ImGui_BeginMainMenuBar()) {
+            defer c.ImGui_EndMainMenuBar();
+            if (c.ImGui_BeginMenu("File")) {
+                defer c.ImGui_EndMenu();
+                _ = c.ImGui_Checkbox("show demo", &UiData.show_demo_window);
+                c.ImGui_Separator();
+                if (c.ImGui_MenuItem("Quit")) {
+                    return c.SDL_APP_SUCCESS;
+                }
+            }
+            if (c.ImGui_BeginMenu("Rendering")) {
+                defer c.ImGui_EndMenu();
+                _ = c.ImGui_ColorEdit3("Background color", &UiData.background_color, c.ImGuiColorEditFlags_NoInputs);
+                c.ImGui_Separator();
+                if (c.ImGui_MenuItemEx("Perspective", null, camera_mode == CameraProjectionType.perspective, true)) {
+                    camera_mode = CameraProjectionType.perspective;
+                }
+                if (c.ImGui_MenuItemEx("Orthographic", null, camera_mode == CameraProjectionType.orthographic, true)) {
+                    camera_mode = CameraProjectionType.orthographic;
+                }
+            }
+        }
+
         models_registry.uiPanel();
         for (modules.items) |*module| {
             module.uiPanel();
         }
 
-        _ = c.ImGui_Begin("Rendering", null, 0);
-        c.ImGui_Text("Camera mode");
-        if (c.ImGui_RadioButton("Perspective", camera_mode == CameraProjectionType.perspective)) {
-            camera_mode = CameraProjectionType.perspective;
-        }
-        c.ImGui_SameLine();
-        if (c.ImGui_RadioButton("Orthographic", camera_mode == CameraProjectionType.orthographic)) {
-            camera_mode = CameraProjectionType.orthographic;
-        }
-
-        c.ImGui_Separator();
-        _ = c.ImGui_Checkbox("show demo", &UiData.show_demo_window);
-        c.ImGui_End();
         if (UiData.show_demo_window) {
             c.ImGui_ShowDemoWindow(null);
         }
@@ -440,8 +473,9 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
 
         models_registry.deinit();
         modules.deinit();
-        // point_cloud_renderer.deinit();
+        point_cloud_renderer.deinit();
         surface_mesh_renderer.deinit();
+        vector_per_vertex_renderer.deinit();
 
         gl.makeProcTableCurrent(null);
         errify(c.SDL_GL_MakeCurrent(window, null)) catch {};

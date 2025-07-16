@@ -23,7 +23,10 @@ pub fn deinit(self: *Self) void {
 pub fn fillFrom(self: *Self, comptime T: type, data: *const Data(T)) !void {
     gl.BindBuffer(gl.ARRAY_BUFFER, self.index);
     defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
-    const vec_size = @typeInfo(T).array.len;
+    const vec_size = switch (@typeInfo(T)) {
+        .array => @typeInfo(T).array.len,
+        else => @compileError("VBO.fillFrom only supports array types"),
+    };
     const buf_size = data.rawSize();
     gl.BufferData(gl.ARRAY_BUFFER, @intCast(buf_size), null, gl.STATIC_DRAW);
     const maybe_buffer = gl.MapBuffer(gl.ARRAY_BUFFER, gl.WRITE_ONLY);

@@ -296,7 +296,7 @@ pub const DataContainer = struct {
     pub fn getMarker(self: *DataContainer) !*Data(bool) {
         const index = self.available_markers_indices.pop();
         if (index) |i| {
-            return self.markers.items[self.available_markers_indices.swapRemove(i)];
+            return self.markers.items[i];
         }
         // same as for addData, but the name is not used (the marker is not stored in the hashmap)
         var marker_arena = std.heap.ArenaAllocator.init(self.allocator);

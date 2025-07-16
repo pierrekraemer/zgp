@@ -70,8 +70,8 @@ pub const Parameters = struct {
 
     model_view_matrix: [16]f32 = undefined,
     projection_matrix: [16]f32 = undefined,
-    ambiant_color: [4]f32 = .{ 0, 0, 0, 0 },
-    light_position: [3]f32 = .{ 0, 0, 0 },
+    ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
+    light_position: [3]f32 = .{ 10, 0, 100 },
 
     pub fn init(shader: *const Self) Parameters {
         return .{
@@ -100,11 +100,11 @@ pub const Parameters = struct {
         gl.Uniform3fv(self.shader.light_position_uniform, 1, &self.light_position);
     }
 
-    pub fn drawElements(self: *Parameters, primitive: c_uint, ibo: IBO) void {
+    pub fn drawElements(self: *Parameters, ibo: IBO) void {
         gl.BindVertexArray(self.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);
         defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
-        gl.DrawElements(primitive, @intCast(ibo.nb_indices), gl.UNSIGNED_INT, 0);
+        gl.DrawElements(gl.TRIANGLES, @intCast(ibo.nb_indices), gl.UNSIGNED_INT, 0);
     }
 };
