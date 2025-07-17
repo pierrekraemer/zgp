@@ -12,11 +12,7 @@ pub fn computeFaceNormal(
 ) !Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
     std.debug.assert(SurfaceMesh.cellType(face) == .face);
-    var he_it: SurfaceMesh.CellHalfEdgeIterator = .{
-        .surface_mesh = surface_mesh,
-        .cell = face,
-        .current = SurfaceMesh.halfEdge(face),
-    };
+    var he_it = surface_mesh.cellHalfedgeIterator(face);
     var normal = zm.f32x4s(0);
     while (he_it.next()) |heF| {
         var he = heF;
@@ -43,6 +39,7 @@ pub fn computeFaceNormals(
     face_normal: *Data(Vec3),
 ) !void {
     var face_it = try SurfaceMesh.CellIterator(.face).init(surface_mesh);
+    defer face_it.deinit();
     while (face_it.next()) |face| {
         const n = try computeFaceNormal(surface_mesh, vertex_position, face);
         face_normal.value(surface_mesh.indexOf(face)).* = n;
@@ -56,11 +53,7 @@ pub fn computeVertexNormal(
 ) !Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
     std.debug.assert(SurfaceMesh.cellType(vertex) == .vertex);
-    var he_it: SurfaceMesh.CellHalfEdgeIterator = .{
-        .surface_mesh = surface_mesh,
-        .cell = vertex,
-        .current = SurfaceMesh.halfEdge(vertex),
-    };
+    var he_it = surface_mesh.cellHalfedgeIterator(vertex);
     var normal = zm.f32x4s(0);
     while (he_it.next()) |he| {
         const n = try computeFaceNormal(surface_mesh, vertex_position, .{ .face = he });
@@ -77,6 +70,7 @@ pub fn computeVertexNormals(
     vertex_normal: *Data(Vec3),
 ) !void {
     var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(surface_mesh);
+    defer vertex_it.deinit();
     while (vertex_it.next()) |vertex| {
         const n = try computeVertexNormal(surface_mesh, vertex_position, vertex);
         vertex_normal.value(surface_mesh.indexOf(vertex)).* = n;

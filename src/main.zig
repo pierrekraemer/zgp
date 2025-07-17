@@ -144,7 +144,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer c.ImGui_DestroyContext(null);
 
     const imio = c.ImGui_GetIO();
-    imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard;
+    imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard | c.ImGuiConfigFlags_DockingEnable | c.ImGuiConfigFlags_ViewportsEnable;
 
     c.ImGui_StyleColorsDark(null);
 
@@ -388,6 +388,11 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
         c.ImGui_Render();
         c.cImGui_ImplOpenGL3_RenderDrawData(c.ImGui_GetDrawData());
+
+        c.ImGui_UpdatePlatformWindows();
+        c.ImGui_RenderPlatformWindowsDefault();
+
+        try errify(c.SDL_GL_MakeCurrent(window, gl_context));
     }
 
     try errify(c.SDL_GL_SwapWindow(window));

@@ -474,19 +474,19 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
     const sm = try self.createSurfaceMesh(std.fs.path.basename(filename));
 
     const vertex_position = try sm.addData(.vertex, Vec3, "position");
-    const halfedges_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.HalfEdge), "halfedges_of_vertex");
+    const halfedges_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Halfedge), "halfedges_of_vertex");
     defer sm.removeData(.vertex, &halfedges_of_vertex.gen);
 
     for (import_data.vertices_position.items) |pos| {
         const vertex_index = try sm.newDataIndex(.vertex);
         vertex_position.value(vertex_index).* = pos;
-        halfedges_of_vertex.value(vertex_index).* = std.ArrayList(SurfaceMesh.HalfEdge).init(halfedges_of_vertex.arena());
+        halfedges_of_vertex.value(vertex_index).* = std.ArrayList(SurfaceMesh.Halfedge).init(halfedges_of_vertex.arena());
     }
 
     var i: u32 = 0;
     for (import_data.faces_nb_vertices.items) |face_nb_vertices| {
         const face = try sm.addUnboundedFace(face_nb_vertices);
-        var he = SurfaceMesh.halfEdge(face);
+        var he = SurfaceMesh.halfedge(face);
         for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
             sm.he_vertex_index.value(he).* = index;
             try halfedges_of_vertex.value(index).append(he);

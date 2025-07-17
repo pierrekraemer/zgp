@@ -29,13 +29,10 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
     defer indices.deinit();
     switch (cell_type) {
         .face => {
-            var f_it = try SurfaceMesh.CellIterator(.face).init(sm); // TODO: replace with a more user friendly iterator initializer
+            var f_it = try SurfaceMesh.CellIterator(.face).init(sm);
+            defer f_it.deinit();
             while (f_it.next()) |f| {
-                var he_it: SurfaceMesh.CellHalfEdgeIterator = .{ // TODO: replace with a more user friendly local iterator
-                    .surface_mesh = sm,
-                    .cell = f,
-                    .current = SurfaceMesh.halfEdge(f),
-                };
+                var he_it = sm.cellHalfedgeIterator(f);
                 while (he_it.next()) |he| {
                     try indices.append(sm.indexOf(.{ .vertex = he }));
                 }
@@ -43,12 +40,9 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
         },
         .edge => {
             var e_it = try SurfaceMesh.CellIterator(.edge).init(sm);
+            defer e_it.deinit();
             while (e_it.next()) |e| {
-                var he_it: SurfaceMesh.CellHalfEdgeIterator = .{
-                    .surface_mesh = sm,
-                    .cell = e,
-                    .current = SurfaceMesh.halfEdge(e),
-                };
+                var he_it = sm.cellHalfedgeIterator(e);
                 while (he_it.next()) |he| {
                     try indices.append(sm.indexOf(.{ .vertex = he }));
                 }
@@ -56,6 +50,7 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
         },
         .vertex => {
             var v_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
+            defer v_it.deinit();
             while (v_it.next()) |v| {
                 try indices.append(sm.indexOf(v));
             }
