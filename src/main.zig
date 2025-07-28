@@ -238,7 +238,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_vertex_position);
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, Vec3, sm_vertex_normal);
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, Vec3, sm_vertex_color);
-        try models_registry.connectivityUpdated(sm);
+
+        try models_registry.surfaceMeshConnectivityUpdated(sm);
     }
 
     // try sm.dump(std.io.getStdErr().writer().any());
@@ -301,7 +302,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_vertex_position);
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, Vec3, sm_vertex_normal);
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, Vec3, sm_vertex_color);
-        try models_registry.connectivityUpdated(sm);
+
+        try models_registry.surfaceMeshConnectivityUpdated(sm);
     }
 
     // Init end

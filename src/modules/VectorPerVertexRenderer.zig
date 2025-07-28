@@ -69,14 +69,14 @@ pub fn surfaceMeshAdded(self: *Self, surface_mesh: *SurfaceMesh) !void {
 pub fn surfaceMeshStandardDataChanged(
     self: *Self,
     surface_mesh: *SurfaceMesh,
-    data: SurfaceMeshStandardData,
-) void {
+    std_data: SurfaceMeshStandardData,
+) !void {
     const p = self.parameters.getPtr(surface_mesh) orelse return;
-    const surface_mesh_info = zgp.models_registry.surface_meshes_info.getPtr(surface_mesh) orelse return;
-    switch (data) {
+    const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse return;
+    switch (std_data) {
         .vertex_position => {
             const vertex_position = surface_mesh_info.vertex_position orelse return;
-            const position_vbo = zgp.models_registry.vbo_registry.get(&vertex_position.gen).?;
+            const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position);
             p.point_vector_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
         },
         else => return, // Ignore other data changes
@@ -87,8 +87,7 @@ fn setSurfaceMeshVectorData(self: *Self, surface_mesh: *SurfaceMesh, vector: ?*D
     const p = self.parameters.getPtr(surface_mesh) orelse return;
     p.vector_data = vector;
     if (p.vector_data) |v| {
-        try zgp.models_registry.dataUpdated(Vec3, v); // TODO: update VBOs in another place
-        const vector_vbo = zgp.models_registry.vbo_registry.get(&v.gen).?;
+        const vector_vbo = try zgp.models_registry.getDataVBO(Vec3, v);
         p.point_vector_shader_parameters.setVertexAttribArray(.vector, vector_vbo, 0, 0);
     }
 }
@@ -97,7 +96,7 @@ pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
     var sm_it = zgp.models_registry.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const surface_mesh = entry.value_ptr.*;
-        const surface_mesh_info = zgp.models_registry.surface_meshes_info.getPtr(surface_mesh) orelse continue;
+        const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse continue;
         const vector_per_vertex_renderer_parameters = self.parameters.getPtr(surface_mesh) orelse continue;
         zm.storeMat(&vector_per_vertex_renderer_parameters.point_vector_shader_parameters.model_view_matrix, view_matrix);
         zm.storeMat(&vector_per_vertex_renderer_parameters.point_vector_shader_parameters.projection_matrix, projection_matrix);

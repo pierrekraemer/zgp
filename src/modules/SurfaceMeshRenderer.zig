@@ -21,6 +21,8 @@ const LineBold = @import("../rendering/shaders/line_bold/LineBold.zig");
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const VBO = @import("../rendering/VBO.zig");
 
+const Vec3 = @import("../numerical/types.zig").Vec3;
+
 const SurfaceMeshRendererParameters = struct {
     tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters,
     line_bold_shader_parameters: LineBold.Parameters,
@@ -83,21 +85,21 @@ pub fn surfaceMeshAdded(self: *Self, surface_mesh: *SurfaceMesh) !void {
 pub fn surfaceMeshStandardDataChanged(
     self: *Self,
     surface_mesh: *SurfaceMesh,
-    data: SurfaceMeshStandardData,
-) void {
+    std_data: SurfaceMeshStandardData,
+) !void {
     const p = self.parameters.getPtr(surface_mesh) orelse return;
-    const surface_mesh_info = zgp.models_registry.surface_meshes_info.getPtr(surface_mesh) orelse return;
-    switch (data) {
+    const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse return;
+    switch (std_data) {
         .vertex_position => {
             const vertex_position = surface_mesh_info.vertex_position orelse return;
-            const position_vbo = zgp.models_registry.vbo_registry.get(&vertex_position.gen).?;
+            const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position);
             p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             p.line_bold_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
         },
         .vertex_color => {
             const vertex_color = surface_mesh_info.vertex_color orelse return;
-            const color_vbo = zgp.models_registry.vbo_registry.get(&vertex_color.gen).?;
+            const color_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_color);
             p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
             p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
         },
@@ -109,7 +111,7 @@ pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
     var sm_it = zgp.models_registry.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const sm = entry.value_ptr.*;
-        const info = zgp.models_registry.surface_meshes_info.getPtr(sm) orelse continue;
+        const info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse continue;
         const p = self.parameters.getPtr(sm) orelse continue;
         if (p.draw_faces) {
             zm.storeMat(&p.tri_flat_color_per_vertex_shader_parameters.model_view_matrix, view_matrix);

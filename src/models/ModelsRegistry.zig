@@ -108,19 +108,53 @@ pub fn deinit(self: *Self) void {
     self.vbo_registry.deinit();
 }
 
-pub fn connectivityUpdated(self: *Self, surface_mesh: *SurfaceMesh) !void {
+pub fn surfaceMeshConnectivityUpdated(self: *Self, surface_mesh: *SurfaceMesh) !void {
     const info = self.surface_meshes_info.getPtr(surface_mesh).?;
     try info.points_ibo.fillFrom(surface_mesh, .vertex, self.allocator);
     try info.lines_ibo.fillFrom(surface_mesh, .edge, self.allocator);
     try info.triangles_ibo.fillFrom(surface_mesh, .face, self.allocator);
+
+    for (zgp.modules.items) |*module| {
+        try module.surfaceMeshConnectivityUpdated(surface_mesh);
+    }
 }
 
-pub fn dataUpdated(self: *Self, comptime T: type, data: *const Data(T)) !void {
+pub fn surfaceMeshDataUpdated(self: *Self, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, comptime T: type, data: *const Data(T)) !void {
+    // If it exists, update the VBO with the data
+    const maybe_vbo = self.vbo_registry.getPtr(&data.gen);
+    if (maybe_vbo) |vbo| {
+        try vbo.fillFrom(T, data);
+    }
+
+    for (zgp.modules.items) |*module| {
+        try module.surfaceMeshDataUpdated(surface_mesh, cell_type, &data.gen);
+    }
+}
+
+pub fn updateDataVBO(self: *Self, comptime T: type, data: *const Data(T)) !void {
     const vbo = try self.vbo_registry.getOrPut(&data.gen);
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
     }
     try vbo.value_ptr.*.fillFrom(T, data);
+}
+
+pub fn getDataVBO(self: *Self, comptime T: type, data: *const Data(T)) !VBO {
+    const vbo = try self.vbo_registry.getOrPut(&data.gen);
+    if (!vbo.found_existing) {
+        vbo.value_ptr.* = VBO.init();
+        // if the VBO was just created, fill it with the data
+        try vbo.value_ptr.*.fillFrom(T, data);
+    }
+    return vbo.value_ptr.*;
+}
+
+pub fn getPointCloudInfo(self: *Self, point_cloud: *const PointCloud) ?*PointCloudInfo {
+    return self.point_clouds_info.getPtr(point_cloud);
+}
+
+pub fn getSurfaceMeshInfo(self: *Self, surface_mesh: *const SurfaceMesh) ?*SurfaceMeshInfo {
+    return self.surface_meshes_info.getPtr(surface_mesh);
 }
 
 pub fn setPointCloudStandardData(
@@ -136,12 +170,9 @@ pub fn setPointCloudStandardData(
         .vertex_normal => info.vertex_normal = data,
         .vertex_color => info.vertex_color = data,
     }
-    if (data) |d| {
-        try self.dataUpdated(T, d); // TODO: update VBOs in another place
-    }
 
     for (zgp.modules.items) |*module| {
-        module.pointCloudStandardDataChanged(point_cloud, std_data);
+        try module.pointCloudStandardDataChanged(point_cloud, std_data);
     }
 }
 
@@ -158,12 +189,9 @@ pub fn setSurfaceMeshStandardData(
         .vertex_normal => info.vertex_normal = data,
         .vertex_color => info.vertex_color = data,
     }
-    if (data) |d| {
-        try self.dataUpdated(T, d); // TODO: update VBOs in another place
-    }
 
     for (zgp.modules.items) |*module| {
-        module.surfaceMeshStandardDataChanged(surface_mesh, std_data);
+        try module.surfaceMeshStandardDataChanged(surface_mesh, std_data);
     }
 }
 

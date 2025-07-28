@@ -69,19 +69,19 @@ pub fn pointCloudAdded(self: *Self, point_cloud: *PointCloud) !void {
 pub fn pointCloudStandardDataChanged(
     self: *Self,
     point_cloud: *PointCloud,
-    data: PointCloudStandardData,
-) void {
+    std_data: PointCloudStandardData,
+) !void {
     const p = self.parameters.getPtr(point_cloud) orelse return;
-    const point_cloud_info = zgp.models_registry.point_clouds_info.getPtr(point_cloud) orelse return;
-    switch (data) {
+    const point_cloud_info = zgp.models_registry.getPointCloudInfo(point_cloud) orelse return;
+    switch (std_data) {
         .vertex_position => {
             const vertex_position = point_cloud_info.vertex_position orelse return;
-            const position_vbo = zgp.models_registry.vbo_registry.get(&vertex_position.gen).?;
+            const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position);
             p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
         },
         .vertex_color => {
             const vertex_color = point_cloud_info.vertex_color orelse return;
-            const color_vbo = zgp.models_registry.vbo_registry.get(&vertex_color.gen).?;
+            const color_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_color);
             p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
         },
         else => return, // Ignore other data changes
@@ -92,7 +92,7 @@ pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
     var pc_it = zgp.models_registry.point_clouds.iterator();
     while (pc_it.next()) |entry| {
         const pc = entry.value_ptr.*;
-        const info = zgp.models_registry.point_clouds_info.getPtr(pc) orelse continue;
+        const info = zgp.models_registry.getPointCloudInfo(pc) orelse continue;
         const p = self.parameters.getPtr(pc) orelse continue;
         if (p.draw_points) {
             zm.storeMat(&p.point_sphere_shader_parameters.model_view_matrix, view_matrix);
