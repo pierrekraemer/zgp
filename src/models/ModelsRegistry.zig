@@ -502,43 +502,42 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
     const sm = try self.createSurfaceMesh(std.fs.path.basename(filename));
 
     const vertex_position = try sm.addData(.vertex, Vec3, "position");
-    const halfedges_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Halfedge), "halfedges_of_vertex");
-    defer sm.removeData(.vertex, &halfedges_of_vertex.gen);
+    const darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
+    defer sm.removeData(.vertex, &darts_of_vertex.gen);
 
     for (import_data.vertices_position.items) |pos| {
         const vertex_index = try sm.newDataIndex(.vertex);
         vertex_position.value(vertex_index).* = pos;
-        halfedges_of_vertex.value(vertex_index).* = std.ArrayList(SurfaceMesh.Halfedge).init(halfedges_of_vertex.arena());
+        darts_of_vertex.value(vertex_index).* = std.ArrayList(SurfaceMesh.Dart).init(darts_of_vertex.arena());
     }
 
     var i: u32 = 0;
     for (import_data.faces_nb_vertices.items) |face_nb_vertices| {
         const face = try sm.addUnboundedFace(face_nb_vertices);
-        var he = SurfaceMesh.halfedge(face);
+        var d = SurfaceMesh.dartOf(face);
         for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
-            sm.he_vertex_index.value(he).* = index;
-            try halfedges_of_vertex.value(index).append(he);
-            he = sm.phi1(he);
+            sm.dart_vertex_index.value(d).* = index;
+            try darts_of_vertex.value(index).append(d);
+            d = sm.phi1(d);
         }
         i += face_nb_vertices;
     }
 
     var nb_boundary_edges: u32 = 0;
 
-    var halfedge_it = try SurfaceMesh.CellIterator(.halfedge).init(sm);
-    defer halfedge_it.deinit();
-    while (halfedge_it.next()) |he| {
-        if (sm.phi2(he) == he) {
-            const vertex_index = sm.indexOf(.{ .vertex = he });
-            const next_vertex_index = sm.indexOf(.{ .vertex = sm.phi1(he) });
-            const next_vertex_halfedges = halfedges_of_vertex.value(next_vertex_index).*;
-            const opposite_halfedge = for (next_vertex_halfedges.items) |he2| {
-                if (sm.indexOf(.{ .vertex = sm.phi1(he2) }) == vertex_index) {
-                    break he2;
+    var dart_it = sm.dartIterator();
+    while (dart_it.next()) |d| {
+        if (sm.phi2(d) == d) {
+            const vertex_index = sm.indexOf(.{ .vertex = d });
+            const next_vertex_index = sm.indexOf(.{ .vertex = sm.phi1(d) });
+            const next_vertex_darts = darts_of_vertex.value(next_vertex_index).*;
+            const opposite_dart = for (next_vertex_darts.items) |d2| {
+                if (sm.indexOf(.{ .vertex = sm.phi1(d2) }) == vertex_index) {
+                    break d2;
                 }
             } else null;
-            if (opposite_halfedge) |he2| {
-                sm.phi2Sew(he, he2);
+            if (opposite_dart) |d2| {
+                sm.phi2Sew(d, d2);
             } else {
                 nb_boundary_edges += 1;
             }

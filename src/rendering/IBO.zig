@@ -32,9 +32,9 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             var f_it = try SurfaceMesh.CellIterator(.face).init(sm);
             defer f_it.deinit();
             while (f_it.next()) |f| {
-                var he_it = sm.cellHalfedgeIterator(f);
-                while (he_it.next()) |he| {
-                    try indices.append(sm.indexOf(.{ .vertex = he }));
+                var dart_it = sm.cellDartIterator(f);
+                while (dart_it.next()) |d| {
+                    try indices.append(sm.indexOf(.{ .vertex = d }));
                 }
             }
         },
@@ -42,9 +42,9 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             var e_it = try SurfaceMesh.CellIterator(.edge).init(sm);
             defer e_it.deinit();
             while (e_it.next()) |e| {
-                var he_it = sm.cellHalfedgeIterator(e);
-                while (he_it.next()) |he| {
-                    try indices.append(sm.indexOf(.{ .vertex = he }));
+                var dart_it = sm.cellDartIterator(e);
+                while (dart_it.next()) |d| {
+                    try indices.append(sm.indexOf(.{ .vertex = d }));
                 }
             }
         },
