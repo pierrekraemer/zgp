@@ -1,9 +1,11 @@
 const std = @import("std");
-const zm = @import("zmath");
 const assert = std.debug.assert;
 
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const DataGen = @import("../utils/Data.zig").DataGen;
+
+const mat = @import("../utils/mat.zig");
+const Mat4 = mat.Mat4;
 
 const PointCloud = ModelsRegistry.PointCloud;
 const PointCloudStandardData = ModelsRegistry.PointCloudStandardData;
@@ -25,7 +27,7 @@ const VTable = struct {
     surfaceMeshDataUpdated: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) anyerror!void,
 
     uiPanel: *const fn (ptr: *anyopaque) void,
-    draw: *const fn (ptr: *anyopaque, view_matrix: zm.Mat, projection_matrix: zm.Mat) void,
+    draw: *const fn (ptr: *anyopaque, view_matrix: Mat4, projection_matrix: Mat4) void,
 };
 
 pub fn init(ptr: anytype) Self {
@@ -72,7 +74,7 @@ pub fn init(ptr: anytype) Self {
             const impl: Ptr = @ptrCast(@alignCast(pointer));
             impl.uiPanel();
         }
-        fn draw(pointer: *anyopaque, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
+        fn draw(pointer: *anyopaque, view_matrix: Mat4, projection_matrix: Mat4) void {
             if (!@hasDecl(Module, "draw")) return;
             const impl: Ptr = @ptrCast(@alignCast(pointer));
             impl.draw(view_matrix, projection_matrix);
@@ -119,6 +121,6 @@ pub fn surfaceMeshDataUpdated(self: *Self, surface_mesh: *SurfaceMesh, cell_type
 pub fn uiPanel(self: *Self) void {
     self.vtable.uiPanel(self.ptr);
 }
-pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
+pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
     self.vtable.draw(self.ptr, view_matrix, projection_matrix);
 }

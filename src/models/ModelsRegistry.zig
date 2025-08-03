@@ -16,7 +16,8 @@ const DataGen = @import("../utils/Data.zig").DataGen;
 const VBO = @import("../rendering/VBO.zig");
 const IBO = @import("../rendering/IBO.zig");
 
-const Vec3 = @import("../numerical/types.zig").Vec3;
+const vec = @import("../utils/vec.zig");
+const Vec3 = vec.Vec3;
 
 pub const PointCloudStandardData = enum {
     vertex_position,

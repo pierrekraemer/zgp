@@ -11,7 +11,6 @@ const c = @cImport({
     @cInclude("backends/dcimgui_impl_sdl3.h");
     @cInclude("backends/dcimgui_impl_opengl3.h");
 });
-const zm = @import("zmath");
 
 const ModelsRegistry = @import("models/ModelsRegistry.zig");
 
@@ -22,7 +21,12 @@ const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
 
 const normal = @import("models/surface/normal.zig");
 
-const Vec3 = @import("numerical/types.zig").Vec3;
+const vec = @import("utils/vec.zig");
+const Vec3 = vec.Vec3;
+const Vec4 = vec.Vec4;
+
+const mat = @import("utils/mat.zig");
+const Mat4 = mat.Mat4;
 
 var allocator: std.mem.Allocator = undefined;
 var rng: std.Random.DefaultPrng = undefined;
@@ -51,10 +55,10 @@ var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
 
-var view_matrix = zm.lookAtRh(
-    zm.f32x4(0.0, 0.0, 2.0, 1.0),
-    zm.f32x4(0.0, 0.0, 0.0, 0.0),
-    zm.f32x4(0.0, 1.0, 0.0, 0.0),
+var view_matrix = mat.lookAtRh(
+    .{ 0.0, 0.0, 2.0 },
+    .{ 0.0, 0.0, 0.0 },
+    .{ 0.0, 1.0, 0.0 },
 );
 const CameraProjectionType = enum {
     perspective,
@@ -187,46 +191,37 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const sm_vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
         // scale the mesh position in the range [0, 1]
         var pos_it = sm_vertex_position.iterator();
-        var bb_min = zm.f32x4s(std.math.floatMax(f32));
-        var bb_max = zm.f32x4s(std.math.floatMin(f32));
+        var bb_min = vec.splat3(std.math.floatMax(f32));
+        var bb_max = vec.splat3(std.math.floatMin(f32));
         while (pos_it.next()) |pos| {
-            bb_min[0] = @min(bb_min[0], pos[0]);
-            bb_min[1] = @min(bb_min[1], pos[1]);
-            bb_min[2] = @min(bb_min[2], pos[2]);
-            bb_max[0] = @max(bb_max[0], pos[0]);
-            bb_max[1] = @max(bb_max[1], pos[1]);
-            bb_max[2] = @max(bb_max[2], pos[2]);
+            bb_min = vec.componentwiseMin3(bb_min, pos.*);
+            bb_max = vec.componentwiseMax3(bb_max, pos.*);
         }
-        const range = bb_max - bb_min;
-        const max = @reduce(.Max, range);
-        const scale = range / zm.f32x4s(max);
+        const range = vec.sub3(bb_max, bb_min);
+        const max = vec.maxComponent3(range);
+        const scale = vec.mulScalar3(range, 1.0 / max);
         pos_it.reset();
         while (pos_it.next()) |pos| {
-            pos[0] = (pos[0] - bb_min[0]) / range[0] * scale[0];
-            pos[1] = (pos[1] - bb_min[1]) / range[1] * scale[1];
-            pos[2] = (pos[2] - bb_min[2]) / range[2] * scale[2];
+            pos.* = vec.componentwiseMul3(vec.componentwiseDiv3(vec.sub3(pos.*, bb_min), range), scale);
         }
         // center the mesh position on the origin
-        var centroid = zm.f32x4s(0.0);
+        var centroid = vec.zero3;
         pos_it.reset();
         while (pos_it.next()) |pos| {
-            centroid += zm.f32x4(pos[0], pos[1], pos[2], 0.0);
+            centroid = vec.add3(centroid, pos.*);
         }
-        centroid /= zm.f32x4s(@floatFromInt(sm_vertex_position.nbElements()));
+        const nb_elements: f32 = @floatFromInt(sm_vertex_position.nbElements());
+        centroid = vec.mulScalar3(centroid, 1.0 / nb_elements);
         pos_it.reset();
         while (pos_it.next()) |pos| {
-            pos[0] = pos[0] - centroid[0];
-            pos[1] = pos[1] - centroid[1];
-            pos[2] = pos[2] - centroid[2];
+            pos.* = vec.sub3(pos.*, centroid);
         }
 
         const sm_vertex_color = try sm.addData(.vertex, Vec3, "color");
         var col_it = sm_vertex_color.iterator();
         const r = rng.random();
         while (col_it.next()) |col| {
-            col[0] = r.float(f32);
-            col[1] = r.float(f32);
-            col[2] = r.float(f32);
+            col.* = vec.random3(r);
         }
 
         const sm_face_normal = try sm.addData(.face, Vec3, "normal");
@@ -251,46 +246,37 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const sm_vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
         // scale the mesh position in the range [0, 1]
         var pos_it = sm_vertex_position.iterator();
-        var bb_min = zm.f32x4s(std.math.floatMax(f32));
-        var bb_max = zm.f32x4s(std.math.floatMin(f32));
+        var bb_min = vec.splat3(std.math.floatMax(f32));
+        var bb_max = vec.splat3(std.math.floatMin(f32));
         while (pos_it.next()) |pos| {
-            bb_min[0] = @min(bb_min[0], pos[0]);
-            bb_min[1] = @min(bb_min[1], pos[1]);
-            bb_min[2] = @min(bb_min[2], pos[2]);
-            bb_max[0] = @max(bb_max[0], pos[0]);
-            bb_max[1] = @max(bb_max[1], pos[1]);
-            bb_max[2] = @max(bb_max[2], pos[2]);
+            bb_min = vec.componentwiseMin3(bb_min, pos.*);
+            bb_max = vec.componentwiseMax3(bb_max, pos.*);
         }
-        const range = bb_max - bb_min;
-        const max = @reduce(.Max, range);
-        const scale = range / zm.f32x4s(max);
+        const range = vec.sub3(bb_max, bb_min);
+        const max = vec.maxComponent3(range);
+        const scale = vec.mulScalar3(range, 1.0 / max);
         pos_it.reset();
         while (pos_it.next()) |pos| {
-            pos[0] = (pos[0] - bb_min[0]) / range[0] * scale[0];
-            pos[1] = (pos[1] - bb_min[1]) / range[1] * scale[1];
-            pos[2] = (pos[2] - bb_min[2]) / range[2] * scale[2];
+            pos.* = vec.componentwiseMul3(vec.componentwiseDiv3(vec.sub3(pos.*, bb_min), range), scale);
         }
         // center the mesh position on the origin
-        var centroid = zm.f32x4s(0.0);
+        var centroid = vec.zero3;
         pos_it.reset();
         while (pos_it.next()) |pos| {
-            centroid += zm.f32x4(pos[0], pos[1], pos[2], 0.0);
+            centroid = vec.add3(centroid, pos.*);
         }
-        centroid /= zm.f32x4s(@floatFromInt(sm_vertex_position.nbElements()));
+        const nb_elements: f32 = @floatFromInt(sm_vertex_position.nbElements());
+        centroid = vec.mulScalar3(centroid, 1.0 / nb_elements);
         pos_it.reset();
         while (pos_it.next()) |pos| {
-            pos[0] = pos[0] - centroid[0];
-            pos[1] = pos[1] - centroid[1];
-            pos[2] = pos[2] - centroid[2];
+            pos.* = vec.sub3(pos.*, centroid);
         }
 
         const sm_vertex_color = try sm.addData(.vertex, Vec3, "color");
         var col_it = sm_vertex_color.iterator();
         const r = rng.random();
         while (col_it.next()) |col| {
-            col[0] = r.float(f32);
-            col[1] = r.float(f32);
-            col[2] = r.float(f32);
+            col.* = vec.random3(r);
         }
 
         const sm_face_normal = try sm.addData(.face, Vec3, "normal");
@@ -344,8 +330,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         // const pivot_point = zm.f32x4(0.0, 0.0, 0.0, 1.0);
 
         const projection_matrix = switch (camera_mode) {
-            CameraProjectionType.perspective => zm.perspectiveFovRhGl(field_of_view, aspect_ratio, 0.01, 50.0),
-            CameraProjectionType.orthographic => zm.orthographicRhGl(4.0, 4.0, 0.01, 50.0),
+            CameraProjectionType.perspective => mat.perspectiveFovRh(field_of_view, aspect_ratio, 0.01, 50.0),
+            CameraProjectionType.orthographic => mat.orthographicRh(4.0, 4.0, 0.01, 50.0),
         };
 
         for (modules.items) |*module| {
@@ -435,12 +421,12 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         c.SDL_EVENT_MOUSE_MOTION => {
             switch (event.motion.state) {
                 c.SDL_BUTTON_LMASK => {
-                    const axis = zm.f32x4(event.motion.yrel, event.motion.xrel, 0.0, 0.0);
-                    const speed = zm.length3(axis)[0] * 0.01;
-                    const rot = zm.matFromAxisAngle(axis, speed);
+                    const axis: vec.Vec3 = .{ event.motion.yrel, event.motion.xrel, 0.0 };
+                    const speed = vec.norm3(axis) * 0.01;
+                    const rot = mat.rotMatFromAxisAndAngle(axis, speed);
                     const tr = view_matrix[3]; // save translation
-                    view_matrix[3] = zm.f32x4(0.0, 0.0, 0.0, 1.0); // set translation to zero
-                    view_matrix = zm.mul(view_matrix, rot); // apply rotation
+                    view_matrix[3] = .{ 0.0, 0.0, 0.0, 1.0 }; // set translation to zero
+                    view_matrix = mat.mul4(rot, view_matrix); // apply rotation
                     view_matrix[3] = tr; // restore translation
                 },
                 c.SDL_BUTTON_RMASK => {
@@ -454,10 +440,12 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
             }
         },
         c.SDL_EVENT_MOUSE_WHEEL => {
+            // TODO: handle wheel events in orthographic camera mode
             const wheel = event.wheel.y;
             if (wheel != 0) {
-                const forward = zm.f32x4(0.0, 0.0, -1.0, 0.0);
-                view_matrix[3] += zm.splat(zm.Vec, -wheel * 0.01) * forward;
+                const forward: Vec4 = .{ 0.0, 0.0, -1.0, 0.0 };
+                const move = vec.mulScalar4(forward, -wheel * 0.01);
+                view_matrix[3] = vec.add4(view_matrix[3], move);
             }
         },
         else => {},

@@ -51,6 +51,8 @@ dart_vertex_index: *Data(u32) = undefined,
 dart_edge_index: *Data(u32) = undefined,
 dart_face_index: *Data(u32) = undefined,
 
+// TODO: manage boundary faces via a dedicated dart marker
+
 const DartIterator = struct {
     surface_mesh: *const SurfaceMesh,
     current_dart: Dart,

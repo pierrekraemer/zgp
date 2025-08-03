@@ -1,9 +1,9 @@
 const std = @import("std");
-const zm = @import("zmath");
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const Data = @import("../../utils/Data.zig").Data;
-const Vec3 = @import("../../numerical/types.zig").Vec3;
+const vec = @import("../../utils/vec.zig");
+const Vec3 = vec.Vec3;
 
 pub fn computeFaceNormal(
     surface_mesh: *SurfaceMesh,
@@ -13,24 +13,22 @@ pub fn computeFaceNormal(
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
     std.debug.assert(SurfaceMesh.typeOf(face) == .face);
     var dart_it = surface_mesh.cellDartIterator(face);
-    var normal = zm.f32x4s(0);
+    var normal = vec.zero3;
     while (dart_it.next()) |dF| {
         var d = dF;
-        const p1 = zm.loadArr3(vertex_position.value(surface_mesh.indexOf(.{ .vertex = d })).*);
+        const p1 = vertex_position.value(surface_mesh.indexOf(.{ .vertex = d })).*;
         d = surface_mesh.phi1(d);
-        const p2 = zm.loadArr3(vertex_position.value(surface_mesh.indexOf(.{ .vertex = d })).*);
+        const p2 = vertex_position.value(surface_mesh.indexOf(.{ .vertex = d })).*;
         d = surface_mesh.phi1(d);
-        const p3 = zm.loadArr3(vertex_position.value(surface_mesh.indexOf(.{ .vertex = d })).*);
-        const v1 = p2 - p1;
-        const v2 = p3 - p1;
-        normal += zm.cross3(v1, v2);
+        const p3 = vertex_position.value(surface_mesh.indexOf(.{ .vertex = d })).*;
+        const v1 = vec.sub3(p2, p1);
+        const v2 = vec.sub3(p3, p1);
+        normal = vec.add3(normal, vec.cross3(v1, v2));
         if (surface_mesh.phi1(d) == dF) {
             break;
         }
     }
-    var res: Vec3 = .{ 0, 0, 0 };
-    zm.storeArr3(&res, zm.normalize3(normal));
-    return res;
+    return vec.normalized3(normal);
 }
 
 pub fn computeFaceNormals(
@@ -54,14 +52,12 @@ pub fn computeVertexNormal(
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
     std.debug.assert(SurfaceMesh.typeOf(vertex) == .vertex);
     var dart_it = surface_mesh.cellDartIterator(vertex);
-    var normal = zm.f32x4s(0);
+    var normal = vec.zero3;
     while (dart_it.next()) |d| {
         const n = try computeFaceNormal(surface_mesh, vertex_position, .{ .face = d });
-        normal += zm.loadArr3(n);
+        normal = vec.add3(normal, n);
     }
-    var res: Vec3 = .{ 0, 0, 0 };
-    zm.storeArr3(&res, zm.normalize3(normal));
-    return res;
+    return vec.normalized3(normal);
 }
 
 pub fn computeVertexNormals(

@@ -1,5 +1,4 @@
 const std = @import("std");
-const zm = @import("zmath");
 const gl = @import("gl");
 
 const c = @cImport({
@@ -21,7 +20,11 @@ const LineBold = @import("../rendering/shaders/line_bold/LineBold.zig");
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const VBO = @import("../rendering/VBO.zig");
 
-const Vec3 = @import("../numerical/types.zig").Vec3;
+const vec = @import("../utils/vec.zig");
+const Vec3 = vec.Vec3;
+
+const mat = @import("../utils/mat.zig");
+const Mat4 = mat.Mat4;
 
 const SurfaceMeshRendererParameters = struct {
     tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters,
@@ -107,29 +110,29 @@ pub fn surfaceMeshStandardDataChanged(
     }
 }
 
-pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
+pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
     var sm_it = zgp.models_registry.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const sm = entry.value_ptr.*;
         const info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse continue;
         const p = self.parameters.getPtr(sm) orelse continue;
         if (p.draw_faces) {
-            zm.storeMat(&p.tri_flat_color_per_vertex_shader_parameters.model_view_matrix, view_matrix);
-            zm.storeMat(&p.tri_flat_color_per_vertex_shader_parameters.projection_matrix, projection_matrix);
+            p.tri_flat_color_per_vertex_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+            p.tri_flat_color_per_vertex_shader_parameters.projection_matrix = @bitCast(projection_matrix);
             p.tri_flat_color_per_vertex_shader_parameters.useShader();
             defer gl.UseProgram(0);
             p.tri_flat_color_per_vertex_shader_parameters.drawElements(info.triangles_ibo);
         }
         if (p.draw_edges) {
-            zm.storeMat(&p.line_bold_shader_parameters.model_view_matrix, view_matrix);
-            zm.storeMat(&p.line_bold_shader_parameters.projection_matrix, projection_matrix);
+            p.line_bold_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+            p.line_bold_shader_parameters.projection_matrix = @bitCast(projection_matrix);
             p.line_bold_shader_parameters.useShader();
             defer gl.UseProgram(0);
             p.line_bold_shader_parameters.drawElements(info.lines_ibo);
         }
         if (p.draw_vertices) {
-            zm.storeMat(&p.point_sphere_shader_parameters.model_view_matrix, view_matrix);
-            zm.storeMat(&p.point_sphere_shader_parameters.projection_matrix, projection_matrix);
+            p.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+            p.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
             p.point_sphere_shader_parameters.useShader();
             defer gl.UseProgram(0);
             p.point_sphere_shader_parameters.drawElements(info.points_ibo);

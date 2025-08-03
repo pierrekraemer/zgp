@@ -1,5 +1,4 @@
 const std = @import("std");
-const zm = @import("zmath");
 const gl = @import("gl");
 
 const c = @cImport({
@@ -16,11 +15,16 @@ const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
 const SurfaceMeshStandardData = ModelsRegistry.SurfaceMeshStandardData;
 
-const Data = @import("../utils/Data.zig").Data;
-const Vec3 = @import("../numerical/types.zig").Vec3;
-
 const PointVector = @import("../rendering/shaders/point_vector/PointVector.zig");
 const VBO = @import("../rendering/VBO.zig");
+
+const Data = @import("../utils/Data.zig").Data;
+
+const vec = @import("../utils/vec.zig");
+const Vec3 = vec.Vec3;
+
+const mat = @import("../utils/mat.zig");
+const Mat4 = mat.Mat4;
 
 const VectorPerVertexRendererParameters = struct {
     point_vector_shader_parameters: PointVector.Parameters,
@@ -92,14 +96,14 @@ fn setSurfaceMeshVectorData(self: *Self, surface_mesh: *SurfaceMesh, vector: ?*D
     }
 }
 
-pub fn draw(self: *Self, view_matrix: zm.Mat, projection_matrix: zm.Mat) void {
+pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
     var sm_it = zgp.models_registry.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const surface_mesh = entry.value_ptr.*;
         const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse continue;
         const vector_per_vertex_renderer_parameters = self.parameters.getPtr(surface_mesh) orelse continue;
-        zm.storeMat(&vector_per_vertex_renderer_parameters.point_vector_shader_parameters.model_view_matrix, view_matrix);
-        zm.storeMat(&vector_per_vertex_renderer_parameters.point_vector_shader_parameters.projection_matrix, projection_matrix);
+        vector_per_vertex_renderer_parameters.point_vector_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+        vector_per_vertex_renderer_parameters.point_vector_shader_parameters.projection_matrix = @bitCast(projection_matrix);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.useShader();
         defer gl.UseProgram(0);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.drawElements(surface_mesh_info.points_ibo);
