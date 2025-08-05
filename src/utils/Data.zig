@@ -127,9 +127,9 @@ pub fn Data(comptime T: type) type {
 
         pub const Iterator = BaseIterator(*Self, *T);
         pub const ConstIterator = BaseIterator(*const Self, *const T);
-        fn BaseIterator(comptime SelfType: type, comptime ElementPtr: type) type {
+        fn BaseIterator(comptime SelfPtr: type, comptime ElementPtr: type) type {
             return struct {
-                data: SelfType,
+                data: SelfPtr,
                 index: u32,
                 pub fn next(it: *@This()) ?ElementPtr {
                     if (it.index == it.data.gen.container.lastIndex()) {
@@ -370,6 +370,7 @@ pub const DataContainer = struct {
         } else self.capacity;
     }
 
+    /// lastIndex actually returns one past the last valid index.
     pub fn lastIndex(self: *const DataContainer) u32 {
         return self.capacity;
     }

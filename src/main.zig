@@ -19,14 +19,17 @@ const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
 
-const normal = @import("models/surface/normal.zig");
-
-const vec = @import("utils/vec.zig");
+const vec = @import("geometry/vec.zig");
 const Vec3 = vec.Vec3;
 const Vec4 = vec.Vec4;
 
-const mat = @import("utils/mat.zig");
+const mat = @import("geometry/mat.zig");
 const Mat4 = mat.Mat4;
+
+const geometry_utils = @import("geometry/utils.zig");
+const normal = @import("models/surface/normal.zig");
+const length = @import("models/surface/length.zig");
+const angle = @import("models/surface/angle.zig");
 
 var allocator: std.mem.Allocator = undefined;
 var rng: std.Random.DefaultPrng = undefined;
@@ -50,12 +53,12 @@ var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
 
 var window: *c.SDL_Window = undefined;
-var window_width: c_int = 800;
+var window_width: c_int = 1200;
 var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
 
-var view_matrix = mat.lookAtRh(
+var view_matrix = mat.lookAt(
     .{ 0.0, 0.0, 2.0 },
     .{ 0.0, 0.0, 0.0 },
     .{ 0.0, 1.0, 0.0 },
@@ -189,33 +192,10 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         errdefer sm.deinit();
 
         const sm_vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
-        // scale the mesh position in the range [0, 1]
-        var pos_it = sm_vertex_position.iterator();
-        var bb_min = vec.splat3(std.math.floatMax(f32));
-        var bb_max = vec.splat3(std.math.floatMin(f32));
-        while (pos_it.next()) |pos| {
-            bb_min = vec.componentwiseMin3(bb_min, pos.*);
-            bb_max = vec.componentwiseMax3(bb_max, pos.*);
-        }
-        const range = vec.sub3(bb_max, bb_min);
-        const max = vec.maxComponent3(range);
-        const scale = vec.mulScalar3(range, 1.0 / max);
-        pos_it.reset();
-        while (pos_it.next()) |pos| {
-            pos.* = vec.componentwiseMul3(vec.componentwiseDiv3(vec.sub3(pos.*, bb_min), range), scale);
-        }
-        // center the mesh position on the origin
-        var centroid = vec.zero3;
-        pos_it.reset();
-        while (pos_it.next()) |pos| {
-            centroid = vec.add3(centroid, pos.*);
-        }
-        const nb_elements: f32 = @floatFromInt(sm_vertex_position.nbElements());
-        centroid = vec.mulScalar3(centroid, 1.0 / nb_elements);
-        pos_it.reset();
-        while (pos_it.next()) |pos| {
-            pos.* = vec.sub3(pos.*, centroid);
-        }
+        // scale the mesh position in the range [0, 1] and center it on the origin
+        const bb_min, const bb_max = geometry_utils.boundingBox(sm_vertex_position);
+        geometry_utils.scale(sm_vertex_position, 1.0 / vec.maxComponent3(vec.sub3(bb_max, bb_min)));
+        geometry_utils.centerAround(sm_vertex_position, vec.zero3);
 
         const sm_vertex_color = try sm.addData(.vertex, Vec3, "color");
         var col_it = sm_vertex_color.iterator();
@@ -229,6 +209,15 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
         const sm_vertex_normal = try sm.addData(.vertex, Vec3, "normal");
         try normal.computeVertexNormals(sm, sm_vertex_position, sm_vertex_normal);
+
+        const sm_edge_length = try sm.addData(.edge, f32, "length");
+        try length.computeEdgeLengths(sm, sm_vertex_position, sm_edge_length);
+
+        const sm_corner_angle = try sm.addData(.corner, f32, "angle");
+        try angle.computeCornerAngles(sm, sm_vertex_position, sm_corner_angle);
+
+        const sm_edge_dihedral_angle = try sm.addData(.edge, f32, "dihedral_angle");
+        try angle.computeEdgeDihedralAngles(sm, sm_vertex_position, sm_edge_dihedral_angle);
 
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_vertex_position);
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, Vec3, sm_vertex_normal);
@@ -244,33 +233,10 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         errdefer sm.deinit();
 
         const sm_vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
-        // scale the mesh position in the range [0, 1]
-        var pos_it = sm_vertex_position.iterator();
-        var bb_min = vec.splat3(std.math.floatMax(f32));
-        var bb_max = vec.splat3(std.math.floatMin(f32));
-        while (pos_it.next()) |pos| {
-            bb_min = vec.componentwiseMin3(bb_min, pos.*);
-            bb_max = vec.componentwiseMax3(bb_max, pos.*);
-        }
-        const range = vec.sub3(bb_max, bb_min);
-        const max = vec.maxComponent3(range);
-        const scale = vec.mulScalar3(range, 1.0 / max);
-        pos_it.reset();
-        while (pos_it.next()) |pos| {
-            pos.* = vec.componentwiseMul3(vec.componentwiseDiv3(vec.sub3(pos.*, bb_min), range), scale);
-        }
-        // center the mesh position on the origin
-        var centroid = vec.zero3;
-        pos_it.reset();
-        while (pos_it.next()) |pos| {
-            centroid = vec.add3(centroid, pos.*);
-        }
-        const nb_elements: f32 = @floatFromInt(sm_vertex_position.nbElements());
-        centroid = vec.mulScalar3(centroid, 1.0 / nb_elements);
-        pos_it.reset();
-        while (pos_it.next()) |pos| {
-            pos.* = vec.sub3(pos.*, centroid);
-        }
+        // scale the mesh position in the range [0, 1] and center it on the origin
+        const bb_min, const bb_max = geometry_utils.boundingBox(sm_vertex_position);
+        geometry_utils.scale(sm_vertex_position, 1.0 / vec.maxComponent3(vec.sub3(bb_max, bb_min)));
+        geometry_utils.centerAround(sm_vertex_position, vec.zero3);
 
         const sm_vertex_color = try sm.addData(.vertex, Vec3, "color");
         var col_it = sm_vertex_color.iterator();
@@ -284,6 +250,15 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
         const sm_vertex_normal = try sm.addData(.vertex, Vec3, "normal");
         try normal.computeVertexNormals(sm, sm_vertex_position, sm_vertex_normal);
+
+        const sm_edge_length = try sm.addData(.edge, f32, "length");
+        try length.computeEdgeLengths(sm, sm_vertex_position, sm_edge_length);
+
+        const sm_corner_angle = try sm.addData(.corner, f32, "angle");
+        try angle.computeCornerAngles(sm, sm_vertex_position, sm_corner_angle);
+
+        const sm_edge_dihedral_angle = try sm.addData(.edge, f32, "dihedral_angle");
+        try angle.computeEdgeDihedralAngles(sm, sm_vertex_position, sm_edge_dihedral_angle);
 
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_vertex_position);
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, Vec3, sm_vertex_normal);
@@ -309,7 +284,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     {
         const UiData = struct {
             var show_demo_window: bool = false;
-            var background_color: [4]f32 = .{ 0.45, 0.45, 0.45, 1 };
+            var background_color: [4]f32 = .{ 0.65, 0.65, 0.65, 1 };
         };
 
         gl.ClearColor(UiData.background_color[0], UiData.background_color[1], UiData.background_color[2], UiData.background_color[3]);
@@ -330,8 +305,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         // const pivot_point = zm.f32x4(0.0, 0.0, 0.0, 1.0);
 
         const projection_matrix = switch (camera_mode) {
-            CameraProjectionType.perspective => mat.perspectiveFovRh(field_of_view, aspect_ratio, 0.01, 50.0),
-            CameraProjectionType.orthographic => mat.orthographicRh(4.0, 4.0, 0.01, 50.0),
+            CameraProjectionType.perspective => mat.perspective(field_of_view, aspect_ratio, 0.01, 50.0),
+            CameraProjectionType.orthographic => mat.orthographic(4.0, 4.0, 0.01, 50.0),
         };
 
         for (modules.items) |*module| {
@@ -342,8 +317,15 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         c.cImGui_ImplSDL3_NewFrame();
         c.ImGui_NewFrame();
 
+        const viewport = c.ImGui_GetMainViewport();
+
+        var main_menu_bar_size: c.ImVec2 = undefined;
+
         if (c.ImGui_BeginMainMenuBar()) {
             defer c.ImGui_EndMainMenuBar();
+
+            main_menu_bar_size = c.ImGui_GetWindowSize();
+
             if (c.ImGui_BeginMenu("File")) {
                 defer c.ImGui_EndMenu();
                 _ = c.ImGui_Checkbox("show demo", &UiData.show_demo_window);
@@ -352,6 +334,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                     return c.SDL_APP_SUCCESS;
                 }
             }
+
             if (c.ImGui_BeginMenu("Rendering")) {
                 defer c.ImGui_EndMenu();
                 _ = c.ImGui_ColorEdit3("Background color", &UiData.background_color, c.ImGuiColorEditFlags_NoInputs);
@@ -363,12 +346,58 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                     camera_mode = CameraProjectionType.orthographic;
                 }
             }
+
+            models_registry.menuBar();
         }
 
-        models_registry.uiPanel();
-        for (modules.items) |*module| {
-            module.uiPanel();
+        c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowRounding, 0.0);
+        c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowBorderSize, 0.0);
+
+        c.ImGui_SetNextWindowPos(c.ImVec2{
+            .x = viewport.*.Pos.x,
+            .y = viewport.*.Pos.y + main_menu_bar_size.y,
+        }, 0);
+        c.ImGui_SetNextWindowSize(c.ImVec2{
+            .x = viewport.*.Size.x * 0.22,
+            .y = viewport.*.Size.y - main_menu_bar_size.y,
+        }, 0);
+        c.ImGui_SetNextWindowBgAlpha(0.2);
+        if (c.ImGui_Begin("Models Registry", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
+            c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus))
+        {
+            defer c.ImGui_End();
+            models_registry.uiPanel();
         }
+
+        c.ImGui_SetNextWindowPos(c.ImVec2{
+            .x = viewport.*.Pos.x + viewport.*.Size.x * 0.78,
+            .y = viewport.*.Pos.y + main_menu_bar_size.y,
+        }, 0);
+        c.ImGui_SetNextWindowSize(c.ImVec2{
+            .x = viewport.*.Size.x * 0.22,
+            .y = viewport.*.Size.y - main_menu_bar_size.y,
+        }, 0);
+        c.ImGui_SetNextWindowBgAlpha(0.2);
+        if (c.ImGui_Begin("Modules", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
+            c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus))
+        {
+            defer c.ImGui_End();
+            for (modules.items) |*module| {
+                c.ImGui_PushIDPtr(module);
+                defer c.ImGui_PopID();
+                c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
+                c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
+                c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
+                if (c.ImGui_CollapsingHeader(module.name().ptr, 0)) {
+                    c.ImGui_PopStyleColorEx(3);
+                    module.uiPanel();
+                } else {
+                    c.ImGui_PopStyleColorEx(3);
+                }
+            }
+        }
+
+        c.ImGui_PopStyleVarEx(2);
 
         if (UiData.show_demo_window) {
             c.ImGui_ShowDemoWindow(null);

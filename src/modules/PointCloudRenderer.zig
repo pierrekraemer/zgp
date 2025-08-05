@@ -18,10 +18,10 @@ const PointCloudStandardData = ModelsRegistry.PointCloudStandardData;
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const VBO = @import("../rendering/VBO.zig");
 
-const vec = @import("../utils/vec.zig");
+const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
-const mat = @import("../utils/mat.zig");
+const mat = @import("../geometry/mat.zig");
 const Mat4 = mat.Mat4;
 
 const PointCloudRendererParameters = struct {
@@ -62,6 +62,10 @@ pub fn deinit(self: *Self) void {
 
 pub fn module(self: *Self) Module {
     return Module.init(self);
+}
+
+pub fn name(_: *Self) []const u8 {
+    return "Point Cloud Renderer";
 }
 
 pub fn pointCloudAdded(self: *Self, point_cloud: *PointCloud) !void {
@@ -116,9 +120,6 @@ pub fn uiPanel(self: *Self) void {
             UiData.selected_point_cloud = pc;
         }
     };
-
-    _ = c.ImGui_Begin("Point Cloud Renderer", null, c.ImGuiWindowFlags_NoSavedSettings);
-    defer c.ImGui_End();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 

@@ -20,10 +20,10 @@ const LineBold = @import("../rendering/shaders/line_bold/LineBold.zig");
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const VBO = @import("../rendering/VBO.zig");
 
-const vec = @import("../utils/vec.zig");
+const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
-const mat = @import("../utils/mat.zig");
+const mat = @import("../geometry/mat.zig");
 const Mat4 = mat.Mat4;
 
 const SurfaceMeshRendererParameters = struct {
@@ -79,6 +79,10 @@ pub fn deinit(self: *Self) void {
 
 pub fn module(self: *Self) Module {
     return Module.init(self);
+}
+
+pub fn name(_: *Self) []const u8 {
+    return "Surface Mesh Renderer";
 }
 
 pub fn surfaceMeshAdded(self: *Self, surface_mesh: *SurfaceMesh) !void {
@@ -151,8 +155,8 @@ pub fn uiPanel(self: *Self) void {
         }
     };
 
-    _ = c.ImGui_Begin("Surface Mesh Renderer", null, 0);
-    defer c.ImGui_End();
+    // _ = c.ImGui_Begin("Surface Mesh Renderer", null, 0);
+    // defer c.ImGui_End();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 

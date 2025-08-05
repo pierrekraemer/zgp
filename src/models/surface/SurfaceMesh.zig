@@ -46,7 +46,7 @@ face_data: DataContainer,
 dart_phi1: *Data(Dart) = undefined,
 dart_phi_1: *Data(Dart) = undefined,
 dart_phi2: *Data(Dart) = undefined,
-// dart_corner_index is not needed as the index of a corner is the dart itself
+dart_corner_index: *Data(u32) = undefined,
 dart_vertex_index: *Data(u32) = undefined,
 dart_edge_index: *Data(u32) = undefined,
 dart_face_index: *Data(u32) = undefined,
@@ -101,7 +101,7 @@ pub fn CellIterator(comptime cell_type: CellType) type {
         pub fn init(surface_mesh: *SurfaceMesh) !@This() {
             return .{
                 .surface_mesh = surface_mesh,
-                // no marker needed for corner iterator
+                // no marker needed for corner iterator (a corner is a single dart)
                 .marker = if (cell_type != .corner) try surface_mesh.dart_data.getMarker() else null,
                 .current_dart = surface_mesh.dart_data.firstIndex(),
             };
@@ -115,7 +115,7 @@ pub fn CellIterator(comptime cell_type: CellType) type {
             if (self.current_dart == self.surface_mesh.dart_data.lastIndex()) {
                 return null;
             }
-            // special case for corner iterator: no need to mark the darts of the cell
+            // special case for corner iterator: a corner is a single dart, so there is no need to mark the darts of the cell
             if (cell_type == .corner) {
                 // prepare current_dart for next iteration
                 defer self.current_dart = self.surface_mesh.dart_data.nextIndex(self.current_dart);
@@ -172,6 +172,7 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMesh {
     sm.dart_phi1 = try sm.dart_data.addData(Dart, "phi1");
     sm.dart_phi_1 = try sm.dart_data.addData(Dart, "phi_1");
     sm.dart_phi2 = try sm.dart_data.addData(Dart, "phi2");
+    sm.dart_corner_index = try sm.dart_data.addData(u32, "corner_index");
     sm.dart_vertex_index = try sm.dart_data.addData(u32, "vertex_index");
     sm.dart_edge_index = try sm.dart_data.addData(u32, "edge_index");
     sm.dart_face_index = try sm.dart_data.addData(u32, "face_index");
@@ -248,6 +249,7 @@ fn addDart(self: *SurfaceMesh) !Dart {
     self.dart_phi1.value(d).* = d;
     self.dart_phi_1.value(d).* = d;
     self.dart_phi2.value(d).* = d;
+    self.dart_corner_index.value(d).* = invalid_index;
     self.dart_vertex_index.value(d).* = invalid_index;
     self.dart_edge_index.value(d).* = invalid_index;
     self.dart_face_index.value(d).* = invalid_index;
@@ -257,6 +259,10 @@ fn addDart(self: *SurfaceMesh) !Dart {
 fn removeDart(self: *SurfaceMesh, d: Dart) void {
     self.dart_data.freeIndex(d);
     self.corner_data.freeIndex(d);
+    const corner_index = self.dart_corner_index.value(d).*;
+    if (corner_index != invalid_index) {
+        self.corner_data.unrefIndex(corner_index);
+    }
     const vertex_index = self.dart_vertex_index.value(d).*;
     if (vertex_index != invalid_index) {
         self.vertex_data.unrefIndex(vertex_index);
@@ -308,13 +314,13 @@ pub fn phi2Unsew(self: *SurfaceMesh, d: Dart) void {
 
 pub fn setDartIndex(self: *SurfaceMesh, d: Dart, cell_type: CellType, index: u32) void {
     var index_data = switch (cell_type) {
-        .corner => unreachable, // corner index are darts themselves, so noone should try to set a corner index
+        .corner => self.dart_corner_index,
         .vertex => self.dart_vertex_index,
         .edge => self.dart_edge_index,
         .face => self.dart_face_index,
     };
     var data_container = switch (cell_type) {
-        .corner => unreachable,
+        .corner => &self.corner_data,
         .vertex => &self.vertex_data,
         .edge => &self.edge_data,
         .face => &self.face_data,
@@ -351,7 +357,7 @@ pub fn indexCells(self: *SurfaceMesh, comptime cell_type: CellType) !void {
 pub fn indexOf(self: *const SurfaceMesh, c: Cell) u32 {
     const d = dartOf(c);
     switch (c) {
-        .corner => return d,
+        .corner => return self.dart_corner_index.value(d).*,
         .vertex => return self.dart_vertex_index.value(d).*,
         .edge => return self.dart_edge_index.value(d).*,
         .face => return self.dart_face_index.value(d).*,

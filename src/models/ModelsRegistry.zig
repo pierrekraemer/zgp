@@ -16,7 +16,7 @@ const DataGen = @import("../utils/Data.zig").DataGen;
 const VBO = @import("../rendering/VBO.zig");
 const IBO = @import("../rendering/IBO.zig");
 
-const vec = @import("../utils/vec.zig");
+const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
 pub const PointCloudStandardData = enum {
@@ -196,6 +196,10 @@ pub fn setSurfaceMeshStandardData(
     }
 }
 
+pub fn menuBar(self: *Self) void {
+    _ = self;
+}
+
 pub fn uiPanel(self: *Self) void {
     const UiData = struct {
         var selected_point_cloud: ?*PointCloud = null;
@@ -231,8 +235,8 @@ pub fn uiPanel(self: *Self) void {
         }
     };
 
-    _ = c.ImGui_Begin("Models Registry", null, 0);
-    defer c.ImGui_End();
+    // _ = c.ImGui_Begin("Models Registry", null, 0);
+    // defer c.ImGui_End();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 
@@ -545,6 +549,8 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
         }
     }
 
+    // vertices were already indexed above
+    try sm.indexCells(.corner);
     try sm.indexCells(.edge);
     try sm.indexCells(.face);
 

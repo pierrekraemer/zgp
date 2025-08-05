@@ -2,14 +2,14 @@ const std = @import("std");
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const Data = @import("../../utils/Data.zig").Data;
-const vec = @import("../../utils/vec.zig");
+const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
-pub fn computeFaceNormal(
+pub fn faceNormal(
     surface_mesh: *SurfaceMesh,
     vertex_position: *const Data(Vec3),
     face: SurfaceMesh.Cell,
-) !Vec3 {
+) Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
     std.debug.assert(SurfaceMesh.typeOf(face) == .face);
     var dart_it = surface_mesh.cellDartIterator(face);
@@ -39,22 +39,22 @@ pub fn computeFaceNormals(
     var face_it = try SurfaceMesh.CellIterator(.face).init(surface_mesh);
     defer face_it.deinit();
     while (face_it.next()) |face| {
-        const n = try computeFaceNormal(surface_mesh, vertex_position, face);
+        const n = faceNormal(surface_mesh, vertex_position, face);
         face_normal.value(surface_mesh.indexOf(face)).* = n;
     }
 }
 
-pub fn computeVertexNormal(
+pub fn vertexNormal(
     surface_mesh: *SurfaceMesh,
     vertex_position: *const Data(Vec3),
     vertex: SurfaceMesh.Cell,
-) !Vec3 {
+) Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
     std.debug.assert(SurfaceMesh.typeOf(vertex) == .vertex);
     var dart_it = surface_mesh.cellDartIterator(vertex);
     var normal = vec.zero3;
     while (dart_it.next()) |d| {
-        const n = try computeFaceNormal(surface_mesh, vertex_position, .{ .face = d });
+        const n = faceNormal(surface_mesh, vertex_position, .{ .face = d });
         normal = vec.add3(normal, n);
     }
     return vec.normalized3(normal);
@@ -68,7 +68,7 @@ pub fn computeVertexNormals(
     var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(surface_mesh);
     defer vertex_it.deinit();
     while (vertex_it.next()) |vertex| {
-        const n = try computeVertexNormal(surface_mesh, vertex_position, vertex);
+        const n = vertexNormal(surface_mesh, vertex_position, vertex);
         vertex_normal.value(surface_mesh.indexOf(vertex)).* = n;
     }
 }

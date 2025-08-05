@@ -11,12 +11,14 @@ const Scalar = vec.Scalar;
 /// All operations consider the matrix to be in column-major order.
 pub const Mat4 = [4]Vec4;
 
-pub const identity4 = .{
-    .{ 1, 0, 0, 0 },
-    .{ 0, 1, 0, 0 },
-    .{ 0, 0, 1, 0 },
-    .{ 0, 0, 0, 1 },
+pub const identity4: Mat4 = .{
+    .{ 1.0, 0.0, 0.0, 0.0 },
+    .{ 0.0, 1.0, 0.0, 0.0 },
+    .{ 0.0, 0.0, 1.0, 0.0 },
+    .{ 0.0, 0.0, 0.0, 1.0 },
 };
+
+pub const zero4: Mat4 = .{ vec.zero4, vec.zero4, vec.zero4, vec.zero4 };
 
 pub fn mul4(a: Mat4, b: Mat4) Mat4 {
     var result: Mat4 = undefined;
@@ -37,18 +39,8 @@ pub fn mulVec4(m: Mat4, v: Vec4) Vec4 {
     };
 }
 
-pub fn flat4(m: Mat4) [16]Scalar {
-    return .{
-        m[0][0], m[0][1], m[0][2], m[0][3],
-        m[1][0], m[1][1], m[1][2], m[1][3],
-        m[2][0], m[2][1], m[2][2], m[2][3],
-        m[3][0], m[3][1], m[3][2], m[3][3],
-    };
-}
-
-// TODO: Keep only the right-handed versions
-
-pub fn lookToLh(eyepos: Vec3, eyedir: Vec3, updir: Vec3) Mat4 {
+pub fn lookAt(eyepos: Vec3, focuspos: Vec3, updir: Vec3) Mat4 {
+    const eyedir = vec.sub3(eyepos, focuspos);
     const az = vec.normalized3(eyedir);
     const ax = vec.normalized3(vec.cross3(updir, az));
     const ay = vec.normalized3(vec.cross3(az, ax));
@@ -59,17 +51,8 @@ pub fn lookToLh(eyepos: Vec3, eyedir: Vec3, updir: Vec3) Mat4 {
         .{ -vec.dot3(ax, eyepos), -vec.dot3(ay, eyepos), -vec.dot3(az, eyepos), 1.0 },
     };
 }
-pub fn lookToRh(eyepos: Vec3, eyedir: Vec3, updir: Vec3) Mat4 {
-    return lookToLh(eyepos, vec.mulScalar3(eyedir, -1.0), updir);
-}
-pub fn lookAtLh(eyepos: Vec3, focuspos: Vec3, updir: Vec3) Mat4 {
-    return lookToLh(eyepos, vec.sub3(focuspos, eyepos), updir);
-}
-pub fn lookAtRh(eyepos: Vec3, focuspos: Vec3, updir: Vec3) Mat4 {
-    return lookToLh(eyepos, vec.sub3(eyepos, focuspos), updir);
-}
 
-pub fn perspectiveFovRh(fov: Scalar, aspect: Scalar, near: Scalar, far: Scalar) Mat4 {
+pub fn perspective(fov: Scalar, aspect: Scalar, near: Scalar, far: Scalar) Mat4 {
     const c = @cos(fov / 2);
     const s = @sin(fov / 2);
 
@@ -90,7 +73,7 @@ pub fn perspectiveFovRh(fov: Scalar, aspect: Scalar, near: Scalar, far: Scalar) 
     };
 }
 
-pub fn orthographicRh(w: Scalar, h: Scalar, near: Scalar, far: Scalar) Mat4 {
+pub fn orthographic(w: Scalar, h: Scalar, near: Scalar, far: Scalar) Mat4 {
     assert(!math.approxEqAbs(Scalar, w, 0.0, 0.001));
     assert(!math.approxEqAbs(Scalar, h, 0.0, 0.001));
     assert(!math.approxEqAbs(Scalar, far, near, 0.001));

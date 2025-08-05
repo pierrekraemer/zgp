@@ -4,7 +4,7 @@ const assert = std.debug.assert;
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const DataGen = @import("../utils/Data.zig").DataGen;
 
-const mat = @import("../utils/mat.zig");
+const mat = @import("../geometry/mat.zig");
 const Mat4 = mat.Mat4;
 
 const PointCloud = ModelsRegistry.PointCloud;
@@ -18,6 +18,8 @@ ptr: *anyopaque, // pointer to the concrete Module
 vtable: *const VTable,
 
 const VTable = struct {
+    name: *const fn (ptr: *anyopaque) []const u8,
+
     pointCloudAdded: *const fn (ptr: *anyopaque, point_cloud: *PointCloud) anyerror!void,
     pointCloudStandardDataChanged: *const fn (ptr: *anyopaque, point_cloud: *PointCloud, std_data: PointCloudStandardData) anyerror!void,
 
@@ -39,6 +41,11 @@ pub fn init(ptr: anytype) Self {
     const Module = ptr_info.pointer.child;
 
     const gen = struct {
+        fn name(pointer: *anyopaque) []const u8 {
+            if (!@hasDecl(Module, "name")) return "NoName Module";
+            const impl: Ptr = @ptrCast(@alignCast(pointer));
+            return impl.name();
+        }
         fn pointCloudAdded(pointer: *anyopaque, point_cloud: *PointCloud) !void {
             if (!@hasDecl(Module, "pointCloudAdded")) return;
             const impl: Ptr = @ptrCast(@alignCast(pointer));
@@ -84,6 +91,7 @@ pub fn init(ptr: anytype) Self {
     return .{
         .ptr = ptr,
         .vtable = &.{
+            .name = gen.name,
             .pointCloudAdded = gen.pointCloudAdded,
             .pointCloudStandardDataChanged = gen.pointCloudStandardDataChanged,
             .surfaceMeshAdded = gen.surfaceMeshAdded,
@@ -100,6 +108,9 @@ pub fn deinit(self: *Self) void {
     self.arena.deinit();
 }
 
+pub fn name(self: *Self) []const u8 {
+    return self.vtable.name(self.ptr);
+}
 pub fn pointCloudAdded(self: *Self, point_cloud: *PointCloud) !void {
     try self.vtable.pointCloudAdded(self.ptr, point_cloud);
 }

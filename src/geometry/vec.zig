@@ -2,22 +2,30 @@ const std = @import("std");
 
 pub const Scalar = f32;
 
-pub const Vec2 = [2]Scalar;
-pub const Vec3 = [3]Scalar;
-pub const Vec4 = [4]Scalar;
+fn Vec(comptime N: usize) type {
+    return [N]Scalar;
+}
 
-pub const zero2: Vec2 = splat2(0);
-pub const zero3: Vec3 = splat3(0);
-pub const zero4: Vec4 = splat4(0);
+pub const Vec2 = Vec(2);
+pub const Vec3 = Vec(3);
+pub const Vec4 = Vec(4);
+
+// pub fn nbComponents(comptime Vec: type) usize {
+//     return @typeInfo(Vec).array.len;
+// }
+
+pub const zero2: Vec2 = @splat(0);
+pub const zero3: Vec3 = @splat(0);
+pub const zero4: Vec4 = @splat(0);
 
 pub fn splat2(scalar: Scalar) Vec2 {
-    return .{ scalar, scalar };
+    return @splat(scalar);
 }
 pub fn splat3(scalar: Scalar) Vec3 {
-    return .{ scalar, scalar, scalar };
+    return @splat(scalar);
 }
 pub fn splat4(scalar: Scalar) Vec4 {
-    return .{ scalar, scalar, scalar, scalar };
+    return @splat(scalar);
 }
 
 pub fn random2(r: std.Random) Vec2 {

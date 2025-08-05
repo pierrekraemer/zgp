@@ -1,6 +1,6 @@
 const std = @import("std");
 
-pub fn DisjointSet(comptime T: type) type {
+pub fn DisjointSets(comptime T: type) type {
     const Element = struct {
         value: T,
         parent: usize,
