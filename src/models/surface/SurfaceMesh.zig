@@ -51,8 +51,7 @@ dart_corner_index: *Data(u32) = undefined,
 dart_vertex_index: *Data(u32) = undefined,
 dart_edge_index: *Data(u32) = undefined,
 dart_face_index: *Data(u32) = undefined,
-
-// TODO: manage boundary faces via a dedicated dart marker
+dart_boundary: *Data(bool) = undefined, // boundary marker
 
 const DartIterator = struct {
     surface_mesh: *const SurfaceMesh,
@@ -177,6 +176,7 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMesh {
     sm.dart_vertex_index = try sm.dart_data.addData(u32, "vertex_index");
     sm.dart_edge_index = try sm.dart_data.addData(u32, "edge_index");
     sm.dart_face_index = try sm.dart_data.addData(u32, "face_index");
+    sm.dart_boundary = try sm.dart_data.getMarker();
     return sm;
 }
 

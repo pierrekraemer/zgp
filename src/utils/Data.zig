@@ -335,6 +335,10 @@ pub const DataContainer = struct {
             const data_gen = entry.value_ptr.*;
             try data_gen.ensureLength(index + 1);
         }
+        for (self.markers.items) |marker| {
+            try marker.ensureLength(index + 1);
+            marker.value(index).* = false; // reset the markers at this index
+        }
         self.is_active.value(index).* = true; // after newIndex, the index is active
         self.nb_refs.value(index).* = 0; // but has no reference yet
         return index;
