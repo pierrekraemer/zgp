@@ -1,8 +1,8 @@
 const std = @import("std");
-const data = @import("../../utils/Data.zig");
 
 const PointCloud = @This();
 
+const data = @import("../../utils/Data.zig");
 const DataContainer = data.DataContainer;
 const DataGen = data.DataGen;
 const Data = data.Data;

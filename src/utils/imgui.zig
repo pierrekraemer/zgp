@@ -21,11 +21,13 @@ pub fn surfaceMeshListBox(
         while (sm_it.next()) |entry| {
             const sm = entry.value_ptr.*;
             const name = entry.key_ptr.*;
-            const selected = selected_surface_mesh == sm;
-            if (c.ImGui_SelectableEx(name.ptr, selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                on_selected(sm);
+            const is_selected = selected_surface_mesh == sm;
+            if (c.ImGui_SelectableEx(name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                if (!is_selected) {
+                    on_selected(sm); // only call on_selected if it was not previously selected
+                }
             }
-            if (selected) {
+            if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
             }
         }
@@ -42,11 +44,13 @@ pub fn pointCloudListBox(
         while (pc_it.next()) |entry| {
             const pc = entry.value_ptr.*;
             const name = entry.key_ptr.*;
-            const selected = selected_point_cloud == pc;
-            if (c.ImGui_SelectableEx(name.ptr, selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                on_selected(pc);
+            const is_selected = selected_point_cloud == pc;
+            if (c.ImGui_SelectableEx(name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                if (!is_selected) {
+                    on_selected(pc); // only call on_selected if it was not previously selected
+                }
             }
-            if (selected) {
+            if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
             }
         }
@@ -66,7 +70,7 @@ pub fn surfaceMeshCellDataComboBox(
         const none_selected = if (selected_data) |_| false else true;
         if (c.ImGui_SelectableEx("--none--", none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
             if (!none_selected) {
-                on_selected(T, null, context);
+                on_selected(T, null, context); // only call on_selected if it was not previously selected
             }
         }
         if (none_selected) {
@@ -83,7 +87,7 @@ pub fn surfaceMeshCellDataComboBox(
             const is_selected = selected_data == data;
             if (c.ImGui_SelectableEx(data.gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) {
-                    on_selected(T, data, context);
+                    on_selected(T, data, context); // only call on_selected if it was not previously selected
                 }
             }
             if (is_selected) {
@@ -105,7 +109,7 @@ pub fn pointCloudDataComboBox(
         const none_selected = if (selected_data) |_| false else true;
         if (c.ImGui_SelectableEx("--none--", none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
             if (!none_selected) {
-                on_selected(T, null, context);
+                on_selected(T, null, context); // only call on_selected if it was not previously selected
             }
         }
         if (none_selected) {
@@ -116,7 +120,7 @@ pub fn pointCloudDataComboBox(
             const is_selected = selected_data == data;
             if (c.ImGui_SelectableEx(data.gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) {
-                    on_selected(T, data, context);
+                    on_selected(T, data, context); // only call on_selected if it was not previously selected
                 }
             }
             if (is_selected) {

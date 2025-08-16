@@ -81,16 +81,22 @@ pub fn pointCloudStandardDataChanged(
     const point_cloud_info = zgp.models_registry.getPointCloudInfo(point_cloud) orelse return;
     switch (std_data) {
         .vertex_position => {
-            const vertex_position = point_cloud_info.vertex_position orelse return;
-            const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position);
-            p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+            if (point_cloud_info.vertex_position) |vertex_position| {
+                const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position);
+                p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+            } else {
+                p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
+            }
         },
         .vertex_color => {
-            const vertex_color = point_cloud_info.vertex_color orelse return;
-            const color_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_color);
-            p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
+            if (point_cloud_info.vertex_color) |vertex_color| {
+                const color_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_color);
+                p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
+            } else {
+                p.point_sphere_shader_parameters.unsetVertexAttribArray(.color);
+            }
         },
-        else => return, // Ignore other data changes
+        else => return, // Ignore other standard data changes
     }
 }
 

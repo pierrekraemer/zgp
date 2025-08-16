@@ -89,7 +89,15 @@ pub const Parameters = struct {
             .position => self.shader.position_attrib,
             .color => self.shader.color_attrib,
         };
-        self.vao.setVertexAttribArray(attrib_info, vbo, stride, pointer);
+        self.vao.enableVertexAttribArray(attrib_info, vbo, stride, pointer);
+    }
+
+    pub fn unsetVertexAttribArray(self: *Parameters, attrib: VertexAttrib) void {
+        const attrib_info = switch (attrib) {
+            .position => self.shader.position_attrib,
+            .color => self.shader.color_attrib,
+        };
+        self.vao.disableVertexAttribArray(attrib_info);
     }
 
     pub fn useShader(self: *Parameters) void {

@@ -1,4 +1,6 @@
 const std = @import("std");
+const assert = std.debug.assert;
+
 const typeId = @import("typeId.zig").typeId;
 
 pub const DataGen = struct {
@@ -248,7 +250,7 @@ pub const DataContainer = struct {
     }
 
     pub fn removeData(self: *DataContainer, data_gen: *DataGen) void {
-        std.debug.assert(data_gen.container == self);
+        assert(data_gen.container == self);
         if (self.datas.remove(data_gen.name)) {
             data_gen.deinit();
         }
@@ -313,7 +315,7 @@ pub const DataContainer = struct {
     }
 
     pub fn releaseMarker(self: *DataContainer, marker: *Data(bool)) void {
-        std.debug.assert(marker.gen.container == self);
+        assert(marker.gen.container == self);
         const marker_index = std.mem.indexOf(*Data(bool), self.markers.items, (&marker)[0..1]);
         if (marker_index) |i| {
             self.available_markers_indices.append(@intCast(i)) catch |err| {
@@ -351,7 +353,7 @@ pub const DataContainer = struct {
     }
 
     pub fn unrefIndex(self: *DataContainer, index: u32) void {
-        self.nb_refs.value(index).* -= 1;
+        self.nb_refs.value(index).* -|= 1;
         if (self.nb_refs.value(index).* == 0) {
             self.freeIndex(index);
         }

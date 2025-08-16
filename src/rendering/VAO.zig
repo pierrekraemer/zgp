@@ -27,7 +27,8 @@ pub fn deinit(self: *Self) void {
     }
 }
 
-pub fn setVertexAttribArray(self: *Self, attrib_info: VertexAttribInfo, vbo: VBO, stride: isize, pointer: usize) void {
+/// Enable a vertex attribute of the VAO with the given VBO
+pub fn enableVertexAttribArray(self: *Self, attrib_info: VertexAttribInfo, vbo: VBO, stride: isize, pointer: usize) void {
     gl.BindVertexArray(self.index);
     defer gl.BindVertexArray(0);
     gl.BindBuffer(gl.ARRAY_BUFFER, vbo.index);
@@ -43,19 +44,22 @@ pub fn setVertexAttribArray(self: *Self, attrib_info: VertexAttribInfo, vbo: VBO
     gl.EnableVertexAttribArray(attrib_info.index);
 }
 
-// pub fn setVertexAttribValue(self: *Self, generic_attrib_index: u32, comptime T: type, value: T) void {
-//     gl.BindVertexArray(self.index);
-//     defer gl.BindVertexArray(0);
-//     switch (@typeInfo(T)) {
-//         .array => {
-//             switch (@typeInfo(T).array.len) {
-//                 1 => gl.VertexAttrib1f(generic_attrib_index, value[0]),
-//                 2 => gl.VertexAttrib2f(generic_attrib_index, value[0], value[1]),
-//                 3 => gl.VertexAttrib3f(generic_attrib_index, value[0], value[1], value[2]),
-//                 4 => gl.VertexAttrib4f(generic_attrib_index, value[0], value[1], value[2], value[3]),
-//                 else => unreachable,
-//             }
-//         },
-//         else => @compileError("setVertexAttribValue only support array types"),
-//     }
-// }
+/// Disable a vertex attribute of the VAO
+/// // (and provide a constant value to be used instead)
+pub fn disableVertexAttribArray(self: *Self, attrib_info: VertexAttribInfo) void {
+    gl.BindVertexArray(self.index);
+    defer gl.BindVertexArray(0);
+    gl.DisableVertexAttribArray(attrib_info.index);
+    // switch (@typeInfo(T)) {
+    //     .array => {
+    //         switch (@typeInfo(T).array.len) {
+    //             1 => gl.VertexAttrib1f(attrib_info.index, value[0]),
+    //             2 => gl.VertexAttrib2f(attrib_info.index, value[0], value[1]),
+    //             3 => gl.VertexAttrib3f(attrib_info.index, value[0], value[1], value[2]),
+    //             4 => gl.VertexAttrib4f(attrib_info.index, value[0], value[1], value[2], value[3]),
+    //             else => unreachable,
+    //         }
+    //     },
+    //     else => @compileError("setVertexAttribValue only support array types"),
+    // }
+}

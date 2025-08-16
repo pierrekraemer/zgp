@@ -235,57 +235,67 @@ pub fn uiPanel(self: *Self) void {
         }
     };
 
-    // _ = c.ImGui_Begin("Models Registry", null, 0);
-    // defer c.ImGui_End();
-
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 
-    c.ImGui_SeparatorText("Surface Meshes");
-    imgui_utils.surfaceMeshListBox(UiData.selected_surface_mesh, &UiCB.onSurfaceMeshSelected);
+    c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
+    c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
+    c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
+    if (c.ImGui_CollapsingHeader("Surface Meshes", c.ImGuiTreeNodeFlags_DefaultOpen)) {
+        c.ImGui_PopStyleColorEx(3);
 
-    if (UiData.selected_surface_mesh) |sm| {
-        const maybe_info = self.surface_meshes_info.getPtr(sm);
-        if (maybe_info) |info| {
-            c.ImGui_Text("Vertex Position");
-            c.ImGui_PushID("Vertex Position");
-            imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3, info.vertex_position, UiCB.SurfaceMeshDataSelectedContext{ .models_registry = self, .surface_mesh = sm, .std_data = .vertex_position }, &UiCB.onSurfaceMeshStandardDataSelected);
-            c.ImGui_PopID();
-            c.ImGui_Text("Vertex Color");
-            c.ImGui_PushID("Vertex Color");
-            imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3, info.vertex_color, UiCB.SurfaceMeshDataSelectedContext{ .models_registry = self, .surface_mesh = sm, .std_data = .vertex_color }, &UiCB.onSurfaceMeshStandardDataSelected);
-            c.ImGui_PopID();
-            c.ImGui_Text("Vertex Normal");
-            c.ImGui_PushID("Vertex Normal");
-            imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3, info.vertex_normal, UiCB.SurfaceMeshDataSelectedContext{ .models_registry = self, .surface_mesh = sm, .std_data = .vertex_normal }, &UiCB.onSurfaceMeshStandardDataSelected);
-            c.ImGui_PopID();
+        imgui_utils.surfaceMeshListBox(UiData.selected_surface_mesh, &UiCB.onSurfaceMeshSelected);
+
+        if (UiData.selected_surface_mesh) |sm| {
+            const maybe_info = self.surface_meshes_info.getPtr(sm);
+            if (maybe_info) |info| {
+                c.ImGui_Text("Vertex Position");
+                c.ImGui_PushID("Vertex Position");
+                imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3, info.vertex_position, UiCB.SurfaceMeshDataSelectedContext{ .models_registry = self, .surface_mesh = sm, .std_data = .vertex_position }, &UiCB.onSurfaceMeshStandardDataSelected);
+                c.ImGui_PopID();
+                c.ImGui_Text("Vertex Color");
+                c.ImGui_PushID("Vertex Color");
+                imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3, info.vertex_color, UiCB.SurfaceMeshDataSelectedContext{ .models_registry = self, .surface_mesh = sm, .std_data = .vertex_color }, &UiCB.onSurfaceMeshStandardDataSelected);
+                c.ImGui_PopID();
+                c.ImGui_Text("Vertex Normal");
+                c.ImGui_PushID("Vertex Normal");
+                imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3, info.vertex_normal, UiCB.SurfaceMeshDataSelectedContext{ .models_registry = self, .surface_mesh = sm, .std_data = .vertex_normal }, &UiCB.onSurfaceMeshStandardDataSelected);
+                c.ImGui_PopID();
+            }
+        } else {
+            c.ImGui_Text("No Surface Mesh selected");
         }
     } else {
-        c.ImGui_Text("No Surface Mesh selected");
+        c.ImGui_PopStyleColorEx(3);
     }
 
-    c.ImGui_Separator();
+    c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
+    c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
+    c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
+    if (c.ImGui_CollapsingHeader("Point Clouds", c.ImGuiTreeNodeFlags_DefaultOpen)) {
+        c.ImGui_PopStyleColorEx(3);
+        imgui_utils.pointCloudListBox(UiData.selected_point_cloud, &UiCB.onPointCloudSelected);
 
-    c.ImGui_SeparatorText("Point Clouds");
-    imgui_utils.pointCloudListBox(UiData.selected_point_cloud, &UiCB.onPointCloudSelected);
-
-    if (UiData.selected_point_cloud) |pc| {
-        const maybe_info = self.point_clouds_info.getPtr(pc);
-        if (maybe_info) |info| {
-            c.ImGui_Text("Vertex Position");
-            c.ImGui_PushID("Vertex Position");
-            imgui_utils.pointCloudDataComboBox(pc, Vec3, info.vertex_position, UiCB.PointCloudDataSelectedContext{ .models_registry = self, .point_cloud = pc, .std_data = .vertex_position }, &UiCB.onPointCloudStandardDataSelected);
-            c.ImGui_PopID();
-            c.ImGui_Text("Vertex Color");
-            c.ImGui_PushID("Vertex Color");
-            imgui_utils.pointCloudDataComboBox(pc, Vec3, info.vertex_color, UiCB.PointCloudDataSelectedContext{ .models_registry = self, .point_cloud = pc, .std_data = .vertex_color }, &UiCB.onPointCloudStandardDataSelected);
-            c.ImGui_PopID();
-            c.ImGui_Text("Vertex Normal");
-            c.ImGui_PushID("Vertex Normal");
-            imgui_utils.pointCloudDataComboBox(pc, Vec3, info.vertex_normal, UiCB.PointCloudDataSelectedContext{ .models_registry = self, .point_cloud = pc, .std_data = .vertex_normal }, &UiCB.onPointCloudStandardDataSelected);
-            c.ImGui_PopID();
+        if (UiData.selected_point_cloud) |pc| {
+            const maybe_info = self.point_clouds_info.getPtr(pc);
+            if (maybe_info) |info| {
+                c.ImGui_Text("Vertex Position");
+                c.ImGui_PushID("Vertex Position");
+                imgui_utils.pointCloudDataComboBox(pc, Vec3, info.vertex_position, UiCB.PointCloudDataSelectedContext{ .models_registry = self, .point_cloud = pc, .std_data = .vertex_position }, &UiCB.onPointCloudStandardDataSelected);
+                c.ImGui_PopID();
+                c.ImGui_Text("Vertex Color");
+                c.ImGui_PushID("Vertex Color");
+                imgui_utils.pointCloudDataComboBox(pc, Vec3, info.vertex_color, UiCB.PointCloudDataSelectedContext{ .models_registry = self, .point_cloud = pc, .std_data = .vertex_color }, &UiCB.onPointCloudStandardDataSelected);
+                c.ImGui_PopID();
+                c.ImGui_Text("Vertex Normal");
+                c.ImGui_PushID("Vertex Normal");
+                imgui_utils.pointCloudDataComboBox(pc, Vec3, info.vertex_normal, UiCB.PointCloudDataSelectedContext{ .models_registry = self, .point_cloud = pc, .std_data = .vertex_normal }, &UiCB.onPointCloudStandardDataSelected);
+                c.ImGui_PopID();
+            }
+        } else {
+            c.ImGui_Text("No Point Cloud selected");
         }
     } else {
-        c.ImGui_Text("No Point Cloud selected");
+        c.ImGui_PopStyleColorEx(3);
     }
 
     c.ImGui_PopItemWidth();
@@ -297,11 +307,15 @@ pub fn createPointCloud(self: *Self, name: []const u8) !*PointCloud {
         return error.ModelNameAlreadyExists;
     }
     const pc = try self.allocator.create(PointCloud);
+    errdefer self.allocator.destroy(pc);
     pc.* = try PointCloud.init(self.allocator);
+    errdefer pc.deinit();
     try self.point_clouds.put(name, pc);
+    errdefer _ = self.point_clouds.remove(name);
     try self.point_clouds_info.put(pc, .{
         .points_ibo = IBO.init(),
     });
+    errdefer _ = self.point_clouds_info.remove(pc);
 
     for (zgp.modules.items) |*module| {
         try module.pointCloudAdded(pc);
@@ -316,13 +330,17 @@ pub fn createSurfaceMesh(self: *Self, name: []const u8) !*SurfaceMesh {
         return error.ModelNameAlreadyExists;
     }
     const sm = try self.allocator.create(SurfaceMesh);
+    errdefer self.allocator.destroy(sm);
     sm.* = try SurfaceMesh.init(self.allocator);
+    errdefer sm.deinit();
     try self.surface_meshes.put(name, sm);
+    errdefer _ = self.surface_meshes.remove(name);
     try self.surface_meshes_info.put(sm, .{
         .triangles_ibo = IBO.init(),
         .lines_ibo = IBO.init(),
         .points_ibo = IBO.init(),
     });
+    errdefer _ = self.surface_meshes_info.remove(sm);
 
     for (zgp.modules.items) |*module| {
         try module.surfaceMeshAdded(sm);

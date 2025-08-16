@@ -348,6 +348,10 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             }
 
             models_registry.menuBar();
+
+            for (modules.items) |*module| {
+                module.menuBar();
+            }
         }
 
         c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowRounding, 0.0);

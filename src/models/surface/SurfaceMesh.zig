@@ -1,8 +1,9 @@
 const std = @import("std");
-const data = @import("../../utils/Data.zig");
+const assert = std.debug.assert;
 
 const SurfaceMesh = @This();
 
+const data = @import("../../utils/Data.zig");
 const DataContainer = data.DataContainer;
 const DataGen = data.DataGen;
 const Data = data.Data;
@@ -235,15 +236,6 @@ pub fn newDataIndex(self: *SurfaceMesh, cell_type: CellType) !u32 {
     }
 }
 
-pub fn nbCells(self: *const SurfaceMesh, cell_type: CellType) u32 {
-    switch (cell_type) {
-        .corner => return self.corner_data.nbElements(),
-        .vertex => return self.vertex_data.nbElements(),
-        .edge => return self.edge_data.nbElements(),
-        .face => return self.face_data.nbElements(),
-    }
-}
-
 fn addDart(self: *SurfaceMesh) !Dart {
     const d = try self.dart_data.newIndex();
     self.dart_phi1.value(d).* = d;
@@ -258,7 +250,6 @@ fn addDart(self: *SurfaceMesh) !Dart {
 
 fn removeDart(self: *SurfaceMesh, d: Dart) void {
     self.dart_data.freeIndex(d);
-    self.corner_data.freeIndex(d);
     const corner_index = self.dart_corner_index.value(d).*;
     if (corner_index != invalid_index) {
         self.corner_data.unrefIndex(corner_index);
@@ -288,7 +279,7 @@ pub fn phi2(self: *const SurfaceMesh, dart: Dart) Dart {
 }
 
 pub fn phi1Sew(self: *SurfaceMesh, d1: Dart, d2: Dart) void {
-    std.debug.assert(d1 != d2);
+    assert(d1 != d2);
     const d3 = self.phi1(d1);
     const d4 = self.phi1(d2);
     self.dart_phi1.value(d1).* = d4;
@@ -298,15 +289,15 @@ pub fn phi1Sew(self: *SurfaceMesh, d1: Dart, d2: Dart) void {
 }
 
 pub fn phi2Sew(self: *SurfaceMesh, d1: Dart, d2: Dart) void {
-    std.debug.assert(d1 != d2);
-    std.debug.assert(self.phi2(d1) == d1);
-    std.debug.assert(self.phi2(d2) == d2);
+    assert(d1 != d2);
+    assert(self.phi2(d1) == d1);
+    assert(self.phi2(d2) == d2);
     self.dart_phi2.value(d1).* = d2;
     self.dart_phi2.value(d2).* = d1;
 }
 
 pub fn phi2Unsew(self: *SurfaceMesh, d: Dart) void {
-    std.debug.assert(self.phi2(d) != d);
+    assert(self.phi2(d) != d);
     const d2 = self.phi2(d);
     self.dart_phi2.value(d).* = d;
     self.dart_phi2.value(d2).* = d2;
@@ -379,6 +370,36 @@ pub fn dump(self: *SurfaceMesh, writer: std.io.AnyWriter) !void {
     }
 }
 
+pub fn nbCells(self: *const SurfaceMesh, cell_type: CellType) u32 {
+    switch (cell_type) {
+        .corner => return self.corner_data.nbElements(),
+        .vertex => return self.vertex_data.nbElements(),
+        .edge => return self.edge_data.nbElements(),
+        .face => return self.face_data.nbElements(),
+    }
+}
+
+pub fn degree(self: *const SurfaceMesh, cell: Cell) u32 {
+    assert(typeOf(cell) == .vertex or typeOf(cell) == .edge); // face is a top cell and does not have a degree
+    var it = self.cellDartIterator(cell);
+    var deg: u32 = 0;
+    while (it.next()) |_| {
+        // if (!self.isBoundary(d)) // TODO: check boundary condition
+        deg += 1;
+    }
+    return deg;
+}
+
+pub fn codegree(self: *const SurfaceMesh, cell: Cell) u32 {
+    assert(typeOf(cell) == .face or typeOf(cell) == .edge); // vertex is a 0-cell and does not have a codegree
+    var it = self.cellDartIterator(cell);
+    var deg: u32 = 0;
+    while (it.next()) |_| {
+        deg += 1;
+    }
+    return deg;
+}
+
 /// Creates a new face with the given number of vertices.
 /// Unbounded means that the face is not linked to any boundary "outer" face (all its darts are phi2-linked to themselves).
 /// None of the face darts are associated to vertex/edge/face indices and the face is not closed by a boundary face.
@@ -398,4 +419,9 @@ pub fn addUnboundedFace(self: *SurfaceMesh, nb_vertices: u32) !Cell {
         }
     }
     return .{ .face = d1 };
+}
+
+pub fn flipEdge(self: *SurfaceMesh, edge: Cell) void {
+    assert(typeOf(edge) == .edge);
+    _ = self;
 }

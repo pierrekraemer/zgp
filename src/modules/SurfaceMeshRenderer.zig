@@ -98,19 +98,28 @@ pub fn surfaceMeshStandardDataChanged(
     const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse return;
     switch (std_data) {
         .vertex_position => {
-            const vertex_position = surface_mesh_info.vertex_position orelse return;
-            const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position);
-            p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
-            p.line_bold_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
-            p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+            if (surface_mesh_info.vertex_position) |vertex_position| {
+                const position_vbo: VBO = try zgp.models_registry.getDataVBO(Vec3, vertex_position);
+                p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+                p.line_bold_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+                p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+            } else {
+                p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
+                p.line_bold_shader_parameters.unsetVertexAttribArray(.position);
+                p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
+            }
         },
         .vertex_color => {
-            const vertex_color = surface_mesh_info.vertex_color orelse return;
-            const color_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_color);
-            p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
-            p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
+            if (surface_mesh_info.vertex_color) |vertex_color| {
+                const color_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_color);
+                p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
+                p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
+            } else {
+                p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
+                p.point_sphere_shader_parameters.unsetVertexAttribArray(.color);
+            }
         },
-        else => return, // Ignore other data changes
+        else => return, // Ignore other standard data changes
     }
 }
 

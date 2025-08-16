@@ -29,6 +29,7 @@ const VTable = struct {
     surfaceMeshDataUpdated: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) anyerror!void,
 
     uiPanel: *const fn (ptr: *anyopaque) void,
+    menuBar: *const fn (ptr: *anyopaque) void,
     draw: *const fn (ptr: *anyopaque, view_matrix: Mat4, projection_matrix: Mat4) void,
 };
 
@@ -81,6 +82,11 @@ pub fn init(ptr: anytype) Self {
             const impl: Ptr = @ptrCast(@alignCast(pointer));
             impl.uiPanel();
         }
+        fn menuBar(pointer: *anyopaque) void {
+            if (!@hasDecl(Module, "menuBar")) return;
+            const impl: Ptr = @ptrCast(@alignCast(pointer));
+            impl.menuBar();
+        }
         fn draw(pointer: *anyopaque, view_matrix: Mat4, projection_matrix: Mat4) void {
             if (!@hasDecl(Module, "draw")) return;
             const impl: Ptr = @ptrCast(@alignCast(pointer));
@@ -99,6 +105,7 @@ pub fn init(ptr: anytype) Self {
             .surfaceMeshConnectivityUpdated = gen.surfaceMeshConnectivityUpdated,
             .surfaceMeshDataUpdated = gen.surfaceMeshDataUpdated,
             .uiPanel = gen.uiPanel,
+            .menuBar = gen.menuBar,
             .draw = gen.draw,
         },
     };
@@ -131,6 +138,9 @@ pub fn surfaceMeshDataUpdated(self: *Self, surface_mesh: *SurfaceMesh, cell_type
 }
 pub fn uiPanel(self: *Self) void {
     self.vtable.uiPanel(self.ptr);
+}
+pub fn menuBar(self: *Self) void {
+    self.vtable.menuBar(self.ptr);
 }
 pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
     self.vtable.draw(self.ptr, view_matrix, projection_matrix);

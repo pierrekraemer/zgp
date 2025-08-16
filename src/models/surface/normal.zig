@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const Data = @import("../../utils/Data.zig").Data;
@@ -11,7 +12,7 @@ pub fn faceNormal(
     face: SurfaceMesh.Cell,
 ) Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
-    std.debug.assert(SurfaceMesh.typeOf(face) == .face);
+    assert(SurfaceMesh.typeOf(face) == .face);
     var dart_it = surface_mesh.cellDartIterator(face);
     var normal = vec.zero3;
     while (dart_it.next()) |dF| {
@@ -50,7 +51,7 @@ pub fn vertexNormal(
     vertex: SurfaceMesh.Cell,
 ) Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
-    std.debug.assert(SurfaceMesh.typeOf(vertex) == .vertex);
+    assert(SurfaceMesh.typeOf(vertex) == .vertex);
     var dart_it = surface_mesh.cellDartIterator(vertex);
     var normal = vec.zero3;
     while (dart_it.next()) |d| {
