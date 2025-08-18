@@ -62,6 +62,6 @@ pub fn removePoint(self: *PointCloud, p: Point) void {
     self.point_data.freeIndex(p);
 }
 
-pub fn indexOf(_: *const PointCloud, p: Point) u32 {
+pub fn pointIndex(_: *const PointCloud, p: Point) u32 {
     return p;
 }

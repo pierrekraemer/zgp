@@ -12,16 +12,16 @@ pub fn faceNormal(
     face: SurfaceMesh.Cell,
 ) Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
-    assert(SurfaceMesh.typeOf(face) == .face);
+    assert(face.cellType() == .face);
     var dart_it = surface_mesh.cellDartIterator(face);
     var normal = vec.zero3;
     while (dart_it.next()) |dF| {
         var d = dF;
-        const p1 = vertex_position.value(surface_mesh.indexOf(.{ .vertex = d })).*;
+        const p1 = vertex_position.value(surface_mesh.cellIndex(.{ .vertex = d })).*;
         d = surface_mesh.phi1(d);
-        const p2 = vertex_position.value(surface_mesh.indexOf(.{ .vertex = d })).*;
+        const p2 = vertex_position.value(surface_mesh.cellIndex(.{ .vertex = d })).*;
         d = surface_mesh.phi1(d);
-        const p3 = vertex_position.value(surface_mesh.indexOf(.{ .vertex = d })).*;
+        const p3 = vertex_position.value(surface_mesh.cellIndex(.{ .vertex = d })).*;
         const v1 = vec.sub3(p2, p1);
         const v2 = vec.sub3(p3, p1);
         normal = vec.add3(normal, vec.cross3(v1, v2));
@@ -41,7 +41,7 @@ pub fn computeFaceNormals(
     defer face_it.deinit();
     while (face_it.next()) |face| {
         const n = faceNormal(surface_mesh, vertex_position, face);
-        face_normal.value(surface_mesh.indexOf(face)).* = n;
+        face_normal.value(surface_mesh.cellIndex(face)).* = n;
     }
 }
 
@@ -51,12 +51,14 @@ pub fn vertexNormal(
     vertex: SurfaceMesh.Cell,
 ) Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
-    assert(SurfaceMesh.typeOf(vertex) == .vertex);
+    assert(vertex.cellType() == .vertex);
     var dart_it = surface_mesh.cellDartIterator(vertex);
     var normal = vec.zero3;
     while (dart_it.next()) |d| {
-        const n = faceNormal(surface_mesh, vertex_position, .{ .face = d });
-        normal = vec.add3(normal, n);
+        if (!surface_mesh.isBoundaryDart(d)) {
+            const n = faceNormal(surface_mesh, vertex_position, .{ .face = d });
+            normal = vec.add3(normal, n);
+        }
     }
     return vec.normalized3(normal);
 }
@@ -70,6 +72,6 @@ pub fn computeVertexNormals(
     defer vertex_it.deinit();
     while (vertex_it.next()) |vertex| {
         const n = vertexNormal(surface_mesh, vertex_position, vertex);
-        vertex_normal.value(surface_mesh.indexOf(vertex)).* = n;
+        vertex_normal.value(surface_mesh.cellIndex(vertex)).* = n;
     }
 }

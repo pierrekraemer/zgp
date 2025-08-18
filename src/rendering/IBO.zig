@@ -34,7 +34,7 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             while (f_it.next()) |f| {
                 var dart_it = sm.cellDartIterator(f);
                 while (dart_it.next()) |d| {
-                    try indices.append(sm.indexOf(.{ .vertex = d }));
+                    try indices.append(sm.cellIndex(.{ .vertex = d }));
                 }
             }
         },
@@ -44,7 +44,7 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             while (e_it.next()) |e| {
                 var dart_it = sm.cellDartIterator(e);
                 while (dart_it.next()) |d| {
-                    try indices.append(sm.indexOf(.{ .vertex = d }));
+                    try indices.append(sm.cellIndex(.{ .vertex = d }));
                 }
             }
         },
@@ -52,7 +52,7 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             var v_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
             defer v_it.deinit();
             while (v_it.next()) |v| {
-                try indices.append(sm.indexOf(v));
+                try indices.append(sm.cellIndex(v));
             }
         },
         else => unreachable,

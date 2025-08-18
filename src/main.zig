@@ -76,21 +76,21 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // SDL & GL initialization
     // ***********************
 
-    sdl_log.debug("SDL build time version: {d}.{d}.{d}", .{
+    sdl_log.info("SDL build time version: {d}.{d}.{d}", .{
         c.SDL_MAJOR_VERSION,
         c.SDL_MINOR_VERSION,
         c.SDL_MICRO_VERSION,
     });
-    sdl_log.debug("SDL build time revision: {s}", .{c.SDL_REVISION});
+    sdl_log.info("SDL build time revision: {s}", .{c.SDL_REVISION});
     {
         const version = c.SDL_GetVersion();
-        sdl_log.debug("SDL runtime version: {d}.{d}.{d}", .{
+        sdl_log.info("SDL runtime version: {d}.{d}.{d}", .{
             c.SDL_VERSIONNUM_MAJOR(version),
             c.SDL_VERSIONNUM_MINOR(version),
             c.SDL_VERSIONNUM_MICRO(version),
         });
         const revision: [*:0]const u8 = c.SDL_GetRevision();
-        sdl_log.debug("SDL runtime revision: {s}", .{revision});
+        sdl_log.info("SDL runtime revision: {s}", .{revision});
     }
 
     try errify(c.SDL_SetAppMetadata("zgp", "0.0.0", "zgp"));
@@ -160,7 +160,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = c.cImGui_ImplOpenGL3_InitEx(shader_version);
     errdefer c.cImGui_ImplOpenGL3_Shutdown();
 
-    imgui_log.debug("ImGui initialized\n", .{});
+    imgui_log.info("ImGui initialized", .{});
 
     // Models registry initialization
     // *****************************************
@@ -188,7 +188,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // ***********************************
 
     {
-        const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/david_25k.off");
+        // const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/julius_388k.off");
+        const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/grid_tri.off");
         errdefer sm.deinit();
 
         const sm_vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
@@ -226,7 +227,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         try models_registry.surfaceMeshConnectivityUpdated(sm);
     }
 
-    // try sm.dump(std.io.getStdErr().writer().any());
+    // sm.dump(std.io.getStdErr().writer().any());
 
     {
         const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/elephant_isotropic_25k.off");

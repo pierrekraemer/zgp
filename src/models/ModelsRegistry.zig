@@ -246,6 +246,11 @@ pub fn uiPanel(self: *Self) void {
         imgui_utils.surfaceMeshListBox(UiData.selected_surface_mesh, &UiCB.onSurfaceMeshSelected);
 
         if (UiData.selected_surface_mesh) |sm| {
+            c.ImGui_SeparatorText("#Cells");
+            c.ImGui_Text("Vertex: %d", sm.nbCells(.vertex));
+            c.ImGui_Text("Edge: %d", sm.nbCells(.edge));
+            c.ImGui_Text("Face: %d", sm.nbCells(.face));
+            c.ImGui_SeparatorText("Standard Data");
             const maybe_info = self.surface_meshes_info.getPtr(sm);
             if (maybe_info) |info| {
                 c.ImGui_Text("Vertex Position");
@@ -411,7 +416,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
 
     switch (filetype) {
         .off => {
-            std.debug.print("reading OFF file\n", .{});
+            zgp.zgp_log.info("reading OFF file", .{});
 
             while (reader.streamUntilDelimiter(line_writer, '\n', null)) {
                 if (line.items.len == 0) continue; // skip empty lines
@@ -419,7 +424,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                 if (std.mem.startsWith(u8, line.items, "OFF")) break;
             } else |err| switch (err) {
                 error.EndOfStream => {
-                    std.debug.print("reached end of file before finding the header\n", .{});
+                    zgp.zgp_log.warn("reached end of file before finding the header", .{});
                     return error.InvalidFileFormat;
                 },
                 else => return err,
@@ -437,18 +442,18 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                     nb_cells[i] = value;
                 }
                 if (i != nb_cells.len) {
-                    std.debug.print("failed to read the number of cells\n", .{});
+                    zgp.zgp_log.warn("failed to read the number of cells", .{});
                     return error.InvalidFileFormat;
                 }
                 break;
             } else |err| switch (err) {
                 error.EndOfStream => {
-                    std.debug.print("reached end of file before reading the number of cells\n", .{});
+                    zgp.zgp_log.warn("reached end of file before reading the number of cells", .{});
                     return error.InvalidFileFormat;
                 },
                 else => return err,
             }
-            std.debug.print("nb_cells: {d} {d} {d}\n", .{ nb_cells[0], nb_cells[1], nb_cells[2] });
+            zgp.zgp_log.info("nb_cells: {d} vertices / {d} faces / {d} edges", .{ nb_cells[0], nb_cells[1], nb_cells[2] });
 
             try import_data.ensureTotalCapacity(nb_cells[0], nb_cells[1]);
 
@@ -462,27 +467,27 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                     var j: u32 = 0;
                     while (tokens.next()) |token| : (j += 1) {
                         if (j >= 3) {
-                            std.debug.print("vertex {d} position has more than 3 coordinates\n", .{i});
+                            zgp.zgp_log.warn("vertex {d} position has more than 3 coordinates", .{i});
                             return error.InvalidFileFormat;
                         }
                         const value = try std.fmt.parseFloat(f32, token);
                         position[j] = value;
                     }
                     if (j != 3) {
-                        std.debug.print("vertex {d} position has less than 3 coordinates\n", .{i});
+                        zgp.zgp_log.warn("vertex {d} position has less than 3 coordinates", .{i});
                         return error.InvalidFileFormat;
                     }
                     try import_data.vertices_position.append(position);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
-                        std.debug.print("reached end of file before reading all vertices\n", .{});
+                        zgp.zgp_log.warn("reached end of file before reading all vertices", .{});
                         return error.InvalidFileFormat;
                     },
                     else => return err,
                 }
             }
-            std.debug.print("read {d} vertices\n", .{import_data.vertices_position.items.len});
+            zgp.zgp_log.info("read {d} vertices", .{import_data.vertices_position.items.len});
 
             i = 0;
             while (i < nb_cells[1]) : (i += 1) {
@@ -496,7 +501,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                         if (j == 0) {
                             face_nb_vertices = try std.fmt.parseInt(u32, token, 10);
                         } else if (j > face_nb_vertices + 1) {
-                            std.debug.print("face {d} has more than {d} vertices\n", .{ i, face_nb_vertices });
+                            zgp.zgp_log.warn("face {d} has more than {d} vertices", .{ i, face_nb_vertices });
                             return error.InvalidFileFormat;
                         } else {
                             const index = try std.fmt.parseInt(u32, token, 10);
@@ -504,20 +509,20 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                         }
                     }
                     if (j != face_nb_vertices + 1) {
-                        std.debug.print("face {d} has less than {d} vertices\n", .{ i, face_nb_vertices });
+                        zgp.zgp_log.warn("face {d} has less than {d} vertices", .{ i, face_nb_vertices });
                         return error.InvalidFileFormat;
                     }
                     try import_data.faces_nb_vertices.append(face_nb_vertices);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
-                        std.debug.print("reached end of file before reading all faces\n", .{});
+                        zgp.zgp_log.warn("reached end of file before reading all faces", .{});
                         return error.InvalidFileFormat;
                     },
                     else => return err,
                 }
             }
-            std.debug.print("read {d} faces\n", .{import_data.faces_nb_vertices.items.len});
+            zgp.zgp_log.info("read {d} faces", .{import_data.faces_nb_vertices.items.len});
         },
         else => return error.InvalidFileExtension,
     }
@@ -537,7 +542,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
     var i: u32 = 0;
     for (import_data.faces_nb_vertices.items) |face_nb_vertices| {
         const face = try sm.addUnboundedFace(face_nb_vertices);
-        var d = SurfaceMesh.dartOf(face);
+        var d = face.dart();
         for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
             sm.dart_vertex_index.value(d).* = index;
             try darts_of_vertex.value(index).append(d);
@@ -551,11 +556,11 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
     var dart_it = sm.dartIterator();
     while (dart_it.next()) |d| {
         if (sm.phi2(d) == d) {
-            const vertex_index = sm.indexOf(.{ .vertex = d });
-            const next_vertex_index = sm.indexOf(.{ .vertex = sm.phi1(d) });
+            const vertex_index = sm.cellIndex(.{ .vertex = d });
+            const next_vertex_index = sm.cellIndex(.{ .vertex = sm.phi1(d) });
             const next_vertex_darts = darts_of_vertex.value(next_vertex_index).*;
             const opposite_dart = for (next_vertex_darts.items) |d2| {
-                if (sm.indexOf(.{ .vertex = sm.phi1(d2) }) == vertex_index) {
+                if (sm.cellIndex(.{ .vertex = sm.phi1(d2) }) == vertex_index) {
                     break d2;
                 }
             } else null;
@@ -565,6 +570,12 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                 nb_boundary_edges += 1;
             }
         }
+    }
+
+    if (nb_boundary_edges > 0) {
+        zgp.zgp_log.info("found {d} boundary edges", .{nb_boundary_edges});
+        const nb_boundary_faces = try sm.close();
+        zgp.zgp_log.info("closed {d} boundary faces", .{nb_boundary_faces});
     }
 
     // vertices were already indexed above
