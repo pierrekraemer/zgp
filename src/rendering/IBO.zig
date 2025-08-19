@@ -32,7 +32,7 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             var f_it = try SurfaceMesh.CellIterator(.face).init(sm);
             defer f_it.deinit();
             while (f_it.next()) |f| {
-                var dart_it = sm.cellDartIterator(f);
+                var dart_it = sm.cellDartIterator(f); // TODO: triangulate polygonal faces
                 while (dart_it.next()) |d| {
                     try indices.append(sm.cellIndex(.{ .vertex = d }));
                 }
@@ -53,6 +53,17 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             defer v_it.deinit();
             while (v_it.next()) |v| {
                 try indices.append(sm.cellIndex(v));
+            }
+        },
+        .boundary => {
+            var b_it = try SurfaceMesh.CellIterator(.boundary).init(sm);
+            defer b_it.deinit();
+            while (b_it.next()) |b| {
+                var dart_it = sm.cellDartIterator(b);
+                while (dart_it.next()) |d| {
+                    try indices.append(sm.cellIndex(.{ .vertex = d }));
+                    try indices.append(sm.cellIndex(.{ .vertex = sm.phi1(d) }));
+                }
             }
         },
         else => unreachable,

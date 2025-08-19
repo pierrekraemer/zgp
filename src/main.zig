@@ -194,12 +194,12 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
         const sm_vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
         // scale the mesh position in the range [0, 1] and center it on the origin
-        const bb_min, const bb_max = geometry_utils.boundingBox(sm_vertex_position);
-        geometry_utils.scale(sm_vertex_position, 1.0 / vec.maxComponent3(vec.sub3(bb_max, bb_min)));
-        geometry_utils.centerAround(sm_vertex_position, vec.zero3);
+        const bb_min, const bb_max = geometry_utils.boundingBox(sm_vertex_position.data);
+        geometry_utils.scale(sm_vertex_position.data, 1.0 / vec.maxComponent3(vec.sub3(bb_max, bb_min)));
+        geometry_utils.centerAround(sm_vertex_position.data, vec.zero3);
 
         const sm_vertex_color = try sm.addData(.vertex, Vec3, "color");
-        var col_it = sm_vertex_color.iterator();
+        var col_it = sm_vertex_color.data.iterator();
         const r = rng.random();
         while (col_it.next()) |col| {
             col.* = vec.random3(r);
@@ -220,9 +220,9 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const sm_edge_dihedral_angle = try sm.addData(.edge, f32, "dihedral_angle");
         try angle.computeEdgeDihedralAngles(sm, sm_vertex_position, sm_edge_dihedral_angle);
 
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_vertex_position);
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, Vec3, sm_vertex_normal);
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, Vec3, sm_vertex_color);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, .vertex, Vec3, sm_vertex_position);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, .vertex, Vec3, sm_vertex_normal);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, .vertex, Vec3, sm_vertex_color);
 
         try models_registry.surfaceMeshConnectivityUpdated(sm);
     }
@@ -235,12 +235,12 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
         const sm_vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
         // scale the mesh position in the range [0, 1] and center it on the origin
-        const bb_min, const bb_max = geometry_utils.boundingBox(sm_vertex_position);
-        geometry_utils.scale(sm_vertex_position, 1.0 / vec.maxComponent3(vec.sub3(bb_max, bb_min)));
-        geometry_utils.centerAround(sm_vertex_position, vec.zero3);
+        const bb_min, const bb_max = geometry_utils.boundingBox(sm_vertex_position.data);
+        geometry_utils.scale(sm_vertex_position.data, 1.0 / vec.maxComponent3(vec.sub3(bb_max, bb_min)));
+        geometry_utils.centerAround(sm_vertex_position.data, vec.zero3);
 
         const sm_vertex_color = try sm.addData(.vertex, Vec3, "color");
-        var col_it = sm_vertex_color.iterator();
+        var col_it = sm_vertex_color.data.iterator();
         const r = rng.random();
         while (col_it.next()) |col| {
             col.* = vec.random3(r);
@@ -261,9 +261,9 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const sm_edge_dihedral_angle = try sm.addData(.edge, f32, "dihedral_angle");
         try angle.computeEdgeDihedralAngles(sm, sm_vertex_position, sm_edge_dihedral_angle);
 
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, Vec3, sm_vertex_position);
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, Vec3, sm_vertex_normal);
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, Vec3, sm_vertex_color);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, .vertex, Vec3, sm_vertex_position);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, .vertex, Vec3, sm_vertex_normal);
+        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, .vertex, Vec3, sm_vertex_color);
 
         try models_registry.surfaceMeshConnectivityUpdated(sm);
     }

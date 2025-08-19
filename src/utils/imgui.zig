@@ -6,8 +6,10 @@ const c = @cImport({
 
 const zgp = @import("../main.zig");
 
-pub const PointCloud = @import("../models/point/PointCloud.zig");
-pub const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
+const PointCloud = @import("../models/point/PointCloud.zig");
+const PointCloudData = PointCloud.PointCloudData;
+const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
+const SurfaceMeshData = SurfaceMesh.SurfaceMeshData;
 
 const Data = @import("../utils/Data.zig").Data;
 
@@ -59,18 +61,18 @@ pub fn pointCloudListBox(
 
 pub fn surfaceMeshCellDataComboBox(
     surface_mesh: *SurfaceMesh,
-    cell_type: SurfaceMesh.CellType,
+    comptime cell_type: SurfaceMesh.CellType,
     comptime T: type,
-    selected_data: ?*Data(T),
+    selected_data: ?SurfaceMeshData(cell_type, T),
     context: anytype,
-    on_selected: *const fn (comptime T: type, ?*Data(T), @TypeOf(context)) void,
+    on_selected: *const fn (comptime cell_type: SurfaceMesh.CellType, comptime T: type, ?SurfaceMeshData(cell_type, T), @TypeOf(context)) void,
 ) void {
-    if (c.ImGui_BeginCombo("", if (selected_data) |data| data.gen.name.ptr else "--none--", 0)) {
+    if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "--none--", 0)) {
         defer c.ImGui_EndCombo();
         const none_selected = if (selected_data) |_| false else true;
         if (c.ImGui_SelectableEx("--none--", none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
             if (!none_selected) {
-                on_selected(T, null, context); // only call on_selected if it was not previously selected
+                on_selected(cell_type, T, null, context); // only call on_selected if it was not previously selected
             }
         }
         if (none_selected) {
@@ -81,13 +83,14 @@ pub fn surfaceMeshCellDataComboBox(
             .vertex => &surface_mesh.vertex_data,
             .edge => &surface_mesh.edge_data,
             .face => &surface_mesh.face_data,
+            else => unreachable,
         };
         var data_it = data_container.typedIterator(T);
         while (data_it.next()) |data| {
-            const is_selected = selected_data == data;
+            const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) {
-                    on_selected(T, data, context); // only call on_selected if it was not previously selected
+                    on_selected(cell_type, T, .{ .surface_mesh = surface_mesh, .data = data }, context); // only call on_selected if it was not previously selected
                 }
             }
             if (is_selected) {
@@ -100,11 +103,11 @@ pub fn surfaceMeshCellDataComboBox(
 pub fn pointCloudDataComboBox(
     point_cloud: *PointCloud,
     comptime T: type,
-    selected_data: ?*Data(T),
+    selected_data: ?PointCloudData(T),
     context: anytype,
-    on_selected: *const fn (comptime T: type, ?*Data(T), @TypeOf(context)) void,
+    on_selected: *const fn (comptime T: type, ?PointCloudData(T), @TypeOf(context)) void,
 ) void {
-    if (c.ImGui_BeginCombo("", if (selected_data) |data| data.gen.name.ptr else "--none--", 0)) {
+    if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "--none--", 0)) {
         defer c.ImGui_EndCombo();
         const none_selected = if (selected_data) |_| false else true;
         if (c.ImGui_SelectableEx("--none--", none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
@@ -117,10 +120,10 @@ pub fn pointCloudDataComboBox(
         }
         var data_it = point_cloud.point_data.typedIterator(T);
         while (data_it.next()) |data| {
-            const is_selected = selected_data == data;
+            const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) {
-                    on_selected(T, data, context); // only call on_selected if it was not previously selected
+                    on_selected(T, .{ .point_cloud = point_cloud, .data = data }, context); // only call on_selected if it was not previously selected
                 }
             }
             if (is_selected) {

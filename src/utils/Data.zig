@@ -88,7 +88,7 @@ pub fn Data(comptime T: type) type {
             self.data.clearRetainingCapacity();
         }
 
-        fn ValueType(comptime SelfType: type) type {
+        fn ValuePtrType(comptime SelfType: type) type {
             if (@typeInfo(SelfType).pointer.is_const) {
                 return *const T;
             } else {
@@ -96,8 +96,12 @@ pub fn Data(comptime T: type) type {
             }
         }
 
-        pub fn value(self: anytype, index: u32) ValueType(@TypeOf(self)) {
+        pub fn valuePtr(self: anytype, index: u32) ValuePtrType(@TypeOf(self)) {
             return self.data.at(index);
+        }
+
+        pub fn value(self: *Self, index: u32) T {
+            return self.data.at(index).*;
         }
 
         pub fn fill(self: *Self, val: T) void {
@@ -337,28 +341,28 @@ pub const DataContainer = struct {
         }
         for (self.markers.items) |marker| {
             try marker.ensureLength(index + 1);
-            marker.value(index).* = false; // reset the markers at this index
+            marker.valuePtr(index).* = false; // reset the markers at this index
         }
-        self.is_active.value(index).* = true; // after newIndex, the index is active
-        self.nb_refs.value(index).* = 0; // but has no reference yet
+        self.is_active.valuePtr(index).* = true; // after newIndex, the index is active
+        self.nb_refs.valuePtr(index).* = 0; // but has no reference yet
         return index;
     }
 
     pub fn freeIndex(self: *DataContainer, index: u32) void {
-        self.is_active.value(index).* = false;
-        self.nb_refs.value(index).* = 0;
+        self.is_active.valuePtr(index).* = false;
+        self.nb_refs.valuePtr(index).* = 0;
         self.free_indices.append(index) catch |err| {
             std.debug.print("Error freeing index {}: {}\n", .{ index, err });
         };
     }
 
     pub fn refIndex(self: *DataContainer, index: u32) void {
-        self.nb_refs.value(index).* += 1;
+        self.nb_refs.valuePtr(index).* += 1;
     }
 
     pub fn unrefIndex(self: *DataContainer, index: u32) void {
-        self.nb_refs.value(index).* -|= 1;
-        if (self.nb_refs.value(index).* == 0) {
+        self.nb_refs.valuePtr(index).* -= 1;
+        if (self.nb_refs.valuePtr(index).* == 0) {
             self.freeIndex(index);
         }
     }
@@ -376,11 +380,6 @@ pub const DataContainer = struct {
         } else self.capacity;
     }
 
-    /// lastIndex actually returns one past the last valid index.
-    pub fn lastIndex(self: *const DataContainer) u32 {
-        return self.capacity;
-    }
-
     pub fn nextIndex(self: *const DataContainer, index: u32) u32 {
         var next: u32 = index + 1;
         return while (next < self.capacity) : (next += 1) {
@@ -390,7 +389,12 @@ pub const DataContainer = struct {
         } else self.capacity;
     }
 
+    /// lastIndex actually returns one past the last valid index.
+    pub fn lastIndex(self: *const DataContainer) u32 {
+        return self.capacity;
+    }
+
     pub fn isActiveIndex(self: *const DataContainer, index: u32) bool {
-        return self.is_active.value(index).*;
+        return self.is_active.valuePtr(index).*;
     }
 };

@@ -80,17 +80,17 @@ pub fn pointCloudStandardDataChanged(
     const p = self.parameters.getPtr(point_cloud) orelse return;
     const point_cloud_info = zgp.models_registry.getPointCloudInfo(point_cloud) orelse return;
     switch (std_data) {
-        .vertex_position => {
-            if (point_cloud_info.vertex_position) |vertex_position| {
-                const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position);
+        .position => {
+            if (point_cloud_info.position) |position| {
+                const position_vbo = try zgp.models_registry.getDataVBO(Vec3, position.data);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
             }
         },
-        .vertex_color => {
-            if (point_cloud_info.vertex_color) |vertex_color| {
-                const color_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_color);
+        .color => {
+            if (point_cloud_info.color) |color| {
+                const color_vbo = try zgp.models_registry.getDataVBO(Vec3, color.data);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.color);

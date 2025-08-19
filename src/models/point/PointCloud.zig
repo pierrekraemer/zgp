@@ -11,7 +11,7 @@ pub const Point = u32;
 
 point_data: DataContainer,
 
-pub const PointIterator = struct {
+const PointIterator = struct {
     point_cloud: *const PointCloud,
     current: Point,
     pub fn next(self: *PointIterator) ?Point {
@@ -22,7 +22,17 @@ pub const PointIterator = struct {
         self.current = self.point_cloud.point_data.nextIndex(self.current);
         return res;
     }
+    pub fn reset(self: *PointIterator) void {
+        self.current = self.point_cloud.point_data.firstIndex();
+    }
 };
+
+pub fn pointIterator(self: *const PointCloud) PointIterator {
+    return .{
+        .point_cloud = self,
+        .current = self.point_data.firstIndex(),
+    };
+}
 
 pub fn init(allocator: std.mem.Allocator) !PointCloud {
     return .{
@@ -38,12 +48,40 @@ pub fn clearRetainingCapacity(self: *PointCloud) void {
     self.point_data.clearRetainingCapacity();
 }
 
-pub fn addData(self: *PointCloud, comptime T: type, name: []const u8) !*Data(T) {
-    return self.point_data.addData(T, name);
+pub fn PointCloudData(comptime T: type) type {
+    return struct {
+        const Self = @This();
+
+        point_cloud: *const PointCloud,
+        data: *Data(T),
+
+        pub fn value(self: Self, p: Point) T {
+            return self.data.value(self.point_cloud.pointIndex(p));
+        }
+
+        pub fn valuePtr(self: Self, p: Point) *T {
+            return self.data.valuePtr(self.point_cloud.pointIndex(p));
+        }
+
+        pub fn name(self: Self) []const u8 {
+            return self.gen().name;
+        }
+
+        pub fn gen(self: Self) *DataGen {
+            return &self.data.gen;
+        }
+    };
 }
 
-pub fn getData(self: *PointCloud, comptime T: type, name: []const u8) !*Data(T) {
-    return self.point_data.getData(T, name);
+pub fn addData(self: *PointCloud, comptime T: type, name: []const u8) !PointCloudData(T) {
+    return .{
+        .point_cloud = self,
+        .data = try self.point_data.addData(T, name),
+    };
+}
+
+pub fn getData(self: *PointCloud, comptime T: type, name: []const u8) ?PointCloudData(T) {
+    return if (self.point_data.getData(T, name)) |d| .{ .point_cloud = self, .data = d } else null;
 }
 
 pub fn removeData(self: *PointCloud, data_gen: *DataGen) void {

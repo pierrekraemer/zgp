@@ -13,12 +13,13 @@ const Module = @import("Module.zig");
 
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
+const SurfaceMeshData = SurfaceMesh.SurfaceMeshData;
 const SurfaceMeshStandardData = ModelsRegistry.SurfaceMeshStandardData;
 
 const PointVector = @import("../rendering/shaders/point_vector/PointVector.zig");
 const VBO = @import("../rendering/VBO.zig");
 
-const Data = @import("../utils/Data.zig").Data;
+// const Data = @import("../utils/Data.zig").Data;
 
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
@@ -28,7 +29,7 @@ const Mat4 = mat.Mat4;
 
 const VectorPerVertexRendererParameters = struct {
     point_vector_shader_parameters: PointVector.Parameters,
-    vector_data: ?*Data(Vec3) = null,
+    vector_data: ?SurfaceMeshData(.vertex, Vec3) = null,
 
     pub fn init(vector_per_vertex_renderer: *const Self) VectorPerVertexRendererParameters {
         return .{
@@ -84,7 +85,7 @@ pub fn surfaceMeshStandardDataChanged(
     switch (std_data) {
         .vertex_position => {
             if (surface_mesh_info.vertex_position) |vertex_position| {
-                const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position);
+                const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position.data);
                 p.point_vector_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_vector_shader_parameters.unsetVertexAttribArray(.position);
@@ -94,11 +95,11 @@ pub fn surfaceMeshStandardDataChanged(
     }
 }
 
-fn setSurfaceMeshVectorData(self: *Self, surface_mesh: *SurfaceMesh, vector: ?*Data(Vec3)) !void {
+fn setSurfaceMeshVectorData(self: *Self, surface_mesh: *SurfaceMesh, vector: ?SurfaceMeshData(.vertex, Vec3)) !void {
     const p = self.parameters.getPtr(surface_mesh) orelse return;
     p.vector_data = vector;
     if (p.vector_data) |v| {
-        const vector_vbo = try zgp.models_registry.getDataVBO(Vec3, v);
+        const vector_vbo = try zgp.models_registry.getDataVBO(Vec3, v.data);
         p.point_vector_shader_parameters.setVertexAttribArray(.vector, vector_vbo, 0, 0);
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);
@@ -132,15 +133,12 @@ pub fn uiPanel(self: *Self) void {
             vector_per_vertex_renderer: *Self,
             surface_mesh: *SurfaceMesh,
         };
-        fn onVectorDataSelected(comptime T: type, data: ?*Data(T), ctx: DataSelectedContext) void {
+        fn onVectorDataSelected(comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: ?SurfaceMeshData(cell_type, T), ctx: DataSelectedContext) void {
             ctx.vector_per_vertex_renderer.setSurfaceMeshVectorData(ctx.surface_mesh, data) catch |err| {
                 zgp.imgui_log.err("Error setting vector data: {}", .{err});
             };
         }
     };
-
-    // _ = c.ImGui_Begin("Vector Per Vertex Renderer", null, 0);
-    // defer c.ImGui_End();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 
@@ -152,7 +150,14 @@ pub fn uiPanel(self: *Self) void {
         if (vector_per_vertex_renderer_parameters) |p| {
             c.ImGui_Text("Vector");
             c.ImGui_PushID("Vector");
-            imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3, p.vector_data, UiCB.DataSelectedContext{ .vector_per_vertex_renderer = self, .surface_mesh = sm }, &UiCB.onVectorDataSelected);
+            imgui_utils.surfaceMeshCellDataComboBox(
+                sm,
+                .vertex,
+                Vec3,
+                p.vector_data,
+                UiCB.DataSelectedContext{ .vector_per_vertex_renderer = self, .surface_mesh = sm },
+                &UiCB.onVectorDataSelected,
+            );
             c.ImGui_PopID();
             _ = c.ImGui_SliderFloatEx("scale", &p.point_vector_shader_parameters.vector_scale, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic);
             _ = c.ImGui_ColorEdit3("color", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs);

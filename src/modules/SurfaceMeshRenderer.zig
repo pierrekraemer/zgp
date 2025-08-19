@@ -27,48 +27,49 @@ const mat = @import("../geometry/mat.zig");
 const Mat4 = mat.Mat4;
 
 const SurfaceMeshRendererParameters = struct {
-    tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters,
-    line_bold_shader_parameters: LineBold.Parameters,
     point_sphere_shader_parameters: PointSphere.Parameters,
+    line_bold_shader_parameters: LineBold.Parameters,
+    tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters,
 
     draw_vertices: bool = true,
     draw_edges: bool = true,
     draw_faces: bool = true,
+    draw_boundaries: bool = false,
 
     pub fn init(surface_mesh_renderer: *const Self) SurfaceMeshRendererParameters {
         return .{
-            .tri_flat_color_per_vertex_shader_parameters = surface_mesh_renderer.tri_flat_color_per_vertex_shader.createParameters(),
-            .line_bold_shader_parameters = surface_mesh_renderer.line_bold_shader.createParameters(),
             .point_sphere_shader_parameters = surface_mesh_renderer.point_sphere_shader.createParameters(),
+            .line_bold_shader_parameters = surface_mesh_renderer.line_bold_shader.createParameters(),
+            .tri_flat_color_per_vertex_shader_parameters = surface_mesh_renderer.tri_flat_color_per_vertex_shader.createParameters(),
         };
     }
 
     pub fn deinit(self: *SurfaceMeshRendererParameters) void {
-        self.tri_flat_color_per_vertex_shader_parameters.deinit();
-        self.line_bold_shader_parameters.deinit();
         self.point_sphere_shader_parameters.deinit();
+        self.line_bold_shader_parameters.deinit();
+        self.tri_flat_color_per_vertex_shader_parameters.deinit();
     }
 };
 
-tri_flat_color_per_vertex_shader: TriFlatColorPerVertex,
-line_bold_shader: LineBold,
 point_sphere_shader: PointSphere,
+line_bold_shader: LineBold,
+tri_flat_color_per_vertex_shader: TriFlatColorPerVertex,
 
 parameters: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRendererParameters),
 
 pub fn init(allocator: std.mem.Allocator) !Self {
     return .{
-        .tri_flat_color_per_vertex_shader = try TriFlatColorPerVertex.init(),
-        .line_bold_shader = try LineBold.init(),
         .point_sphere_shader = try PointSphere.init(),
+        .line_bold_shader = try LineBold.init(),
+        .tri_flat_color_per_vertex_shader = try TriFlatColorPerVertex.init(),
         .parameters = std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRendererParameters).init(allocator),
     };
 }
 
 pub fn deinit(self: *Self) void {
-    self.tri_flat_color_per_vertex_shader.deinit();
-    self.line_bold_shader.deinit();
     self.point_sphere_shader.deinit();
+    self.line_bold_shader.deinit();
+    self.tri_flat_color_per_vertex_shader.deinit();
     var p_it = self.parameters.iterator();
     while (p_it.next()) |entry| {
         var p = entry.value_ptr.*;
@@ -99,7 +100,7 @@ pub fn surfaceMeshStandardDataChanged(
     switch (std_data) {
         .vertex_position => {
             if (surface_mesh_info.vertex_position) |vertex_position| {
-                const position_vbo: VBO = try zgp.models_registry.getDataVBO(Vec3, vertex_position);
+                const position_vbo: VBO = try zgp.models_registry.getDataVBO(Vec3, vertex_position.data);
                 p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.line_bold_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -111,7 +112,7 @@ pub fn surfaceMeshStandardDataChanged(
         },
         .vertex_color => {
             if (surface_mesh_info.vertex_color) |vertex_color| {
-                const color_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_color);
+                const color_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_color.data);
                 p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
             } else {
@@ -150,6 +151,14 @@ pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
             defer gl.UseProgram(0);
             p.point_sphere_shader_parameters.drawElements(info.points_ibo);
         }
+        if (p.draw_boundaries) {
+            p.line_bold_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+            p.line_bold_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+            p.line_bold_shader_parameters.line_color = .{ 1.0, 0.0, 0.0, 1.0 }; // Red color for boundaries
+            p.line_bold_shader_parameters.useShader();
+            defer gl.UseProgram(0);
+            p.line_bold_shader_parameters.drawElements(info.boundaries_ibo);
+        }
     }
 }
 
@@ -163,9 +172,6 @@ pub fn uiPanel(self: *Self) void {
             UiData.selected_surface_mesh = sm;
         }
     };
-
-    // _ = c.ImGui_Begin("Surface Mesh Renderer", null, 0);
-    // defer c.ImGui_End();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 
@@ -181,6 +187,7 @@ pub fn uiPanel(self: *Self) void {
             }
             _ = c.ImGui_Checkbox("draw edges", &p.draw_edges);
             _ = c.ImGui_Checkbox("draw faces", &p.draw_faces);
+            _ = c.ImGui_Checkbox("draw boundaries", &p.draw_boundaries);
         } else {
             c.ImGui_Text("No parameters found for the selected Surface Mesh");
         }
