@@ -92,8 +92,9 @@ pub const Parameters = struct {
         self.vao.disableVertexAttribArray(attrib_info);
     }
 
-    pub fn useShader(self: *Parameters) void {
+    pub fn draw(self: *Parameters, ibo: IBO) void {
         gl.UseProgram(self.shader.program.index);
+        defer gl.UseProgram(0);
         gl.UniformMatrix4fv(self.shader.model_view_matrix_uniform, 1, gl.FALSE, &self.model_view_matrix);
         gl.UniformMatrix4fv(self.shader.projection_matrix_uniform, 1, gl.FALSE, &self.projection_matrix);
         // var viewport: [4]i32 = .{ 0, 0, 0, 0 };
@@ -101,9 +102,6 @@ pub const Parameters = struct {
         // gl.Uniform2f(self.shader.viewport_size_uniform, @as(f32, @floatFromInt(viewport[2])), @as(f32, @floatFromInt(viewport[3])));
         gl.Uniform4fv(self.shader.line_color_uniform, 1, &self.line_color);
         gl.LineWidth(self.line_width);
-    }
-
-    pub fn drawElements(self: *Parameters, ibo: IBO) void {
         gl.BindVertexArray(self.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);

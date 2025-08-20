@@ -12,6 +12,9 @@ const c = @cImport({
     @cInclude("backends/dcimgui_impl_opengl3.h");
 });
 
+const Texture2D = @import("rendering/Texture2D.zig");
+const FBO = @import("rendering/FBO.zig");
+
 const ModelsRegistry = @import("models/ModelsRegistry.zig");
 
 const Module = @import("modules/Module.zig");
@@ -58,6 +61,15 @@ var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
 
+// TODO: should move all camera & FBO management into a separate module
+
+var screen_color_tex: Texture2D = undefined;
+var screen_depth_tex: Texture2D = undefined;
+var fbo: FBO = undefined;
+const FullscreenTexture = @import("rendering/shaders/fullscreen_texture/FullscreenTexture.zig");
+var fullscreen_texture_shader: FullscreenTexture = undefined;
+var fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = undefined;
+
 var view_matrix = mat.lookAt(
     .{ 0.0, 0.0, 2.0 },
     .{ 0.0, 0.0, 0.0 },
@@ -68,6 +80,8 @@ const CameraProjectionType = enum {
     orthographic,
 };
 var camera_mode = CameraProjectionType.perspective;
+
+pub var need_redraw: bool = true;
 
 fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = appstate;
@@ -142,6 +156,33 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             \\
         ),
     };
+
+    // Fullscreen texture & FBO initialization
+    // ***************************************
+
+    screen_color_tex = Texture2D.init(&[_]Texture2D.Parameter{
+        .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
+        .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
+    });
+    screen_color_tex.resize(window_width, window_height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
+    screen_depth_tex = Texture2D.init(&[_]Texture2D.Parameter{
+        .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
+        .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
+    });
+    screen_depth_tex.resize(window_width, window_height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
+
+    fbo = FBO.init();
+    fbo.attachTexture(gl.COLOR_ATTACHMENT0, screen_color_tex);
+    fbo.attachTexture(gl.DEPTH_ATTACHMENT, screen_depth_tex);
+
+    const status = gl.CheckFramebufferStatus(gl.FRAMEBUFFER);
+    if (status != gl.FRAMEBUFFER_COMPLETE) {
+        gl_log.err("Framebuffer not complete: {d}", .{status});
+    }
+
+    fullscreen_texture_shader = try FullscreenTexture.init();
+    fullscreen_texture_shader_parameters = fullscreen_texture_shader.createParameters();
+    fullscreen_texture_shader_parameters.setTexture(screen_color_tex, 0);
 
     // ImGui initialization
     // ********************
@@ -300,19 +341,32 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         gl.Viewport(0, 0, window_width, window_height);
         const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
 
+        // TODO: allow user to change the pivot point
+
         const field_of_view: f32 = 0.2 * std.math.pi;
         // const scene_radius: f32 = 1.0;
         // const focal_distance: f32 = scene_radius / @tan(field_of_view / 2.0);
         // const pivot_point = zm.f32x4(0.0, 0.0, 0.0, 1.0);
 
         const projection_matrix = switch (camera_mode) {
-            CameraProjectionType.perspective => mat.perspective(field_of_view, aspect_ratio, 0.01, 50.0),
-            CameraProjectionType.orthographic => mat.orthographic(4.0, 4.0, 0.01, 50.0),
+            CameraProjectionType.perspective => mat.perspective(field_of_view, aspect_ratio, 0.01, 5.0),
+            CameraProjectionType.orthographic => mat.orthographic(aspect_ratio * -view_matrix[3][2], -view_matrix[3][2], 0.01, 5.0),
         };
 
-        for (modules.items) |*module| {
-            module.draw(view_matrix, projection_matrix);
+        if (need_redraw) {
+            gl.BindFramebuffer(gl.FRAMEBUFFER, fbo.index);
+            gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            // gl.DrawBuffer(gl.COLOR_ATTACHMENT0); // not needed as it is already the default
+            for (modules.items) |*module| {
+                module.draw(view_matrix, projection_matrix);
+            }
+            gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
+            need_redraw = false;
         }
+
+        fullscreen_texture_shader_parameters.useShader();
+        fullscreen_texture_shader_parameters.draw();
+        gl.UseProgram(0);
 
         c.cImGui_ImplOpenGL3_NewFrame();
         c.cImGui_ImplSDL3_NewFrame();
@@ -338,13 +392,17 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
             if (c.ImGui_BeginMenu("Rendering")) {
                 defer c.ImGui_EndMenu();
-                _ = c.ImGui_ColorEdit3("Background color", &UiData.background_color, c.ImGuiColorEditFlags_NoInputs);
+                if (c.ImGui_ColorEdit3("Background color", &UiData.background_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    need_redraw = true;
+                }
                 c.ImGui_Separator();
                 if (c.ImGui_MenuItemEx("Perspective", null, camera_mode == CameraProjectionType.perspective, true)) {
                     camera_mode = CameraProjectionType.perspective;
+                    need_redraw = true;
                 }
                 if (c.ImGui_MenuItemEx("Orthographic", null, camera_mode == CameraProjectionType.orthographic, true)) {
                     camera_mode = CameraProjectionType.orthographic;
+                    need_redraw = true;
                 }
             }
 
@@ -436,6 +494,9 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         },
         c.SDL_EVENT_WINDOW_RESIZED => {
             try errify(c.SDL_GetWindowSizeInPixels(window, &window_width, &window_height));
+            screen_color_tex.resize(window_width, window_height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
+            screen_depth_tex.resize(window_width, window_height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
+            need_redraw = true;
         },
         c.SDL_EVENT_KEY_DOWN => {
             // const down = event.type == c.SDL_EVENT_KEY_DOWN;
@@ -462,6 +523,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                     view_matrix[3] = .{ 0.0, 0.0, 0.0, 1.0 }; // set translation to zero
                     view_matrix = mat.mul4(rot, view_matrix); // apply rotation
                     view_matrix[3] = tr; // restore translation
+                    need_redraw = true;
                 },
                 c.SDL_BUTTON_RMASK => {
                     const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
@@ -469,6 +531,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                     const ny = -1.0 * event.motion.yrel / @as(f32, @floatFromInt(window_height)) * if (aspect_ratio > 1.0) 1.0 else 1.0 / aspect_ratio;
                     view_matrix[3][0] += 2 * nx;
                     view_matrix[3][1] += 2 * ny;
+                    need_redraw = true;
                 },
                 else => {},
             }
@@ -480,6 +543,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 const forward: Vec4 = .{ 0.0, 0.0, -1.0, 0.0 };
                 const move = vec.mulScalar4(forward, -wheel * 0.01);
                 view_matrix[3] = vec.add4(view_matrix[3], move);
+                need_redraw = true;
             }
         },
         else => {},
@@ -505,6 +569,9 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         point_cloud_renderer.deinit();
         surface_mesh_renderer.deinit();
         vector_per_vertex_renderer.deinit();
+        screen_color_tex.deinit();
+        // screen_depth_tex.deinit();
+        fbo.deinit();
 
         gl.makeProcTableCurrent(null);
         errify(c.SDL_GL_MakeCurrent(window, null)) catch {};
@@ -518,10 +585,12 @@ pub fn main() !u8 {
     app_err.reset();
     var empty_argv: [0:null]?[*:0]u8 = .{};
 
+    // TODO: manage command-line options
+
     var da: std.heap.DebugAllocator(.{}) = .init;
     defer _ = da.deinit();
     allocator = da.allocator();
-    // allocator = std.heap.raw_c_allocator;
+    // allocator = std.heap.smp_allocator;
 
     rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
 

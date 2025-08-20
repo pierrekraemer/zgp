@@ -87,6 +87,7 @@ pub fn pointCloudStandardDataChanged(
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
             }
+            zgp.need_redraw = true;
         },
         .color => {
             if (point_cloud_info.color) |color| {
@@ -95,6 +96,7 @@ pub fn pointCloudStandardDataChanged(
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.color);
             }
+            zgp.need_redraw = true;
         },
         else => return, // Ignore other standard data changes
     }
@@ -109,9 +111,7 @@ pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
         if (p.draw_points) {
             p.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
             p.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-            p.point_sphere_shader_parameters.useShader();
-            defer gl.UseProgram(0);
-            p.point_sphere_shader_parameters.drawElements(info.points_ibo);
+            p.point_sphere_shader_parameters.draw(info.points_ibo);
         }
     }
 }
@@ -135,9 +135,13 @@ pub fn uiPanel(self: *Self) void {
     if (UiData.selected_point_cloud) |pc| {
         const surface_mesh_renderer_parameters = self.parameters.getPtr(pc);
         if (surface_mesh_renderer_parameters) |p| {
-            _ = c.ImGui_Checkbox("draw points", &p.draw_points);
+            if (c.ImGui_Checkbox("draw points", &p.draw_points)) {
+                zgp.need_redraw = true;
+            }
             if (p.draw_points) {
-                _ = c.ImGui_SliderFloatEx("point size", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic);
+                if (c.ImGui_SliderFloatEx("point size", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+                    zgp.need_redraw = true;
+                }
             }
         } else {
             c.ImGui_Text("No parameters found for the selected Surface Mesh");

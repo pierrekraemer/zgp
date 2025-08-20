@@ -100,15 +100,13 @@ pub const Parameters = struct {
         self.vao.disableVertexAttribArray(attrib_info);
     }
 
-    pub fn useShader(self: *Parameters) void {
+    pub fn draw(self: *Parameters, ibo: IBO) void {
         gl.UseProgram(self.shader.program.index);
+        defer gl.UseProgram(0);
         gl.UniformMatrix4fv(self.shader.model_view_matrix_uniform, 1, gl.FALSE, &self.model_view_matrix);
         gl.UniformMatrix4fv(self.shader.projection_matrix_uniform, 1, gl.FALSE, &self.projection_matrix);
         gl.Uniform4fv(self.shader.ambiant_color_uniform, 1, &self.ambiant_color);
         gl.Uniform3fv(self.shader.light_position_uniform, 1, &self.light_position);
-    }
-
-    pub fn drawElements(self: *Parameters, ibo: IBO) void {
         gl.BindVertexArray(self.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);

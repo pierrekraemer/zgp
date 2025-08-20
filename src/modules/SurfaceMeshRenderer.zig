@@ -109,6 +109,7 @@ pub fn surfaceMeshStandardDataChanged(
                 p.line_bold_shader_parameters.unsetVertexAttribArray(.position);
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
             }
+            zgp.need_redraw = true;
         },
         .vertex_color => {
             if (surface_mesh_info.vertex_color) |vertex_color| {
@@ -119,6 +120,7 @@ pub fn surfaceMeshStandardDataChanged(
                 p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.color);
             }
+            zgp.need_redraw = true;
         },
         else => return, // Ignore other standard data changes
     }
@@ -133,31 +135,24 @@ pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
         if (p.draw_faces) {
             p.tri_flat_color_per_vertex_shader_parameters.model_view_matrix = @bitCast(view_matrix);
             p.tri_flat_color_per_vertex_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-            p.tri_flat_color_per_vertex_shader_parameters.useShader();
-            defer gl.UseProgram(0);
-            p.tri_flat_color_per_vertex_shader_parameters.drawElements(info.triangles_ibo);
+            p.tri_flat_color_per_vertex_shader_parameters.draw(info.triangles_ibo);
         }
         if (p.draw_edges) {
             p.line_bold_shader_parameters.model_view_matrix = @bitCast(view_matrix);
             p.line_bold_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-            p.line_bold_shader_parameters.useShader();
-            defer gl.UseProgram(0);
-            p.line_bold_shader_parameters.drawElements(info.lines_ibo);
+            p.line_bold_shader_parameters.line_color = .{ 0.0, 0.0, 0.0, 1.0 }; // Black for edges
+            p.line_bold_shader_parameters.draw(info.lines_ibo);
         }
         if (p.draw_vertices) {
             p.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
             p.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-            p.point_sphere_shader_parameters.useShader();
-            defer gl.UseProgram(0);
-            p.point_sphere_shader_parameters.drawElements(info.points_ibo);
+            p.point_sphere_shader_parameters.draw(info.points_ibo);
         }
         if (p.draw_boundaries) {
             p.line_bold_shader_parameters.model_view_matrix = @bitCast(view_matrix);
             p.line_bold_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-            p.line_bold_shader_parameters.line_color = .{ 1.0, 0.0, 0.0, 1.0 }; // Red color for boundaries
-            p.line_bold_shader_parameters.useShader();
-            defer gl.UseProgram(0);
-            p.line_bold_shader_parameters.drawElements(info.boundaries_ibo);
+            p.line_bold_shader_parameters.line_color = .{ 1.0, 0.0, 0.0, 1.0 }; // Red for boundaries
+            p.line_bold_shader_parameters.draw(info.boundaries_ibo);
         }
     }
 }
@@ -181,13 +176,23 @@ pub fn uiPanel(self: *Self) void {
     if (UiData.selected_surface_mesh) |sm| {
         const surface_mesh_renderer_parameters = self.parameters.getPtr(sm);
         if (surface_mesh_renderer_parameters) |p| {
-            _ = c.ImGui_Checkbox("draw vertices", &p.draw_vertices);
-            if (p.draw_vertices) {
-                _ = c.ImGui_SliderFloatEx("point size", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic);
+            if (c.ImGui_Checkbox("draw vertices", &p.draw_vertices)) {
+                zgp.need_redraw = true;
             }
-            _ = c.ImGui_Checkbox("draw edges", &p.draw_edges);
-            _ = c.ImGui_Checkbox("draw faces", &p.draw_faces);
-            _ = c.ImGui_Checkbox("draw boundaries", &p.draw_boundaries);
+            if (p.draw_vertices) {
+                if (c.ImGui_SliderFloatEx("point size", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+                    zgp.need_redraw = true;
+                }
+            }
+            if (c.ImGui_Checkbox("draw edges", &p.draw_edges)) {
+                zgp.need_redraw = true;
+            }
+            if (c.ImGui_Checkbox("draw faces", &p.draw_faces)) {
+                zgp.need_redraw = true;
+            }
+            if (c.ImGui_Checkbox("draw boundaries", &p.draw_boundaries)) {
+                zgp.need_redraw = true;
+            }
         } else {
             c.ImGui_Text("No parameters found for the selected Surface Mesh");
         }

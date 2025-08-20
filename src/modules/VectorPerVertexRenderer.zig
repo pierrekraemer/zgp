@@ -90,6 +90,7 @@ pub fn surfaceMeshStandardDataChanged(
             } else {
                 p.point_vector_shader_parameters.unsetVertexAttribArray(.position);
             }
+            zgp.need_redraw = true;
         },
         else => return, // Ignore other standard data changes
     }
@@ -104,6 +105,7 @@ fn setSurfaceMeshVectorData(self: *Self, surface_mesh: *SurfaceMesh, vector: ?Su
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);
     }
+    zgp.need_redraw = true;
 }
 
 pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
@@ -114,9 +116,7 @@ pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
         const vector_per_vertex_renderer_parameters = self.parameters.getPtr(surface_mesh) orelse continue;
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.model_view_matrix = @bitCast(view_matrix);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-        vector_per_vertex_renderer_parameters.point_vector_shader_parameters.useShader();
-        defer gl.UseProgram(0);
-        vector_per_vertex_renderer_parameters.point_vector_shader_parameters.drawElements(surface_mesh_info.points_ibo);
+        vector_per_vertex_renderer_parameters.point_vector_shader_parameters.draw(surface_mesh_info.points_ibo);
     }
 }
 

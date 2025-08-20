@@ -78,12 +78,11 @@ pub fn orthographic(w: Scalar, h: Scalar, near: Scalar, far: Scalar) Mat4 {
     assert(!math.approxEqAbs(Scalar, h, 0.0, 0.001));
     assert(!math.approxEqAbs(Scalar, far, near, 0.001));
 
-    const r = near - far;
     return .{
         .{ 2 / w, 0.0, 0.0, 0.0 },
         .{ 0.0, 2 / h, 0.0, 0.0 },
-        .{ 0.0, 0.0, 2 / r, 0.0 },
-        .{ 0.0, 0.0, (near + far) / r, 1.0 },
+        .{ 0.0, 0.0, 2 / (near - far), 0.0 },
+        .{ 0.0, 0.0, (near + far) / (near - far), 1.0 },
     };
 }
 
