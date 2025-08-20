@@ -13,6 +13,16 @@ const SurfaceMeshData = SurfaceMesh.SurfaceMeshData;
 
 const Data = @import("../utils/Data.zig").Data;
 
+pub fn helpMarker(desc: []const u8) void {
+    c.ImGui_TextDisabled("(?)");
+    if (c.ImGui_BeginItemTooltip()) {
+        c.ImGui_PushTextWrapPos(c.ImGui_GetFontSize() * 35.0);
+        c.ImGui_TextUnformatted(desc.ptr);
+        c.ImGui_PopTextWrapPos();
+        c.ImGui_EndTooltip();
+    }
+}
+
 pub fn surfaceMeshListBox(
     selected_surface_mesh: ?*SurfaceMesh,
     on_selected: *const fn (?*SurfaceMesh) void,

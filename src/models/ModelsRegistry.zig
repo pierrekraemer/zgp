@@ -254,10 +254,27 @@ pub fn uiPanel(self: *Self) void {
 
         if (UiData.selected_surface_mesh) |sm| {
             c.ImGui_SeparatorText("#Cells");
-            c.ImGui_Text("Vertex: %d", sm.nbCells(.vertex));
-            c.ImGui_Text("Edge: %d", sm.nbCells(.edge));
-            c.ImGui_Text("Face: %d", sm.nbCells(.face));
+
+            var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
+
+            c.ImGui_Text("Vertex");
+            c.ImGui_SameLine();
+            const nbvertices = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.vertex)}) catch "";
+            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - c.ImGui_CalcTextSize(nbvertices.ptr).x));
+            c.ImGui_Text(nbvertices.ptr);
+            c.ImGui_Text("Edge");
+            c.ImGui_SameLine();
+            const nbedges = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.edge)}) catch "";
+            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - c.ImGui_CalcTextSize(nbedges.ptr).x));
+            c.ImGui_Text(nbedges.ptr);
+            c.ImGui_Text("Face");
+            c.ImGui_SameLine();
+            const nbfaces = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.face)}) catch "";
+            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - c.ImGui_CalcTextSize(nbfaces.ptr).x));
+            c.ImGui_Text(nbfaces.ptr);
+
             c.ImGui_SeparatorText("Standard Data");
+
             const maybe_info = self.surface_meshes_info.getPtr(sm);
             if (maybe_info) |info| {
                 c.ImGui_Text("Vertex Position");
