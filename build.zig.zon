@@ -2,7 +2,7 @@
     .name = .zgp,
     .version = "0.0.0",
     .fingerprint = 0xdc9eb8c856ea514c,
-    .minimum_zig_version = "0.14.1",
+    .minimum_zig_version = "0.15.1",
     .dependencies = .{
         .zigglgen = .{
             .url = "git+https://github.com/castholm/zigglgen.git#744d8b6617a7eb8df15f5922faa002e0b5234025",
