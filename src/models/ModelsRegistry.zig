@@ -257,6 +257,10 @@ pub fn uiPanel(self: *Self) void {
 
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
 
+            // TODO: update for zig 0.15
+            // var w: std.Io.Writer = .fixed(&buf);
+            // const nbvertices = try w.print("{d}", .{ sm.nbCells(.vertex) }) catch "";
+
             c.ImGui_Text("Vertex");
             c.ImGui_SameLine();
             const nbvertices = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.vertex)}) catch "";
@@ -429,22 +433,22 @@ const SurfaceMeshImportData = struct {
     faces_nb_vertices: std.ArrayList(u32),
     faces_vertex_indices: std.ArrayList(u32),
 
-    pub fn init(allocator: std.mem.Allocator) SurfaceMeshImportData {
-        return .{
-            .vertices_position = std.ArrayList(Vec3).init(allocator),
-            .faces_nb_vertices = std.ArrayList(u32).init(allocator),
-            .faces_vertex_indices = std.ArrayList(u32).init(allocator),
-        };
+    const init: SurfaceMeshImportData = .{
+        .vertices_position = .empty,
+        .faces_nb_vertices = .empty,
+        .faces_vertex_indices = .empty,
+    };
+
+    pub fn deinit(self: *SurfaceMeshImportData, allocator: std.mem.Allocator) void {
+        self.vertices_position.deinit(allocator);
+        self.faces_nb_vertices.deinit(allocator);
+        self.faces_vertex_indices.deinit(allocator);
     }
-    pub fn deinit(self: *SurfaceMeshImportData) void {
-        self.vertices_position.deinit();
-        self.faces_nb_vertices.deinit();
-        self.faces_vertex_indices.deinit();
-    }
-    pub fn ensureTotalCapacity(self: *SurfaceMeshImportData, nb_vertices: u32, nb_faces: u32) !void {
-        try self.vertices_position.ensureTotalCapacity(nb_vertices);
-        try self.faces_nb_vertices.ensureTotalCapacity(nb_faces);
-        try self.faces_vertex_indices.ensureTotalCapacity(nb_faces * 4);
+
+    pub fn ensureTotalCapacity(self: *SurfaceMeshImportData, allocator: std.mem.Allocator, nb_vertices: u32, nb_faces: u32) !void {
+        try self.vertices_position.ensureTotalCapacity(allocator, nb_vertices);
+        try self.faces_nb_vertices.ensureTotalCapacity(allocator, nb_faces);
+        try self.faces_vertex_indices.ensureTotalCapacity(allocator, nb_faces * 4);
     }
 };
 
@@ -452,12 +456,9 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
     var file = try std.fs.cwd().openFile(filename, .{});
     defer file.close();
 
-    var buf_reader = std.io.bufferedReader(file.reader());
-    const reader = buf_reader.reader();
-
-    var line = std.ArrayList(u8).init(self.allocator);
-    defer line.deinit();
-    const line_writer = line.writer();
+    var buffer: [1024]u8 = undefined;
+    var file_reader = file.reader(&buffer);
+    const reader = &file_reader.interface;
 
     const supported_filetypes = enum {
         off,
@@ -475,17 +476,16 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
         return error.UnsupportedFile;
     };
 
-    var import_data = SurfaceMeshImportData.init(self.allocator);
-    defer import_data.deinit();
+    var import_data: SurfaceMeshImportData = .init;
+    defer import_data.deinit(self.allocator);
 
     switch (filetype) {
         .off => {
             zgp.zgp_log.info("reading OFF file", .{});
 
-            while (reader.streamUntilDelimiter(line_writer, '\n', null)) {
-                if (line.items.len == 0) continue; // skip empty lines
-                defer line.clearRetainingCapacity();
-                if (std.mem.startsWith(u8, line.items, "OFF")) break;
+            while (reader.takeDelimiterExclusive('\n')) |line| {
+                if (line.len == 0) continue; // skip empty lines
+                if (std.mem.startsWith(u8, line, "OFF")) break;
             } else |err| switch (err) {
                 error.EndOfStream => {
                     zgp.zgp_log.warn("reached end of file before finding the header", .{});
@@ -495,10 +495,9 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
             }
 
             var nb_cells: [3]u32 = undefined; // [vertices, faces, edges]
-            while (reader.streamUntilDelimiter(line_writer, '\n', null)) {
-                if (line.items.len == 0) continue; // skip empty lines
-                defer line.clearRetainingCapacity();
-                var tokens = std.mem.tokenizeScalar(u8, line.items, ' ');
+            while (reader.takeDelimiterExclusive('\n')) |line| {
+                if (line.len == 0) continue; // skip empty lines
+                var tokens = std.mem.tokenizeScalar(u8, line, ' ');
                 var i: u32 = 0;
                 while (tokens.next()) |token| : (i += 1) {
                     if (i >= nb_cells.len) return error.InvalidFileFormat;
@@ -519,14 +518,13 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
             }
             zgp.zgp_log.info("nb_cells: {d} vertices / {d} faces / {d} edges", .{ nb_cells[0], nb_cells[1], nb_cells[2] });
 
-            try import_data.ensureTotalCapacity(nb_cells[0], nb_cells[1]);
+            try import_data.ensureTotalCapacity(self.allocator, nb_cells[0], nb_cells[1]);
 
             var i: u32 = 0;
             while (i < nb_cells[0]) : (i += 1) {
-                while (reader.streamUntilDelimiter(line_writer, '\n', null)) {
-                    if (line.items.len == 0) continue; // skip empty lines
-                    defer line.clearRetainingCapacity();
-                    var tokens = std.mem.tokenizeScalar(u8, line.items, ' ');
+                while (reader.takeDelimiterExclusive('\n')) |line| {
+                    if (line.len == 0) continue; // skip empty lines
+                    var tokens = std.mem.tokenizeScalar(u8, line, ' ');
                     var position: Vec3 = undefined;
                     var j: u32 = 0;
                     while (tokens.next()) |token| : (j += 1) {
@@ -541,7 +539,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                         zgp.zgp_log.warn("vertex {d} position has less than 3 coordinates", .{i});
                         return error.InvalidFileFormat;
                     }
-                    try import_data.vertices_position.append(position);
+                    try import_data.vertices_position.append(self.allocator, position);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
@@ -555,10 +553,9 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
 
             i = 0;
             while (i < nb_cells[1]) : (i += 1) {
-                while (reader.streamUntilDelimiter(line_writer, '\n', null)) {
-                    if (line.items.len == 0) continue; // skip empty lines
-                    defer line.clearRetainingCapacity();
-                    var tokens = std.mem.tokenizeScalar(u8, line.items, ' ');
+                while (reader.takeDelimiterExclusive('\n')) |line| {
+                    if (line.len == 0) continue; // skip empty lines
+                    var tokens = std.mem.tokenizeScalar(u8, line, ' ');
                     var face_nb_vertices: u32 = undefined;
                     var j: u32 = 0;
                     while (tokens.next()) |token| : (j += 1) {
@@ -569,14 +566,14 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                             return error.InvalidFileFormat;
                         } else {
                             const index = try std.fmt.parseInt(u32, token, 10);
-                            try import_data.faces_vertex_indices.append(index);
+                            try import_data.faces_vertex_indices.append(self.allocator, index);
                         }
                     }
                     if (j != face_nb_vertices + 1) {
                         zgp.zgp_log.warn("face {d} has less than {d} vertices", .{ i, face_nb_vertices });
                         return error.InvalidFileFormat;
                     }
-                    try import_data.faces_nb_vertices.append(face_nb_vertices);
+                    try import_data.faces_nb_vertices.append(self.allocator, face_nb_vertices);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
@@ -600,7 +597,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
     for (import_data.vertices_position.items) |pos| {
         const vertex_index = try sm.newDataIndex(.vertex);
         vertex_position.data.valuePtr(vertex_index).* = pos;
-        darts_of_vertex.data.valuePtr(vertex_index).* = std.ArrayList(SurfaceMesh.Dart).init(darts_of_vertex.data.arena());
+        darts_of_vertex.data.valuePtr(vertex_index).* = .empty;
     }
 
     var i: u32 = 0;
@@ -609,7 +606,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
         var d = face.dart();
         for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
             sm.dart_vertex_index.valuePtr(d).* = index;
-            try darts_of_vertex.data.valuePtr(index).append(d);
+            try darts_of_vertex.data.valuePtr(index).append(darts_of_vertex.data.arena(), d);
             d = sm.phi1(d);
         }
         i += face_nb_vertices;

@@ -96,7 +96,7 @@ pub fn init(ptr: anytype) Self {
 
     return .{
         .ptr = ptr,
-        .vtable = &.{
+        .vtable = comptime &.{
             .name = gen.name,
             .pointCloudAdded = gen.pointCloudAdded,
             .pointCloudStandardDataChanged = gen.pointCloudStandardDataChanged,

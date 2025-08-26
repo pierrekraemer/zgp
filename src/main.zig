@@ -49,7 +49,7 @@ var uptime: std.time.Timer = undefined;
 
 /// Global models registry accessible from all modules.
 pub var models_registry: ModelsRegistry = undefined;
-pub var modules: std.ArrayList(Module) = undefined;
+pub var modules: std.ArrayList(Module) = .empty;
 
 var point_cloud_renderer: PointCloudRenderer = undefined;
 var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
@@ -212,18 +212,17 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // Modules initialization
     // **********************
 
-    modules = std.ArrayList(Module).init(allocator);
-    errdefer modules.deinit();
-
     point_cloud_renderer = try PointCloudRenderer.init(allocator);
     errdefer point_cloud_renderer.deinit();
-    try modules.append(point_cloud_renderer.module());
     surface_mesh_renderer = try SurfaceMeshRenderer.init(allocator);
     errdefer surface_mesh_renderer.deinit();
-    try modules.append(surface_mesh_renderer.module());
     vector_per_vertex_renderer = try VectorPerVertexRenderer.init(allocator);
     errdefer vector_per_vertex_renderer.deinit();
-    try modules.append(vector_per_vertex_renderer.module());
+
+    errdefer modules.deinit(allocator);
+    try modules.append(allocator, point_cloud_renderer.module());
+    try modules.append(allocator, surface_mesh_renderer.module());
+    try modules.append(allocator, vector_per_vertex_renderer.module());
 
     // Example surface mesh initialization
     // ***********************************
@@ -537,7 +536,6 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
             }
         },
         c.SDL_EVENT_MOUSE_WHEEL => {
-            // TODO: handle wheel events in orthographic camera mode
             const wheel = event.wheel.y;
             if (wheel != 0) {
                 const forward: Vec4 = .{ 0.0, 0.0, -1.0, 0.0 };
@@ -565,7 +563,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         c.ImGui_DestroyContext(null);
 
         models_registry.deinit();
-        modules.deinit();
+        modules.deinit(allocator);
         point_cloud_renderer.deinit();
         surface_mesh_renderer.deinit();
         vector_per_vertex_renderer.deinit();

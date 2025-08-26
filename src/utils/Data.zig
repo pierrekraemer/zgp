@@ -41,7 +41,7 @@ pub const DataGen = struct {
             .arena = arena,
             .ptr = pointer,
             .container = container,
-            .vtable = &.{
+            .vtable = comptime &.{
                 .ensureLength = gen.ensureLength,
                 .clearRetainingCapacity = gen.clearRetainingCapacity,
             },
@@ -180,9 +180,9 @@ pub const DataContainer = struct {
         var dc: DataContainer = .{
             .allocator = allocator,
             .datas = std.StringHashMap(*DataGen).init(allocator),
-            .markers = std.ArrayList(*Data(bool)).init(allocator),
-            .available_markers_indices = std.ArrayList(u32).init(allocator),
-            .free_indices = std.ArrayList(u32).init(allocator),
+            .markers = .empty,
+            .available_markers_indices = .empty,
+            .free_indices = .empty,
         };
         dc.is_active = try dc.addData(bool, "__is_active");
         dc.nb_refs = try dc.addData(u32, "__nb_refs");
@@ -199,9 +199,9 @@ pub const DataContainer = struct {
             marker.gen.deinit();
         }
         self.datas.deinit();
-        self.markers.deinit();
-        self.available_markers_indices.deinit();
-        self.free_indices.deinit();
+        self.markers.deinit(self.allocator);
+        self.available_markers_indices.deinit(self.allocator);
+        self.free_indices.deinit(self.allocator);
     }
 
     pub fn clearRetainingCapacity(self: *DataContainer) void {
@@ -244,7 +244,7 @@ pub const DataContainer = struct {
         if (self.datas.get(name)) |data_gen| {
             if (data_gen.type_id == comptime typeId(T)) {
                 // const data: *Data(T) = @alignCast(@fieldParentPtr("gen", data_gen));
-                const data: *Data(T) = @alignCast(@ptrCast(data_gen.ptr));
+                const data: *Data(T) = @ptrCast(@alignCast(data_gen.ptr));
                 return data;
             }
             return null;
@@ -284,7 +284,7 @@ pub const DataContainer = struct {
                     const data_gen = entry.value_ptr.*;
                     if (data_gen.type_id == comptime typeId(T)) {
                         // const data: *Data(T) = @alignCast(@fieldParentPtr("gen", data_gen));
-                        const data: *Data(T) = @alignCast(@ptrCast(data_gen.ptr));
+                        const data: *Data(T) = @ptrCast(@alignCast(data_gen.ptr));
                         return data;
                     }
                 }
@@ -314,7 +314,7 @@ pub const DataContainer = struct {
         marker.gen = DataGen.init(bool, "", comptime typeId(bool), marker, self, marker_arena);
         try marker.ensureLength(self.capacity);
         marker.fill(false); // marker is filled with false before use
-        try self.markers.append(marker);
+        try self.markers.append(self.allocator, marker);
         return marker;
     }
 
@@ -322,7 +322,7 @@ pub const DataContainer = struct {
         assert(marker.gen.container == self);
         const marker_index = std.mem.indexOf(*Data(bool), self.markers.items, (&marker)[0..1]);
         if (marker_index) |i| {
-            self.available_markers_indices.append(@intCast(i)) catch |err| {
+            self.available_markers_indices.append(self.allocator, @intCast(i)) catch |err| {
                 std.debug.print("Error releasing marker: {}\n", .{err});
             };
         }
@@ -351,7 +351,7 @@ pub const DataContainer = struct {
     pub fn freeIndex(self: *DataContainer, index: u32) void {
         self.is_active.valuePtr(index).* = false;
         self.nb_refs.valuePtr(index).* = 0;
-        self.free_indices.append(index) catch |err| {
+        self.free_indices.append(self.allocator, index) catch |err| {
             std.debug.print("Error freeing index {}: {}\n", .{ index, err });
         };
     }

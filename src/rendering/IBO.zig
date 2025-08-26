@@ -25,8 +25,8 @@ pub fn deinit(self: *Self) void {
 pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, allocator: std.mem.Allocator) !void {
     gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, self.index);
     defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
-    var indices = std.ArrayList(u32).init(allocator);
-    defer indices.deinit();
+    var indices: std.ArrayList(u32) = .empty;
+    defer indices.deinit(allocator);
     switch (cell_type) {
         .face => {
             var f_it = try SurfaceMesh.CellIterator(.face).init(sm);
@@ -34,7 +34,7 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             while (f_it.next()) |f| {
                 var dart_it = sm.cellDartIterator(f); // TODO: triangulate polygonal faces
                 while (dart_it.next()) |d| {
-                    try indices.append(sm.cellIndex(.{ .vertex = d }));
+                    try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
                 }
             }
         },
@@ -44,7 +44,7 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             while (e_it.next()) |e| {
                 var dart_it = sm.cellDartIterator(e);
                 while (dart_it.next()) |d| {
-                    try indices.append(sm.cellIndex(.{ .vertex = d }));
+                    try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
                 }
             }
         },
@@ -52,7 +52,7 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             var v_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
             defer v_it.deinit();
             while (v_it.next()) |v| {
-                try indices.append(sm.cellIndex(v));
+                try indices.append(allocator, sm.cellIndex(v));
             }
         },
         .boundary => {
@@ -61,8 +61,8 @@ pub fn fillFrom(self: *Self, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, 
             while (b_it.next()) |b| {
                 var dart_it = sm.cellDartIterator(b);
                 while (dart_it.next()) |d| {
-                    try indices.append(sm.cellIndex(.{ .vertex = d }));
-                    try indices.append(sm.cellIndex(.{ .vertex = sm.phi1(d) }));
+                    try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
+                    try indices.append(allocator, sm.cellIndex(.{ .vertex = sm.phi1(d) }));
                 }
             }
         },

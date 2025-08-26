@@ -2,19 +2,19 @@
     .name = .zgp,
     .version = "0.0.0",
     .fingerprint = 0xdc9eb8c856ea514c,
-    .minimum_zig_version = "0.14.0",
+    .minimum_zig_version = "0.14.1",
     .dependencies = .{
         .zigglgen = .{
-            .url = "git+https://github.com/castholm/zigglgen.git#d5f381759825ee0bac29bc294d47aa05be4ab7b5",
-            .hash = "zigglgen-0.4.0-bmyqLX_gLQDFXilQ5VQ9fJeOHKU1RFrggOzRqTGBX79W",
+            .url = "git+https://github.com/castholm/zigglgen.git#744d8b6617a7eb8df15f5922faa002e0b5234025",
+            .hash = "zigglgen-0.4.0-bmyqLXT4LQCQviz5TRTU14ntLCRUxLNTK0Us3v93jyxR",
         },
         .sdl = .{
-            .url = "git+https://github.com/castholm/SDL.git#3ed62e53aecd9ffb28e44b9d35b7c09a8739e823",
-            .hash = "sdl-0.2.4+3.2.16-7uIn9DPhfgH29yAIJqHLc69hNb4IW0q-AngtKCFoT92b",
+            .url = "git+https://github.com/castholm/SDL.git#1994ca5dbad5a3e3c670a9ab8533d86cfd97bdc0",
+            .hash = "sdl-0.2.6+3.2.20-7uIn9NgjfwHH5a6HhyLHat2nHU3OP5B05QHhKJKuxEex",
         },
         .cimgui_zig = .{
-            .url = "git+https://github.com/tiawl/cimgui.zig.git?ref=docking#b86685cd1fab8a07dba8323505ab509de291611f",
-            .hash = "cimgui_zig-1.0.0-2XubkjY7XwDe86aumNw1jXRMXoF_3E8DG8MoFMSU7Flh",
+            .url = "https://github.com/tiawl/cimgui.zig/archive/refs/tags/zig-0.15.1-docking.tar.gz",
+            .hash = "cimgui_zig-1.0.0-2Xubkvp8XwBlaeHTR58KF9iYfZNf2Kt9UCN8WGH38FDO",
         },
     },
     .paths = .{
