@@ -1,3 +1,5 @@
+const PointVector = @This();
+
 const std = @import("std");
 const gl = @import("gl");
 
@@ -5,8 +7,6 @@ const Shader = @import("../../Shader.zig");
 const VAO = @import("../../VAO.zig");
 const VBO = @import("../../VBO.zig");
 const IBO = @import("../../IBO.zig");
-
-const Self = @This();
 
 program: Shader,
 
@@ -19,8 +19,8 @@ vector_color_uniform: c_int = undefined,
 position_attrib: VAO.VertexAttribInfo = undefined,
 vector_attrib: VAO.VertexAttribInfo = undefined,
 
-pub fn init() !Self {
-    var s: Self = .{
+pub fn init() !PointVector {
+    var pv: PointVector = .{
         .program = try Shader.init(),
     };
 
@@ -28,43 +28,43 @@ pub fn init() !Self {
     const geometry_shader_source = @embedFile("gs.glsl");
     const fragment_shader_source = @embedFile("fs.glsl");
 
-    try s.program.setShader(.vertex, vertex_shader_source);
-    try s.program.setShader(.geometry, geometry_shader_source);
-    try s.program.setShader(.fragment, fragment_shader_source);
-    try s.program.linkProgram();
+    try pv.program.setShader(.vertex, vertex_shader_source);
+    try pv.program.setShader(.geometry, geometry_shader_source);
+    try pv.program.setShader(.fragment, fragment_shader_source);
+    try pv.program.linkProgram();
 
-    s.model_view_matrix_uniform = gl.GetUniformLocation(s.program.index, "u_model_view_matrix");
-    s.projection_matrix_uniform = gl.GetUniformLocation(s.program.index, "u_projection_matrix");
-    s.vector_scale_uniform = gl.GetUniformLocation(s.program.index, "u_vector_scale");
-    s.vector_color_uniform = gl.GetUniformLocation(s.program.index, "u_vector_color");
-    // s.vector_width_uniform = gl.GetUniformLocation(s.program.index, "u_vector_width");
+    pv.model_view_matrix_uniform = gl.GetUniformLocation(pv.program.index, "u_model_view_matrix");
+    pv.projection_matrix_uniform = gl.GetUniformLocation(pv.program.index, "u_projection_matrix");
+    pv.vector_scale_uniform = gl.GetUniformLocation(pv.program.index, "u_vector_scale");
+    pv.vector_color_uniform = gl.GetUniformLocation(pv.program.index, "u_vector_color");
+    // pv.vector_width_uniform = gl.GetUniformLocation(pv.program.index, "u_vector_width");
 
-    s.position_attrib = .{
-        .index = @intCast(gl.GetAttribLocation(s.program.index, "a_position")),
+    pv.position_attrib = .{
+        .index = @intCast(gl.GetAttribLocation(pv.program.index, "a_position")),
         .size = 3,
         .type = gl.FLOAT,
         .normalized = false,
     };
-    s.vector_attrib = .{
-        .index = @intCast(gl.GetAttribLocation(s.program.index, "a_vector")),
+    pv.vector_attrib = .{
+        .index = @intCast(gl.GetAttribLocation(pv.program.index, "a_vector")),
         .size = 3,
         .type = gl.FLOAT,
         .normalized = false,
     };
 
-    return s;
+    return pv;
 }
 
-pub fn deinit(self: *Self) void {
-    self.program.deinit();
+pub fn deinit(pv: *PointVector) void {
+    pv.program.deinit();
 }
 
-pub fn createParameters(self: *const Self) Parameters {
-    return Parameters.init(self);
+pub fn createParameters(pv: *const PointVector) Parameters {
+    return Parameters.init(pv);
 }
 
 pub const Parameters = struct {
-    shader: *const Self,
+    shader: *const PointVector,
     vao: VAO,
 
     model_view_matrix: [16]f32 = undefined,
@@ -78,45 +78,45 @@ pub const Parameters = struct {
         vector,
     };
 
-    pub fn init(shader: *const Self) Parameters {
+    pub fn init(pv: *const PointVector) Parameters {
         return .{
-            .shader = shader,
+            .shader = pv,
             .vao = VAO.init(),
         };
     }
 
-    pub fn deinit(self: *Parameters) void {
-        self.vao.deinit();
+    pub fn deinit(p: *Parameters) void {
+        p.vao.deinit();
     }
 
-    pub fn setVertexAttribArray(self: *Parameters, attrib: VertexAttrib, vbo: VBO, stride: isize, pointer: usize) void {
+    pub fn setVertexAttribArray(p: *Parameters, attrib: VertexAttrib, vbo: VBO, stride: isize, pointer: usize) void {
         const attrib_info = switch (attrib) {
-            .position => self.shader.position_attrib,
-            .vector => self.shader.vector_attrib,
+            .position => p.shader.position_attrib,
+            .vector => p.shader.vector_attrib,
         };
-        self.vao.enableVertexAttribArray(attrib_info, vbo, stride, pointer);
+        p.vao.enableVertexAttribArray(attrib_info, vbo, stride, pointer);
     }
 
-    pub fn unsetVertexAttribArray(self: *Parameters, attrib: VertexAttrib) void {
+    pub fn unsetVertexAttribArray(p: *Parameters, attrib: VertexAttrib) void {
         const attrib_info = switch (attrib) {
-            .position => self.shader.position_attrib,
-            .vector => self.shader.vector_attrib,
+            .position => p.shader.position_attrib,
+            .vector => p.shader.vector_attrib,
         };
-        self.vao.disableVertexAttribArray(attrib_info);
+        p.vao.disableVertexAttribArray(attrib_info);
     }
 
-    pub fn draw(self: *Parameters, ibo: IBO) void {
-        gl.UseProgram(self.shader.program.index);
+    pub fn draw(p: *Parameters, ibo: IBO) void {
+        gl.UseProgram(p.shader.program.index);
         defer gl.UseProgram(0);
-        gl.UniformMatrix4fv(self.shader.model_view_matrix_uniform, 1, gl.FALSE, &self.model_view_matrix);
-        gl.UniformMatrix4fv(self.shader.projection_matrix_uniform, 1, gl.FALSE, &self.projection_matrix);
-        gl.Uniform1f(self.shader.vector_scale_uniform, self.vector_scale);
-        gl.Uniform4fv(self.shader.vector_color_uniform, 1, &self.vector_color);
+        gl.UniformMatrix4fv(p.shader.model_view_matrix_uniform, 1, gl.FALSE, &p.model_view_matrix);
+        gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, &p.projection_matrix);
+        gl.Uniform1f(p.shader.vector_scale_uniform, p.vector_scale);
+        gl.Uniform4fv(p.shader.vector_color_uniform, 1, &p.vector_color);
         // var viewport: [4]i32 = .{ 0, 0, 0, 0 };
         // gl.GetIntegerv(gl.VIEWPORT, &viewport);
-        // gl.Uniform2f(self.shader.vector_width_uniform, self.vector_width / @as(f32, @floatFromInt(viewport[2])), self.vector_width / @as(f32, @floatFromInt(viewport[3])));
-        gl.LineWidth(self.vector_width);
-        gl.BindVertexArray(self.vao.index);
+        // gl.Uniform2f(p.shader.vector_width_uniform, p.vector_width / @as(f32, @floatFromInt(viewport[2])), p.vector_width / @as(f32, @floatFromInt(viewport[3])));
+        gl.LineWidth(p.vector_width);
+        gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);
         defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);

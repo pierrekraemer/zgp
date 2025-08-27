@@ -9,7 +9,14 @@ const Scalar = vec.Scalar;
 
 /// 4x4 matrix
 /// All operations consider the matrix to be in column-major order.
+pub const Mat3 = [3]Vec3;
 pub const Mat4 = [4]Vec4;
+
+pub const identity3: Mat3 = .{
+    .{ 1.0, 0.0, 0.0 },
+    .{ 0.0, 1.0, 0.0 },
+    .{ 0.0, 0.0, 1.0 },
+};
 
 pub const identity4: Mat4 = .{
     .{ 1.0, 0.0, 0.0, 0.0 },
@@ -18,7 +25,19 @@ pub const identity4: Mat4 = .{
     .{ 0.0, 0.0, 0.0, 1.0 },
 };
 
+pub const zero3: Mat3 = .{ vec.zero3, vec.zero3, vec.zero3 };
+
 pub const zero4: Mat4 = .{ vec.zero4, vec.zero4, vec.zero4, vec.zero4 };
+
+pub fn mul3(a: Mat3, b: Mat3) Mat3 {
+    var result: Mat3 = undefined;
+    for (0..2) |i| {
+        for (0..2) |j| {
+            result[i][j] = a[0][j] * b[i][0] + a[1][j] * b[i][1] + a[2][j] * b[i][2];
+        }
+    }
+    return result;
+}
 
 pub fn mul4(a: Mat4, b: Mat4) Mat4 {
     var result: Mat4 = undefined;
@@ -30,6 +49,31 @@ pub fn mul4(a: Mat4, b: Mat4) Mat4 {
     return result;
 }
 
+pub fn preMulVec3(v: Vec3, m: Mat3) Vec3 {
+    return .{
+        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
+    };
+}
+
+pub fn mulVec3(m: Mat3, v: Vec3) Vec3 {
+    return .{
+        m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2],
+        m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2],
+        m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2],
+    };
+}
+
+pub fn preMulVec4(v: Vec4, m: Mat4) Vec4 {
+    return .{
+        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2] + m[0][3] * v[3],
+        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2] + m[1][3] * v[3],
+        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2] + m[2][3] * v[3],
+        m[3][0] * v[0] + m[3][1] * v[1] + m[3][2] * v[2] + m[3][3] * v[3],
+    };
+}
+
 pub fn mulVec4(m: Mat4, v: Vec4) Vec4 {
     return .{
         m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
@@ -39,9 +83,10 @@ pub fn mulVec4(m: Mat4, v: Vec4) Vec4 {
     };
 }
 
-pub fn lookAt(eyepos: Vec3, focuspos: Vec3, updir: Vec3) Mat4 {
-    const eyedir = vec.sub3(eyepos, focuspos);
-    const az = vec.normalized3(eyedir);
+pub fn lookAt(eyepos: Vec3, eyedir: Vec3, updir: Vec3) Mat4 {
+    // const eyedir = vec.sub3(eyepos, focuspos);
+    const dir = vec.mulScalar3(eyedir, -1.0);
+    const az = vec.normalized3(dir);
     const ax = vec.normalized3(vec.cross3(updir, az));
     const ay = vec.normalized3(vec.cross3(az, ax));
     return .{
@@ -86,7 +131,23 @@ pub fn orthographic(w: Scalar, h: Scalar, near: Scalar, far: Scalar) Mat4 {
     };
 }
 
-pub fn rotMatFromNormalizedAxisAndAngle(axis: Vec3, angle: Scalar) Mat4 {
+pub fn rotMat3FromNormalizedAxisAndAngle(axis: Vec3, angle: Scalar) Mat3 {
+    const c = @cos(angle);
+    const s = @sin(angle);
+    const t = 1 - c;
+
+    return .{
+        .{ t * axis[0] * axis[0] + c, t * axis[0] * axis[1] + s * axis[2], t * axis[0] * axis[2] - s * axis[1] },
+        .{ t * axis[0] * axis[1] - s * axis[2], t * axis[1] * axis[1] + c, t * axis[1] * axis[2] + s * axis[0] },
+        .{ t * axis[0] * axis[2] + s * axis[1], t * axis[1] * axis[2] - s * axis[0], t * axis[2] * axis[2] + c },
+    };
+}
+
+pub fn rotMat3FromAxisAndAngle(axis: Vec3, angle: Scalar) Mat3 {
+    return rotMat3FromNormalizedAxisAndAngle(vec.normalized3(axis), angle);
+}
+
+pub fn rotMat4FromNormalizedAxisAndAngle(axis: Vec3, angle: Scalar) Mat4 {
     const c = @cos(angle);
     const s = @sin(angle);
     const t = 1 - c;
@@ -99,6 +160,6 @@ pub fn rotMatFromNormalizedAxisAndAngle(axis: Vec3, angle: Scalar) Mat4 {
     };
 }
 
-pub fn rotMatFromAxisAndAngle(axis: Vec3, angle: Scalar) Mat4 {
-    return rotMatFromNormalizedAxisAndAngle(vec.normalized3(axis), angle);
+pub fn rotMat4FromAxisAndAngle(axis: Vec3, angle: Scalar) Mat4 {
+    return rotMat4FromNormalizedAxisAndAngle(vec.normalized3(axis), angle);
 }

@@ -12,9 +12,6 @@ const c = @cImport({
     @cInclude("backends/dcimgui_impl_opengl3.h");
 });
 
-const Texture2D = @import("rendering/Texture2D.zig");
-const FBO = @import("rendering/FBO.zig");
-
 const ModelsRegistry = @import("models/ModelsRegistry.zig");
 
 const Module = @import("modules/Module.zig");
@@ -33,6 +30,10 @@ const geometry_utils = @import("geometry/utils.zig");
 const normal = @import("models/surface/normal.zig");
 const length = @import("models/surface/length.zig");
 const angle = @import("models/surface/angle.zig");
+
+const Camera = @import("rendering/Camera.zig");
+const Texture2D = @import("rendering/Texture2D.zig");
+const FBO = @import("rendering/FBO.zig");
 
 var allocator: std.mem.Allocator = undefined;
 var rng: std.Random.DefaultPrng = undefined;
@@ -61,7 +62,7 @@ var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
 
-// TODO: should move all camera & FBO management into a separate module
+// TODO: should move view & FBO management into separate module
 
 var screen_color_tex: Texture2D = undefined;
 var screen_depth_tex: Texture2D = undefined;
@@ -70,18 +71,9 @@ const FullscreenTexture = @import("rendering/shaders/fullscreen_texture/Fullscre
 var fullscreen_texture_shader: FullscreenTexture = undefined;
 var fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = undefined;
 
-var view_matrix = mat.lookAt(
-    .{ 0.0, 0.0, 2.0 },
-    .{ 0.0, 0.0, 0.0 },
-    .{ 0.0, 1.0, 0.0 },
-);
-const CameraProjectionType = enum {
-    perspective,
-    orthographic,
-};
-var camera_mode = CameraProjectionType.perspective;
-
 pub var need_redraw: bool = true;
+
+var camera: Camera = .{};
 
 fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = appstate;
@@ -156,6 +148,20 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             \\
         ),
     };
+
+    // Camera initialization
+    // *********************
+
+    camera.position = .{ 0.0, 0.0, 2.0 };
+    camera.look_dir = vec.normalized3(vec.sub3(.{ 0.0, 0.0, 0.0 }, camera.position));
+    camera.up_dir = .{ 0.0, 1.0, 0.0 };
+    camera.pivot_position = .{ 0.0, 0.0, 0.0 };
+    camera.updateViewMatrix();
+
+    camera.aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
+    camera.field_of_view = 0.2 * std.math.pi;
+    camera.projection_type = .perspective;
+    camera.updateProjectionMatrix();
 
     // Fullscreen texture & FBO initialization
     // ***************************************
@@ -338,28 +344,15 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         gl.PolygonOffset(1.0, 1.5);
 
         gl.Viewport(0, 0, window_width, window_height);
-        const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
-
-        // TODO: allow user to change the pivot point
-
-        const field_of_view: f32 = 0.2 * std.math.pi;
-        // const scene_radius: f32 = 1.0;
-        // const focal_distance: f32 = scene_radius / @tan(field_of_view / 2.0);
-        // const pivot_point = zm.f32x4(0.0, 0.0, 0.0, 1.0);
-
-        const projection_matrix = switch (camera_mode) {
-            CameraProjectionType.perspective => mat.perspective(field_of_view, aspect_ratio, 0.01, 5.0),
-            CameraProjectionType.orthographic => mat.orthographic(aspect_ratio * -view_matrix[3][2], -view_matrix[3][2], 0.01, 5.0),
-        };
 
         if (need_redraw) {
             gl.BindFramebuffer(gl.FRAMEBUFFER, fbo.index);
+            defer gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
             gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
             // gl.DrawBuffer(gl.COLOR_ATTACHMENT0); // not needed as it is already the default
             for (modules.items) |*module| {
-                module.draw(view_matrix, projection_matrix);
+                module.draw(camera.view_matrix, camera.projection_matrix);
             }
-            gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
             need_redraw = false;
         }
 
@@ -389,18 +382,26 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                 }
             }
 
-            if (c.ImGui_BeginMenu("Rendering")) {
+            if (c.ImGui_BeginMenu("Camera")) {
                 defer c.ImGui_EndMenu();
                 if (c.ImGui_ColorEdit3("Background color", &UiData.background_color, c.ImGuiColorEditFlags_NoInputs)) {
                     need_redraw = true;
                 }
                 c.ImGui_Separator();
-                if (c.ImGui_MenuItemEx("Perspective", null, camera_mode == CameraProjectionType.perspective, true)) {
-                    camera_mode = CameraProjectionType.perspective;
+                if (c.ImGui_MenuItemEx("Perspective", null, camera.projection_type == .perspective, true)) {
+                    camera.projection_type = .perspective;
+                    camera.updateProjectionMatrix();
                     need_redraw = true;
                 }
-                if (c.ImGui_MenuItemEx("Orthographic", null, camera_mode == CameraProjectionType.orthographic, true)) {
-                    camera_mode = CameraProjectionType.orthographic;
+                if (c.ImGui_MenuItemEx("Orthographic", null, camera.projection_type == .orthographic, true)) {
+                    camera.projection_type = .orthographic;
+                    camera.updateProjectionMatrix();
+                    need_redraw = true;
+                }
+                c.ImGui_Separator();
+                if (c.ImGui_Button("Look at origin")) {
+                    camera.look_dir = vec.normalized3(vec.sub3(.{ 0.0, 0.0, 0.0 }, camera.position));
+                    camera.updateViewMatrix();
                     need_redraw = true;
                 }
             }
@@ -504,32 +505,28 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 else => {},
             }
         },
-        c.SDL_EVENT_MOUSE_BUTTON_DOWN, c.SDL_EVENT_MOUSE_BUTTON_UP => {
-            // const down = event.type == c.SDL_EVENT_MOUSE_BUTTON_DOWN;
+        c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
             switch (event.button.button) {
-                // c.SDL_BUTTON_LEFT => sdl_log.info("mouse button: left ({s})", .{if (down) "down" else "up"}),
-                // c.SDL_BUTTON_RIGHT => sdl_log.info("mouse button: right ({s})", .{if (down) "down" else "up"}),
+                c.SDL_BUTTON_LEFT => {},
+                c.SDL_BUTTON_RIGHT => {},
+                else => {},
+            }
+        },
+        c.SDL_EVENT_MOUSE_BUTTON_UP => {
+            switch (event.button.button) {
+                c.SDL_BUTTON_LEFT => {},
+                c.SDL_BUTTON_RIGHT => {},
                 else => {},
             }
         },
         c.SDL_EVENT_MOUSE_MOTION => {
             switch (event.motion.state) {
                 c.SDL_BUTTON_LMASK => {
-                    const axis: vec.Vec3 = .{ event.motion.yrel, event.motion.xrel, 0.0 };
-                    const speed = vec.norm3(axis) * 0.01;
-                    const rot = mat.rotMatFromAxisAndAngle(axis, speed);
-                    const tr = view_matrix[3]; // save translation
-                    view_matrix[3] = .{ 0.0, 0.0, 0.0, 1.0 }; // set translation to zero
-                    view_matrix = mat.mul4(rot, view_matrix); // apply rotation
-                    view_matrix[3] = tr; // restore translation
+                    camera.rotateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
                     need_redraw = true;
                 },
                 c.SDL_BUTTON_RMASK => {
-                    const aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
-                    const nx = event.motion.xrel / @as(f32, @floatFromInt(window_width)) * if (aspect_ratio > 1.0) aspect_ratio else 1.0;
-                    const ny = -1.0 * event.motion.yrel / @as(f32, @floatFromInt(window_height)) * if (aspect_ratio > 1.0) 1.0 else 1.0 / aspect_ratio;
-                    view_matrix[3][0] += 2 * nx;
-                    view_matrix[3][1] += 2 * ny;
+                    camera.translateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
                     need_redraw = true;
                 },
                 else => {},
@@ -538,9 +535,15 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         c.SDL_EVENT_MOUSE_WHEEL => {
             const wheel = event.wheel.y;
             if (wheel != 0) {
-                const forward: Vec4 = .{ 0.0, 0.0, -1.0, 0.0 };
-                const move = vec.mulScalar4(forward, -wheel * 0.01);
-                view_matrix[3] = vec.add4(view_matrix[3], move);
+                var tr4: Vec4 = .{ 0.0, 0.0, -1.0, 0.0 };
+                tr4 = vec.mulScalar4(tr4, wheel * 0.01);
+                tr4 = mat.preMulVec4(tr4, camera.view_matrix);
+                const tr: Vec3 = .{ tr4[0], tr4[1], tr4[2] };
+                camera.position = vec.add3(camera.position, tr);
+                camera.updateViewMatrix();
+                if (camera.projection_type == .orthographic) {
+                    camera.updateProjectionMatrix();
+                }
                 need_redraw = true;
             }
         },
@@ -587,6 +590,7 @@ pub fn main() !u8 {
 
     var da: std.heap.DebugAllocator(.{}) = .init;
     defer _ = da.deinit();
+    defer _ = da.detectLeaks();
     allocator = da.allocator();
     // allocator = std.heap.smp_allocator;
 

@@ -1,3 +1,5 @@
+const FullscreenTexture = @This();
+
 const std = @import("std");
 const gl = @import("gl");
 
@@ -5,70 +7,68 @@ const Shader = @import("../../Shader.zig");
 const VAO = @import("../../VAO.zig");
 const Texture2D = @import("../../Texture2D.zig");
 
-const Self = @This();
-
 program: Shader,
 
 texture_unit_uniform: c_int = undefined,
 
-pub fn init() !Self {
-    var s: Self = .{
+pub fn init() !FullscreenTexture {
+    var ft: FullscreenTexture = .{
         .program = try Shader.init(),
     };
 
     const vertex_shader_source = @embedFile("vs.glsl");
     const fragment_shader_source = @embedFile("fs.glsl");
 
-    try s.program.setShader(.vertex, vertex_shader_source);
-    try s.program.setShader(.fragment, fragment_shader_source);
-    try s.program.linkProgram();
+    try ft.program.setShader(.vertex, vertex_shader_source);
+    try ft.program.setShader(.fragment, fragment_shader_source);
+    try ft.program.linkProgram();
 
-    s.texture_unit_uniform = gl.GetUniformLocation(s.program.index, "u_texture_unit");
+    ft.texture_unit_uniform = gl.GetUniformLocation(ft.program.index, "u_texture_unit");
 
-    return s;
+    return ft;
 }
 
-pub fn deinit(self: *Self) void {
-    self.program.deinit();
+pub fn deinit(ft: *FullscreenTexture) void {
+    ft.program.deinit();
 }
 
-pub fn createParameters(self: *const Self) Parameters {
-    return Parameters.init(self);
+pub fn createParameters(ft: *const FullscreenTexture) Parameters {
+    return Parameters.init(ft);
 }
 
 pub const Parameters = struct {
-    shader: *const Self,
+    shader: *const FullscreenTexture,
     vao: VAO,
 
     tex: Texture2D = undefined,
     texture_unit: c_int = undefined,
 
-    pub fn init(shader: *const Self) Parameters {
+    pub fn init(ft: *const FullscreenTexture) Parameters {
         return .{
-            .shader = shader,
+            .shader = ft,
             .vao = VAO.init(),
         };
     }
 
-    pub fn deinit(self: *Parameters) void {
-        self.vao.deinit();
+    pub fn deinit(p: *Parameters) void {
+        p.vao.deinit();
     }
 
-    pub fn setTexture(self: *Parameters, tex: Texture2D, unit: c_int) void {
-        self.tex = tex;
-        self.texture_unit = unit;
+    pub fn setTexture(p: *Parameters, tex: Texture2D, unit: c_int) void {
+        p.tex = tex;
+        p.texture_unit = unit;
     }
 
-    pub fn useShader(self: *Parameters) void {
-        gl.UseProgram(self.shader.program.index);
-        const unit: c_uint = @intCast(self.texture_unit);
+    pub fn useShader(p: *Parameters) void {
+        gl.UseProgram(p.shader.program.index);
+        const unit: c_uint = @intCast(p.texture_unit);
         gl.ActiveTexture(gl.TEXTURE0 + unit);
-        gl.BindTexture(gl.TEXTURE_2D, self.tex.index);
-        gl.Uniform1i(self.shader.texture_unit_uniform, self.texture_unit);
+        gl.BindTexture(gl.TEXTURE_2D, p.tex.index);
+        gl.Uniform1i(p.shader.texture_unit_uniform, p.texture_unit);
     }
 
-    pub fn draw(self: *Parameters) void {
-        gl.BindVertexArray(self.vao.index); // even an empty VAO is needed in order for DrawArrays to work
+    pub fn draw(p: *Parameters) void {
+        gl.BindVertexArray(p.vao.index); // even an empty VAO is needed in order for DrawArrays to work
         defer gl.BindVertexArray(0);
         gl.DrawArrays(gl.TRIANGLES, 0, 3);
     }

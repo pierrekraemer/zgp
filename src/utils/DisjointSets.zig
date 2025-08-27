@@ -9,7 +9,7 @@ pub fn DisjointSets(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        elements: std.ArrayListUnmanaged(Element) = .empty, // TODO: becomes simply ArrayList in zig 0.15
+        elements: std.ArrayList(Element) = .empty,
 
         pub const init: Self = .{};
 

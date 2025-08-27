@@ -1,9 +1,9 @@
+const VAO = @This();
+
 const std = @import("std");
 const gl = @import("gl");
 
 const VBO = @import("./VBO.zig");
-
-const Self = @This();
 
 index: c_uint = 0,
 
@@ -14,22 +14,22 @@ pub const VertexAttribInfo = struct {
     normalized: bool,
 };
 
-pub fn init() Self {
-    var s: Self = .{};
-    gl.GenVertexArrays(1, (&s.index)[0..1]);
-    return s;
+pub fn init() VAO {
+    var v: VAO = .{};
+    gl.GenVertexArrays(1, (&v.index)[0..1]);
+    return v;
 }
 
-pub fn deinit(self: *Self) void {
-    if (self.index != 0) {
-        gl.DeleteVertexArrays(1, (&self.index)[0..1]);
-        self.index = 0;
+pub fn deinit(v: *VAO) void {
+    if (v.index != 0) {
+        gl.DeleteVertexArrays(1, (&v.index)[0..1]);
+        v.index = 0;
     }
 }
 
 /// Enable a vertex attribute of the VAO with the given VBO
-pub fn enableVertexAttribArray(self: *Self, attrib_info: VertexAttribInfo, vbo: VBO, stride: isize, pointer: usize) void {
-    gl.BindVertexArray(self.index);
+pub fn enableVertexAttribArray(v: *VAO, attrib_info: VertexAttribInfo, vbo: VBO, stride: isize, pointer: usize) void {
+    gl.BindVertexArray(v.index);
     defer gl.BindVertexArray(0);
     gl.BindBuffer(gl.ARRAY_BUFFER, vbo.index);
     defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
@@ -46,8 +46,8 @@ pub fn enableVertexAttribArray(self: *Self, attrib_info: VertexAttribInfo, vbo: 
 
 /// Disable a vertex attribute of the VAO
 /// // (and provide a constant value to be used instead)
-pub fn disableVertexAttribArray(self: *Self, attrib_info: VertexAttribInfo) void {
-    gl.BindVertexArray(self.index);
+pub fn disableVertexAttribArray(v: *VAO, attrib_info: VertexAttribInfo) void {
+    gl.BindVertexArray(v.index);
     defer gl.BindVertexArray(0);
     gl.DisableVertexAttribArray(attrib_info.index);
     // switch (@typeInfo(T)) {

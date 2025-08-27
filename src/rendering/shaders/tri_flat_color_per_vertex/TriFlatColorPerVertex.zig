@@ -1,3 +1,5 @@
+const TriFlatColorPerVertex = @This();
+
 const std = @import("std");
 const gl = @import("gl");
 
@@ -5,8 +7,6 @@ const Shader = @import("../../Shader.zig");
 const VAO = @import("../../VAO.zig");
 const VBO = @import("../../VBO.zig");
 const IBO = @import("../../IBO.zig");
-
-const Self = @This();
 
 program: Shader,
 
@@ -23,49 +23,49 @@ const VertexAttrib = enum {
     color,
 };
 
-pub fn init() !Self {
-    var s: Self = .{
+pub fn init() !TriFlatColorPerVertex {
+    var tfcpv: TriFlatColorPerVertex = .{
         .program = try Shader.init(),
     };
 
     const vertex_shader_source = @embedFile("vs.glsl");
     const fragment_shader_source = @embedFile("fs.glsl");
 
-    try s.program.setShader(.vertex, vertex_shader_source);
-    try s.program.setShader(.fragment, fragment_shader_source);
-    try s.program.linkProgram();
+    try tfcpv.program.setShader(.vertex, vertex_shader_source);
+    try tfcpv.program.setShader(.fragment, fragment_shader_source);
+    try tfcpv.program.linkProgram();
 
-    s.model_view_matrix_uniform = gl.GetUniformLocation(s.program.index, "u_model_view_matrix");
-    s.projection_matrix_uniform = gl.GetUniformLocation(s.program.index, "u_projection_matrix");
-    s.ambiant_color_uniform = gl.GetUniformLocation(s.program.index, "u_ambiant_color");
-    s.light_position_uniform = gl.GetUniformLocation(s.program.index, "u_light_position");
+    tfcpv.model_view_matrix_uniform = gl.GetUniformLocation(tfcpv.program.index, "u_model_view_matrix");
+    tfcpv.projection_matrix_uniform = gl.GetUniformLocation(tfcpv.program.index, "u_projection_matrix");
+    tfcpv.ambiant_color_uniform = gl.GetUniformLocation(tfcpv.program.index, "u_ambiant_color");
+    tfcpv.light_position_uniform = gl.GetUniformLocation(tfcpv.program.index, "u_light_position");
 
-    s.position_attrib = .{
-        .index = @intCast(gl.GetAttribLocation(s.program.index, "a_position")),
+    tfcpv.position_attrib = .{
+        .index = @intCast(gl.GetAttribLocation(tfcpv.program.index, "a_position")),
         .size = 3,
         .type = gl.FLOAT,
         .normalized = false,
     };
-    s.color_attrib = .{
-        .index = @intCast(gl.GetAttribLocation(s.program.index, "a_color")),
+    tfcpv.color_attrib = .{
+        .index = @intCast(gl.GetAttribLocation(tfcpv.program.index, "a_color")),
         .size = 3,
         .type = gl.FLOAT,
         .normalized = false,
     };
 
-    return s;
+    return tfcpv;
 }
 
-pub fn deinit(self: *Self) void {
-    self.program.deinit();
+pub fn deinit(tfcpv: *TriFlatColorPerVertex) void {
+    tfcpv.program.deinit();
 }
 
-pub fn createParameters(self: *const Self) Parameters {
-    return Parameters.init(self);
+pub fn createParameters(tfcpv: *const TriFlatColorPerVertex) Parameters {
+    return Parameters.init(tfcpv);
 }
 
 pub const Parameters = struct {
-    shader: *const Self,
+    shader: *const TriFlatColorPerVertex,
     vao: VAO,
 
     model_view_matrix: [16]f32 = undefined,
@@ -73,41 +73,41 @@ pub const Parameters = struct {
     ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
     light_position: [3]f32 = .{ 10, 0, 100 },
 
-    pub fn init(shader: *const Self) Parameters {
+    pub fn init(tfcpv: *const TriFlatColorPerVertex) Parameters {
         return .{
-            .shader = shader,
+            .shader = tfcpv,
             .vao = VAO.init(),
         };
     }
 
-    pub fn deinit(self: *Parameters) void {
-        self.vao.deinit();
+    pub fn deinit(p: *Parameters) void {
+        p.vao.deinit();
     }
 
-    pub fn setVertexAttribArray(self: *Parameters, attrib: VertexAttrib, vbo: VBO, stride: isize, pointer: usize) void {
+    pub fn setVertexAttribArray(p: *Parameters, attrib: VertexAttrib, vbo: VBO, stride: isize, pointer: usize) void {
         const attrib_info = switch (attrib) {
-            .position => self.shader.position_attrib,
-            .color => self.shader.color_attrib,
+            .position => p.shader.position_attrib,
+            .color => p.shader.color_attrib,
         };
-        self.vao.enableVertexAttribArray(attrib_info, vbo, stride, pointer);
+        p.vao.enableVertexAttribArray(attrib_info, vbo, stride, pointer);
     }
 
-    pub fn unsetVertexAttribArray(self: *Parameters, attrib: VertexAttrib) void {
+    pub fn unsetVertexAttribArray(p: *Parameters, attrib: VertexAttrib) void {
         const attrib_info = switch (attrib) {
-            .position => self.shader.position_attrib,
-            .color => self.shader.color_attrib,
+            .position => p.shader.position_attrib,
+            .color => p.shader.color_attrib,
         };
-        self.vao.disableVertexAttribArray(attrib_info);
+        p.vao.disableVertexAttribArray(attrib_info);
     }
 
-    pub fn draw(self: *Parameters, ibo: IBO) void {
-        gl.UseProgram(self.shader.program.index);
+    pub fn draw(p: *Parameters, ibo: IBO) void {
+        gl.UseProgram(p.shader.program.index);
         defer gl.UseProgram(0);
-        gl.UniformMatrix4fv(self.shader.model_view_matrix_uniform, 1, gl.FALSE, &self.model_view_matrix);
-        gl.UniformMatrix4fv(self.shader.projection_matrix_uniform, 1, gl.FALSE, &self.projection_matrix);
-        gl.Uniform4fv(self.shader.ambiant_color_uniform, 1, &self.ambiant_color);
-        gl.Uniform3fv(self.shader.light_position_uniform, 1, &self.light_position);
-        gl.BindVertexArray(self.vao.index);
+        gl.UniformMatrix4fv(p.shader.model_view_matrix_uniform, 1, gl.FALSE, &p.model_view_matrix);
+        gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, &p.projection_matrix);
+        gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, &p.ambiant_color);
+        gl.Uniform3fv(p.shader.light_position_uniform, 1, &p.light_position);
+        gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);
         defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);

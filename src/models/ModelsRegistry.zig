@@ -257,10 +257,6 @@ pub fn uiPanel(self: *Self) void {
 
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
 
-            // TODO: update for zig 0.15
-            // var w: std.Io.Writer = .fixed(&buf);
-            // const nbvertices = try w.print("{d}", .{ sm.nbCells(.vertex) }) catch "";
-
             c.ImGui_Text("Vertex");
             c.ImGui_SameLine();
             const nbvertices = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.vertex)}) catch "";
@@ -458,7 +454,6 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
 
     var buffer: [1024]u8 = undefined;
     var file_reader = file.reader(&buffer);
-    const reader = &file_reader.interface;
 
     const supported_filetypes = enum {
         off,
@@ -483,7 +478,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
         .off => {
             zgp.zgp_log.info("reading OFF file", .{});
 
-            while (reader.takeDelimiterExclusive('\n')) |line| {
+            while (file_reader.interface.takeDelimiterExclusive('\n')) |line| {
                 if (line.len == 0) continue; // skip empty lines
                 if (std.mem.startsWith(u8, line, "OFF")) break;
             } else |err| switch (err) {
@@ -495,7 +490,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
             }
 
             var nb_cells: [3]u32 = undefined; // [vertices, faces, edges]
-            while (reader.takeDelimiterExclusive('\n')) |line| {
+            while (file_reader.interface.takeDelimiterExclusive('\n')) |line| {
                 if (line.len == 0) continue; // skip empty lines
                 var tokens = std.mem.tokenizeScalar(u8, line, ' ');
                 var i: u32 = 0;
@@ -522,7 +517,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
 
             var i: u32 = 0;
             while (i < nb_cells[0]) : (i += 1) {
-                while (reader.takeDelimiterExclusive('\n')) |line| {
+                while (file_reader.interface.takeDelimiterExclusive('\n')) |line| {
                     if (line.len == 0) continue; // skip empty lines
                     var tokens = std.mem.tokenizeScalar(u8, line, ' ');
                     var position: Vec3 = undefined;
@@ -553,7 +548,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
 
             i = 0;
             while (i < nb_cells[1]) : (i += 1) {
-                while (reader.takeDelimiterExclusive('\n')) |line| {
+                while (file_reader.interface.takeDelimiterExclusive('\n')) |line| {
                     if (line.len == 0) continue; // skip empty lines
                     var tokens = std.mem.tokenizeScalar(u8, line, ' ');
                     var face_nb_vertices: u32 = undefined;
