@@ -55,3 +55,8 @@ pub fn translateFromScreenVec(c: *Camera, screen_vec: Vec2) void {
     c.position = vec.add3(c.position, .{ world_tr4[0], world_tr4[1], world_tr4[2] });
     c.updateViewMatrix();
 }
+
+pub fn moveForward(c: *Camera, distance: f32) void {
+    c.position = vec.add3(c.position, vec.mulScalar3(c.look_dir, distance));
+    c.updateViewMatrix();
+}

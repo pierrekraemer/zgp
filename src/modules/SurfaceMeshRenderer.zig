@@ -1,3 +1,5 @@
+const SurfaceMeshRenderer = @This();
+
 const std = @import("std");
 const gl = @import("gl");
 
@@ -6,7 +8,6 @@ const c = @cImport({
 });
 const imgui_utils = @import("../utils/imgui.zig");
 
-const Self = @This();
 const zgp = @import("../main.zig");
 
 const Module = @import("Module.zig");
@@ -36,11 +37,11 @@ const SurfaceMeshRendererParameters = struct {
     draw_faces: bool = true,
     draw_boundaries: bool = false,
 
-    pub fn init(surface_mesh_renderer: *const Self) SurfaceMeshRendererParameters {
+    pub fn init(smr: *const SurfaceMeshRenderer) SurfaceMeshRendererParameters {
         return .{
-            .point_sphere_shader_parameters = surface_mesh_renderer.point_sphere_shader.createParameters(),
-            .line_bold_shader_parameters = surface_mesh_renderer.line_bold_shader.createParameters(),
-            .tri_flat_color_per_vertex_shader_parameters = surface_mesh_renderer.tri_flat_color_per_vertex_shader.createParameters(),
+            .point_sphere_shader_parameters = smr.point_sphere_shader.createParameters(),
+            .line_bold_shader_parameters = smr.line_bold_shader.createParameters(),
+            .tri_flat_color_per_vertex_shader_parameters = smr.tri_flat_color_per_vertex_shader.createParameters(),
         };
     }
 
@@ -57,7 +58,7 @@ tri_flat_color_per_vertex_shader: TriFlatColorPerVertex,
 
 parameters: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRendererParameters),
 
-pub fn init(allocator: std.mem.Allocator) !Self {
+pub fn init(allocator: std.mem.Allocator) !SurfaceMeshRenderer {
     return .{
         .point_sphere_shader = try PointSphere.init(),
         .line_bold_shader = try LineBold.init(),
@@ -66,36 +67,36 @@ pub fn init(allocator: std.mem.Allocator) !Self {
     };
 }
 
-pub fn deinit(self: *Self) void {
-    self.point_sphere_shader.deinit();
-    self.line_bold_shader.deinit();
-    self.tri_flat_color_per_vertex_shader.deinit();
-    var p_it = self.parameters.iterator();
+pub fn deinit(smr: *SurfaceMeshRenderer) void {
+    smr.point_sphere_shader.deinit();
+    smr.line_bold_shader.deinit();
+    smr.tri_flat_color_per_vertex_shader.deinit();
+    var p_it = smr.parameters.iterator();
     while (p_it.next()) |entry| {
         var p = entry.value_ptr.*;
         p.deinit();
     }
-    self.parameters.deinit();
+    smr.parameters.deinit();
 }
 
-pub fn module(self: *Self) Module {
-    return Module.init(self);
+pub fn module(smr: *SurfaceMeshRenderer) Module {
+    return Module.init(smr);
 }
 
-pub fn name(_: *Self) []const u8 {
+pub fn name(_: *SurfaceMeshRenderer) []const u8 {
     return "Surface Mesh Renderer";
 }
 
-pub fn surfaceMeshAdded(self: *Self, surface_mesh: *SurfaceMesh) !void {
-    try self.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init(self));
+pub fn surfaceMeshAdded(smr: *SurfaceMeshRenderer, surface_mesh: *SurfaceMesh) !void {
+    try smr.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init(smr));
 }
 
 pub fn surfaceMeshStandardDataChanged(
-    self: *Self,
+    smr: *SurfaceMeshRenderer,
     surface_mesh: *SurfaceMesh,
     std_data: SurfaceMeshStandardData,
 ) !void {
-    const p = self.parameters.getPtr(surface_mesh) orelse return;
+    const p = smr.parameters.getPtr(surface_mesh) orelse return;
     const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse return;
     switch (std_data) {
         .vertex_position => {
@@ -126,12 +127,12 @@ pub fn surfaceMeshStandardDataChanged(
     }
 }
 
-pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
+pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
     var sm_it = zgp.models_registry.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const sm = entry.value_ptr.*;
         const info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse continue;
-        const p = self.parameters.getPtr(sm) orelse continue;
+        const p = smr.parameters.getPtr(sm) orelse continue;
         if (p.draw_faces) {
             p.tri_flat_color_per_vertex_shader_parameters.model_view_matrix = @bitCast(view_matrix);
             p.tri_flat_color_per_vertex_shader_parameters.projection_matrix = @bitCast(projection_matrix);
@@ -157,7 +158,7 @@ pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
     }
 }
 
-pub fn uiPanel(self: *Self) void {
+pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
     const UiData = struct {
         var selected_surface_mesh: ?*SurfaceMesh = null;
     };
@@ -174,7 +175,7 @@ pub fn uiPanel(self: *Self) void {
     imgui_utils.surfaceMeshListBox(UiData.selected_surface_mesh, &UiCB.onSurfaceMeshSelected);
 
     if (UiData.selected_surface_mesh) |sm| {
-        const surface_mesh_renderer_parameters = self.parameters.getPtr(sm);
+        const surface_mesh_renderer_parameters = smr.parameters.getPtr(sm);
         if (surface_mesh_renderer_parameters) |p| {
             if (c.ImGui_Checkbox("draw vertices", &p.draw_vertices)) {
                 zgp.need_redraw = true;

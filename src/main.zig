@@ -18,6 +18,7 @@ const Module = @import("modules/Module.zig");
 const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
+const SurfaceMeshModeling = @import("modules/SurfaceMeshModeling.zig");
 
 const vec = @import("geometry/vec.zig");
 const Vec3 = vec.Vec3;
@@ -55,6 +56,7 @@ pub var modules: std.ArrayList(Module) = .empty;
 var point_cloud_renderer: PointCloudRenderer = undefined;
 var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
+var surface_mesh_modeling: SurfaceMeshModeling = undefined;
 
 var window: *c.SDL_Window = undefined;
 var window_width: c_int = 1200;
@@ -224,11 +226,13 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_renderer.deinit();
     vector_per_vertex_renderer = try VectorPerVertexRenderer.init(allocator);
     errdefer vector_per_vertex_renderer.deinit();
+    surface_mesh_modeling = .{};
 
     errdefer modules.deinit(allocator);
     try modules.append(allocator, point_cloud_renderer.module());
     try modules.append(allocator, surface_mesh_renderer.module());
     try modules.append(allocator, vector_per_vertex_renderer.module());
+    try modules.append(allocator, surface_mesh_modeling.module());
 
     // Example surface mesh initialization
     // ***********************************
@@ -399,8 +403,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                     need_redraw = true;
                 }
                 c.ImGui_Separator();
-                if (c.ImGui_Button("Look at origin")) {
-                    camera.look_dir = vec.normalized3(vec.sub3(.{ 0.0, 0.0, 0.0 }, camera.position));
+                if (c.ImGui_Button("Look at pivot point")) {
+                    camera.look_dir = vec.normalized3(vec.sub3(camera.pivot_position, camera.position));
                     camera.updateViewMatrix();
                     need_redraw = true;
                 }
@@ -499,7 +503,6 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
             need_redraw = true;
         },
         c.SDL_EVENT_KEY_DOWN => {
-            // const down = event.type == c.SDL_EVENT_KEY_DOWN;
             switch (event.key.key) {
                 c.SDLK_ESCAPE => return c.SDL_APP_SUCCESS,
                 else => {},
@@ -535,12 +538,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         c.SDL_EVENT_MOUSE_WHEEL => {
             const wheel = event.wheel.y;
             if (wheel != 0) {
-                var tr4: Vec4 = .{ 0.0, 0.0, -1.0, 0.0 };
-                tr4 = vec.mulScalar4(tr4, wheel * 0.01);
-                tr4 = mat.preMulVec4(tr4, camera.view_matrix);
-                const tr: Vec3 = .{ tr4[0], tr4[1], tr4[2] };
-                camera.position = vec.add3(camera.position, tr);
-                camera.updateViewMatrix();
+                camera.moveForward(wheel * 0.01);
                 if (camera.projection_type == .orthographic) {
                     camera.updateProjectionMatrix();
                 }

@@ -23,8 +23,6 @@ pub fn deinit(i: *IBO) void {
 }
 
 pub fn fillFrom(i: *IBO, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, allocator: std.mem.Allocator) !void {
-    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, i.index);
-    defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
     var indices: std.ArrayList(u32) = .empty;
     defer indices.deinit(allocator);
     switch (cell_type) {
@@ -33,8 +31,17 @@ pub fn fillFrom(i: *IBO, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, allo
             defer f_it.deinit();
             while (f_it.next()) |f| {
                 var dart_it = sm.cellDartIterator(f); // TODO: triangulate polygonal faces
-                while (dart_it.next()) |d| {
-                    try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
+                const dart_start = dart_it.next() orelse break;
+                const start_index = sm.cellIndex(.{ .vertex = dart_start });
+                var dart_v1 = dart_it.next() orelse break;
+                var v1_index = sm.cellIndex(.{ .vertex = dart_v1 });
+                while (dart_it.next()) |dart_v2| {
+                    const v2_index = sm.cellIndex(.{ .vertex = dart_v2 });
+                    try indices.append(allocator, start_index);
+                    try indices.append(allocator, v1_index);
+                    try indices.append(allocator, v2_index);
+                    dart_v1 = dart_v2;
+                    v1_index = v2_index;
                 }
             }
         },
@@ -69,6 +76,8 @@ pub fn fillFrom(i: *IBO, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, allo
         else => unreachable,
     }
     i.nb_indices = indices.items.len;
+    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, i.index);
+    defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
     gl.BufferData(
         gl.ELEMENT_ARRAY_BUFFER,
         @intCast(i.nb_indices * @sizeOf(u32)),

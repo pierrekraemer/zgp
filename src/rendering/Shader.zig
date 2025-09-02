@@ -23,7 +23,6 @@ pub const ShaderType = enum {
 };
 
 index: c_uint = 0,
-ready: bool = false,
 
 pub fn init() !Shader {
     var s: Shader = .{};
@@ -37,7 +36,6 @@ pub fn deinit(s: *Shader) void {
     if (s.index != 0) {
         gl.DeleteProgram(s.index);
         s.index = 0;
-        s.ready = false;
     }
 }
 
@@ -88,5 +86,4 @@ pub fn linkProgram(s: *Shader) !void {
             gl.DetachShader(s.index, attached_shaders[i]);
         }
     }
-    s.ready = true;
 }

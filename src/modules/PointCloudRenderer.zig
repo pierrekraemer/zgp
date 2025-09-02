@@ -1,3 +1,5 @@
+const PointCloudRenderer = @This();
+
 const std = @import("std");
 const gl = @import("gl");
 
@@ -6,7 +8,6 @@ const c = @cImport({
 });
 const imgui_utils = @import("../utils/imgui.zig");
 
-const Self = @This();
 const zgp = @import("../main.zig");
 
 const Module = @import("Module.zig");
@@ -28,9 +29,9 @@ const PointCloudRendererParameters = struct {
     point_sphere_shader_parameters: PointSphere.Parameters,
     draw_points: bool = true,
 
-    pub fn init(point_cloud_renderer: *const Self) PointCloudRendererParameters {
+    pub fn init(pcr: *const PointCloudRenderer) PointCloudRendererParameters {
         return .{
-            .point_sphere_shader_parameters = point_cloud_renderer.point_sphere_shader.createParameters(),
+            .point_sphere_shader_parameters = pcr.point_sphere_shader.createParameters(),
         };
     }
 
@@ -43,41 +44,41 @@ point_sphere_shader: PointSphere,
 
 parameters: std.AutoHashMap(*const PointCloud, PointCloudRendererParameters),
 
-pub fn init(allocator: std.mem.Allocator) !Self {
+pub fn init(allocator: std.mem.Allocator) !PointCloudRenderer {
     return .{
         .point_sphere_shader = try PointSphere.init(),
         .parameters = std.AutoHashMap(*const PointCloud, PointCloudRendererParameters).init(allocator),
     };
 }
 
-pub fn deinit(self: *Self) void {
-    self.point_sphere_shader.deinit();
-    var p_it = self.parameters.iterator();
+pub fn deinit(pcr: *PointCloudRenderer) void {
+    pcr.point_sphere_shader.deinit();
+    var p_it = pcr.parameters.iterator();
     while (p_it.next()) |entry| {
         var p = entry.value_ptr.*;
         p.deinit();
     }
-    self.parameters.deinit();
+    pcr.parameters.deinit();
 }
 
-pub fn module(self: *Self) Module {
-    return Module.init(self);
+pub fn module(pcr: *PointCloudRenderer) Module {
+    return Module.init(pcr);
 }
 
-pub fn name(_: *Self) []const u8 {
+pub fn name(_: *PointCloudRenderer) []const u8 {
     return "Point Cloud Renderer";
 }
 
-pub fn pointCloudAdded(self: *Self, point_cloud: *PointCloud) !void {
-    try self.parameters.put(point_cloud, PointCloudRendererParameters.init(self));
+pub fn pointCloudAdded(pcr: *PointCloudRenderer, point_cloud: *PointCloud) !void {
+    try pcr.parameters.put(point_cloud, PointCloudRendererParameters.init(pcr));
 }
 
 pub fn pointCloudStandardDataChanged(
-    self: *Self,
+    pcr: *PointCloudRenderer,
     point_cloud: *PointCloud,
     std_data: PointCloudStandardData,
 ) !void {
-    const p = self.parameters.getPtr(point_cloud) orelse return;
+    const p = pcr.parameters.getPtr(point_cloud) orelse return;
     const point_cloud_info = zgp.models_registry.getPointCloudInfo(point_cloud) orelse return;
     switch (std_data) {
         .position => {
@@ -102,12 +103,12 @@ pub fn pointCloudStandardDataChanged(
     }
 }
 
-pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
+pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
     var pc_it = zgp.models_registry.point_clouds.iterator();
     while (pc_it.next()) |entry| {
         const pc = entry.value_ptr.*;
         const info = zgp.models_registry.getPointCloudInfo(pc) orelse continue;
-        const p = self.parameters.getPtr(pc) orelse continue;
+        const p = pcr.parameters.getPtr(pc) orelse continue;
         if (p.draw_points) {
             p.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
             p.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
@@ -116,7 +117,7 @@ pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
     }
 }
 
-pub fn uiPanel(self: *Self) void {
+pub fn uiPanel(pcr: *PointCloudRenderer) void {
     const UiData = struct {
         var selected_point_cloud: ?*PointCloud = null;
     };
@@ -133,7 +134,7 @@ pub fn uiPanel(self: *Self) void {
     imgui_utils.pointCloudListBox(UiData.selected_point_cloud, &UiCB.onPointCloudSelected);
 
     if (UiData.selected_point_cloud) |pc| {
-        const surface_mesh_renderer_parameters = self.parameters.getPtr(pc);
+        const surface_mesh_renderer_parameters = pcr.parameters.getPtr(pc);
         if (surface_mesh_renderer_parameters) |p| {
             if (c.ImGui_Checkbox("draw points", &p.draw_points)) {
                 zgp.need_redraw = true;

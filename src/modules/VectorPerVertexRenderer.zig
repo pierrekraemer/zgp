@@ -1,3 +1,5 @@
+const VectorPerVertexRenderer = @This();
+
 const std = @import("std");
 const gl = @import("gl");
 
@@ -6,7 +8,6 @@ const c = @cImport({
 });
 const imgui_utils = @import("../utils/imgui.zig");
 
-const Self = @This();
 const zgp = @import("../main.zig");
 
 const Module = @import("Module.zig");
@@ -19,8 +20,6 @@ const SurfaceMeshStandardData = ModelsRegistry.SurfaceMeshStandardData;
 const PointVector = @import("../rendering/shaders/point_vector/PointVector.zig");
 const VBO = @import("../rendering/VBO.zig");
 
-// const Data = @import("../utils/Data.zig").Data;
-
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
@@ -31,9 +30,9 @@ const VectorPerVertexRendererParameters = struct {
     point_vector_shader_parameters: PointVector.Parameters,
     vector_data: ?SurfaceMeshData(.vertex, Vec3) = null,
 
-    pub fn init(vector_per_vertex_renderer: *const Self) VectorPerVertexRendererParameters {
+    pub fn init(vpvr: *const VectorPerVertexRenderer) VectorPerVertexRendererParameters {
         return .{
-            .point_vector_shader_parameters = vector_per_vertex_renderer.vector_per_vertex_shader.createParameters(),
+            .point_vector_shader_parameters = vpvr.vector_per_vertex_shader.createParameters(),
         };
     }
 
@@ -46,41 +45,41 @@ vector_per_vertex_shader: PointVector,
 
 parameters: std.AutoHashMap(*const SurfaceMesh, VectorPerVertexRendererParameters),
 
-pub fn init(allocator: std.mem.Allocator) !Self {
+pub fn init(allocator: std.mem.Allocator) !VectorPerVertexRenderer {
     return .{
         .vector_per_vertex_shader = try PointVector.init(),
         .parameters = std.AutoHashMap(*const SurfaceMesh, VectorPerVertexRendererParameters).init(allocator),
     };
 }
 
-pub fn deinit(self: *Self) void {
-    self.vector_per_vertex_shader.deinit();
-    var p_it = self.parameters.iterator();
+pub fn deinit(vpvr: *VectorPerVertexRenderer) void {
+    vpvr.vector_per_vertex_shader.deinit();
+    var p_it = vpvr.parameters.iterator();
     while (p_it.next()) |entry| {
         var p = entry.value_ptr.*;
         p.deinit();
     }
-    self.parameters.deinit();
+    vpvr.parameters.deinit();
 }
 
-pub fn module(self: *Self) Module {
-    return Module.init(self);
+pub fn module(vpvr: *VectorPerVertexRenderer) Module {
+    return Module.init(vpvr);
 }
 
-pub fn name(_: *Self) []const u8 {
+pub fn name(_: *VectorPerVertexRenderer) []const u8 {
     return "Vector Per Vertex Renderer";
 }
 
-pub fn surfaceMeshAdded(self: *Self, surface_mesh: *SurfaceMesh) !void {
-    try self.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init(self));
+pub fn surfaceMeshAdded(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMesh) !void {
+    try vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init(vpvr));
 }
 
 pub fn surfaceMeshStandardDataChanged(
-    self: *Self,
+    vpvr: *VectorPerVertexRenderer,
     surface_mesh: *SurfaceMesh,
     std_data: SurfaceMeshStandardData,
 ) !void {
-    const p = self.parameters.getPtr(surface_mesh) orelse return;
+    const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse return;
     switch (std_data) {
         .vertex_position => {
@@ -96,8 +95,8 @@ pub fn surfaceMeshStandardDataChanged(
     }
 }
 
-fn setSurfaceMeshVectorData(self: *Self, surface_mesh: *SurfaceMesh, vector: ?SurfaceMeshData(.vertex, Vec3)) !void {
-    const p = self.parameters.getPtr(surface_mesh) orelse return;
+fn setSurfaceMeshVectorData(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMesh, vector: ?SurfaceMeshData(.vertex, Vec3)) !void {
+    const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     p.vector_data = vector;
     if (p.vector_data) |v| {
         const vector_vbo = try zgp.models_registry.getDataVBO(Vec3, v.data);
@@ -108,19 +107,19 @@ fn setSurfaceMeshVectorData(self: *Self, surface_mesh: *SurfaceMesh, vector: ?Su
     zgp.need_redraw = true;
 }
 
-pub fn draw(self: *Self, view_matrix: Mat4, projection_matrix: Mat4) void {
+pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
     var sm_it = zgp.models_registry.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const surface_mesh = entry.value_ptr.*;
         const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse continue;
-        const vector_per_vertex_renderer_parameters = self.parameters.getPtr(surface_mesh) orelse continue;
+        const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(surface_mesh) orelse continue;
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.model_view_matrix = @bitCast(view_matrix);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.projection_matrix = @bitCast(projection_matrix);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.draw(surface_mesh_info.points_ibo);
     }
 }
 
-pub fn uiPanel(self: *Self) void {
+pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
     const UiData = struct {
         var selected_surface_mesh: ?*SurfaceMesh = null;
     };
@@ -130,7 +129,7 @@ pub fn uiPanel(self: *Self) void {
             UiData.selected_surface_mesh = sm;
         }
         const DataSelectedContext = struct {
-            vector_per_vertex_renderer: *Self,
+            vector_per_vertex_renderer: *VectorPerVertexRenderer,
             surface_mesh: *SurfaceMesh,
         };
         fn onVectorDataSelected(comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: ?SurfaceMeshData(cell_type, T), ctx: DataSelectedContext) void {
@@ -146,7 +145,7 @@ pub fn uiPanel(self: *Self) void {
     imgui_utils.surfaceMeshListBox(UiData.selected_surface_mesh, &UiCB.onSurfaceMeshSelected);
 
     if (UiData.selected_surface_mesh) |sm| {
-        const vector_per_vertex_renderer_parameters = self.parameters.getPtr(sm);
+        const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(sm);
         if (vector_per_vertex_renderer_parameters) |p| {
             c.ImGui_Text("Vector");
             c.ImGui_PushID("Vector");
@@ -155,7 +154,7 @@ pub fn uiPanel(self: *Self) void {
                 .vertex,
                 Vec3,
                 p.vector_data,
-                UiCB.DataSelectedContext{ .vector_per_vertex_renderer = self, .surface_mesh = sm },
+                UiCB.DataSelectedContext{ .vector_per_vertex_renderer = vpvr, .surface_mesh = sm },
                 &UiCB.onVectorDataSelected,
             );
             c.ImGui_PopID();

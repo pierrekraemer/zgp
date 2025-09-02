@@ -14,6 +14,7 @@ point_data: DataContainer,
 const PointIterator = struct {
     point_cloud: *const PointCloud,
     current: Point,
+
     pub fn next(self: *PointIterator) ?Point {
         if (self.current == self.point_cloud.point_data.lastIndex()) {
             return null;
@@ -27,10 +28,10 @@ const PointIterator = struct {
     }
 };
 
-pub fn pointIterator(self: *const PointCloud) PointIterator {
+pub fn pointIterator(pc: *const PointCloud) PointIterator {
     return .{
-        .point_cloud = self,
-        .current = self.point_data.firstIndex(),
+        .point_cloud = pc,
+        .current = pc.point_data.firstIndex(),
     };
 }
 
@@ -40,12 +41,12 @@ pub fn init(allocator: std.mem.Allocator) !PointCloud {
     };
 }
 
-pub fn deinit(self: *PointCloud) void {
-    self.point_data.deinit();
+pub fn deinit(pc: *PointCloud) void {
+    pc.point_data.deinit();
 }
 
-pub fn clearRetainingCapacity(self: *PointCloud) void {
-    self.point_data.clearRetainingCapacity();
+pub fn clearRetainingCapacity(pc: *PointCloud) void {
+    pc.point_data.clearRetainingCapacity();
 }
 
 pub fn PointCloudData(comptime T: type) type {
@@ -58,46 +59,43 @@ pub fn PointCloudData(comptime T: type) type {
         pub fn value(self: Self, p: Point) T {
             return self.data.value(self.point_cloud.pointIndex(p));
         }
-
         pub fn valuePtr(self: Self, p: Point) *T {
             return self.data.valuePtr(self.point_cloud.pointIndex(p));
         }
-
         pub fn name(self: Self) []const u8 {
             return self.gen().name;
         }
-
         pub fn gen(self: Self) *DataGen {
             return &self.data.gen;
         }
     };
 }
 
-pub fn addData(self: *PointCloud, comptime T: type, name: []const u8) !PointCloudData(T) {
+pub fn addData(pc: *PointCloud, comptime T: type, name: []const u8) !PointCloudData(T) {
     return .{
-        .point_cloud = self,
-        .data = try self.point_data.addData(T, name),
+        .point_cloud = pc,
+        .data = try pc.point_data.addData(T, name),
     };
 }
 
-pub fn getData(self: *PointCloud, comptime T: type, name: []const u8) ?PointCloudData(T) {
-    return if (self.point_data.getData(T, name)) |d| .{ .point_cloud = self, .data = d } else null;
+pub fn getData(pc: *PointCloud, comptime T: type, name: []const u8) ?PointCloudData(T) {
+    return if (pc.point_data.getData(T, name)) |d| .{ .point_cloud = pc, .data = d } else null;
 }
 
-pub fn removeData(self: *PointCloud, data_gen: *DataGen) void {
-    self.point_data.removeData(data_gen);
+pub fn removeData(pc: *PointCloud, data_gen: *DataGen) void {
+    pc.point_data.removeData(data_gen);
 }
 
-pub fn nbPoints(self: *const PointCloud) u32 {
-    return self.point_data.nbElements();
+pub fn nbPoints(pc: *const PointCloud) u32 {
+    return pc.point_data.nbElements();
 }
 
-pub fn addPoint(self: *PointCloud) !Point {
-    return self.point_data.newIndex();
+pub fn addPoint(pc: *PointCloud) !Point {
+    return pc.point_data.newIndex();
 }
 
-pub fn removePoint(self: *PointCloud, p: Point) void {
-    self.point_data.freeIndex(p);
+pub fn removePoint(pc: *PointCloud, p: Point) void {
+    pc.point_data.freeIndex(p);
 }
 
 pub fn pointIndex(_: *const PointCloud, p: Point) u32 {

@@ -1,3 +1,5 @@
+const ModelsRegistry = @This();
+
 const std = @import("std");
 
 const c = @cImport({
@@ -5,7 +7,6 @@ const c = @cImport({
 });
 const imgui_utils = @import("../utils/imgui.zig");
 
-const Self = @This();
 const zgp = @import("../main.zig");
 
 pub const PointCloud = @import("point/PointCloud.zig");
@@ -53,6 +54,8 @@ const SurfaceMeshInfo = struct {
     boundaries_ibo: IBO,
 };
 
+// TODO: the models registry does not really need to be "instanciable", a namespace for static data would be enough
+
 allocator: std.mem.Allocator,
 
 point_clouds: std.StringHashMap(*PointCloud),
@@ -63,7 +66,10 @@ surface_meshes_info: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshInfo),
 
 vbo_registry: std.AutoHashMap(*const DataGen, VBO),
 
-pub fn init(allocator: std.mem.Allocator) Self {
+pub var selected_point_cloud: ?*PointCloud = null;
+pub var selected_surface_mesh: ?*SurfaceMesh = null;
+
+pub fn init(allocator: std.mem.Allocator) ModelsRegistry {
     return .{
         .allocator = allocator,
         .point_clouds = std.StringHashMap(*PointCloud).init(allocator),
@@ -74,22 +80,22 @@ pub fn init(allocator: std.mem.Allocator) Self {
     };
 }
 
-pub fn deinit(self: *Self) void {
-    var pc_info_it = self.point_clouds_info.iterator();
+pub fn deinit(mr: *ModelsRegistry) void {
+    var pc_info_it = mr.point_clouds_info.iterator();
     while (pc_info_it.next()) |entry| {
         var info = entry.value_ptr.*;
         info.points_ibo.deinit();
     }
-    self.point_clouds_info.deinit();
-    var pc_it = self.point_clouds.iterator();
+    mr.point_clouds_info.deinit();
+    var pc_it = mr.point_clouds.iterator();
     while (pc_it.next()) |entry| {
         var pc = entry.value_ptr.*;
         pc.deinit();
-        self.allocator.destroy(pc);
+        mr.allocator.destroy(pc);
     }
-    self.point_clouds.deinit();
+    mr.point_clouds.deinit();
 
-    var sm_info_it = self.surface_meshes_info.iterator();
+    var sm_info_it = mr.surface_meshes_info.iterator();
     while (sm_info_it.next()) |entry| {
         var info = entry.value_ptr.*;
         info.points_ibo.deinit();
@@ -97,57 +103,57 @@ pub fn deinit(self: *Self) void {
         info.triangles_ibo.deinit();
         info.boundaries_ibo.deinit();
     }
-    self.surface_meshes_info.deinit();
-    var sm_it = self.surface_meshes.iterator();
+    mr.surface_meshes_info.deinit();
+    var sm_it = mr.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         var sm = entry.value_ptr.*;
         sm.deinit();
-        self.allocator.destroy(sm);
+        mr.allocator.destroy(sm);
     }
-    self.surface_meshes.deinit();
+    mr.surface_meshes.deinit();
 
-    var vbo_it = self.vbo_registry.iterator();
+    var vbo_it = mr.vbo_registry.iterator();
     while (vbo_it.next()) |entry| {
         var vbo = entry.value_ptr.*;
         vbo.deinit();
     }
-    self.vbo_registry.deinit();
+    mr.vbo_registry.deinit();
 }
 
-pub fn surfaceMeshConnectivityUpdated(self: *Self, surface_mesh: *SurfaceMesh) !void {
-    const info = self.surface_meshes_info.getPtr(surface_mesh).?;
-    try info.points_ibo.fillFrom(surface_mesh, .vertex, self.allocator);
-    try info.lines_ibo.fillFrom(surface_mesh, .edge, self.allocator);
-    try info.triangles_ibo.fillFrom(surface_mesh, .face, self.allocator);
-    try info.boundaries_ibo.fillFrom(surface_mesh, .boundary, self.allocator);
+pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) !void {
+    const info = mr.surface_meshes_info.getPtr(sm).?;
+    try info.points_ibo.fillFrom(sm, .vertex, mr.allocator);
+    try info.lines_ibo.fillFrom(sm, .edge, mr.allocator);
+    try info.triangles_ibo.fillFrom(sm, .face, mr.allocator);
+    try info.boundaries_ibo.fillFrom(sm, .boundary, mr.allocator);
 
     for (zgp.modules.items) |*module| {
-        try module.surfaceMeshConnectivityUpdated(surface_mesh);
+        try module.surfaceMeshConnectivityUpdated(sm);
     }
 }
 
-pub fn surfaceMeshDataUpdated(self: *Self, surface_mesh: *SurfaceMesh, comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: SurfaceMeshData(cell_type, T)) !void {
+pub fn surfaceMeshDataUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh, comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: SurfaceMeshData(cell_type, T)) !void {
     // If it exists, update the VBO with the data
-    const maybe_vbo = self.vbo_registry.getPtr(data.gen());
+    const maybe_vbo = mr.vbo_registry.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
         try vbo.fillFrom(T, data.data);
     }
 
     for (zgp.modules.items) |*module| {
-        try module.surfaceMeshDataUpdated(surface_mesh, cell_type, data.gen());
+        try module.surfaceMeshDataUpdated(sm, cell_type, data.gen());
     }
 }
 
-pub fn updateDataVBO(self: *Self, comptime T: type, data: *const Data(T)) !void {
-    const vbo = try self.vbo_registry.getOrPut(&data.gen);
+pub fn updateDataVBO(mr: *ModelsRegistry, comptime T: type, data: *const Data(T)) !void {
+    const vbo = try mr.vbo_registry.getOrPut(&data.gen);
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
     }
     try vbo.value_ptr.*.fillFrom(T, data);
 }
 
-pub fn getDataVBO(self: *Self, comptime T: type, data: *const Data(T)) !VBO {
-    const vbo = try self.vbo_registry.getOrPut(&data.gen);
+pub fn getDataVBO(mr: *ModelsRegistry, comptime T: type, data: *const Data(T)) !VBO {
+    const vbo = try mr.vbo_registry.getOrPut(&data.gen);
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
         // if the VBO was just created, fill it with the data
@@ -156,22 +162,22 @@ pub fn getDataVBO(self: *Self, comptime T: type, data: *const Data(T)) !VBO {
     return vbo.value_ptr.*;
 }
 
-pub fn getPointCloudInfo(self: *Self, point_cloud: *const PointCloud) ?*PointCloudInfo {
-    return self.point_clouds_info.getPtr(point_cloud);
+pub fn getPointCloudInfo(mr: *ModelsRegistry, pc: *const PointCloud) ?*PointCloudInfo {
+    return mr.point_clouds_info.getPtr(pc);
 }
 
-pub fn getSurfaceMeshInfo(self: *Self, surface_mesh: *const SurfaceMesh) ?*SurfaceMeshInfo {
-    return self.surface_meshes_info.getPtr(surface_mesh);
+pub fn getSurfaceMeshInfo(mr: *ModelsRegistry, sm: *const SurfaceMesh) ?*SurfaceMeshInfo {
+    return mr.surface_meshes_info.getPtr(sm);
 }
 
 pub fn setPointCloudStandardData(
-    self: *Self,
-    point_cloud: *PointCloud,
+    mr: *ModelsRegistry,
+    pc: *PointCloud,
     std_data: PointCloudStandardData,
     comptime T: type,
     data: ?PointCloudData(T),
 ) !void {
-    const info = self.point_clouds_info.getPtr(point_cloud).?;
+    const info = mr.point_clouds_info.getPtr(pc).?;
     switch (std_data) {
         .position => info.position = data,
         .normal => info.normal = data,
@@ -179,19 +185,19 @@ pub fn setPointCloudStandardData(
     }
 
     for (zgp.modules.items) |*module| {
-        try module.pointCloudStandardDataChanged(point_cloud, std_data);
+        try module.pointCloudStandardDataChanged(pc, std_data);
     }
 }
 
 pub fn setSurfaceMeshStandardData(
-    self: *Self,
-    surface_mesh: *SurfaceMesh,
+    mr: *ModelsRegistry,
+    sm: *SurfaceMesh,
     std_data: SurfaceMeshStandardData,
     comptime cell_type: SurfaceMesh.CellType,
     comptime T: type,
     data: ?SurfaceMeshData(cell_type, T),
 ) !void {
-    const info = self.surface_meshes_info.getPtr(surface_mesh).?;
+    const info = mr.surface_meshes_info.getPtr(sm).?;
     switch (std_data) {
         .vertex_position => info.vertex_position = data,
         .vertex_normal => info.vertex_normal = data,
@@ -199,29 +205,22 @@ pub fn setSurfaceMeshStandardData(
     }
 
     for (zgp.modules.items) |*module| {
-        try module.surfaceMeshStandardDataChanged(surface_mesh, std_data);
+        try module.surfaceMeshStandardDataChanged(sm, std_data);
     }
 }
 
-pub fn menuBar(self: *Self) void {
-    _ = self;
-}
+pub fn menuBar(_: *ModelsRegistry) void {}
 
-pub fn uiPanel(self: *Self) void {
-    const UiData = struct {
-        var selected_point_cloud: ?*PointCloud = null;
-        var selected_surface_mesh: ?*SurfaceMesh = null;
-    };
-
+pub fn uiPanel(mr: *ModelsRegistry) void {
     const UiCB = struct {
         fn onSurfaceMeshSelected(sm: ?*SurfaceMesh) void {
-            UiData.selected_surface_mesh = sm;
+            selected_surface_mesh = sm;
         }
         fn onPointCloudSelected(pc: ?*PointCloud) void {
-            UiData.selected_point_cloud = pc;
+            selected_point_cloud = pc;
         }
         const SurfaceMeshDataSelectedContext = struct {
-            models_registry: *Self,
+            models_registry: *ModelsRegistry,
             surface_mesh: *SurfaceMesh,
             std_data: SurfaceMeshStandardData,
         };
@@ -231,7 +230,7 @@ pub fn uiPanel(self: *Self) void {
             };
         }
         const PointCloudDataSelectedContext = struct {
-            models_registry: *Self,
+            models_registry: *ModelsRegistry,
             point_cloud: *PointCloud,
             std_data: PointCloudStandardData,
         };
@@ -250,9 +249,9 @@ pub fn uiPanel(self: *Self) void {
     if (c.ImGui_CollapsingHeader("Surface Meshes", c.ImGuiTreeNodeFlags_DefaultOpen)) {
         c.ImGui_PopStyleColorEx(3);
 
-        imgui_utils.surfaceMeshListBox(UiData.selected_surface_mesh, &UiCB.onSurfaceMeshSelected);
+        imgui_utils.surfaceMeshListBox(selected_surface_mesh, &UiCB.onSurfaceMeshSelected);
 
-        if (UiData.selected_surface_mesh) |sm| {
+        if (selected_surface_mesh) |sm| {
             c.ImGui_SeparatorText("#Cells");
 
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
@@ -275,7 +274,7 @@ pub fn uiPanel(self: *Self) void {
 
             c.ImGui_SeparatorText("Standard Data");
 
-            const maybe_info = self.surface_meshes_info.getPtr(sm);
+            const maybe_info = mr.surface_meshes_info.getPtr(sm);
             if (maybe_info) |info| {
                 c.ImGui_Text("Vertex Position");
                 c.ImGui_PushID("Vertex Position");
@@ -284,7 +283,7 @@ pub fn uiPanel(self: *Self) void {
                     .vertex,
                     Vec3,
                     info.vertex_position,
-                    UiCB.SurfaceMeshDataSelectedContext{ .models_registry = self, .surface_mesh = sm, .std_data = .vertex_position },
+                    UiCB.SurfaceMeshDataSelectedContext{ .models_registry = mr, .surface_mesh = sm, .std_data = .vertex_position },
                     &UiCB.onSurfaceMeshStandardDataSelected,
                 );
                 c.ImGui_PopID();
@@ -295,7 +294,7 @@ pub fn uiPanel(self: *Self) void {
                     .vertex,
                     Vec3,
                     info.vertex_color,
-                    UiCB.SurfaceMeshDataSelectedContext{ .models_registry = self, .surface_mesh = sm, .std_data = .vertex_color },
+                    UiCB.SurfaceMeshDataSelectedContext{ .models_registry = mr, .surface_mesh = sm, .std_data = .vertex_color },
                     &UiCB.onSurfaceMeshStandardDataSelected,
                 );
                 c.ImGui_PopID();
@@ -306,7 +305,7 @@ pub fn uiPanel(self: *Self) void {
                     .vertex,
                     Vec3,
                     info.vertex_normal,
-                    UiCB.SurfaceMeshDataSelectedContext{ .models_registry = self, .surface_mesh = sm, .std_data = .vertex_normal },
+                    UiCB.SurfaceMeshDataSelectedContext{ .models_registry = mr, .surface_mesh = sm, .std_data = .vertex_normal },
                     &UiCB.onSurfaceMeshStandardDataSelected,
                 );
                 c.ImGui_PopID();
@@ -323,10 +322,10 @@ pub fn uiPanel(self: *Self) void {
     c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
     if (c.ImGui_CollapsingHeader("Point Clouds", c.ImGuiTreeNodeFlags_DefaultOpen)) {
         c.ImGui_PopStyleColorEx(3);
-        imgui_utils.pointCloudListBox(UiData.selected_point_cloud, &UiCB.onPointCloudSelected);
+        imgui_utils.pointCloudListBox(selected_point_cloud, &UiCB.onPointCloudSelected);
 
-        if (UiData.selected_point_cloud) |pc| {
-            const maybe_info = self.point_clouds_info.getPtr(pc);
+        if (selected_point_cloud) |pc| {
+            const maybe_info = mr.point_clouds_info.getPtr(pc);
             if (maybe_info) |info| {
                 c.ImGui_Text("Vertex Position");
                 c.ImGui_PushID("Vertex Position");
@@ -334,7 +333,7 @@ pub fn uiPanel(self: *Self) void {
                     pc,
                     Vec3,
                     info.position,
-                    UiCB.PointCloudDataSelectedContext{ .models_registry = self, .point_cloud = pc, .std_data = .position },
+                    UiCB.PointCloudDataSelectedContext{ .models_registry = mr, .point_cloud = pc, .std_data = .position },
                     &UiCB.onPointCloudStandardDataSelected,
                 );
                 c.ImGui_PopID();
@@ -344,7 +343,7 @@ pub fn uiPanel(self: *Self) void {
                     pc,
                     Vec3,
                     info.color,
-                    UiCB.PointCloudDataSelectedContext{ .models_registry = self, .point_cloud = pc, .std_data = .color },
+                    UiCB.PointCloudDataSelectedContext{ .models_registry = mr, .point_cloud = pc, .std_data = .color },
                     &UiCB.onPointCloudStandardDataSelected,
                 );
                 c.ImGui_PopID();
@@ -354,7 +353,7 @@ pub fn uiPanel(self: *Self) void {
                     pc,
                     Vec3,
                     info.normal,
-                    UiCB.PointCloudDataSelectedContext{ .models_registry = self, .point_cloud = pc, .std_data = .normal },
+                    UiCB.PointCloudDataSelectedContext{ .models_registry = mr, .point_cloud = pc, .std_data = .normal },
                     &UiCB.onPointCloudStandardDataSelected,
                 );
                 c.ImGui_PopID();
@@ -369,21 +368,21 @@ pub fn uiPanel(self: *Self) void {
     c.ImGui_PopItemWidth();
 }
 
-pub fn createPointCloud(self: *Self, name: []const u8) !*PointCloud {
-    const maybe_point_cloud = self.point_clouds.get(name);
+pub fn createPointCloud(mr: *ModelsRegistry, name: []const u8) !*PointCloud {
+    const maybe_point_cloud = mr.point_clouds.get(name);
     if (maybe_point_cloud) |_| {
         return error.ModelNameAlreadyExists;
     }
-    const pc = try self.allocator.create(PointCloud);
-    errdefer self.allocator.destroy(pc);
-    pc.* = try PointCloud.init(self.allocator);
+    const pc = try mr.allocator.create(PointCloud);
+    errdefer mr.allocator.destroy(pc);
+    pc.* = try PointCloud.init(mr.allocator);
     errdefer pc.deinit();
-    try self.point_clouds.put(name, pc);
-    errdefer _ = self.point_clouds.remove(name);
-    try self.point_clouds_info.put(pc, .{
+    try mr.point_clouds.put(name, pc);
+    errdefer _ = mr.point_clouds.remove(name);
+    try mr.point_clouds_info.put(pc, .{
         .points_ibo = IBO.init(),
     });
-    errdefer _ = self.point_clouds_info.remove(pc);
+    errdefer _ = mr.point_clouds_info.remove(pc);
 
     for (zgp.modules.items) |*module| {
         try module.pointCloudAdded(pc);
@@ -392,24 +391,24 @@ pub fn createPointCloud(self: *Self, name: []const u8) !*PointCloud {
     return pc;
 }
 
-pub fn createSurfaceMesh(self: *Self, name: []const u8) !*SurfaceMesh {
-    const maybe_surface_mesh = self.surface_meshes.get(name);
+pub fn createSurfaceMesh(mr: *ModelsRegistry, name: []const u8) !*SurfaceMesh {
+    const maybe_surface_mesh = mr.surface_meshes.get(name);
     if (maybe_surface_mesh) |_| {
         return error.ModelNameAlreadyExists;
     }
-    const sm = try self.allocator.create(SurfaceMesh);
-    errdefer self.allocator.destroy(sm);
-    sm.* = try SurfaceMesh.init(self.allocator);
+    const sm = try mr.allocator.create(SurfaceMesh);
+    errdefer mr.allocator.destroy(sm);
+    sm.* = try SurfaceMesh.init(mr.allocator);
     errdefer sm.deinit();
-    try self.surface_meshes.put(name, sm);
-    errdefer _ = self.surface_meshes.remove(name);
-    try self.surface_meshes_info.put(sm, .{
+    try mr.surface_meshes.put(name, sm);
+    errdefer _ = mr.surface_meshes.remove(name);
+    try mr.surface_meshes_info.put(sm, .{
         .points_ibo = IBO.init(),
         .lines_ibo = IBO.init(),
         .triangles_ibo = IBO.init(),
         .boundaries_ibo = IBO.init(),
     });
-    errdefer _ = self.surface_meshes_info.remove(sm);
+    errdefer _ = mr.surface_meshes_info.remove(sm);
 
     for (zgp.modules.items) |*module| {
         try module.surfaceMeshAdded(sm);
@@ -418,8 +417,8 @@ pub fn createSurfaceMesh(self: *Self, name: []const u8) !*SurfaceMesh {
     return sm;
 }
 
-pub fn loadPointCloudFromFile(self: *Self, filename: []const u8) !*PointCloud {
-    const pc = try self.createPointCloud(filename);
+pub fn loadPointCloudFromFile(mr: *ModelsRegistry, filename: []const u8) !*PointCloud {
+    const pc = try mr.createPointCloud(filename);
     // read the file and fill the point cloud
     return pc;
 }
@@ -448,7 +447,7 @@ const SurfaceMeshImportData = struct {
     }
 };
 
-pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh {
+pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*SurfaceMesh {
     var file = try std.fs.cwd().openFile(filename, .{});
     defer file.close();
 
@@ -472,7 +471,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
     };
 
     var import_data: SurfaceMeshImportData = .init;
-    defer import_data.deinit(self.allocator);
+    defer import_data.deinit(mr.allocator);
 
     switch (filetype) {
         .off => {
@@ -513,7 +512,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
             }
             zgp.zgp_log.info("nb_cells: {d} vertices / {d} faces / {d} edges", .{ nb_cells[0], nb_cells[1], nb_cells[2] });
 
-            try import_data.ensureTotalCapacity(self.allocator, nb_cells[0], nb_cells[1]);
+            try import_data.ensureTotalCapacity(mr.allocator, nb_cells[0], nb_cells[1]);
 
             var i: u32 = 0;
             while (i < nb_cells[0]) : (i += 1) {
@@ -534,7 +533,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                         zgp.zgp_log.warn("vertex {d} position has less than 3 coordinates", .{i});
                         return error.InvalidFileFormat;
                     }
-                    try import_data.vertices_position.append(self.allocator, position);
+                    try import_data.vertices_position.append(mr.allocator, position);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
@@ -561,14 +560,14 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
                             return error.InvalidFileFormat;
                         } else {
                             const index = try std.fmt.parseInt(u32, token, 10);
-                            try import_data.faces_vertex_indices.append(self.allocator, index);
+                            try import_data.faces_vertex_indices.append(mr.allocator, index);
                         }
                     }
                     if (j != face_nb_vertices + 1) {
                         zgp.zgp_log.warn("face {d} has less than {d} vertices", .{ i, face_nb_vertices });
                         return error.InvalidFileFormat;
                     }
-                    try import_data.faces_nb_vertices.append(self.allocator, face_nb_vertices);
+                    try import_data.faces_nb_vertices.append(mr.allocator, face_nb_vertices);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
@@ -583,7 +582,7 @@ pub fn loadSurfaceMeshFromFile(self: *Self, filename: []const u8) !*SurfaceMesh 
         else => return error.InvalidFileExtension,
     }
 
-    const sm = try self.createSurfaceMesh(std.fs.path.basename(filename));
+    const sm = try mr.createSurfaceMesh(std.fs.path.basename(filename));
 
     const vertex_position = try sm.addData(.vertex, Vec3, "position");
     const darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
