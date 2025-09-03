@@ -23,6 +23,23 @@ const IBO = @import("../rendering/IBO.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
+// pub fn instance() *ModelsRegistry {
+//   const static = struct {
+//     var instance : ?ModelsRegistry = null;
+//   };
+//   if (static.instance == null) {
+//     // run setup code
+//   }
+//   return &static.instance.?;
+// }
+
+// var global_instance: ModelsRegistry = undefined;
+// var global_once = std.once(init_global);
+// pub fn instance() *ModelsRegistry {
+//   global_once.call();
+//   return &global_instance;
+// }
+
 pub const PointCloudStandardData = enum {
     position,
     normal,
@@ -53,8 +70,6 @@ const SurfaceMeshInfo = struct {
     triangles_ibo: IBO,
     boundaries_ibo: IBO,
 };
-
-// TODO: the models registry does not really need to be "instanciable", a namespace for static data would be enough
 
 allocator: std.mem.Allocator,
 
@@ -599,7 +614,8 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
         const face = try sm.addUnboundedFace(face_nb_vertices);
         var d = face.dart();
         for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
-            sm.dart_vertex_index.valuePtr(d).* = index;
+            // sm.dart_vertex_index.valuePtr(d).* = index;
+            sm.setDartIndex(d, .vertex, index);
             try darts_of_vertex.data.valuePtr(index).append(darts_of_vertex.data.arena(), d);
             d = sm.phi1(d);
         }

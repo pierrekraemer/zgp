@@ -392,7 +392,8 @@ pub fn isBoundaryDart(sm: *const SurfaceMesh, d: Dart) bool {
     return sm.dart_boundary_marker.value(d);
 }
 
-fn setDartIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u32) void {
+// TODO: rename setDartCellIndex?
+pub fn setDartIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u32) void {
     var index_data = switch (cell_type) {
         .corner => sm.dart_corner_index,
         .vertex => sm.dart_vertex_index,
@@ -417,6 +418,7 @@ fn setDartIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u32) void
     index_data.valuePtr(d).* = index;
 }
 
+// TODO: rename dartCellIndex?
 pub fn dartIndex(sm: *const SurfaceMesh, d: Dart, cell_type: CellType) u32 {
     switch (cell_type) {
         .corner => return sm.dart_corner_index.value(d),
@@ -464,36 +466,44 @@ pub fn dump(sm: *SurfaceMesh, writer: *std.Io.Writer) void {
     }
 }
 
+// TODO: implement
+pub fn checkIntegrity() bool {
+    return true;
+}
+
+/// Returns the number of cells of the given CellType in the given SurfaceMesh
 pub fn nbCells(sm: *const SurfaceMesh, cell_type: CellType) u32 {
-    switch (cell_type) {
-        .corner => return sm.corner_data.nbElements(),
-        .vertex => return sm.vertex_data.nbElements(),
-        .edge => return sm.edge_data.nbElements(),
-        .face => return sm.face_data.nbElements(),
+    return switch (cell_type) {
+        .corner => sm.corner_data.nbElements(),
+        .vertex => sm.vertex_data.nbElements(),
+        .edge => sm.edge_data.nbElements(),
+        .face => sm.face_data.nbElements(),
         else => unreachable,
-    }
+    };
 }
 
+/// Returns the degree of the given cell (number of d+1 incident cells)
 pub fn degree(sm: *const SurfaceMesh, cell: Cell) u32 {
-    assert(cell.cellType() == .vertex or cell.cellType() == .edge); // face is a top cell and does not have a degree
-    var it = sm.cellDartIterator(cell);
-    var deg: u32 = 0;
-    while (it.next()) |d| {
-        if (!sm.isBoundaryDart(d)) {
-            deg += 1;
-        }
-    }
-    return deg;
+    return switch (cell.cellType()) {
+        // nb refs is equal to the number of darts of the vertex which is equal to its degree
+        // (more efficient than iterating through the darts of the vertex)
+        .vertex => sm.vertex_data.nb_refs.value(sm.cellIndex(cell)),
+        .edge => if (sm.isBoundaryDart(cell.dart()) or sm.isBoundaryDart(sm.phi2(cell.dart()))) 1 else 2,
+        // face is a top-cell and does not have a degree
+        else => unreachable,
+    };
 }
 
+/// Returns the codegree of the given cell (number of d-1 incident cells)
 pub fn codegree(sm: *const SurfaceMesh, cell: Cell) u32 {
-    assert(cell.cellType() == .face or cell.cellType() == .edge); // vertex is a 0-cell and does not have a codegree
-    var it = sm.cellDartIterator(cell);
-    var deg: u32 = 0;
-    while (it.next()) |_| {
-        deg += 1;
-    }
-    return deg;
+    return switch (cell.cellType()) {
+        // vertex is a 0-cell and does not have a codegree
+        .edge => 2,
+        // nb refs is equal to the number of darts of the face which is equal to its codegree
+        // (more efficient than iterating through the darts of the face)
+        .face => sm.face_data.nb_refs.value(sm.cellIndex(cell)),
+        else => unreachable,
+    };
 }
 
 /// Creates a new face with the given number of vertices.
@@ -556,9 +566,47 @@ pub fn close(sm: *SurfaceMesh) !u32 {
     return nb_boundary_faces;
 }
 
+/// Flips the given edge.
+/// TODO: write a more detailed comment
 pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) void {
     assert(edge.cellType() == .edge);
-    _ = sm;
+
+    const d = edge.dart();
+    const dd = sm.phi2(d);
+
+    // TODO: should not allow the flip if the degree of an incident vertex is <= 2?
+
+    if (sm.isBoundaryDart(d) or sm.isBoundaryDart(dd)) {
+        // flipping a boundary edge is not allowed
+        return;
+    }
+
+    const d1 = sm.phi1(d);
+    const d_1 = sm.phi_1(d);
+    const dd1 = sm.phi1(dd);
+    const dd_1 = sm.phi_1(dd);
+
+    sm.phi1Sew(d, dd_1);
+    sm.phi1Sew(dd, d_1);
+    sm.phi1Sew(d, d1);
+    sm.phi1Sew(dd, dd1);
+
+    {
+        // Corner indices.
+    }
+    {
+        // Vertex index.
+        sm.setDartIndex(d, .vertex, sm.dartIndex(sm.phi1(dd), .vertex));
+        sm.setDartIndex(dd, .vertex, sm.dartIndex(sm.phi1(d), .vertex));
+    }
+    {
+        // Edge indices.
+    }
+    {
+        // Face indices.
+        sm.setDartIndex(sm.phi_1(d), .face, sm.dartIndex(d, .face));
+        sm.setDartIndex(sm.phi_1(dd), .face, sm.dartIndex(dd, .face));
+    }
 }
 
 /// Cuts the given edge by inserting a new vertex.

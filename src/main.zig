@@ -277,8 +277,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         try models_registry.surfaceMeshConnectivityUpdated(sm);
     }
 
-    // sm.dump(std.io.getStdErr().writer().any());
-
     {
         const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/elephant_isotropic_25k.off");
         errdefer sm.deinit();

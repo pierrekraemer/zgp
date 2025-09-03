@@ -189,36 +189,36 @@ pub const DataContainer = struct {
         return dc;
     }
 
-    pub fn deinit(self: *DataContainer) void {
-        var it = self.datas.iterator();
+    pub fn deinit(dc: *DataContainer) void {
+        var it = dc.datas.iterator();
         while (it.next()) |entry| {
             const data_gen = entry.value_ptr.*;
             data_gen.deinit();
         }
-        for (self.markers.items) |marker| {
+        for (dc.markers.items) |marker| {
             marker.gen.deinit();
         }
-        self.datas.deinit();
-        self.markers.deinit(self.allocator);
-        self.available_markers_indices.deinit(self.allocator);
-        self.free_indices.deinit(self.allocator);
+        dc.datas.deinit();
+        dc.markers.deinit(dc.allocator);
+        dc.available_markers_indices.deinit(dc.allocator);
+        dc.free_indices.deinit(dc.allocator);
     }
 
-    pub fn clearRetainingCapacity(self: *DataContainer) void {
-        var it = self.datas.iterator();
+    pub fn clearRetainingCapacity(dc: *DataContainer) void {
+        var it = dc.datas.iterator();
         while (it.next()) |entry| {
             const data_gen = entry.value_ptr.*;
             data_gen.clearRetainingCapacity();
         }
-        for (self.markers.items) |marker| {
+        for (dc.markers.items) |marker| {
             marker.clearRetainingCapacity();
         }
-        self.free_indices.clearRetainingCapacity();
-        self.capacity = 0;
+        dc.free_indices.clearRetainingCapacity();
+        dc.capacity = 0;
     }
 
-    pub fn addData(self: *DataContainer, comptime T: type, name: []const u8) !*Data(T) {
-        const maybe_data_gen = self.datas.get(name);
+    pub fn addData(dc: *DataContainer, comptime T: type, name: []const u8) !*Data(T) {
+        const maybe_data_gen = dc.datas.get(name);
         if (maybe_data_gen) |_| {
             return error.DataNameAlreadyExists;
         }
@@ -229,19 +229,19 @@ pub const DataContainer = struct {
         // The Data(T) then:
         // - use it to allocate its SegmentedList(T, 32) data,
         // - exposes it to allow the user to use it if T needs to allocate memory.
-        var data_arena = std.heap.ArenaAllocator.init(self.allocator);
+        var data_arena = std.heap.ArenaAllocator.init(dc.allocator);
         errdefer data_arena.deinit();
         const data = try data_arena.allocator().create(Data(T));
         data.* = .init;
         const owned_name = try data_arena.allocator().dupe(u8, name);
-        data.gen = DataGen.init(T, owned_name, comptime typeId(T), data, self, data_arena);
-        try data.ensureLength(self.capacity);
-        try self.datas.put(owned_name, &data.gen);
+        data.gen = DataGen.init(T, owned_name, comptime typeId(T), data, dc, data_arena);
+        try data.ensureLength(dc.capacity);
+        try dc.datas.put(owned_name, &data.gen);
         return data;
     }
 
-    pub fn getData(self: *const DataContainer, comptime T: type, name: []const u8) ?*Data(T) {
-        if (self.datas.get(name)) |data_gen| {
+    pub fn getData(dc: *const DataContainer, comptime T: type, name: []const u8) ?*Data(T) {
+        if (dc.datas.get(name)) |data_gen| {
             if (data_gen.type_id == comptime typeId(T)) {
                 // const data: *Data(T) = @alignCast(@fieldParentPtr("gen", data_gen));
                 const data: *Data(T) = @ptrCast(@alignCast(data_gen.ptr));
@@ -253,9 +253,9 @@ pub const DataContainer = struct {
         }
     }
 
-    pub fn removeData(self: *DataContainer, data_gen: *DataGen) void {
-        assert(data_gen.container == self);
-        if (self.datas.remove(data_gen.name)) {
+    pub fn removeData(dc: *DataContainer, data_gen: *DataGen) void {
+        assert(data_gen.container == dc);
+        if (dc.datas.remove(data_gen.name)) {
             data_gen.deinit();
         }
     }
@@ -270,9 +270,9 @@ pub const DataContainer = struct {
         }
     };
 
-    pub fn iterator(self: *const DataContainer) DataGenIterator {
+    pub fn iterator(dc: *const DataContainer) DataGenIterator {
         return .{
-            .iterator = self.datas.iterator(),
+            .iterator = dc.datas.iterator(),
         };
     }
 
@@ -293,108 +293,113 @@ pub const DataContainer = struct {
         };
     }
 
-    pub fn typedIterator(self: *const DataContainer, comptime T: type) DataIterator(T) {
+    pub fn typedIterator(dc: *const DataContainer, comptime T: type) DataIterator(T) {
         return .{
-            .iterator = self.datas.iterator(),
+            .iterator = dc.datas.iterator(),
         };
     }
 
-    pub fn getMarker(self: *DataContainer) !*Data(bool) {
-        const index = self.available_markers_indices.pop();
+    pub fn getMarker(dc: *DataContainer) !*Data(bool) {
+        const index = dc.available_markers_indices.pop();
         if (index) |i| {
-            var marker = self.markers.items[i];
+            var marker = dc.markers.items[i];
             marker.fill(false); // reset the marker to false
             return marker;
         }
         // same as for addData, but the name is not used (the marker is not stored in the hashmap)
-        var marker_arena = std.heap.ArenaAllocator.init(self.allocator);
+        var marker_arena = std.heap.ArenaAllocator.init(dc.allocator);
         errdefer marker_arena.deinit();
         const marker = try marker_arena.allocator().create(Data(bool));
         marker.* = .init;
-        marker.gen = DataGen.init(bool, "", comptime typeId(bool), marker, self, marker_arena);
-        try marker.ensureLength(self.capacity);
+        marker.gen = DataGen.init(bool, "", comptime typeId(bool), marker, dc, marker_arena);
+        try marker.ensureLength(dc.capacity);
         marker.fill(false); // marker is filled with false before use
-        try self.markers.append(self.allocator, marker);
+        try dc.markers.append(dc.allocator, marker);
         return marker;
     }
 
-    pub fn releaseMarker(self: *DataContainer, marker: *Data(bool)) void {
-        assert(marker.gen.container == self);
-        const marker_index = std.mem.indexOf(*Data(bool), self.markers.items, (&marker)[0..1]);
+    pub fn releaseMarker(dc: *DataContainer, marker: *Data(bool)) void {
+        assert(marker.gen.container == dc);
+        const marker_index = std.mem.indexOf(*Data(bool), dc.markers.items, (&marker)[0..1]);
         if (marker_index) |i| {
-            self.available_markers_indices.append(self.allocator, @intCast(i)) catch |err| {
+            dc.available_markers_indices.append(dc.allocator, @intCast(i)) catch |err| {
                 std.debug.print("Error releasing marker: {}\n", .{err});
             };
         }
     }
 
-    pub fn newIndex(self: *DataContainer) !u32 {
-        const index = self.free_indices.pop() orelse blk: {
-            defer self.capacity += 1;
-            break :blk self.capacity;
+    pub fn newIndex(dc: *DataContainer) !u32 {
+        const index = dc.free_indices.pop() orelse blk: {
+            defer dc.capacity += 1;
+            break :blk dc.capacity;
         };
-        // should not be necessary when the index comes from free_indices
-        var it = self.datas.iterator();
+
+        var it = dc.datas.iterator();
         while (it.next()) |entry| {
             const data_gen = entry.value_ptr.*;
-            try data_gen.ensureLength(index + 1);
+            try data_gen.ensureLength(dc.capacity); // not necessary when the index comes from free_indices
         }
-        for (self.markers.items) |marker| {
-            try marker.ensureLength(index + 1);
+        try dc.is_active.ensureLength(dc.capacity); // not necessary when the index comes from free_indices
+        try dc.nb_refs.ensureLength(dc.capacity); // not necessary when the index comes from free_indices
+
+        for (dc.markers.items) |marker| {
+            try marker.ensureLength(dc.capacity); // not necessary when the index comes from free_indices
             marker.valuePtr(index).* = false; // reset the markers at this index
         }
-        self.is_active.valuePtr(index).* = true; // after newIndex, the index is active
-        self.nb_refs.valuePtr(index).* = 0; // but has no reference yet
+
+        dc.is_active.valuePtr(index).* = true; // after newIndex, the index is active
+        dc.nb_refs.valuePtr(index).* = 0; // but has no reference yet
+
         return index;
     }
 
-    pub fn freeIndex(self: *DataContainer, index: u32) void {
-        self.is_active.valuePtr(index).* = false;
-        self.nb_refs.valuePtr(index).* = 0;
-        self.free_indices.append(self.allocator, index) catch |err| {
+    fn freeIndex(dc: *DataContainer, index: u32) void {
+        dc.is_active.valuePtr(index).* = false;
+        dc.nb_refs.valuePtr(index).* = 0;
+        dc.free_indices.append(dc.allocator, index) catch |err| {
             std.debug.print("Error freeing index {}: {}\n", .{ index, err });
         };
     }
 
-    pub fn refIndex(self: *DataContainer, index: u32) void {
-        self.nb_refs.valuePtr(index).* += 1;
+    pub fn refIndex(dc: *DataContainer, index: u32) void {
+        dc.nb_refs.valuePtr(index).* += 1;
     }
 
-    pub fn unrefIndex(self: *DataContainer, index: u32) void {
-        self.nb_refs.valuePtr(index).* -= 1;
-        if (self.nb_refs.valuePtr(index).* == 0) {
-            self.freeIndex(index);
+    pub fn unrefIndex(dc: *DataContainer, index: u32) void {
+        dc.nb_refs.valuePtr(index).* -= 1;
+        if (dc.nb_refs.valuePtr(index).* == 0) {
+            dc.freeIndex(index);
         }
     }
 
-    pub fn nbElements(self: *const DataContainer) u32 {
-        return @intCast(self.capacity - self.free_indices.items.len);
+    pub fn nbElements(dc: *const DataContainer) u32 {
+        return @intCast(dc.capacity - dc.free_indices.items.len);
     }
 
-    pub fn firstIndex(self: *const DataContainer) u32 {
+    pub fn firstIndex(dc: *const DataContainer) u32 {
         var index: u32 = 0;
-        return while (index < self.capacity) : (index += 1) {
-            if (self.isActiveIndex(index)) {
+        return while (index < dc.capacity) : (index += 1) {
+            if (dc.isActiveIndex(index)) {
                 break index;
             }
-        } else self.capacity;
+        } else dc.capacity;
     }
 
-    pub fn nextIndex(self: *const DataContainer, index: u32) u32 {
+    pub fn nextIndex(dc: *const DataContainer, index: u32) u32 {
         var next: u32 = index + 1;
-        return while (next < self.capacity) : (next += 1) {
-            if (self.isActiveIndex(next)) {
+        return while (next < dc.capacity) : (next += 1) {
+            if (dc.isActiveIndex(next)) {
                 break next;
             }
-        } else self.capacity;
+        } else dc.capacity;
     }
 
     /// lastIndex actually returns one past the last valid index.
-    pub fn lastIndex(self: *const DataContainer) u32 {
-        return self.capacity;
+    pub fn lastIndex(dc: *const DataContainer) u32 {
+        return dc.capacity;
     }
 
-    pub fn isActiveIndex(self: *const DataContainer, index: u32) bool {
-        return self.is_active.valuePtr(index).*;
+    pub fn isActiveIndex(dc: *const DataContainer, index: u32) bool {
+        return dc.is_active.valuePtr(index).*;
     }
 };
