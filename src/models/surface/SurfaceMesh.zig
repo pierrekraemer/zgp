@@ -392,8 +392,11 @@ pub fn isBoundaryDart(sm: *const SurfaceMesh, d: Dart) bool {
     return sm.dart_boundary_marker.value(d);
 }
 
-// TODO: rename setDartCellIndex?
-pub fn setDartIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u32) void {
+pub fn isValidDart(sm: *const SurfaceMesh, d: Dart) bool {
+    return sm.dart_data.isActiveIndex(d);
+}
+
+pub fn setDartCellIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u32) void {
     var index_data = switch (cell_type) {
         .corner => sm.dart_corner_index,
         .vertex => sm.dart_vertex_index,
@@ -418,8 +421,7 @@ pub fn setDartIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u32) 
     index_data.valuePtr(d).* = index;
 }
 
-// TODO: rename dartCellIndex?
-pub fn dartIndex(sm: *const SurfaceMesh, d: Dart, cell_type: CellType) u32 {
+pub fn dartCellIndex(sm: *const SurfaceMesh, d: Dart, cell_type: CellType) u32 {
     switch (cell_type) {
         .corner => return sm.dart_corner_index.value(d),
         .vertex => return sm.dart_vertex_index.value(d),
@@ -432,12 +434,12 @@ pub fn dartIndex(sm: *const SurfaceMesh, d: Dart, cell_type: CellType) u32 {
 fn setCellIndex(sm: *SurfaceMesh, c: Cell, index: u32) void {
     var dart_it = sm.cellDartIterator(c);
     while (dart_it.next()) |d| {
-        sm.setDartIndex(d, c.cellType(), index);
+        sm.setDartCellIndex(d, c.cellType(), index);
     }
 }
 
 pub fn cellIndex(sm: *const SurfaceMesh, c: Cell) u32 {
-    return sm.dartIndex(c.dart(), c.cellType());
+    return sm.dartCellIndex(c.dart(), c.cellType());
 }
 
 pub fn indexCells(sm: *SurfaceMesh, comptime cell_type: CellType) !void {
@@ -459,9 +461,9 @@ pub fn dump(sm: *SurfaceMesh, writer: *std.Io.Writer) void {
             sm.phi1(d),
             sm.phi_1(d),
             sm.phi2(d),
-            sm.dartIndex(d, .vertex),
-            sm.dartIndex(d, .edge),
-            sm.dartIndex(d, .face),
+            sm.dartCellIndex(d, .vertex),
+            sm.dartCellIndex(d, .edge),
+            sm.dartCellIndex(d, .face),
         });
     }
 }
@@ -527,6 +529,11 @@ pub fn addUnboundedFace(sm: *SurfaceMesh, nb_vertices: u32) !Cell {
     return .{ .face = d1 };
 }
 
+/// Closes the given SurfaceMesh by adding boundary faces where needed.
+/// Open edges (darts phi2-linked to themselves) are detected and boundary faces
+/// are created by following the open boundary cycles.
+/// This function is meant to be called after a construction process of a SurfaceMesh
+/// such as importing from files (see ModelsRegistry.loadSurfaceMeshFromFile)
 pub fn close(sm: *SurfaceMesh) !u32 {
     var nb_boundary_faces: u32 = 0;
     var dart_it = sm.dartIterator();
@@ -536,8 +543,8 @@ pub fn close(sm: *SurfaceMesh) !u32 {
             sm.dart_boundary_marker.valuePtr(b_first).* = true;
             sm.phi2Sew(d, b_first);
             // boundary darts do not represent a valid corner, thus they do not have a corner index
-            sm.setDartIndex(b_first, .vertex, sm.dartIndex(sm.phi1(d), .vertex));
-            sm.setDartIndex(b_first, .edge, sm.dartIndex(d, .edge));
+            sm.setDartCellIndex(b_first, .vertex, sm.dartCellIndex(sm.phi1(d), .vertex));
+            sm.setDartCellIndex(b_first, .edge, sm.dartCellIndex(d, .edge));
             // boundary darts do not represent a valid face, thus they do not have a face index
 
             var d_current = d;
@@ -555,8 +562,8 @@ pub fn close(sm: *SurfaceMesh) !u32 {
                 sm.phi2Sew(d_current, b_next);
                 sm.phi1Sew(b_first, b_next);
                 // boundary darts do not represent a valid corner, thus they do not have a corner index
-                sm.setDartIndex(b_next, .vertex, sm.dartIndex(sm.phi1(d_current), .vertex));
-                sm.setDartIndex(b_next, .edge, sm.dartIndex(d_current, .edge));
+                sm.setDartCellIndex(b_next, .vertex, sm.dartCellIndex(sm.phi1(d_current), .vertex));
+                sm.setDartCellIndex(b_next, .edge, sm.dartCellIndex(d_current, .edge));
                 // boundary darts do not represent a valid face, thus they do not have a face index
             }
 
@@ -568,7 +575,7 @@ pub fn close(sm: *SurfaceMesh) !u32 {
 
 /// Flips the given edge.
 /// TODO: write a more detailed comment
-pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) void {
+pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) !void {
     assert(edge.cellType() == .edge);
 
     const d = edge.dart();
@@ -577,8 +584,7 @@ pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) void {
     // TODO: should not allow the flip if the degree of an incident vertex is <= 2?
 
     if (sm.isBoundaryDart(d) or sm.isBoundaryDart(dd)) {
-        // flipping a boundary edge is not allowed
-        return;
+        return error.FlippingBoundaryEdgeNotAllowed;
     }
 
     const d1 = sm.phi1(d);
@@ -593,19 +599,21 @@ pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) void {
 
     {
         // Corner indices.
+        // no new corners are created & no existing corners are modified
     }
     {
         // Vertex index.
-        sm.setDartIndex(d, .vertex, sm.dartIndex(sm.phi1(dd), .vertex));
-        sm.setDartIndex(dd, .vertex, sm.dartIndex(sm.phi1(d), .vertex));
+        sm.setDartCellIndex(d, .vertex, sm.dartCellIndex(sm.phi1(dd), .vertex));
+        sm.setDartCellIndex(dd, .vertex, sm.dartCellIndex(sm.phi1(d), .vertex));
     }
     {
         // Edge indices.
+        // no new edges are created & no existing edges are modified
     }
     {
         // Face indices.
-        sm.setDartIndex(sm.phi_1(d), .face, sm.dartIndex(d, .face));
-        sm.setDartIndex(sm.phi_1(dd), .face, sm.dartIndex(dd, .face));
+        sm.setDartCellIndex(sm.phi_1(d), .face, sm.dartCellIndex(d, .face));
+        sm.setDartCellIndex(sm.phi_1(dd), .face, sm.dartCellIndex(dd, .face));
     }
 }
 
@@ -615,52 +623,113 @@ pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) void {
 pub fn cutEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
     assert(edge.cellType() == .edge);
 
-    const d1 = edge.dart();
-    const d2 = sm.phi2(d1);
-    sm.phi2Unsew(d1);
+    const d = edge.dart();
+    const dd = sm.phi2(d);
+    sm.phi2Unsew(d);
 
-    const nd1 = try sm.addDart();
-    sm.phi1Sew(d1, nd1);
-    const nd2 = try sm.addDart();
-    sm.phi1Sew(d2, nd2);
+    const d1 = try sm.addDart();
+    sm.phi1Sew(d, d1);
+    const dd1 = try sm.addDart();
+    sm.phi1Sew(dd, dd1);
 
-    sm.phi2Sew(d1, nd2);
-    sm.phi2Sew(d2, nd1);
+    sm.phi2Sew(d, dd1);
+    sm.phi2Sew(dd, d1);
 
-    sm.dart_boundary_marker.valuePtr(nd1).* = sm.dart_boundary_marker.value(d1);
-    sm.dart_boundary_marker.valuePtr(nd2).* = sm.dart_boundary_marker.value(d2);
+    sm.dart_boundary_marker.valuePtr(d1).* = sm.dart_boundary_marker.value(d);
+    sm.dart_boundary_marker.valuePtr(dd1).* = sm.dart_boundary_marker.value(dd);
 
     {
         // Corner indices.
-        if (!sm.isBoundaryDart(nd1)) { // corners in boundary faces are not indexed
-            const index = sm.dartIndex(nd1, .corner);
-            sm.setDartIndex(nd1, .corner, index);
+        if (!sm.isBoundaryDart(d1)) { // corners in boundary faces are not indexed
+            const index = sm.dartCellIndex(d1, .corner);
+            sm.setDartCellIndex(d1, .corner, index);
         }
-        if (!sm.isBoundaryDart(nd2)) { // corners in boundary faces are not indexed
-            const index = sm.dartIndex(nd2, .corner);
-            sm.setDartIndex(nd2, .corner, index);
+        if (!sm.isBoundaryDart(dd1)) { // corners in boundary faces are not indexed
+            const index = sm.dartCellIndex(dd1, .corner);
+            sm.setDartCellIndex(dd1, .corner, index);
         }
     }
     {
         // Vertex index.
         const index = try sm.newDataIndex(.vertex);
-        sm.setDartIndex(nd1, .vertex, index);
-        sm.setDartIndex(nd2, .vertex, index);
+        sm.setDartCellIndex(d1, .vertex, index);
+        sm.setDartCellIndex(dd1, .vertex, index);
     }
     {
         // Edge indices.
         // The edge of d1 keeps the index of the original edge.
-        sm.setDartIndex(nd2, .edge, sm.dartIndex(d1, .edge));
+        sm.setDartCellIndex(dd1, .edge, sm.dartCellIndex(d, .edge));
         // The edge of d2 gets a new index.
         const index = try sm.newDataIndex(.edge);
-        sm.setDartIndex(d2, .edge, index);
-        sm.setDartIndex(nd1, .edge, index);
+        sm.setDartCellIndex(dd, .edge, index);
+        sm.setDartCellIndex(d1, .edge, index);
     }
     {
         // Face indices.
-        sm.setDartIndex(nd1, .face, sm.dartIndex(d1, .face));
-        sm.setDartIndex(nd2, .face, sm.dartIndex(d2, .face));
+        sm.setDartCellIndex(d1, .face, sm.dartCellIndex(d, .face));
+        sm.setDartCellIndex(dd1, .face, sm.dartCellIndex(dd, .face));
     }
 
-    return .{ .vertex = nd1 };
+    return .{ .vertex = d1 };
+}
+
+/// Collapses the given edge.
+/// TODO: write a more detailed comment
+pub fn collapseEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
+    assert(edge.cellType() == .edge);
+
+    const d = edge.dart();
+    const d1 = sm.phi1(d);
+    const d_1 = sm.phi_1(d);
+    const d_12 = sm.phi2(d_1);
+    const dd = sm.phi2(d);
+    const dd1 = sm.phi1(dd);
+    const dd_1 = sm.phi_1(dd);
+    const dd_12 = sm.phi2(dd_1);
+
+    sm.phi1Sew(d_1, d);
+    sm.removeDart(d);
+    sm.phi1Sew(dd_1, dd);
+    sm.removeDart(dd);
+
+    // remove a potential 2-sided face on the side of d
+    if (sm.phi1(d1) == d_1) {
+        const d12 = sm.phi2(d1);
+        sm.phi2Unsew(d1);
+        sm.phi2Unsew(d_1);
+        sm.phi2Sew(d_12, d12);
+        sm.removeDart(d1);
+        sm.removeDart(d_1);
+    }
+    // remove a potential 2-sided face on the side of dd
+    if (sm.phi1(dd1) == dd_1) {
+        const dd12 = sm.phi2(dd1);
+        sm.phi2Unsew(dd1);
+        sm.phi2Unsew(dd_1);
+        sm.phi2Sew(dd_12, dd12);
+        sm.removeDart(dd1);
+        sm.removeDart(dd_1);
+    }
+
+    {
+        // Corner indices.
+        // no new corners are created & no existing corners are modified
+    }
+    {
+        // Vertex index.
+        // use the index of the vertex of d for the resulting vertex
+        sm.setCellIndex(.{ .vertex = d_12 }, sm.dartCellIndex(d_12, .vertex));
+    }
+    {
+        // Edge indices.
+        // these statements are correct wether 2-sided faces have been deleted or not
+        sm.setDartCellIndex(d_12, .edge, sm.dartCellIndex(sm.phi2(d_12), .edge));
+        sm.setDartCellIndex(dd_12, .edge, sm.dartCellIndex(sm.phi2(dd_12), .edge));
+    }
+    {
+        // Face indices.
+        // faces have been either removed or reduced
+    }
+
+    return .{ .vertex = d_12 };
 }

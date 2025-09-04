@@ -334,6 +334,8 @@ pub const DataContainer = struct {
             break :blk dc.capacity;
         };
 
+        // TODO: distinct cases when using index from free_indices vs. new capacity
+
         var it = dc.datas.iterator();
         while (it.next()) |entry| {
             const data_gen = entry.value_ptr.*;
@@ -353,7 +355,8 @@ pub const DataContainer = struct {
         return index;
     }
 
-    fn freeIndex(dc: *DataContainer, index: u32) void {
+    pub fn freeIndex(dc: *DataContainer, index: u32) void {
+        assert(index < dc.capacity and dc.is_active.valuePtr(index).*);
         dc.is_active.valuePtr(index).* = false;
         dc.nb_refs.valuePtr(index).* = 0;
         dc.free_indices.append(dc.allocator, index) catch |err| {
@@ -362,10 +365,12 @@ pub const DataContainer = struct {
     }
 
     pub fn refIndex(dc: *DataContainer, index: u32) void {
+        assert(index < dc.capacity and dc.is_active.valuePtr(index).*);
         dc.nb_refs.valuePtr(index).* += 1;
     }
 
     pub fn unrefIndex(dc: *DataContainer, index: u32) void {
+        assert(index < dc.capacity and dc.is_active.valuePtr(index).*);
         dc.nb_refs.valuePtr(index).* -= 1;
         if (dc.nb_refs.valuePtr(index).* == 0) {
             dc.freeIndex(index);
@@ -400,6 +405,6 @@ pub const DataContainer = struct {
     }
 
     pub fn isActiveIndex(dc: *const DataContainer, index: u32) bool {
-        return dc.is_active.valuePtr(index).*;
+        return index < dc.capacity and dc.is_active.valuePtr(index).*;
     }
 };

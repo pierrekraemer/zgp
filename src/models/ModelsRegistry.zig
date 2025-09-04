@@ -148,7 +148,7 @@ pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) !vo
 }
 
 pub fn surfaceMeshDataUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh, comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: SurfaceMeshData(cell_type, T)) !void {
-    // If it exists, update the VBO with the data
+    // if it exists, update the VBO with the data
     const maybe_vbo = mr.vbo_registry.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
         try vbo.fillFrom(T, data.data);
@@ -615,7 +615,7 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
         var d = face.dart();
         for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
             // sm.dart_vertex_index.valuePtr(d).* = index;
-            sm.setDartIndex(d, .vertex, index);
+            sm.setDartCellIndex(d, .vertex, index);
             try darts_of_vertex.data.valuePtr(index).append(darts_of_vertex.data.arena(), d);
             d = sm.phi1(d);
         }
@@ -627,11 +627,11 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
     var dart_it = sm.dartIterator();
     while (dart_it.next()) |d| {
         if (sm.phi2(d) == d) {
-            const vertex_index = sm.dartIndex(d, .vertex);
-            const next_vertex_index = sm.dartIndex(sm.phi1(d), .vertex);
+            const vertex_index = sm.dartCellIndex(d, .vertex);
+            const next_vertex_index = sm.dartCellIndex(sm.phi1(d), .vertex);
             const next_vertex_darts = darts_of_vertex.data.valuePtr(next_vertex_index).*;
             const opposite_dart = for (next_vertex_darts.items) |d2| {
-                if (sm.dartIndex(sm.phi1(d2), .vertex) == vertex_index) {
+                if (sm.dartCellIndex(sm.phi1(d2), .vertex) == vertex_index) {
                     break d2;
                 }
             } else null;
