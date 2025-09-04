@@ -159,22 +159,9 @@ pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4, projection_matrix: Mat
 }
 
 pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
-    const UiData = struct {
-        var selected_surface_mesh: ?*SurfaceMesh = null;
-    };
-
-    const UiCB = struct {
-        fn onSurfaceMeshSelected(sm: ?*SurfaceMesh) void {
-            UiData.selected_surface_mesh = sm;
-        }
-    };
-
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 
-    c.ImGui_SeparatorText("Surface Meshes");
-    imgui_utils.surfaceMeshListBox(UiData.selected_surface_mesh, &UiCB.onSurfaceMeshSelected);
-
-    if (UiData.selected_surface_mesh) |sm| {
+    if (zgp.models_registry.selected_surface_mesh) |sm| {
         const surface_mesh_renderer_parameters = smr.parameters.getPtr(sm);
         if (surface_mesh_renderer_parameters) |p| {
             if (c.ImGui_Checkbox("draw vertices", &p.draw_vertices)) {

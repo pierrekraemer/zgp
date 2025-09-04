@@ -118,22 +118,9 @@ pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4, projection_matrix: Mat4
 }
 
 pub fn uiPanel(pcr: *PointCloudRenderer) void {
-    const UiData = struct {
-        var selected_point_cloud: ?*PointCloud = null;
-    };
-
-    const UiCB = struct {
-        fn onPointCloudSelected(pc: ?*PointCloud) void {
-            UiData.selected_point_cloud = pc;
-        }
-    };
-
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 
-    c.ImGui_SeparatorText("Point Clouds");
-    imgui_utils.pointCloudListBox(UiData.selected_point_cloud, &UiCB.onPointCloudSelected);
-
-    if (UiData.selected_point_cloud) |pc| {
+    if (zgp.models_registry.selected_point_cloud) |pc| {
         const surface_mesh_renderer_parameters = pcr.parameters.getPtr(pc);
         if (surface_mesh_renderer_parameters) |p| {
             if (c.ImGui_Checkbox("draw points", &p.draw_points)) {

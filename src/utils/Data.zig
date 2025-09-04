@@ -329,29 +329,28 @@ pub const DataContainer = struct {
     }
 
     pub fn newIndex(dc: *DataContainer) !u32 {
-        const index = dc.free_indices.pop() orelse blk: {
-            defer dc.capacity += 1;
-            break :blk dc.capacity;
+        const index = if (dc.free_indices.pop()) |index| blk: {
+            for (dc.markers.items) |marker| {
+                marker.valuePtr(index).* = false; // reset the markers at this index
+            }
+            break :blk index;
+        } else blk: {
+            const index = dc.capacity;
+            dc.capacity += 1;
+            var it = dc.datas.iterator();
+            for (dc.markers.items) |marker| {
+                try marker.ensureLength(dc.capacity);
+                marker.valuePtr(index).* = false; // reset the markers at this index
+            }
+            while (it.next()) |entry| {
+                try entry.value_ptr.*.ensureLength(dc.capacity);
+            }
+            try dc.is_active.ensureLength(dc.capacity);
+            try dc.nb_refs.ensureLength(dc.capacity);
+            break :blk index;
         };
-
-        // TODO: distinct cases when using index from free_indices vs. new capacity
-
-        var it = dc.datas.iterator();
-        while (it.next()) |entry| {
-            const data_gen = entry.value_ptr.*;
-            try data_gen.ensureLength(dc.capacity); // not necessary when the index comes from free_indices
-        }
-        try dc.is_active.ensureLength(dc.capacity); // not necessary when the index comes from free_indices
-        try dc.nb_refs.ensureLength(dc.capacity); // not necessary when the index comes from free_indices
-
-        for (dc.markers.items) |marker| {
-            try marker.ensureLength(dc.capacity); // not necessary when the index comes from free_indices
-            marker.valuePtr(index).* = false; // reset the markers at this index
-        }
-
-        dc.is_active.valuePtr(index).* = true; // after newIndex, the index is active
+        dc.is_active.valuePtr(index).* = true; // index returned by newIndex is active
         dc.nb_refs.valuePtr(index).* = 0; // but has no reference yet
-
         return index;
     }
 

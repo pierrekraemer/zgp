@@ -26,7 +26,7 @@ pub fn name(_: *SurfaceMeshModeling) []const u8 {
 }
 
 fn cutAllEdges() !void {
-    const sm = ModelsRegistry.selected_surface_mesh orelse return;
+    const sm = zgp.models_registry.selected_surface_mesh orelse return;
     const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse return;
     if (surface_mesh_info.vertex_position) |vertex_position| {
         try subdivision.cutAllEdges(sm, vertex_position);
@@ -37,14 +37,14 @@ fn cutAllEdges() !void {
 }
 
 fn flipEdge(dart: SurfaceMesh.Dart) !void {
-    const sm = ModelsRegistry.selected_surface_mesh orelse return;
+    const sm = zgp.models_registry.selected_surface_mesh orelse return;
     try sm.flipEdge(.{ .edge = dart });
     try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
     zgp.need_redraw = true;
 }
 
 fn collapseEdge(dart: SurfaceMesh.Dart) !void {
-    const sm = ModelsRegistry.selected_surface_mesh orelse return;
+    const sm = zgp.models_registry.selected_surface_mesh orelse return;
     const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse return;
     if (surface_mesh_info.vertex_position) |vertex_position| {
         const new_pos = vec.mulScalar3(
@@ -69,7 +69,7 @@ pub fn menuBar(_: *SurfaceMeshModeling) void {
 
     if (c.ImGui_BeginMenu("SurfaceMeshModeling")) {
         defer c.ImGui_EndMenu();
-        if (ModelsRegistry.selected_surface_mesh) |sm| {
+        if (zgp.models_registry.selected_surface_mesh) |sm| {
             if (c.ImGui_MenuItem("Cut All Edges")) {
                 cutAllEdges() catch |err| {
                     std.debug.print("Error cutting all edges: {}\n", .{err});

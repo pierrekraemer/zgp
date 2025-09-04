@@ -120,14 +120,7 @@ pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4, projection_matrix
 }
 
 pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
-    const UiData = struct {
-        var selected_surface_mesh: ?*SurfaceMesh = null;
-    };
-
     const UiCB = struct {
-        fn onSurfaceMeshSelected(sm: ?*SurfaceMesh) void {
-            UiData.selected_surface_mesh = sm;
-        }
         const DataSelectedContext = struct {
             vector_per_vertex_renderer: *VectorPerVertexRenderer,
             surface_mesh: *SurfaceMesh,
@@ -141,10 +134,7 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 
-    c.ImGui_SeparatorText("Surface Meshes");
-    imgui_utils.surfaceMeshListBox(UiData.selected_surface_mesh, &UiCB.onSurfaceMeshSelected);
-
-    if (UiData.selected_surface_mesh) |sm| {
+    if (zgp.models_registry.selected_surface_mesh) |sm| {
         const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(sm);
         if (vector_per_vertex_renderer_parameters) |p| {
             c.ImGui_Text("Vector");
@@ -158,8 +148,12 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
                 &UiCB.onVectorDataSelected,
             );
             c.ImGui_PopID();
-            _ = c.ImGui_SliderFloatEx("scale", &p.point_vector_shader_parameters.vector_scale, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic);
-            _ = c.ImGui_ColorEdit3("color", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs);
+            if (c.ImGui_SliderFloatEx("scale", &p.point_vector_shader_parameters.vector_scale, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+                zgp.need_redraw = true;
+            }
+            if (c.ImGui_ColorEdit3("color", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs)) {
+                zgp.need_redraw = true;
+            }
         } else {
             c.ImGui_Text("No parameters found for the selected Surface Mesh");
         }

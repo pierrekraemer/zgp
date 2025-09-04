@@ -81,8 +81,8 @@ surface_meshes_info: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshInfo),
 
 vbo_registry: std.AutoHashMap(*const DataGen, VBO),
 
-pub var selected_point_cloud: ?*PointCloud = null;
-pub var selected_surface_mesh: ?*SurfaceMesh = null;
+selected_point_cloud: ?*PointCloud = null,
+selected_surface_mesh: ?*SurfaceMesh = null,
 
 pub fn init(allocator: std.mem.Allocator) ModelsRegistry {
     return .{
@@ -228,11 +228,11 @@ pub fn menuBar(_: *ModelsRegistry) void {}
 
 pub fn uiPanel(mr: *ModelsRegistry) void {
     const UiCB = struct {
-        fn onSurfaceMeshSelected(sm: ?*SurfaceMesh) void {
-            selected_surface_mesh = sm;
-        }
-        fn onPointCloudSelected(pc: ?*PointCloud) void {
-            selected_point_cloud = pc;
+        const SurfaceMeshSelectedContext = struct {
+            models_registry: *ModelsRegistry,
+        };
+        fn onSurfaceMeshSelected(sm: ?*SurfaceMesh, ctx: SurfaceMeshSelectedContext) void {
+            ctx.models_registry.selected_surface_mesh = sm;
         }
         const SurfaceMeshDataSelectedContext = struct {
             models_registry: *ModelsRegistry,
@@ -243,6 +243,12 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
             ctx.models_registry.setSurfaceMeshStandardData(ctx.surface_mesh, ctx.std_data, cell_type, T, data) catch |err| {
                 zgp.imgui_log.err("Error setting surface mesh standard data: {}\n", .{err});
             };
+        }
+        const PointCloudSelectedContext = struct {
+            models_registry: *ModelsRegistry,
+        };
+        fn onPointCloudSelected(pc: ?*PointCloud, ctx: PointCloudSelectedContext) void {
+            ctx.models_registry.selected_point_cloud = pc;
         }
         const PointCloudDataSelectedContext = struct {
             models_registry: *ModelsRegistry,
@@ -264,9 +270,13 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
     if (c.ImGui_CollapsingHeader("Surface Meshes", c.ImGuiTreeNodeFlags_DefaultOpen)) {
         c.ImGui_PopStyleColorEx(3);
 
-        imgui_utils.surfaceMeshListBox(selected_surface_mesh, &UiCB.onSurfaceMeshSelected);
+        imgui_utils.surfaceMeshListBox(
+            mr.selected_surface_mesh,
+            UiCB.SurfaceMeshSelectedContext{ .models_registry = mr },
+            &UiCB.onSurfaceMeshSelected,
+        );
 
-        if (selected_surface_mesh) |sm| {
+        if (mr.selected_surface_mesh) |sm| {
             c.ImGui_SeparatorText("#Cells");
 
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
@@ -337,9 +347,14 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
     c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
     if (c.ImGui_CollapsingHeader("Point Clouds", c.ImGuiTreeNodeFlags_DefaultOpen)) {
         c.ImGui_PopStyleColorEx(3);
-        imgui_utils.pointCloudListBox(selected_point_cloud, &UiCB.onPointCloudSelected);
 
-        if (selected_point_cloud) |pc| {
+        imgui_utils.pointCloudListBox(
+            mr.selected_point_cloud,
+            UiCB.PointCloudSelectedContext{ .models_registry = mr },
+            &UiCB.onPointCloudSelected,
+        );
+
+        if (mr.selected_point_cloud) |pc| {
             const maybe_info = mr.point_clouds_info.getPtr(pc);
             if (maybe_info) |info| {
                 c.ImGui_Text("Vertex Position");

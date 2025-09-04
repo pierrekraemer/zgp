@@ -25,7 +25,8 @@ pub fn helpMarker(desc: []const u8) void {
 
 pub fn surfaceMeshListBox(
     selected_surface_mesh: ?*SurfaceMesh,
-    on_selected: *const fn (?*SurfaceMesh) void,
+    context: anytype,
+    on_selected: *const fn (?*SurfaceMesh, @TypeOf(context)) void,
 ) void {
     if (c.ImGui_BeginListBox("##Surface Meshes", c.ImVec2{ .x = 0, .y = 0 })) {
         defer c.ImGui_EndListBox();
@@ -36,7 +37,7 @@ pub fn surfaceMeshListBox(
             const is_selected = selected_surface_mesh == sm;
             if (c.ImGui_SelectableEx(name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) {
-                    on_selected(sm); // only call on_selected if it was not previously selected
+                    on_selected(sm, context); // only call on_selected if it was not previously selected
                 }
             }
             if (is_selected) {
@@ -48,7 +49,8 @@ pub fn surfaceMeshListBox(
 
 pub fn pointCloudListBox(
     selected_point_cloud: ?*PointCloud,
-    on_selected: *const fn (?*PointCloud) void,
+    context: anytype,
+    on_selected: *const fn (?*PointCloud, @TypeOf(context)) void,
 ) void {
     if (c.ImGui_BeginListBox("##Point Clouds", c.ImVec2{ .x = 0, .y = 0 })) {
         defer c.ImGui_EndListBox();
@@ -59,7 +61,7 @@ pub fn pointCloudListBox(
             const is_selected = selected_point_cloud == pc;
             if (c.ImGui_SelectableEx(name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) {
-                    on_selected(pc); // only call on_selected if it was not previously selected
+                    on_selected(pc, context); // only call on_selected if it was not previously selected
                 }
             }
             if (is_selected) {
