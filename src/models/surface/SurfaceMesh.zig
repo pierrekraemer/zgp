@@ -53,6 +53,41 @@ dart_edge_index: *Data(u32) = undefined,
 dart_face_index: *Data(u32) = undefined,
 dart_boundary_marker: *Data(bool) = undefined, // boundary marker
 
+pub fn init(allocator: std.mem.Allocator) !SurfaceMesh {
+    var sm: SurfaceMesh = .{
+        .dart_data = try DataContainer.init(allocator),
+        .corner_data = try DataContainer.init(allocator),
+        .vertex_data = try DataContainer.init(allocator),
+        .edge_data = try DataContainer.init(allocator),
+        .face_data = try DataContainer.init(allocator),
+    };
+    sm.dart_phi1 = try sm.dart_data.addData(Dart, "phi1");
+    sm.dart_phi_1 = try sm.dart_data.addData(Dart, "phi_1");
+    sm.dart_phi2 = try sm.dart_data.addData(Dart, "phi2");
+    sm.dart_corner_index = try sm.dart_data.addData(u32, "corner_index");
+    sm.dart_vertex_index = try sm.dart_data.addData(u32, "vertex_index");
+    sm.dart_edge_index = try sm.dart_data.addData(u32, "edge_index");
+    sm.dart_face_index = try sm.dart_data.addData(u32, "face_index");
+    sm.dart_boundary_marker = try sm.dart_data.getMarker();
+    return sm;
+}
+
+pub fn deinit(sm: *SurfaceMesh) void {
+    sm.dart_data.deinit();
+    sm.corner_data.deinit();
+    sm.vertex_data.deinit();
+    sm.edge_data.deinit();
+    sm.face_data.deinit();
+}
+
+pub fn clearRetainingCapacity(sm: *SurfaceMesh) void {
+    sm.dart_data.clearRetainingCapacity();
+    sm.corner_data.clearRetainingCapacity();
+    sm.vertex_data.clearRetainingCapacity();
+    sm.edge_data.clearRetainingCapacity();
+    sm.face_data.clearRetainingCapacity();
+}
+
 /// DartIterator iterates over all the darts of the SurfaceMesh.
 /// (even boundary darts)
 const DartIterator = struct {
@@ -84,7 +119,6 @@ const CellDartIterator = struct {
     surface_mesh: *const SurfaceMesh,
     cell: Cell,
     current_dart: ?Dart,
-
     pub fn next(it: *CellDartIterator) ?Dart {
         // prepare current_dart for next iteration
         defer {
@@ -103,6 +137,9 @@ const CellDartIterator = struct {
             }
         }
         return it.current_dart;
+    }
+    pub fn reset(it: *CellDartIterator) void {
+        it.current_dart = it.cell.dart();
     }
 };
 
@@ -152,7 +189,7 @@ fn nextBoundaryDart(sm: *const SurfaceMesh, d: Dart) Dart {
 
 /// CellIterator iterates over all the cells of the given CellType of the SurfaceMesh.
 /// Each cell is guaranteed to be represented by a non-boundary dart of the cell.
-/// When iterating over faces, boundary corners and boundary faces are not included at all.
+/// When iterating over corners or faces, boundary corners and boundary faces are not included at all.
 /// This also means that boundary corners & boundary faces have no index and thus do not carry any data.
 pub fn CellIterator(comptime cell_type: CellType) type {
     return struct {
@@ -160,19 +197,19 @@ pub fn CellIterator(comptime cell_type: CellType) type {
 
         surface_mesh: *SurfaceMesh,
         current_dart: Dart,
-        marker: ?*Data(bool), // TODO: consider using a marker within the cell data container (rather than on darts)
+        marker: ?DartMarker,
 
         pub fn init(sm: *SurfaceMesh) !Self {
             return .{
                 .surface_mesh = sm,
                 // no marker needed for corner iterator (a corner is a single dart)
-                .marker = if (cell_type != .corner) try sm.dart_data.getMarker() else null,
+                .marker = if (cell_type != .corner) try DartMarker.init(sm) else null,
                 .current_dart = if (cell_type == .boundary) sm.firstBoundaryDart() else sm.firstNonBoundaryDart(),
             };
         }
         pub fn deinit(self: *Self) void {
-            if (self.marker) |marker| {
-                self.surface_mesh.dart_data.releaseMarker(marker);
+            if (self.marker) |*marker| {
+                marker.deinit();
             }
         }
         pub fn next(self: *Self) ?Cell {
@@ -205,48 +242,81 @@ pub fn CellIterator(comptime cell_type: CellType) type {
         pub fn reset(self: *Self) void {
             self.current_dart = if (cell_type == .boundary) self.surface_mesh.firstBoundaryDart() else self.surface_mesh.firstNonBoundaryDart();
             if (self.marker) |marker| {
-                marker.fill(false);
+                marker.reset();
             }
         }
     };
 }
 
-pub fn init(allocator: std.mem.Allocator) !SurfaceMesh {
-    var sm: SurfaceMesh = .{
-        .dart_data = try DataContainer.init(allocator),
-        .corner_data = try DataContainer.init(allocator),
-        .vertex_data = try DataContainer.init(allocator),
-        .edge_data = try DataContainer.init(allocator),
-        .face_data = try DataContainer.init(allocator),
+pub fn CellMarker(comptime cell_type: CellType) type {
+    return struct {
+        const Self = @This();
+
+        surface_mesh: *SurfaceMesh,
+        marker: *Data(bool),
+
+        pub fn init(sm: *SurfaceMesh) !Self {
+            return .{
+                .surface_mesh = sm,
+                .marker = try switch (cell_type) {
+                    .corner => sm.corner_data.getMarker(),
+                    .vertex => sm.vertex_data.getMarker(),
+                    .edge => sm.edge_data.getMarker(),
+                    .face => sm.face_data.getMarker(),
+                    else => unreachable,
+                },
+            };
+        }
+        pub fn deinit(self: *Self) void {
+            switch (cell_type) {
+                .corner => self.surface_mesh.corner_data.releaseMarker(self.marker),
+                .vertex => self.surface_mesh.vertex_data.releaseMarker(self.marker),
+                .edge => self.surface_mesh.edge_data.releaseMarker(self.marker),
+                .face => self.surface_mesh.face_data.releaseMarker(self.marker),
+                else => unreachable,
+            }
+        }
+
+        pub fn value(self: Self, c: Cell) bool {
+            assert(c.cellType() == cell_type);
+            return self.marker.value(self.surface_mesh.cellIndex(c));
+        }
+        pub fn valuePtr(self: Self, c: Cell) *bool {
+            assert(c.cellType() == cell_type);
+            return self.marker.valuePtr(self.surface_mesh.cellIndex(c));
+        }
+        pub fn reset(self: *Self) void {
+            self.marker.fill(false);
+        }
     };
-    sm.dart_phi1 = try sm.dart_data.addData(Dart, "phi1");
-    sm.dart_phi_1 = try sm.dart_data.addData(Dart, "phi_1");
-    sm.dart_phi2 = try sm.dart_data.addData(Dart, "phi2");
-    sm.dart_corner_index = try sm.dart_data.addData(u32, "corner_index");
-    sm.dart_vertex_index = try sm.dart_data.addData(u32, "vertex_index");
-    sm.dart_edge_index = try sm.dart_data.addData(u32, "edge_index");
-    sm.dart_face_index = try sm.dart_data.addData(u32, "face_index");
-    sm.dart_boundary_marker = try sm.dart_data.getMarker();
-    return sm;
 }
 
-pub fn deinit(sm: *SurfaceMesh) void {
-    sm.dart_data.deinit();
-    sm.corner_data.deinit();
-    sm.vertex_data.deinit();
-    sm.edge_data.deinit();
-    sm.face_data.deinit();
-}
+const DartMarker = struct {
+    surface_mesh: *SurfaceMesh,
+    marker: *Data(bool),
 
-pub fn clearRetainingCapacity(sm: *SurfaceMesh) void {
-    sm.dart_data.clearRetainingCapacity();
-    sm.corner_data.clearRetainingCapacity();
-    sm.vertex_data.clearRetainingCapacity();
-    sm.edge_data.clearRetainingCapacity();
-    sm.face_data.clearRetainingCapacity();
-}
+    pub fn init(sm: *SurfaceMesh) !DartMarker {
+        return .{
+            .surface_mesh = sm,
+            .marker = try sm.dart_data.getMarker(),
+        };
+    }
+    pub fn deinit(dm: *DartMarker) void {
+        dm.surface_mesh.dart_data.releaseMarker(dm.marker);
+    }
 
-pub fn SurfaceMeshData(comptime cell_type: CellType, comptime T: type) type {
+    pub fn value(dm: DartMarker, d: Dart) bool {
+        return dm.marker.value(d);
+    }
+    pub fn valuePtr(dm: DartMarker, d: Dart) *bool {
+        return dm.marker.valuePtr(d);
+    }
+    pub fn reset(dm: *DartMarker) void {
+        dm.marker.fill(false);
+    }
+};
+
+pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
     return struct {
         const Self = @This();
 
@@ -270,7 +340,7 @@ pub fn SurfaceMeshData(comptime cell_type: CellType, comptime T: type) type {
     };
 }
 
-pub fn addData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !SurfaceMeshData(cell_type, T) {
+pub fn addData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
     const d = switch (cell_type) {
         .corner => try sm.corner_data.addData(T, name),
         .vertex => try sm.vertex_data.addData(T, name),
@@ -281,7 +351,7 @@ pub fn addData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type,
     return .{ .surface_mesh = sm, .data = d };
 }
 
-pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) ?SurfaceMeshData(cell_type, T) {
+pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) ?CellData(cell_type, T) {
     if (switch (cell_type) {
         .corner => sm.corner_data.getData(T, name),
         .vertex => sm.vertex_data.getData(T, name),

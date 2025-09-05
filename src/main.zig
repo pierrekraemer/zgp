@@ -47,7 +47,6 @@ pub const imgui_log = std.log.scoped(.imgui);
 pub const zgp_log = std.log.scoped(.zgp);
 
 var fully_initialized = false;
-var uptime: std.time.Timer = undefined;
 
 /// Global models registry accessible from all modules.
 pub var models_registry: ModelsRegistry = undefined;
@@ -203,6 +202,12 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard | c.ImGuiConfigFlags_DockingEnable | c.ImGuiConfigFlags_ViewportsEnable;
 
     c.ImGui_StyleColorsDark(null);
+    const imstyle = c.ImGui_GetStyle();
+    imstyle.*.Colors[c.ImGuiCol_Header] = c.ImVec4_t{ .x = 65.0 / 255.0, .y = 255.0 / 255.0, .z = 255.0 / 255.0, .w = 120.0 / 255.0 };
+    imstyle.*.Colors[c.ImGuiCol_HeaderActive] = c.ImVec4_t{ .x = 65.0 / 255.0, .y = 255.0 / 255.0, .z = 255.0 / 255.0, .w = 200.0 / 255.0 };
+    imstyle.*.Colors[c.ImGuiCol_HeaderHovered] = c.ImVec4_t{ .x = 65.0 / 255.0, .y = 255.0 / 255.0, .z = 255.0 / 255.0, .w = 80.0 / 255.0 };
+    imstyle.*.SeparatorTextAlign = c.ImVec2{ .x = 1.0, .y = 0.0 };
+    imstyle.*.FrameRounding = 3;
 
     _ = c.cImGui_ImplSDL3_InitForOpenGL(window, gl_context);
     errdefer c.cImGui_ImplSDL3_Shutdown();
@@ -278,6 +283,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     }
 
     {
+        var timer = try std.time.Timer.start();
+
         const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/elephant_isotropic_25k.off");
         errdefer sm.deinit();
 
@@ -314,12 +321,13 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, .vertex, Vec3, sm_vertex_color);
 
         try models_registry.surfaceMeshConnectivityUpdated(sm);
+
+        const elapsed: f64 = @floatFromInt(timer.read());
+        zgp_log.info("Time elapsed is: {d:.3}ms\n", .{elapsed / std.time.ns_per_ms});
     }
 
     // Init end
     // ********
-
-    uptime = try .start();
 
     fully_initialized = true;
     errdefer comptime unreachable;
@@ -332,7 +340,6 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
     {
         const UiData = struct {
-            var show_demo_window: bool = false;
             var background_color: [4]f32 = .{ 0.65, 0.65, 0.65, 1 };
         };
 
@@ -375,10 +382,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
             main_menu_bar_size = c.ImGui_GetWindowSize();
 
-            if (c.ImGui_BeginMenu("File")) {
+            if (c.ImGui_BeginMenu("ZGP")) {
                 defer c.ImGui_EndMenu();
-                _ = c.ImGui_Checkbox("show demo", &UiData.show_demo_window);
-                c.ImGui_Separator();
                 if (c.ImGui_MenuItem("Quit")) {
                     return c.SDL_APP_SUCCESS;
                 }
@@ -464,9 +469,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
         c.ImGui_PopStyleVarEx(2);
 
-        if (UiData.show_demo_window) {
-            c.ImGui_ShowDemoWindow(null);
-        }
+        // c.ImGui_ShowStyleEditor(null);
 
         c.ImGui_Render();
         c.cImGui_ImplOpenGL3_RenderDrawData(c.ImGui_GetDrawData());
@@ -567,7 +570,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         surface_mesh_renderer.deinit();
         vector_per_vertex_renderer.deinit();
         screen_color_tex.deinit();
-        // screen_depth_tex.deinit();
+        screen_depth_tex.deinit();
         fbo.deinit();
 
         gl.makeProcTableCurrent(null);

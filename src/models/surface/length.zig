@@ -2,13 +2,12 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
-const SurfaceMeshData = SurfaceMesh.SurfaceMeshData;
 const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
 pub fn edgeLength(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMeshData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     edge: SurfaceMesh.Cell,
 ) f32 {
     assert(edge.cellType() == .edge);
@@ -20,8 +19,8 @@ pub fn edgeLength(
 
 pub fn computeEdgeLengths(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMeshData(.vertex, Vec3),
-    edge_length: SurfaceMeshData(.edge, f32),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    edge_length: SurfaceMesh.CellData(.edge, f32),
 ) !void {
     var it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer it.deinit();

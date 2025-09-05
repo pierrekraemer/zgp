@@ -168,9 +168,12 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
                 zgp.need_redraw = true;
             }
             if (p.draw_vertices) {
-                if (c.ImGui_SliderFloatEx("point size", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+                c.ImGui_Text("Point size");
+                c.ImGui_PushID("Point size");
+                if (c.ImGui_SliderFloatEx("", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
                     zgp.need_redraw = true;
                 }
+                c.ImGui_PopID();
             }
             if (c.ImGui_Checkbox("draw edges", &p.draw_edges)) {
                 zgp.need_redraw = true;

@@ -10,9 +10,7 @@ const imgui_utils = @import("../utils/imgui.zig");
 const zgp = @import("../main.zig");
 
 pub const PointCloud = @import("point/PointCloud.zig");
-const PointCloudData = PointCloud.PointCloudData;
 pub const SurfaceMesh = @import("surface/SurfaceMesh.zig");
-const SurfaceMeshData = SurfaceMesh.SurfaceMeshData;
 
 const Data = @import("../utils/Data.zig").Data;
 const DataGen = @import("../utils/Data.zig").DataGen;
@@ -23,23 +21,6 @@ const IBO = @import("../rendering/IBO.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
-// pub fn instance() *ModelsRegistry {
-//   const static = struct {
-//     var instance : ?ModelsRegistry = null;
-//   };
-//   if (static.instance == null) {
-//     // run setup code
-//   }
-//   return &static.instance.?;
-// }
-
-// var global_instance: ModelsRegistry = undefined;
-// var global_once = std.once(init_global);
-// pub fn instance() *ModelsRegistry {
-//   global_once.call();
-//   return &global_instance;
-// }
-
 pub const PointCloudStandardData = enum {
     position,
     normal,
@@ -47,9 +28,9 @@ pub const PointCloudStandardData = enum {
 };
 
 const PointCloudInfo = struct {
-    position: ?PointCloudData(Vec3) = null,
-    normal: ?PointCloudData(Vec3) = null,
-    color: ?PointCloudData(Vec3) = null,
+    position: ?PointCloud.CellData(Vec3) = null,
+    normal: ?PointCloud.CellData(Vec3) = null,
+    color: ?PointCloud.CellData(Vec3) = null,
 
     points_ibo: IBO,
 };
@@ -61,9 +42,9 @@ pub const SurfaceMeshStandardData = enum {
 };
 
 const SurfaceMeshInfo = struct {
-    vertex_position: ?SurfaceMeshData(.vertex, Vec3) = null,
-    vertex_normal: ?SurfaceMeshData(.vertex, Vec3) = null,
-    vertex_color: ?SurfaceMeshData(.vertex, Vec3) = null,
+    vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
+    vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
+    vertex_color: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
 
     points_ibo: IBO,
     lines_ibo: IBO,
@@ -147,7 +128,7 @@ pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) !vo
     }
 }
 
-pub fn surfaceMeshDataUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh, comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: SurfaceMeshData(cell_type, T)) !void {
+pub fn surfaceMeshDataUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh, comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: SurfaceMesh.CellData(cell_type, T)) !void {
     // if it exists, update the VBO with the data
     const maybe_vbo = mr.vbo_registry.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
@@ -190,7 +171,7 @@ pub fn setPointCloudStandardData(
     pc: *PointCloud,
     std_data: PointCloudStandardData,
     comptime T: type,
-    data: ?PointCloudData(T),
+    data: ?PointCloud.CellData(T),
 ) !void {
     const info = mr.point_clouds_info.getPtr(pc).?;
     switch (std_data) {
@@ -210,7 +191,7 @@ pub fn setSurfaceMeshStandardData(
     std_data: SurfaceMeshStandardData,
     comptime cell_type: SurfaceMesh.CellType,
     comptime T: type,
-    data: ?SurfaceMeshData(cell_type, T),
+    data: ?SurfaceMesh.CellData(cell_type, T),
 ) !void {
     const info = mr.surface_meshes_info.getPtr(sm).?;
     switch (std_data) {
@@ -239,7 +220,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
             surface_mesh: *SurfaceMesh,
             std_data: SurfaceMeshStandardData,
         };
-        fn onSurfaceMeshStandardDataSelected(comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: ?SurfaceMeshData(cell_type, T), ctx: SurfaceMeshDataSelectedContext) void {
+        fn onSurfaceMeshStandardDataSelected(comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: ?SurfaceMesh.CellData(cell_type, T), ctx: SurfaceMeshDataSelectedContext) void {
             ctx.models_registry.setSurfaceMeshStandardData(ctx.surface_mesh, ctx.std_data, cell_type, T, data) catch |err| {
                 zgp.imgui_log.err("Error setting surface mesh standard data: {}\n", .{err});
             };
@@ -255,7 +236,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
             point_cloud: *PointCloud,
             std_data: PointCloudStandardData,
         };
-        fn onPointCloudStandardDataSelected(comptime T: type, data: ?PointCloudData(T), ctx: PointCloudDataSelectedContext) void {
+        fn onPointCloudStandardDataSelected(comptime T: type, data: ?PointCloud.CellData(T), ctx: PointCloudDataSelectedContext) void {
             ctx.models_registry.setPointCloudStandardData(ctx.point_cloud, ctx.std_data, T, data) catch |err| {
                 zgp.imgui_log.err("Error setting point cloud standard data: {}\n", .{err});
             };

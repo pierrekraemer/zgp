@@ -65,6 +65,7 @@ fn collapseEdge(dart: SurfaceMesh.Dart) !void {
 pub fn menuBar(_: *SurfaceMeshModeling) void {
     const UiData = struct {
         var dart: c_int = 0;
+        const one: c.ImU32 = 1;
     };
 
     if (c.ImGui_BeginMenu("SurfaceMeshModeling")) {
@@ -75,7 +76,7 @@ pub fn menuBar(_: *SurfaceMeshModeling) void {
                     std.debug.print("Error cutting all edges: {}\n", .{err});
                 };
             }
-            _ = c.ImGui_InputInt("Dart", &UiData.dart);
+            _ = c.ImGui_InputScalarEx("Dart", c.ImGuiDataType_U32, &UiData.dart, &UiData.one, null, "%u", 0);
             if (sm.isValidDart(@intCast(UiData.dart))) {
                 if (c.ImGui_MenuItem("Flip Edge")) {
                     flipEdge(@intCast(UiData.dart)) catch |err| {

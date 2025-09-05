@@ -2,13 +2,12 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
-const SurfaceMeshData = SurfaceMesh.SurfaceMeshData;
 const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
 pub fn faceNormal(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMeshData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     face: SurfaceMesh.Cell,
 ) Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
@@ -35,8 +34,8 @@ pub fn faceNormal(
 
 pub fn computeFaceNormals(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMeshData(.vertex, Vec3),
-    face_normal: SurfaceMeshData(.face, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3),
 ) !void {
     var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
     defer face_it.deinit();
@@ -48,7 +47,7 @@ pub fn computeFaceNormals(
 
 pub fn vertexNormal(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMeshData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     vertex: SurfaceMesh.Cell,
 ) Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
@@ -66,8 +65,8 @@ pub fn vertexNormal(
 
 pub fn computeVertexNormals(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMeshData(.vertex, Vec3),
-    vertex_normal: SurfaceMeshData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
 ) !void {
     var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
     defer vertex_it.deinit();

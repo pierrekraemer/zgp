@@ -4,20 +4,19 @@ const assert = std.debug.assert;
 const zgp = @import("../../main.zig");
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
-const SurfaceMeshData = SurfaceMesh.SurfaceMeshData;
 const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
 pub fn cutAllEdges(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMeshData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
 ) !void {
-    var marker = try sm.edge_data.getMarker(); // TODO: add marker wrapper (like SurfaceMeshData)
-    defer sm.edge_data.releaseMarker(marker);
+    var marker = try SurfaceMesh.CellMarker(.edge).init(sm);
+    defer marker.deinit();
     var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer edge_it.deinit();
     while (edge_it.next()) |edge| {
-        if (!marker.value(sm.cellIndex(edge))) {
+        if (!marker.value(edge)) {
             const new_pos = vec.mulScalar3(
                 vec.add3(
                     vertex_position.value(.{ .vertex = edge.dart() }),
@@ -27,8 +26,8 @@ pub fn cutAllEdges(
             );
             const v = try sm.cutEdge(edge);
             vertex_position.valuePtr(v).* = new_pos;
-            marker.valuePtr(sm.cellIndex(edge)).* = true;
-            marker.valuePtr(sm.cellIndex(.{ .edge = sm.phi1(edge.dart()) })).* = true;
+            marker.valuePtr(edge).* = true;
+            marker.valuePtr(.{ .edge = sm.phi1(edge.dart()) }).* = true;
         }
     }
 }

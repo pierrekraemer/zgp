@@ -49,7 +49,7 @@ pub fn clearRetainingCapacity(pc: *PointCloud) void {
     pc.point_data.clearRetainingCapacity();
 }
 
-pub fn PointCloudData(comptime T: type) type {
+pub fn CellData(comptime T: type) type {
     return struct {
         const Self = @This();
 
@@ -71,14 +71,14 @@ pub fn PointCloudData(comptime T: type) type {
     };
 }
 
-pub fn addData(pc: *PointCloud, comptime T: type, name: []const u8) !PointCloudData(T) {
+pub fn addData(pc: *PointCloud, comptime T: type, name: []const u8) !CellData(T) {
     return .{
         .point_cloud = pc,
         .data = try pc.point_data.addData(T, name),
     };
 }
 
-pub fn getData(pc: *PointCloud, comptime T: type, name: []const u8) ?PointCloudData(T) {
+pub fn getData(pc: *PointCloud, comptime T: type, name: []const u8) ?CellData(T) {
     return if (pc.point_data.getData(T, name)) |d| .{ .point_cloud = pc, .data = d } else null;
 }
 

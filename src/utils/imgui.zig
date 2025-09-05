@@ -7,9 +7,7 @@ const c = @cImport({
 const zgp = @import("../main.zig");
 
 const PointCloud = @import("../models/point/PointCloud.zig");
-const PointCloudData = PointCloud.PointCloudData;
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
-const SurfaceMeshData = SurfaceMesh.SurfaceMeshData;
 
 const Data = @import("../utils/Data.zig").Data;
 
@@ -75,9 +73,9 @@ pub fn surfaceMeshCellDataComboBox(
     surface_mesh: *SurfaceMesh,
     comptime cell_type: SurfaceMesh.CellType,
     comptime T: type,
-    selected_data: ?SurfaceMeshData(cell_type, T),
+    selected_data: ?SurfaceMesh.CellData(cell_type, T),
     context: anytype,
-    on_selected: *const fn (comptime cell_type: SurfaceMesh.CellType, comptime T: type, ?SurfaceMeshData(cell_type, T), @TypeOf(context)) void,
+    on_selected: *const fn (comptime cell_type: SurfaceMesh.CellType, comptime T: type, ?SurfaceMesh.CellData(cell_type, T), @TypeOf(context)) void,
 ) void {
     if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "--none--", 0)) {
         defer c.ImGui_EndCombo();
@@ -115,9 +113,9 @@ pub fn surfaceMeshCellDataComboBox(
 pub fn pointCloudDataComboBox(
     point_cloud: *PointCloud,
     comptime T: type,
-    selected_data: ?PointCloudData(T),
+    selected_data: ?PointCloud.CellData(T),
     context: anytype,
-    on_selected: *const fn (comptime T: type, ?PointCloudData(T), @TypeOf(context)) void,
+    on_selected: *const fn (comptime T: type, ?PointCloud.CellData(T), @TypeOf(context)) void,
 ) void {
     if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "--none--", 0)) {
         defer c.ImGui_EndCombo();

@@ -14,7 +14,6 @@ const Module = @import("Module.zig");
 
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
-const SurfaceMeshData = SurfaceMesh.SurfaceMeshData;
 const SurfaceMeshStandardData = ModelsRegistry.SurfaceMeshStandardData;
 
 const PointVector = @import("../rendering/shaders/point_vector/PointVector.zig");
@@ -28,7 +27,7 @@ const Mat4 = mat.Mat4;
 
 const VectorPerVertexRendererParameters = struct {
     point_vector_shader_parameters: PointVector.Parameters,
-    vector_data: ?SurfaceMeshData(.vertex, Vec3) = null,
+    vector_data: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
 
     pub fn init(vpvr: *const VectorPerVertexRenderer) VectorPerVertexRendererParameters {
         return .{
@@ -95,7 +94,7 @@ pub fn surfaceMeshStandardDataChanged(
     }
 }
 
-fn setSurfaceMeshVectorData(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMesh, vector: ?SurfaceMeshData(.vertex, Vec3)) !void {
+fn setSurfaceMeshVectorData(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMesh, vector: ?SurfaceMesh.CellData(.vertex, Vec3)) !void {
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     p.vector_data = vector;
     if (p.vector_data) |v| {
@@ -125,7 +124,7 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
             vector_per_vertex_renderer: *VectorPerVertexRenderer,
             surface_mesh: *SurfaceMesh,
         };
-        fn onVectorDataSelected(comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: ?SurfaceMeshData(cell_type, T), ctx: DataSelectedContext) void {
+        fn onVectorDataSelected(comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: ?SurfaceMesh.CellData(cell_type, T), ctx: DataSelectedContext) void {
             ctx.vector_per_vertex_renderer.setSurfaceMeshVectorData(ctx.surface_mesh, data) catch |err| {
                 zgp.imgui_log.err("Error setting vector data: {}", .{err});
             };
@@ -148,12 +147,18 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
                 &UiCB.onVectorDataSelected,
             );
             c.ImGui_PopID();
-            if (c.ImGui_SliderFloatEx("scale", &p.point_vector_shader_parameters.vector_scale, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+            c.ImGui_Text("scale");
+            c.ImGui_PushID("scale");
+            if (c.ImGui_SliderFloatEx("", &p.point_vector_shader_parameters.vector_scale, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
                 zgp.need_redraw = true;
             }
-            if (c.ImGui_ColorEdit3("color", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs)) {
+            c.ImGui_PopID();
+            c.ImGui_Text("color");
+            c.ImGui_PushID("color");
+            if (c.ImGui_ColorEdit3("", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs)) {
                 zgp.need_redraw = true;
             }
+            c.ImGui_PopID();
         } else {
             c.ImGui_Text("No parameters found for the selected Surface Mesh");
         }
