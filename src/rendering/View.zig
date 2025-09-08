@@ -12,7 +12,7 @@ const FBO = @import("FBO.zig");
 const Texture2D = @import("Texture2D.zig");
 const FullscreenTexture = @import("shaders/fullscreen_texture/FullscreenTexture.zig");
 
-camera: *const Camera,
+camera: ?*Camera = null,
 
 width: c_int,
 height: c_int,
@@ -24,9 +24,8 @@ fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = undefined,
 
 need_redraw: bool,
 
-pub fn init(camera: *const Camera, width: c_int, height: c_int) !View {
+pub fn init(width: c_int, height: c_int) !View {
     var view: View = .{
-        .camera = camera,
         .width = width,
         .height = height,
         .need_redraw = true,
@@ -65,6 +64,20 @@ pub fn deinit(view: *View) void {
     view.screen_color_tex.deinit();
 }
 
+pub fn setCamera(view: *View, camera: *Camera, allocator: std.mem.Allocator) !void {
+    if (view.camera) |old_camera| {
+        // remove the view from its previous camera
+        const idx: usize = for (old_camera.views_using_camera.items, 0..) |v, index| {
+            if (v == view) {
+                break index;
+            }
+        } else unreachable; // the view must be in use by its old camera
+        _ = old_camera.views_using_camera.orderedRemove(idx);
+    }
+    view.camera = camera;
+    try camera.views_using_camera.append(allocator, view);
+}
+
 pub fn resize(view: *View, width: c_int, height: c_int) void {
     view.width = width;
     view.height = height;
@@ -74,6 +87,10 @@ pub fn resize(view: *View, width: c_int, height: c_int) void {
 }
 
 pub fn draw(view: *View, modules: []Module) void {
+    if (view.camera == null) {
+        gl_log.err("No camera set for view", .{});
+        return;
+    }
     gl.Viewport(0, 0, view.width, view.height);
     if (view.need_redraw) {
         gl.BindFramebuffer(gl.FRAMEBUFFER, view.fbo.index);
@@ -81,7 +98,7 @@ pub fn draw(view: *View, modules: []Module) void {
         gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         // gl.DrawBuffer(gl.COLOR_ATTACHMENT0); // not needed as it is already the default
         for (modules) |*module| {
-            module.draw(view.camera.view_matrix, view.camera.projection_matrix);
+            module.draw(view.camera.?.view_matrix, view.camera.?.projection_matrix);
         }
         view.need_redraw = false;
     }

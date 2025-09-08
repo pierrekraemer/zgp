@@ -1,5 +1,7 @@
 const Camera = @This();
 
+const View = @import("View.zig");
+
 const std = @import("std");
 const mat = @import("../geometry/mat.zig");
 const Mat4 = mat.Mat4;
@@ -26,8 +28,41 @@ projection_type: CameraProjectionType,
 
 projection_matrix: Mat4 = undefined,
 
+views_using_camera: std.ArrayList(*View),
+
+pub fn init(
+    position: Vec3,
+    look_dir: Vec3,
+    up_dir: Vec3,
+    pivot_position: Vec3,
+    aspect_ratio: f32,
+    field_of_view: f32,
+    projection_type: CameraProjectionType,
+) Camera {
+    var c: Camera = .{
+        .position = position,
+        .look_dir = look_dir,
+        .up_dir = up_dir,
+        .pivot_position = pivot_position,
+        .aspect_ratio = aspect_ratio,
+        .field_of_view = field_of_view,
+        .projection_type = projection_type,
+        .views_using_camera = .empty,
+    };
+    c.updateViewMatrix();
+    c.updateProjectionMatrix();
+    return c;
+}
+
+pub fn deinit(c: *Camera, allocator: std.mem.Allocator) void {
+    c.views_using_camera.deinit(allocator);
+}
+
 pub fn updateViewMatrix(c: *Camera) void {
     c.view_matrix = mat.lookAt(c.position, c.look_dir, c.up_dir);
+    for (c.views_using_camera.items) |view| {
+        view.need_redraw = true;
+    }
 }
 
 pub fn updateProjectionMatrix(c: *Camera) void {
@@ -35,6 +70,9 @@ pub fn updateProjectionMatrix(c: *Camera) void {
         .perspective => mat.perspective(c.field_of_view, c.aspect_ratio, 0.01, 5.0),
         .orthographic => mat.orthographic(c.aspect_ratio * -c.view_matrix[3][2], -c.view_matrix[3][2], 0.01, 5.0),
     };
+    for (c.views_using_camera.items) |view| {
+        view.need_redraw = true;
+    }
 }
 
 pub fn rotateFromScreenVec(c: *Camera, screen_vec: Vec2) void {

@@ -150,25 +150,22 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         ),
     };
 
-    // Camera initialization
-    // *********************
+    // Camera & View initialization
+    // ****************************
 
-    camera.position = .{ 0.0, 0.0, 2.0 };
-    camera.look_dir = vec.normalized3(vec.sub3(.{ 0.0, 0.0, 0.0 }, camera.position));
-    camera.up_dir = .{ 0.0, 1.0, 0.0 };
-    camera.pivot_position = .{ 0.0, 0.0, 0.0 };
-    camera.updateViewMatrix();
+    camera = Camera.init(
+        .{ 0.0, 0.0, 2.0 },
+        .{ 0.0, 0.0, -1.0 },
+        .{ 0.0, 1.0, 0.0 },
+        .{ 0.0, 0.0, 0.0 },
+        @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height)),
+        0.2 * std.math.pi,
+        .perspective,
+    );
 
-    camera.aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
-    camera.field_of_view = 0.2 * std.math.pi;
-    camera.projection_type = .perspective;
-    camera.updateProjectionMatrix();
-
-    // View initialization
-    // *******************
-
-    view = try View.init(&camera, window_width, window_height);
+    view = try View.init(window_width, window_height);
     errdefer view.deinit();
+    try view.setCamera(&camera, allocator);
 
     // ImGui initialization
     // ********************
@@ -354,7 +351,6 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                 }
             }
 
-            // TODO: Camera should notify its associated View(s)
             if (c.ImGui_BeginMenu("Camera")) {
                 defer c.ImGui_EndMenu();
                 if (c.ImGui_ColorEdit3("Background color", &UiData.background_color, c.ImGuiColorEditFlags_NoInputs)) {
@@ -364,18 +360,15 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                 if (c.ImGui_MenuItemEx("Perspective", null, camera.projection_type == .perspective, true)) {
                     camera.projection_type = .perspective;
                     camera.updateProjectionMatrix();
-                    requestRedraw();
                 }
                 if (c.ImGui_MenuItemEx("Orthographic", null, camera.projection_type == .orthographic, true)) {
                     camera.projection_type = .orthographic;
                     camera.updateProjectionMatrix();
-                    requestRedraw();
                 }
                 c.ImGui_Separator();
                 if (c.ImGui_Button("Look at pivot point")) {
                     camera.look_dir = vec.normalized3(vec.sub3(camera.pivot_position, camera.position));
                     camera.updateViewMatrix();
-                    requestRedraw();
                 }
             }
 
@@ -465,6 +458,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         },
         c.SDL_EVENT_WINDOW_RESIZED => {
             try errify(c.SDL_GetWindowSizeInPixels(window, &window_width, &window_height));
+            // TODO: update Camera in View.resize
             camera.aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
             camera.updateProjectionMatrix();
             view.resize(window_width, window_height);
@@ -489,16 +483,13 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 else => {},
             }
         },
-        // TODO: Camera should notify its associated View(s)
         c.SDL_EVENT_MOUSE_MOTION => {
             switch (event.motion.state) {
                 c.SDL_BUTTON_LMASK => {
                     camera.rotateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
-                    requestRedraw();
                 },
                 c.SDL_BUTTON_RMASK => {
                     camera.translateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
-                    requestRedraw();
                 },
                 else => {},
             }
@@ -510,7 +501,6 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 if (camera.projection_type == .orthographic) {
                     camera.updateProjectionMatrix();
                 }
-                requestRedraw();
             }
         },
         else => {},
@@ -536,6 +526,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         vector_per_vertex_renderer.deinit();
         modules.deinit(allocator);
 
+        camera.deinit(allocator);
         view.deinit();
 
         models_registry.deinit();
