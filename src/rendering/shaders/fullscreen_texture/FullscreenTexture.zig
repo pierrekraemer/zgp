@@ -7,13 +7,23 @@ const Shader = @import("../../Shader.zig");
 const VAO = @import("../../VAO.zig");
 const Texture2D = @import("../../Texture2D.zig");
 
+var global_instance: FullscreenTexture = undefined;
+var init_global_once = std.once(init_global);
+fn init_global() void {
+    global_instance = init() catch unreachable;
+}
+pub fn instance() *FullscreenTexture {
+    init_global_once.call();
+    return &global_instance;
+}
+
 program: Shader,
 
 texture_unit_uniform: c_int = undefined,
 
-pub fn init() !FullscreenTexture {
+fn init() !FullscreenTexture {
     var ft: FullscreenTexture = .{
-        .program = try Shader.init(),
+        .program = Shader.init(),
     };
 
     const vertex_shader_source = @embedFile("vs.glsl");
@@ -28,12 +38,8 @@ pub fn init() !FullscreenTexture {
     return ft;
 }
 
-pub fn deinit(ft: *FullscreenTexture) void {
+fn deinit(ft: *FullscreenTexture) void {
     ft.program.deinit();
-}
-
-pub fn createParameters(ft: *const FullscreenTexture) Parameters {
-    return Parameters.init(ft);
 }
 
 pub const Parameters = struct {
@@ -43,9 +49,9 @@ pub const Parameters = struct {
     tex: Texture2D = undefined,
     texture_unit: c_int = undefined,
 
-    pub fn init(ft: *const FullscreenTexture) Parameters {
+    pub fn init() Parameters {
         return .{
-            .shader = ft,
+            .shader = instance(),
             .vao = VAO.init(),
         };
     }

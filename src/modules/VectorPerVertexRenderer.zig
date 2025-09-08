@@ -7,6 +7,7 @@ const c = @cImport({
     @cInclude("dcimgui.h");
 });
 const imgui_utils = @import("../utils/imgui.zig");
+const imgui_log = std.log.scoped(.imgui);
 
 const zgp = @import("../main.zig");
 
@@ -29,9 +30,9 @@ const VectorPerVertexRendererParameters = struct {
     point_vector_shader_parameters: PointVector.Parameters,
     vector_data: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
 
-    pub fn init(vpvr: *const VectorPerVertexRenderer) VectorPerVertexRendererParameters {
+    pub fn init() VectorPerVertexRendererParameters {
         return .{
-            .point_vector_shader_parameters = vpvr.vector_per_vertex_shader.createParameters(),
+            .point_vector_shader_parameters = PointVector.Parameters.init(),
         };
     }
 
@@ -40,19 +41,15 @@ const VectorPerVertexRendererParameters = struct {
     }
 };
 
-vector_per_vertex_shader: PointVector,
-
 parameters: std.AutoHashMap(*const SurfaceMesh, VectorPerVertexRendererParameters),
 
 pub fn init(allocator: std.mem.Allocator) !VectorPerVertexRenderer {
     return .{
-        .vector_per_vertex_shader = try PointVector.init(),
         .parameters = std.AutoHashMap(*const SurfaceMesh, VectorPerVertexRendererParameters).init(allocator),
     };
 }
 
 pub fn deinit(vpvr: *VectorPerVertexRenderer) void {
-    vpvr.vector_per_vertex_shader.deinit();
     var p_it = vpvr.parameters.iterator();
     while (p_it.next()) |entry| {
         var p = entry.value_ptr.*;
@@ -70,7 +67,7 @@ pub fn name(_: *VectorPerVertexRenderer) []const u8 {
 }
 
 pub fn surfaceMeshAdded(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMesh) !void {
-    try vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init(vpvr));
+    try vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init());
 }
 
 pub fn surfaceMeshStandardDataChanged(
@@ -88,7 +85,6 @@ pub fn surfaceMeshStandardDataChanged(
             } else {
                 p.point_vector_shader_parameters.unsetVertexAttribArray(.position);
             }
-            zgp.need_redraw = true;
         },
         else => return, // Ignore other standard data changes
     }
@@ -103,7 +99,7 @@ fn setSurfaceMeshVectorData(vpvr: *VectorPerVertexRenderer, surface_mesh: *Surfa
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);
     }
-    zgp.need_redraw = true;
+    zgp.requestRedraw();
 }
 
 pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
@@ -126,7 +122,7 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
         };
         fn onVectorDataSelected(comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: ?SurfaceMesh.CellData(cell_type, T), ctx: DataSelectedContext) void {
             ctx.vector_per_vertex_renderer.setSurfaceMeshVectorData(ctx.surface_mesh, data) catch |err| {
-                zgp.imgui_log.err("Error setting vector data: {}", .{err});
+                imgui_log.err("Error setting vector data: {}", .{err});
             };
         }
     };
@@ -150,13 +146,13 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
             c.ImGui_Text("scale");
             c.ImGui_PushID("scale");
             if (c.ImGui_SliderFloatEx("", &p.point_vector_shader_parameters.vector_scale, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                zgp.need_redraw = true;
+                zgp.requestRedraw();
             }
             c.ImGui_PopID();
             c.ImGui_Text("color");
             c.ImGui_PushID("color");
             if (c.ImGui_ColorEdit3("", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs)) {
-                zgp.need_redraw = true;
+                zgp.requestRedraw();
             }
             c.ImGui_PopID();
         } else {

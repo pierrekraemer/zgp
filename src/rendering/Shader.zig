@@ -5,6 +5,8 @@ const gl = @import("gl");
 
 const gl_log = std.log.scoped(.gl);
 
+// TODO: find a way to register the shader singletons & to deinit them properly
+
 const shader_version = switch (gl.info.api) {
     .gl => (
         \\#version 410 core
@@ -24,11 +26,9 @@ pub const ShaderType = enum {
 
 index: c_uint = 0,
 
-pub fn init() !Shader {
+pub fn init() Shader {
     var s: Shader = .{};
     s.index = gl.CreateProgram();
-    if (s.index == 0)
-        return error.GlCreateProgramFailed;
     return s;
 }
 
@@ -47,8 +47,10 @@ pub fn setShader(s: *Shader, shader_type: ShaderType, shader_source: []const u8)
         .geometry => gl.GEOMETRY_SHADER,
         .fragment => gl.FRAGMENT_SHADER,
     });
-    if (shader == 0)
+    if (shader == 0) {
+        gl_log.err("Failed to create shader: {}", .{shader_type});
         return error.GlCreateShaderFailed;
+    }
     defer gl.DeleteShader(shader); // attached shader will only be _tagged_ for deletion
     gl.ShaderSource(
         shader,
@@ -59,6 +61,7 @@ pub fn setShader(s: *Shader, shader_type: ShaderType, shader_source: []const u8)
     gl.CompileShader(shader);
     gl.GetShaderiv(shader, gl.COMPILE_STATUS, &success);
     if (success == gl.FALSE) {
+        gl_log.err("Failed to compile shader: {}", .{shader_type});
         gl.GetShaderInfoLog(shader, info_log_buf.len, null, &info_log_buf);
         gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
         return error.GlCompileShaderFailed;
@@ -72,9 +75,10 @@ pub fn linkProgram(s: *Shader) !void {
     gl.LinkProgram(s.index);
     gl.GetProgramiv(s.index, gl.LINK_STATUS, &success);
     if (success == gl.FALSE) {
+        gl_log.err("Failed to link program: {}", .{s.index});
         gl.GetProgramInfoLog(s.index, info_log_buf.len, null, &info_log_buf);
         gl_log.err("{s}", .{std.mem.sliceTo(&info_log_buf, 0)});
-        return error.LinkProgramFailed;
+        return error.GlLinkProgramFailed;
     }
     var nb_attached_shaders: c_int = undefined;
     gl.GetProgramiv(s.index, gl.ATTACHED_SHADERS, &nb_attached_shaders);

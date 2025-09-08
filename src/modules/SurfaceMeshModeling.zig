@@ -32,7 +32,6 @@ fn cutAllEdges() !void {
         try subdivision.cutAllEdges(sm, vertex_position);
         try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
         try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
-        zgp.need_redraw = true;
     }
 }
 
@@ -40,7 +39,6 @@ fn flipEdge(dart: SurfaceMesh.Dart) !void {
     const sm = zgp.models_registry.selected_surface_mesh orelse return;
     try sm.flipEdge(.{ .edge = dart });
     try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
-    zgp.need_redraw = true;
 }
 
 fn collapseEdge(dart: SurfaceMesh.Dart) !void {
@@ -58,7 +56,6 @@ fn collapseEdge(dart: SurfaceMesh.Dart) !void {
         vertex_position.valuePtr(v).* = new_pos;
         try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
         try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
-        zgp.need_redraw = true;
     }
 }
 

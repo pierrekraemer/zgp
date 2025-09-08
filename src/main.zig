@@ -33,48 +33,48 @@ const length = @import("models/surface/length.zig");
 const angle = @import("models/surface/angle.zig");
 
 const Camera = @import("rendering/Camera.zig");
-const Texture2D = @import("rendering/Texture2D.zig");
-const FBO = @import("rendering/FBO.zig");
-
-var allocator: std.mem.Allocator = undefined;
-var rng: std.Random.DefaultPrng = undefined;
+const View = @import("rendering/View.zig");
 
 pub const std_options: std.Options = .{ .log_level = .debug };
-
+const gl_log = std.log.scoped(.gl);
 const sdl_log = std.log.scoped(.sdl);
-pub const gl_log = std.log.scoped(.gl);
-pub const imgui_log = std.log.scoped(.imgui);
-pub const zgp_log = std.log.scoped(.zgp);
+const imgui_log = std.log.scoped(.imgui);
+const zgp_log = std.log.scoped(.zgp);
 
 var fully_initialized = false;
 
-/// Global models registry accessible from all modules.
+var allocator: std.mem.Allocator = undefined;
+
+/// Global elements publicly accessible from all modules:
+/// - random number generator
+/// - thread pool
+/// - models registry
+/// - module list
+pub var rng: std.Random.DefaultPrng = undefined;
+pub var thread_pool: std.Thread.Pool = undefined;
 pub var models_registry: ModelsRegistry = undefined;
 pub var modules: std.ArrayList(Module) = .empty;
 
+/// ZGP modules
+/// TODO: could be declared in a config file and loaded at runtime
 var point_cloud_renderer: PointCloudRenderer = undefined;
 var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
 var surface_mesh_modeling: SurfaceMeshModeling = undefined;
 
+/// Application SDL Window & OpenGL context
 var window: *c.SDL_Window = undefined;
 var window_width: c_int = 1200;
 var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
 
-// TODO: should move view & FBO management into separate module
+var camera: Camera = undefined;
+var view: View = undefined;
 
-var screen_color_tex: Texture2D = undefined;
-var screen_depth_tex: Texture2D = undefined;
-var fbo: FBO = undefined;
-const FullscreenTexture = @import("rendering/shaders/fullscreen_texture/FullscreenTexture.zig");
-var fullscreen_texture_shader: FullscreenTexture = undefined;
-var fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = undefined;
-
-pub var need_redraw: bool = true;
-
-var camera: Camera = .{};
+pub fn requestRedraw() void {
+    view.need_redraw = true;
+}
 
 fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = appstate;
@@ -164,32 +164,11 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     camera.projection_type = .perspective;
     camera.updateProjectionMatrix();
 
-    // Fullscreen texture & FBO initialization
-    // ***************************************
+    // View initialization
+    // *******************
 
-    screen_color_tex = Texture2D.init(&[_]Texture2D.Parameter{
-        .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
-        .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
-    });
-    screen_color_tex.resize(window_width, window_height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
-    screen_depth_tex = Texture2D.init(&[_]Texture2D.Parameter{
-        .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
-        .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
-    });
-    screen_depth_tex.resize(window_width, window_height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
-
-    fbo = FBO.init();
-    fbo.attachTexture(gl.COLOR_ATTACHMENT0, screen_color_tex);
-    fbo.attachTexture(gl.DEPTH_ATTACHMENT, screen_depth_tex);
-
-    const status = gl.CheckFramebufferStatus(gl.FRAMEBUFFER);
-    if (status != gl.FRAMEBUFFER_COMPLETE) {
-        gl_log.err("Framebuffer not complete: {d}", .{status});
-    }
-
-    fullscreen_texture_shader = try FullscreenTexture.init();
-    fullscreen_texture_shader_parameters = fullscreen_texture_shader.createParameters();
-    fullscreen_texture_shader_parameters.setTexture(screen_color_tex, 0);
+    view = try View.init(&camera, window_width, window_height);
+    errdefer view.deinit();
 
     // ImGui initialization
     // ********************
@@ -233,12 +212,13 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer vector_per_vertex_renderer.deinit();
     surface_mesh_modeling = .{};
 
-    errdefer modules.deinit(allocator);
     try modules.append(allocator, point_cloud_renderer.module());
     try modules.append(allocator, surface_mesh_renderer.module());
     try modules.append(allocator, vector_per_vertex_renderer.module());
     try modules.append(allocator, surface_mesh_modeling.module());
+    errdefer modules.deinit(allocator);
 
+    // TODO: remove example meshes
     // Example surface mesh initialization
     // ***********************************
 
@@ -352,28 +332,13 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         gl.Enable(gl.POLYGON_OFFSET_FILL);
         gl.PolygonOffset(1.0, 1.5);
 
-        gl.Viewport(0, 0, window_width, window_height);
-
-        if (need_redraw) {
-            gl.BindFramebuffer(gl.FRAMEBUFFER, fbo.index);
-            defer gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
-            gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-            // gl.DrawBuffer(gl.COLOR_ATTACHMENT0); // not needed as it is already the default
-            for (modules.items) |*module| {
-                module.draw(camera.view_matrix, camera.projection_matrix);
-            }
-            need_redraw = false;
-        }
-
-        fullscreen_texture_shader_parameters.useShader();
-        fullscreen_texture_shader_parameters.draw();
-        gl.UseProgram(0);
+        view.draw(modules.items);
 
         c.cImGui_ImplOpenGL3_NewFrame();
         c.cImGui_ImplSDL3_NewFrame();
         c.ImGui_NewFrame();
 
-        const viewport = c.ImGui_GetMainViewport();
+        const imgui_viewport = c.ImGui_GetMainViewport();
 
         var main_menu_bar_size: c.ImVec2 = undefined;
 
@@ -389,27 +354,28 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                 }
             }
 
+            // TODO: Camera should notify its associated View(s)
             if (c.ImGui_BeginMenu("Camera")) {
                 defer c.ImGui_EndMenu();
                 if (c.ImGui_ColorEdit3("Background color", &UiData.background_color, c.ImGuiColorEditFlags_NoInputs)) {
-                    need_redraw = true;
+                    requestRedraw();
                 }
                 c.ImGui_Separator();
                 if (c.ImGui_MenuItemEx("Perspective", null, camera.projection_type == .perspective, true)) {
                     camera.projection_type = .perspective;
                     camera.updateProjectionMatrix();
-                    need_redraw = true;
+                    requestRedraw();
                 }
                 if (c.ImGui_MenuItemEx("Orthographic", null, camera.projection_type == .orthographic, true)) {
                     camera.projection_type = .orthographic;
                     camera.updateProjectionMatrix();
-                    need_redraw = true;
+                    requestRedraw();
                 }
                 c.ImGui_Separator();
                 if (c.ImGui_Button("Look at pivot point")) {
                     camera.look_dir = vec.normalized3(vec.sub3(camera.pivot_position, camera.position));
                     camera.updateViewMatrix();
-                    need_redraw = true;
+                    requestRedraw();
                 }
             }
 
@@ -424,12 +390,12 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowBorderSize, 0.0);
 
         c.ImGui_SetNextWindowPos(c.ImVec2{
-            .x = viewport.*.Pos.x,
-            .y = viewport.*.Pos.y + main_menu_bar_size.y,
+            .x = imgui_viewport.*.Pos.x,
+            .y = imgui_viewport.*.Pos.y + main_menu_bar_size.y,
         }, 0);
         c.ImGui_SetNextWindowSize(c.ImVec2{
-            .x = viewport.*.Size.x * 0.22,
-            .y = viewport.*.Size.y - main_menu_bar_size.y,
+            .x = imgui_viewport.*.Size.x * 0.22,
+            .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
         }, 0);
         c.ImGui_SetNextWindowBgAlpha(0.2);
         if (c.ImGui_Begin("Models Registry", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
@@ -440,12 +406,12 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         }
 
         c.ImGui_SetNextWindowPos(c.ImVec2{
-            .x = viewport.*.Pos.x + viewport.*.Size.x * 0.78,
-            .y = viewport.*.Pos.y + main_menu_bar_size.y,
+            .x = imgui_viewport.*.Pos.x + imgui_viewport.*.Size.x * 0.78,
+            .y = imgui_viewport.*.Pos.y + main_menu_bar_size.y,
         }, 0);
         c.ImGui_SetNextWindowSize(c.ImVec2{
-            .x = viewport.*.Size.x * 0.22,
-            .y = viewport.*.Size.y - main_menu_bar_size.y,
+            .x = imgui_viewport.*.Size.x * 0.22,
+            .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
         }, 0);
         c.ImGui_SetNextWindowBgAlpha(0.2);
         if (c.ImGui_Begin("Modules", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
@@ -499,9 +465,9 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         },
         c.SDL_EVENT_WINDOW_RESIZED => {
             try errify(c.SDL_GetWindowSizeInPixels(window, &window_width, &window_height));
-            screen_color_tex.resize(window_width, window_height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
-            screen_depth_tex.resize(window_width, window_height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
-            need_redraw = true;
+            camera.aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
+            camera.updateProjectionMatrix();
+            view.resize(window_width, window_height);
         },
         c.SDL_EVENT_KEY_DOWN => {
             switch (event.key.key) {
@@ -523,15 +489,16 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 else => {},
             }
         },
+        // TODO: Camera should notify its associated View(s)
         c.SDL_EVENT_MOUSE_MOTION => {
             switch (event.motion.state) {
                 c.SDL_BUTTON_LMASK => {
                     camera.rotateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
-                    need_redraw = true;
+                    requestRedraw();
                 },
                 c.SDL_BUTTON_RMASK => {
                     camera.translateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
-                    need_redraw = true;
+                    requestRedraw();
                 },
                 else => {},
             }
@@ -543,7 +510,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 if (camera.projection_type == .orthographic) {
                     camera.updateProjectionMatrix();
                 }
-                need_redraw = true;
+                requestRedraw();
             }
         },
         else => {},
@@ -564,14 +531,14 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         c.cImGui_ImplSDL3_Shutdown();
         c.ImGui_DestroyContext(null);
 
-        models_registry.deinit();
-        modules.deinit(allocator);
         point_cloud_renderer.deinit();
         surface_mesh_renderer.deinit();
         vector_per_vertex_renderer.deinit();
-        screen_color_tex.deinit();
-        screen_depth_tex.deinit();
-        fbo.deinit();
+        modules.deinit(allocator);
+
+        view.deinit();
+
+        models_registry.deinit();
 
         gl.makeProcTableCurrent(null);
         errify(c.SDL_GL_MakeCurrent(window, null)) catch {};
@@ -594,6 +561,9 @@ pub fn main() !u8 {
     // allocator = std.heap.smp_allocator;
 
     rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
+
+    try thread_pool.init(.{ .allocator = allocator });
+    defer thread_pool.deinit();
 
     const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(empty_argv.len, @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;

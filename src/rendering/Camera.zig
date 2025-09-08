@@ -13,16 +13,16 @@ const CameraProjectionType = enum {
     orthographic,
 };
 
-position: Vec3 = undefined,
-look_dir: Vec3 = undefined,
-up_dir: Vec3 = undefined,
-pivot_position: Vec3 = undefined,
+position: Vec3,
+look_dir: Vec3,
+up_dir: Vec3,
+pivot_position: Vec3,
 
 view_matrix: Mat4 = undefined,
 
-aspect_ratio: f32 = undefined,
-field_of_view: f32 = undefined,
-projection_type: CameraProjectionType = undefined,
+aspect_ratio: f32,
+field_of_view: f32,
+projection_type: CameraProjectionType,
 
 projection_matrix: Mat4 = undefined,
 

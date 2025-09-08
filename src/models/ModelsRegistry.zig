@@ -6,8 +6,10 @@ const c = @cImport({
     @cInclude("dcimgui.h");
 });
 const imgui_utils = @import("../utils/imgui.zig");
+const imgui_log = std.log.scoped(.imgui);
 
 const zgp = @import("../main.zig");
+const zgp_log = std.log.scoped(.zgp);
 
 pub const PointCloud = @import("point/PointCloud.zig");
 pub const SurfaceMesh = @import("surface/SurfaceMesh.zig");
@@ -126,6 +128,7 @@ pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) !vo
     for (zgp.modules.items) |*module| {
         try module.surfaceMeshConnectivityUpdated(sm);
     }
+    zgp.requestRedraw();
 }
 
 pub fn surfaceMeshDataUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh, comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: SurfaceMesh.CellData(cell_type, T)) !void {
@@ -138,6 +141,7 @@ pub fn surfaceMeshDataUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh, comptime ce
     for (zgp.modules.items) |*module| {
         try module.surfaceMeshDataUpdated(sm, cell_type, data.gen());
     }
+    zgp.requestRedraw();
 }
 
 pub fn updateDataVBO(mr: *ModelsRegistry, comptime T: type, data: *const Data(T)) !void {
@@ -183,6 +187,7 @@ pub fn setPointCloudStandardData(
     for (zgp.modules.items) |*module| {
         try module.pointCloudStandardDataChanged(pc, std_data);
     }
+    zgp.requestRedraw();
 }
 
 pub fn setSurfaceMeshStandardData(
@@ -203,6 +208,7 @@ pub fn setSurfaceMeshStandardData(
     for (zgp.modules.items) |*module| {
         try module.surfaceMeshStandardDataChanged(sm, std_data);
     }
+    zgp.requestRedraw();
 }
 
 pub fn menuBar(_: *ModelsRegistry) void {}
@@ -222,7 +228,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
         };
         fn onSurfaceMeshStandardDataSelected(comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: ?SurfaceMesh.CellData(cell_type, T), ctx: SurfaceMeshDataSelectedContext) void {
             ctx.models_registry.setSurfaceMeshStandardData(ctx.surface_mesh, ctx.std_data, cell_type, T, data) catch |err| {
-                zgp.imgui_log.err("Error setting surface mesh standard data: {}\n", .{err});
+                imgui_log.err("Error setting surface mesh standard data: {}\n", .{err});
             };
         }
         const PointCloudSelectedContext = struct {
@@ -238,7 +244,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
         };
         fn onPointCloudStandardDataSelected(comptime T: type, data: ?PointCloud.CellData(T), ctx: PointCloudDataSelectedContext) void {
             ctx.models_registry.setPointCloudStandardData(ctx.point_cloud, ctx.std_data, T, data) catch |err| {
-                zgp.imgui_log.err("Error setting point cloud standard data: {}\n", .{err});
+                imgui_log.err("Error setting point cloud standard data: {}\n", .{err});
             };
         }
     };
@@ -486,14 +492,14 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
 
     switch (filetype) {
         .off => {
-            zgp.zgp_log.info("reading OFF file", .{});
+            zgp_log.info("reading OFF file", .{});
 
             while (file_reader.interface.takeDelimiterExclusive('\n')) |line| {
                 if (line.len == 0) continue; // skip empty lines
                 if (std.mem.startsWith(u8, line, "OFF")) break;
             } else |err| switch (err) {
                 error.EndOfStream => {
-                    zgp.zgp_log.warn("reached end of file before finding the header", .{});
+                    zgp_log.warn("reached end of file before finding the header", .{});
                     return error.InvalidFileFormat;
                 },
                 else => return err,
@@ -510,18 +516,18 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
                     nb_cells[i] = value;
                 }
                 if (i != nb_cells.len) {
-                    zgp.zgp_log.warn("failed to read the number of cells", .{});
+                    zgp_log.warn("failed to read the number of cells", .{});
                     return error.InvalidFileFormat;
                 }
                 break;
             } else |err| switch (err) {
                 error.EndOfStream => {
-                    zgp.zgp_log.warn("reached end of file before reading the number of cells", .{});
+                    zgp_log.warn("reached end of file before reading the number of cells", .{});
                     return error.InvalidFileFormat;
                 },
                 else => return err,
             }
-            zgp.zgp_log.info("nb_cells: {d} vertices / {d} faces / {d} edges", .{ nb_cells[0], nb_cells[1], nb_cells[2] });
+            zgp_log.info("nb_cells: {d} vertices / {d} faces / {d} edges", .{ nb_cells[0], nb_cells[1], nb_cells[2] });
 
             try import_data.ensureTotalCapacity(mr.allocator, nb_cells[0], nb_cells[1]);
 
@@ -534,27 +540,27 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
                     var j: u32 = 0;
                     while (tokens.next()) |token| : (j += 1) {
                         if (j >= 3) {
-                            zgp.zgp_log.warn("vertex {d} position has more than 3 coordinates", .{i});
+                            zgp_log.warn("vertex {d} position has more than 3 coordinates", .{i});
                             return error.InvalidFileFormat;
                         }
                         const value = try std.fmt.parseFloat(f32, token);
                         position[j] = value;
                     }
                     if (j != 3) {
-                        zgp.zgp_log.warn("vertex {d} position has less than 3 coordinates", .{i});
+                        zgp_log.warn("vertex {d} position has less than 3 coordinates", .{i});
                         return error.InvalidFileFormat;
                     }
                     try import_data.vertices_position.append(mr.allocator, position);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
-                        zgp.zgp_log.warn("reached end of file before reading all vertices", .{});
+                        zgp_log.warn("reached end of file before reading all vertices", .{});
                         return error.InvalidFileFormat;
                     },
                     else => return err,
                 }
             }
-            zgp.zgp_log.info("read {d} vertices", .{import_data.vertices_position.items.len});
+            zgp_log.info("read {d} vertices", .{import_data.vertices_position.items.len});
 
             i = 0;
             while (i < nb_cells[1]) : (i += 1) {
@@ -567,7 +573,7 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
                         if (j == 0) {
                             face_nb_vertices = try std.fmt.parseInt(u32, token, 10);
                         } else if (j > face_nb_vertices + 1) {
-                            zgp.zgp_log.warn("face {d} has more than {d} vertices", .{ i, face_nb_vertices });
+                            zgp_log.warn("face {d} has more than {d} vertices", .{ i, face_nb_vertices });
                             return error.InvalidFileFormat;
                         } else {
                             const index = try std.fmt.parseInt(u32, token, 10);
@@ -575,20 +581,20 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
                         }
                     }
                     if (j != face_nb_vertices + 1) {
-                        zgp.zgp_log.warn("face {d} has less than {d} vertices", .{ i, face_nb_vertices });
+                        zgp_log.warn("face {d} has less than {d} vertices", .{ i, face_nb_vertices });
                         return error.InvalidFileFormat;
                     }
                     try import_data.faces_nb_vertices.append(mr.allocator, face_nb_vertices);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
-                        zgp.zgp_log.warn("reached end of file before reading all faces", .{});
+                        zgp_log.warn("reached end of file before reading all faces", .{});
                         return error.InvalidFileFormat;
                     },
                     else => return err,
                 }
             }
-            zgp.zgp_log.info("read {d} faces", .{import_data.faces_nb_vertices.items.len});
+            zgp_log.info("read {d} faces", .{import_data.faces_nb_vertices.items.len});
         },
         else => return error.InvalidFileExtension,
     }
@@ -640,9 +646,9 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
     }
 
     if (nb_boundary_edges > 0) {
-        zgp.zgp_log.info("found {d} boundary edges", .{nb_boundary_edges});
+        zgp_log.info("found {d} boundary edges", .{nb_boundary_edges});
         const nb_boundary_faces = try sm.close();
-        zgp.zgp_log.info("closed {d} boundary faces", .{nb_boundary_faces});
+        zgp_log.info("closed {d} boundary faces", .{nb_boundary_faces});
     }
 
     // vertices were already indexed above

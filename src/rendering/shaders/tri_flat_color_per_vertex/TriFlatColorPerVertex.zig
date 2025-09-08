@@ -8,6 +8,16 @@ const VAO = @import("../../VAO.zig");
 const VBO = @import("../../VBO.zig");
 const IBO = @import("../../IBO.zig");
 
+var global_instance: TriFlatColorPerVertex = undefined;
+var init_global_once = std.once(init_global);
+fn init_global() void {
+    global_instance = init() catch unreachable;
+}
+pub fn instance() *TriFlatColorPerVertex {
+    init_global_once.call();
+    return &global_instance;
+}
+
 program: Shader,
 
 model_view_matrix_uniform: c_int = undefined,
@@ -23,9 +33,9 @@ const VertexAttrib = enum {
     color,
 };
 
-pub fn init() !TriFlatColorPerVertex {
+fn init() !TriFlatColorPerVertex {
     var tfcpv: TriFlatColorPerVertex = .{
-        .program = try Shader.init(),
+        .program = Shader.init(),
     };
 
     const vertex_shader_source = @embedFile("vs.glsl");
@@ -60,10 +70,6 @@ pub fn deinit(tfcpv: *TriFlatColorPerVertex) void {
     tfcpv.program.deinit();
 }
 
-pub fn createParameters(tfcpv: *const TriFlatColorPerVertex) Parameters {
-    return Parameters.init(tfcpv);
-}
-
 pub const Parameters = struct {
     shader: *const TriFlatColorPerVertex,
     vao: VAO,
@@ -73,9 +79,9 @@ pub const Parameters = struct {
     ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
     light_position: [3]f32 = .{ 10, 0, 100 },
 
-    pub fn init(tfcpv: *const TriFlatColorPerVertex) Parameters {
+    pub fn init() Parameters {
         return .{
-            .shader = tfcpv,
+            .shader = instance(),
             .vao = VAO.init(),
         };
     }

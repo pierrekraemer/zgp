@@ -8,6 +8,16 @@ const VAO = @import("../../VAO.zig");
 const VBO = @import("../../VBO.zig");
 const IBO = @import("../../IBO.zig");
 
+var global_instance: PointVector = undefined;
+var init_global_once = std.once(init_global);
+fn init_global() void {
+    global_instance = init() catch unreachable;
+}
+pub fn instance() *PointVector {
+    init_global_once.call();
+    return &global_instance;
+}
+
 program: Shader,
 
 model_view_matrix_uniform: c_int = undefined,
@@ -19,9 +29,9 @@ vector_color_uniform: c_int = undefined,
 position_attrib: VAO.VertexAttribInfo = undefined,
 vector_attrib: VAO.VertexAttribInfo = undefined,
 
-pub fn init() !PointVector {
+fn init() !PointVector {
     var pv: PointVector = .{
-        .program = try Shader.init(),
+        .program = Shader.init(),
     };
 
     const vertex_shader_source = @embedFile("vs.glsl");
@@ -59,10 +69,6 @@ pub fn deinit(pv: *PointVector) void {
     pv.program.deinit();
 }
 
-pub fn createParameters(pv: *const PointVector) Parameters {
-    return Parameters.init(pv);
-}
-
 pub const Parameters = struct {
     shader: *const PointVector,
     vao: VAO,
@@ -78,9 +84,9 @@ pub const Parameters = struct {
         vector,
     };
 
-    pub fn init(pv: *const PointVector) Parameters {
+    pub fn init() Parameters {
         return .{
-            .shader = pv,
+            .shader = instance(),
             .vao = VAO.init(),
         };
     }

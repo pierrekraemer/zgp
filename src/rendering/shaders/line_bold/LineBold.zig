@@ -8,6 +8,16 @@ const VAO = @import("../../VAO.zig");
 const VBO = @import("../../VBO.zig");
 const IBO = @import("../../IBO.zig");
 
+var global_instance: LineBold = undefined;
+var init_global_once = std.once(init_global);
+fn init_global() void {
+    global_instance = init() catch unreachable;
+}
+pub fn instance() *LineBold {
+    init_global_once.call();
+    return &global_instance;
+}
+
 program: Shader,
 
 model_view_matrix_uniform: c_int = undefined,
@@ -17,9 +27,9 @@ line_width_uniform: c_int = undefined,
 
 position_attrib: VAO.VertexAttribInfo = undefined,
 
-pub fn init() !LineBold {
+fn init() !LineBold {
     var lb: LineBold = .{
-        .program = try Shader.init(),
+        .program = Shader.init(),
     };
 
     const vertex_shader_source = @embedFile("vs.glsl");
@@ -50,10 +60,6 @@ pub fn deinit(lb: *LineBold) void {
     lb.program.deinit();
 }
 
-pub fn createParameters(lb: *const LineBold) Parameters {
-    return Parameters.init(lb);
-}
-
 pub const Parameters = struct {
     shader: *const LineBold,
     vao: VAO,
@@ -67,9 +73,9 @@ pub const Parameters = struct {
         position,
     };
 
-    pub fn init(lb: *const LineBold) Parameters {
+    pub fn init() Parameters {
         return .{
-            .shader = lb,
+            .shader = instance(),
             .vao = VAO.init(),
         };
     }

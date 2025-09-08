@@ -37,11 +37,11 @@ const SurfaceMeshRendererParameters = struct {
     draw_faces: bool = true,
     draw_boundaries: bool = false,
 
-    pub fn init(smr: *const SurfaceMeshRenderer) SurfaceMeshRendererParameters {
+    pub fn init() SurfaceMeshRendererParameters {
         return .{
-            .point_sphere_shader_parameters = smr.point_sphere_shader.createParameters(),
-            .line_bold_shader_parameters = smr.line_bold_shader.createParameters(),
-            .tri_flat_color_per_vertex_shader_parameters = smr.tri_flat_color_per_vertex_shader.createParameters(),
+            .point_sphere_shader_parameters = PointSphere.Parameters.init(),
+            .line_bold_shader_parameters = LineBold.Parameters.init(),
+            .tri_flat_color_per_vertex_shader_parameters = TriFlatColorPerVertex.Parameters.init(),
         };
     }
 
@@ -52,25 +52,15 @@ const SurfaceMeshRendererParameters = struct {
     }
 };
 
-point_sphere_shader: PointSphere,
-line_bold_shader: LineBold,
-tri_flat_color_per_vertex_shader: TriFlatColorPerVertex,
-
 parameters: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRendererParameters),
 
 pub fn init(allocator: std.mem.Allocator) !SurfaceMeshRenderer {
     return .{
-        .point_sphere_shader = try PointSphere.init(),
-        .line_bold_shader = try LineBold.init(),
-        .tri_flat_color_per_vertex_shader = try TriFlatColorPerVertex.init(),
         .parameters = std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRendererParameters).init(allocator),
     };
 }
 
 pub fn deinit(smr: *SurfaceMeshRenderer) void {
-    smr.point_sphere_shader.deinit();
-    smr.line_bold_shader.deinit();
-    smr.tri_flat_color_per_vertex_shader.deinit();
     var p_it = smr.parameters.iterator();
     while (p_it.next()) |entry| {
         var p = entry.value_ptr.*;
@@ -88,7 +78,7 @@ pub fn name(_: *SurfaceMeshRenderer) []const u8 {
 }
 
 pub fn surfaceMeshAdded(smr: *SurfaceMeshRenderer, surface_mesh: *SurfaceMesh) !void {
-    try smr.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init(smr));
+    try smr.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init());
 }
 
 pub fn surfaceMeshStandardDataChanged(
@@ -110,7 +100,6 @@ pub fn surfaceMeshStandardDataChanged(
                 p.line_bold_shader_parameters.unsetVertexAttribArray(.position);
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
             }
-            zgp.need_redraw = true;
         },
         .vertex_color => {
             if (surface_mesh_info.vertex_color) |vertex_color| {
@@ -121,7 +110,6 @@ pub fn surfaceMeshStandardDataChanged(
                 p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.color);
             }
-            zgp.need_redraw = true;
         },
         else => return, // Ignore other standard data changes
     }
@@ -165,24 +153,24 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
         const surface_mesh_renderer_parameters = smr.parameters.getPtr(sm);
         if (surface_mesh_renderer_parameters) |p| {
             if (c.ImGui_Checkbox("draw vertices", &p.draw_vertices)) {
-                zgp.need_redraw = true;
+                zgp.requestRedraw();
             }
             if (p.draw_vertices) {
                 c.ImGui_Text("Point size");
                 c.ImGui_PushID("Point size");
                 if (c.ImGui_SliderFloatEx("", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                    zgp.need_redraw = true;
+                    zgp.requestRedraw();
                 }
                 c.ImGui_PopID();
             }
             if (c.ImGui_Checkbox("draw edges", &p.draw_edges)) {
-                zgp.need_redraw = true;
+                zgp.requestRedraw();
             }
             if (c.ImGui_Checkbox("draw faces", &p.draw_faces)) {
-                zgp.need_redraw = true;
+                zgp.requestRedraw();
             }
             if (c.ImGui_Checkbox("draw boundaries", &p.draw_boundaries)) {
-                zgp.need_redraw = true;
+                zgp.requestRedraw();
             }
         } else {
             c.ImGui_Text("No parameters found for the selected Surface Mesh");

@@ -27,11 +27,12 @@ const Mat4 = mat.Mat4;
 
 const PointCloudRendererParameters = struct {
     point_sphere_shader_parameters: PointSphere.Parameters,
+
     draw_points: bool = true,
 
-    pub fn init(pcr: *const PointCloudRenderer) PointCloudRendererParameters {
+    pub fn init() PointCloudRendererParameters {
         return .{
-            .point_sphere_shader_parameters = pcr.point_sphere_shader.createParameters(),
+            .point_sphere_shader_parameters = PointSphere.Parameters.init(),
         };
     }
 
@@ -40,19 +41,15 @@ const PointCloudRendererParameters = struct {
     }
 };
 
-point_sphere_shader: PointSphere,
-
 parameters: std.AutoHashMap(*const PointCloud, PointCloudRendererParameters),
 
 pub fn init(allocator: std.mem.Allocator) !PointCloudRenderer {
     return .{
-        .point_sphere_shader = try PointSphere.init(),
         .parameters = std.AutoHashMap(*const PointCloud, PointCloudRendererParameters).init(allocator),
     };
 }
 
 pub fn deinit(pcr: *PointCloudRenderer) void {
-    pcr.point_sphere_shader.deinit();
     var p_it = pcr.parameters.iterator();
     while (p_it.next()) |entry| {
         var p = entry.value_ptr.*;
@@ -70,7 +67,7 @@ pub fn name(_: *PointCloudRenderer) []const u8 {
 }
 
 pub fn pointCloudAdded(pcr: *PointCloudRenderer, point_cloud: *PointCloud) !void {
-    try pcr.parameters.put(point_cloud, PointCloudRendererParameters.init(pcr));
+    try pcr.parameters.put(point_cloud, PointCloudRendererParameters.init());
 }
 
 pub fn pointCloudStandardDataChanged(
@@ -88,7 +85,6 @@ pub fn pointCloudStandardDataChanged(
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
             }
-            zgp.need_redraw = true;
         },
         .color => {
             if (point_cloud_info.color) |color| {
@@ -97,7 +93,6 @@ pub fn pointCloudStandardDataChanged(
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.color);
             }
-            zgp.need_redraw = true;
         },
         else => return, // Ignore other standard data changes
     }
@@ -124,11 +119,11 @@ pub fn uiPanel(pcr: *PointCloudRenderer) void {
         const surface_mesh_renderer_parameters = pcr.parameters.getPtr(pc);
         if (surface_mesh_renderer_parameters) |p| {
             if (c.ImGui_Checkbox("draw points", &p.draw_points)) {
-                zgp.need_redraw = true;
+                zgp.requestRedraw();
             }
             if (p.draw_points) {
                 if (c.ImGui_SliderFloatEx("point size", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                    zgp.need_redraw = true;
+                    zgp.requestRedraw();
                 }
             }
         } else {
