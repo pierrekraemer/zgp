@@ -30,7 +30,7 @@ pub fn fillFrom(i: *IBO, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, allo
             var f_it = try SurfaceMesh.CellIterator(.face).init(sm);
             defer f_it.deinit();
             while (f_it.next()) |f| {
-                // TODO: perform ear-triangulation instead of just a triangle fan on polygonal faces
+                // TODO: should perform ear-triangulation instead of just a triangle fan on polygonal faces
                 var dart_it = sm.cellDartIterator(f);
                 const dart_start = dart_it.next() orelse break;
                 const start_index = sm.cellIndex(.{ .vertex = dart_start });

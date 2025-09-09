@@ -151,6 +151,15 @@ pub fn cellDartIterator(sm: *const SurfaceMesh, cell: Cell) CellDartIterator {
     };
 }
 
+pub fn dartBelongsToCell(sm: *const SurfaceMesh, dart: Dart, cell: Cell) bool {
+    var dart_it = sm.cellDartIterator(cell);
+    return while (dart_it.next()) |d| {
+        if (d == dart) {
+            break true;
+        }
+    } else false;
+}
+
 fn firstNonBoundaryDart(sm: *const SurfaceMesh) Dart {
     var first = sm.dart_data.firstIndex();
     return while (first != sm.dart_data.lastIndex()) : (first = sm.dart_data.nextIndex(first)) {
@@ -502,6 +511,7 @@ pub fn dartCellIndex(sm: *const SurfaceMesh, d: Dart, cell_type: CellType) u32 {
 }
 
 fn setCellIndex(sm: *SurfaceMesh, c: Cell, index: u32) void {
+    // TODO: optimize for corners & edges
     var dart_it = sm.cellDartIterator(c);
     while (dart_it.next()) |d| {
         sm.setDartCellIndex(d, c.cellType(), index);
@@ -690,6 +700,8 @@ pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) !void {
 /// Cuts the given edge by inserting a new vertex.
 /// The new vertex is returned: its representative dart is the one that
 /// belongs to the same face as the representative dart of the given edge.
+/// The edge of the representative dart of the given edge keeps the same edge index
+/// (a new edge index is given to the other new edge).
 pub fn cutEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
     assert(edge.cellType() == .edge);
 
@@ -727,9 +739,9 @@ pub fn cutEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
     }
     {
         // Edge indices.
-        // The edge of d1 keeps the index of the original edge.
+        // The edge of d keeps the index of the original edge.
         sm.setDartCellIndex(dd1, .edge, sm.dartCellIndex(d, .edge));
-        // The edge of d2 gets a new index.
+        // The edge of dd gets a new index.
         const index = try sm.newDataIndex(.edge);
         sm.setDartCellIndex(dd, .edge, index);
         sm.setDartCellIndex(d1, .edge, index);
@@ -802,4 +814,51 @@ pub fn collapseEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
     }
 
     return .{ .vertex = d_12 };
+}
+
+/// Cuts a face by inserting a new edge between the two given darts.
+/// The new edge is returned: its representative dart is the one that belongs to the same vertex as d1.
+/// The face of d1 keeps the same face index (a new face index is given to the other new face).
+pub fn cutFace(sm: *SurfaceMesh, d1: Dart, d2: Dart) !Cell {
+    assert(sm.codegree(.{ .face = d1 }) > 3); // only cut faces with more than 3 edges
+    assert(sm.dartBelongsToCell(d2, .{ .face = d1 })); // check that d1 & d2 belong to the same face
+    assert(sm.phi1(d1) != d2 and sm.phi_1(d1) != d2); // d1 & d2 should not follow each other
+
+    if (sm.isBoundaryDart(d1)) {
+        return error.CuttingBoundaryFaceNotAllowed;
+    }
+
+    const d_1 = try sm.addDart();
+    sm.phi1Sew(sm.phi_1(d1), d_1);
+    const d_2 = try sm.addDart();
+    sm.phi1Sew(sm.phi_1(d2), d_2);
+    sm.phi1Sew(d_1, d_2);
+    sm.phi2Sew(d_1, d_2);
+
+    {
+        // Corner indices.
+        const index1 = try sm.newDataIndex(.corner);
+        sm.setDartCellIndex(d_1, .corner, index1);
+        const index2 = try sm.newDataIndex(.corner);
+        sm.setDartCellIndex(d_2, .corner, index2);
+    }
+    {
+        // Vertex index.
+        sm.setDartCellIndex(d_1, .vertex, sm.dartCellIndex(d1, .vertex));
+        sm.setDartCellIndex(d_2, .vertex, sm.dartCellIndex(d2, .vertex));
+    }
+    {
+        // Edge indices.
+        const index = try sm.newDataIndex(.edge);
+        sm.setDartCellIndex(d_1, .edge, index);
+        sm.setDartCellIndex(d_2, .edge, index);
+    }
+    {
+        // Face indices.
+        sm.setDartCellIndex(d_2, .face, sm.dartCellIndex(d1, .face));
+        const index = try sm.newDataIndex(.face);
+        sm.setCellIndex(.{ .face = d2 }, index);
+    }
+
+    return .{ .edge = d_1 };
 }

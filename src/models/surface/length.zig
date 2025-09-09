@@ -28,3 +28,21 @@ pub fn computeEdgeLengths(
         edge_length.valuePtr(edge).* = edgeLength(sm, vertex_position, edge);
     }
 }
+
+pub fn meanEdgeLength(
+    sm: *SurfaceMesh,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+) f32 {
+    const nb_edges = sm.nbCells(.edge);
+    if (nb_edges == 0) {
+        return 0.0;
+    }
+
+    var total_length: f32 = 0.0;
+    var it = try SurfaceMesh.CellIterator(.edge).init(sm);
+    defer it.deinit();
+    while (it.next()) |edge| {
+        total_length += edgeLength(sm, vertex_position, edge);
+    }
+    return total_length / @as(f32, nb_edges);
+}

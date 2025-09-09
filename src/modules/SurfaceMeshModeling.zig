@@ -35,6 +35,12 @@ fn cutAllEdges() !void {
     }
 }
 
+fn triangulateFaces() !void {
+    const sm = zgp.models_registry.selected_surface_mesh orelse return;
+    try subdivision.triangulateFaces(sm);
+    try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+}
+
 fn flipEdge(dart: SurfaceMesh.Dart) !void {
     const sm = zgp.models_registry.selected_surface_mesh orelse return;
     try sm.flipEdge(.{ .edge = dart });
@@ -71,6 +77,11 @@ pub fn menuBar(_: *SurfaceMeshModeling) void {
             if (c.ImGui_MenuItem("Cut All Edges")) {
                 cutAllEdges() catch |err| {
                     std.debug.print("Error cutting all edges: {}\n", .{err});
+                };
+            }
+            if (c.ImGui_MenuItem("Triangulate faces")) {
+                triangulateFaces() catch |err| {
+                    std.debug.print("Error triangulating faces: {}\n", .{err});
                 };
             }
             _ = c.ImGui_InputScalarEx("Dart", c.ImGuiDataType_U32, &UiData.dart, &UiData.one, null, "%u", 0);

@@ -162,9 +162,11 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         0.2 * std.math.pi,
         .perspective,
     );
+    errdefer camera.deinit(allocator);
 
     view = try View.init(window_width, window_height);
     errdefer view.deinit();
+
     try view.setCamera(&camera, allocator);
 
     // ImGui initialization
@@ -262,7 +264,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     {
         var timer = try std.time.Timer.start();
 
-        const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/elephant_isotropic_25k.off");
+        // const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/elephant_isotropic_25k.off");
+        const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Desktop/elephant_quad_25k.off");
         errdefer sm.deinit();
 
         const sm_vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
