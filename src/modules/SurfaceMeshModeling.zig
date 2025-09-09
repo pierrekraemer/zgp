@@ -16,6 +16,7 @@ const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
 const subdivision = @import("../models/surface/subdivision.zig");
+const remeshing = @import("../models/surface/remeshing.zig");
 
 pub fn module(smm: *SurfaceMeshModeling) Module {
     return Module.init(smm);
@@ -39,6 +40,16 @@ fn triangulateFaces() !void {
     const sm = zgp.models_registry.selected_surface_mesh orelse return;
     try subdivision.triangulateFaces(sm);
     try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+}
+
+fn remesh() !void {
+    const sm = zgp.models_registry.selected_surface_mesh orelse return;
+    const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse return;
+    if (surface_mesh_info.vertex_position) |vertex_position| {
+        try remeshing.pliantRemeshing(sm, vertex_position);
+        try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+        try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+    }
 }
 
 fn flipEdge(dart: SurfaceMesh.Dart) !void {
@@ -82,6 +93,11 @@ pub fn menuBar(_: *SurfaceMeshModeling) void {
             if (c.ImGui_MenuItem("Triangulate faces")) {
                 triangulateFaces() catch |err| {
                     std.debug.print("Error triangulating faces: {}\n", .{err});
+                };
+            }
+            if (c.ImGui_MenuItem("Remesh")) {
+                remesh() catch |err| {
+                    std.debug.print("Error remeshing: {}\n", .{err});
                 };
             }
             _ = c.ImGui_InputScalarEx("Dart", c.ImGuiDataType_U32, &UiData.dart, &UiData.one, null, "%u", 0);

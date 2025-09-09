@@ -5,6 +5,7 @@ const zgp = @import("../../main.zig");
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const length = @import("length.zig");
+const subdivision = @import("subdivision.zig");
 
 const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
@@ -13,7 +14,8 @@ pub fn pliantRemeshing(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
 ) !void {
-    const mean_edge_length = length.meanEdgeLength(sm, vertex_position);
+    try subdivision.triangulateFaces(sm);
+    const mean_edge_length = try length.meanEdgeLength(sm, vertex_position);
     const threshold_squared = mean_edge_length * mean_edge_length * 1.5625;
     for (0..5) |_| {
         // cut long edges
@@ -34,6 +36,14 @@ pub fn pliantRemeshing(
                     );
                     const v = try sm.cutEdge(edge);
                     vertex_position.valuePtr(v).* = new_pos;
+                    const d1 = v.dart();
+                    const dd1 = sm.phi1(sm.phi2(d1));
+                    if (!sm.isBoundaryDart(d1)) {
+                        _ = try sm.cutFace(d1, sm.phi1(sm.phi1(d1)));
+                    }
+                    if (!sm.isBoundaryDart(dd1)) {
+                        _ = try sm.cutFace(dd1, sm.phi1(sm.phi1(dd1)));
+                    }
                 }
                 marker.valuePtr(edge).* = true;
                 marker.valuePtr(.{ .edge = sm.phi1(edge.dart()) }).* = true;
