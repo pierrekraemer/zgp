@@ -35,16 +35,17 @@ fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
 
 /// Remesh the given SurfaceMesh.
 /// The obtained mesh will be triangular, with isotropic triangles and edge lengths
-/// close to the mean edge length of the initial mesh.
+/// close to the mean edge length of the initial mesh times the given length factor.
 /// TODO: adaptive sampling guided by a curvature dependent sizing field.
 pub fn pliantRemeshing(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    length_factor: f32,
 ) !void {
     try subdivision.triangulateFaces(sm);
 
     const mean_edge_length = try length.meanEdgeLength(sm, vertex_position);
-    const length_goal_squared = mean_edge_length * mean_edge_length;
+    const length_goal_squared = mean_edge_length * mean_edge_length * length_factor * length_factor;
 
     const vertex_area = try sm.addData(.vertex, f32, "__vertex_area");
     defer sm.removeData(.vertex, vertex_area.gen());

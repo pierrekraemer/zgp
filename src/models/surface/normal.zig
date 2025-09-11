@@ -5,8 +5,12 @@ const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
+const angle = @import("angle.zig");
+
+/// Compute and return the normal of the given face.
+/// The normal of a polygonal face is computed as the normalized sum of successive edges cross products.
 pub fn faceNormal(
-    sm: *SurfaceMesh,
+    sm: *const SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     face: SurfaceMesh.Cell,
 ) Vec3 {
@@ -32,6 +36,8 @@ pub fn faceNormal(
     return vec.normalized3(normal);
 }
 
+/// Compute the normals of all faces of the given SurfaceMesh
+/// and store them in the given face_normal data.
 pub fn computeFaceNormals(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
@@ -45,24 +51,35 @@ pub fn computeFaceNormals(
     }
 }
 
+/// Compute and return the normal of the given vertex.
+/// The normal of a vertex is computed as the average of the normals of its incident faces,
+/// weighted by the angle of the corresponding corners.
 pub fn vertexNormal(
-    sm: *SurfaceMesh,
+    sm: *const SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     vertex: SurfaceMesh.Cell,
 ) Vec3 {
     // TODO: try to have a type for the different cell types rather than having to check the type through the Cell active tag
     assert(vertex.cellType() == .vertex);
-    var dart_it = sm.cellDartIterator(vertex);
     var normal = vec.zero3;
+    var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
         if (!sm.isBoundaryDart(d)) {
             const n = faceNormal(sm, vertex_position, .{ .face = d });
-            normal = vec.add3(normal, n);
+            normal = vec.add3(
+                normal,
+                vec.mulScalar3(
+                    n,
+                    angle.cornerAngle(sm, vertex_position, .{ .corner = d }),
+                ),
+            );
         }
     }
     return vec.normalized3(normal);
 }
 
+/// Compute the normals of all vertices of the given SurfaceMesh
+/// and store them in the given vertex_normal data.
 pub fn computeVertexNormals(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),

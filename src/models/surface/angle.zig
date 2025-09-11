@@ -10,7 +10,7 @@ const normal = @import("normal.zig");
 
 /// Compute and return the angle of the given corner.
 pub fn cornerAngle(
-    sm: *SurfaceMesh,
+    sm: *const SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     corner: SurfaceMesh.Cell,
 ) f32 {
@@ -42,7 +42,7 @@ pub fn computeCornerAngles(
 /// Compute and return the dihedral angle of the given edge.
 /// Return 0.0 if the edge is a boundary edge.
 pub fn edgeDihedralAngle(
-    sm: *SurfaceMesh,
+    sm: *const SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     edge: SurfaceMesh.Cell,
 ) f32 {
@@ -52,15 +52,14 @@ pub fn edgeDihedralAngle(
     }
     const d = edge.dart();
     const d2 = sm.phi2(d);
-    const v1: SurfaceMesh.Cell = .{ .vertex = d };
-    const v2: SurfaceMesh.Cell = .{ .vertex = d2 };
-    const f1: SurfaceMesh.Cell = .{ .face = d };
-    const f2: SurfaceMesh.Cell = .{ .face = d2 };
-    const n1 = normal.faceNormal(sm, vertex_position, f1);
-    const n2 = normal.faceNormal(sm, vertex_position, f2);
+    const n1 = normal.faceNormal(sm, vertex_position, .{ .face = d });
+    const n2 = normal.faceNormal(sm, vertex_position, .{ .face = d2 });
     return std.math.atan2(
         vec.dot3(
-            vec.sub3(vertex_position.value(v2), vertex_position.value(v1)),
+            vec.sub3(
+                vertex_position.value(.{ .vertex = d2 }),
+                vertex_position.value(.{ .vertex = d }),
+            ),
             vec.cross3(n1, n2),
         ),
         vec.dot3(n1, n2),

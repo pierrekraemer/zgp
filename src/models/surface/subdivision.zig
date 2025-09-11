@@ -6,7 +6,7 @@ const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
 /// Triangulate the polygonal faces of the given SurfaceMesh.
-/// TODO: should perform ear-triangulation instead of just a triangle fan.
+/// TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan.
 pub fn triangulateFaces(sm: *SurfaceMesh) !void {
     var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
     defer face_it.deinit();

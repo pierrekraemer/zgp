@@ -44,11 +44,11 @@ fn triangulateFaces() !void {
     try sm.checkIntegrity();
 }
 
-fn remesh() !void {
+fn remesh(length_factor: f32) !void {
     const sm = zgp.models_registry.selected_surface_mesh orelse return;
     const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse return;
     if (surface_mesh_info.vertex_position) |vertex_position| {
-        try remeshing.pliantRemeshing(sm, vertex_position);
+        try remeshing.pliantRemeshing(sm, vertex_position, length_factor);
         try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
         try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
         try sm.checkIntegrity();
@@ -90,6 +90,7 @@ fn collapseEdge(dart: SurfaceMesh.Dart) !void {
 pub fn menuBar(_: *SurfaceMeshModeling) void {
     const UiData = struct {
         var dart: c_int = 0;
+        var length_factor: f32 = 1.0;
         const one: c.ImU32 = 1;
     };
 
@@ -106,8 +107,9 @@ pub fn menuBar(_: *SurfaceMeshModeling) void {
                     std.debug.print("Error triangulating faces: {}\n", .{err});
                 };
             }
+            _ = c.ImGui_SliderFloat("Length factor", &UiData.length_factor, 0.1, 10.0);
             if (c.ImGui_MenuItem("Remesh")) {
-                remesh() catch |err| {
+                remesh(UiData.length_factor) catch |err| {
                     std.debug.print("Error remeshing: {}\n", .{err});
                 };
             }

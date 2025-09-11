@@ -8,7 +8,7 @@ const Vec3 = vec.Vec3;
 const geometry_utils = @import("../../geometry/utils.zig");
 
 /// Compute and return the area of the given face.
-/// TODO: should perform ear-triangulation instead of just a triangle fan.
+/// TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan.
 pub fn faceArea(
     sm: *const SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
