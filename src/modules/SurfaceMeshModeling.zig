@@ -33,6 +33,7 @@ fn cutAllEdges() !void {
         try subdivision.cutAllEdges(sm, vertex_position);
         try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
         try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+        try sm.checkIntegrity();
     }
 }
 
@@ -40,6 +41,7 @@ fn triangulateFaces() !void {
     const sm = zgp.models_registry.selected_surface_mesh orelse return;
     try subdivision.triangulateFaces(sm);
     try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+    try sm.checkIntegrity();
 }
 
 fn remesh() !void {
@@ -49,30 +51,39 @@ fn remesh() !void {
         try remeshing.pliantRemeshing(sm, vertex_position);
         try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
         try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+        try sm.checkIntegrity();
     }
 }
 
 fn flipEdge(dart: SurfaceMesh.Dart) !void {
     const sm = zgp.models_registry.selected_surface_mesh orelse return;
-    try sm.flipEdge(.{ .edge = dart });
-    try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+    const edge: SurfaceMesh.Cell = .{ .edge = dart };
+    if (sm.canFlipEdge(edge)) {
+        sm.flipEdge(edge);
+        try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+        try sm.checkIntegrity();
+    }
 }
 
 fn collapseEdge(dart: SurfaceMesh.Dart) !void {
     const sm = zgp.models_registry.selected_surface_mesh orelse return;
     const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse return;
-    if (surface_mesh_info.vertex_position) |vertex_position| {
-        const new_pos = vec.mulScalar3(
-            vec.add3(
-                vertex_position.value(.{ .vertex = dart }),
-                vertex_position.value(.{ .vertex = sm.phi1(dart) }),
-            ),
-            0.5,
-        );
-        const v = try sm.collapseEdge(.{ .edge = dart });
-        vertex_position.valuePtr(v).* = new_pos;
-        try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
-        try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+    const edge: SurfaceMesh.Cell = .{ .edge = dart };
+    if (sm.canCollapseEdge(edge)) {
+        if (surface_mesh_info.vertex_position) |vertex_position| {
+            const new_pos = vec.mulScalar3(
+                vec.add3(
+                    vertex_position.value(.{ .vertex = dart }),
+                    vertex_position.value(.{ .vertex = sm.phi1(dart) }),
+                ),
+                0.5,
+            );
+            const v = sm.collapseEdge(.{ .edge = dart });
+            vertex_position.valuePtr(v).* = new_pos;
+            try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+            try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+            try sm.checkIntegrity();
+        }
     }
 }
 

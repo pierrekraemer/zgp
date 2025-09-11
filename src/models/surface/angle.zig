@@ -8,6 +8,7 @@ const Vec3 = vec.Vec3;
 const geometry_utils = @import("../../geometry/utils.zig");
 const normal = @import("normal.zig");
 
+/// Compute and return the angle of the given corner.
 pub fn cornerAngle(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
@@ -24,6 +25,8 @@ pub fn cornerAngle(
     );
 }
 
+/// Compute the angles of all corners of the given SurfaceMesh
+/// and store them in the given corner_angle data.
 pub fn computeCornerAngles(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
@@ -36,18 +39,19 @@ pub fn computeCornerAngles(
     }
 }
 
+/// Compute and return the dihedral angle of the given edge.
+/// Return 0.0 if the edge is a boundary edge.
 pub fn edgeDihedralAngle(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     edge: SurfaceMesh.Cell,
 ) f32 {
     assert(edge.cellType() == .edge);
-    const d = edge.dart();
-    assert(!sm.isBoundaryDart(d));
-    const d2 = sm.phi2(d);
-    if (sm.isBoundaryDart(d2)) {
+    if (sm.isIncidentToBoundary(edge)) {
         return 0.0; // Dihedral angle is not defined for boundary edges
     }
+    const d = edge.dart();
+    const d2 = sm.phi2(d);
     const v1: SurfaceMesh.Cell = .{ .vertex = d };
     const v2: SurfaceMesh.Cell = .{ .vertex = d2 };
     const f1: SurfaceMesh.Cell = .{ .face = d };
@@ -63,6 +67,8 @@ pub fn edgeDihedralAngle(
     );
 }
 
+/// Compute the dihedral angles of all edges of the given SurfaceMesh
+/// and store them in the given edge_dihedral_angle data.
 pub fn computeEdgeDihedralAngles(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),

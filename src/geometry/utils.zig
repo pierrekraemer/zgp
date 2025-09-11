@@ -1,5 +1,7 @@
 const std = @import("std");
+
 const Data = @import("../utils/Data.zig").Data;
+
 const vec = @import("../geometry/vec.zig");
 const Scalar = vec.Scalar;
 const Vec3 = vec.Vec3;
@@ -9,7 +11,17 @@ pub fn angle(a: Vec3, b: Vec3) Scalar {
 }
 
 pub fn cosAngle(a: Vec3, b: Vec3) Scalar {
-    return vec.dot3(vec.normalized3(a), vec.normalized3(b));
+    return vec.dot3(
+        vec.normalized3(a),
+        vec.normalized3(b),
+    );
+}
+
+pub fn triangleArea(a: Vec3, b: Vec3, c: Vec3) Scalar {
+    return 0.5 * vec.norm3(vec.cross3(
+        vec.sub3(b, a),
+        vec.sub3(c, a),
+    ));
 }
 
 pub fn boundingBox(data: *const Data(Vec3)) struct { Vec3, Vec3 } {

@@ -6,7 +6,7 @@ const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
 pub fn edgeLength(
-    sm: *SurfaceMesh,
+    sm: *const SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     edge: SurfaceMesh.Cell,
 ) f32 {

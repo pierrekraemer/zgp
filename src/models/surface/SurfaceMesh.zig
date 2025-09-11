@@ -1,6 +1,8 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const zgp_log = std.log.scoped(.zgp);
+
 const SurfaceMesh = @This();
 
 const data = @import("../../utils/Data.zig");
@@ -250,7 +252,7 @@ pub fn CellIterator(comptime cell_type: CellType) type {
         }
         pub fn reset(self: *Self) void {
             self.current_dart = if (cell_type == .boundary) self.surface_mesh.firstBoundaryDart() else self.surface_mesh.firstNonBoundaryDart();
-            if (self.marker) |marker| {
+            if (self.marker) |*marker| {
                 marker.reset();
             }
         }
@@ -411,7 +413,6 @@ fn addDart(sm: *SurfaceMesh) !Dart {
 }
 
 fn removeDart(sm: *SurfaceMesh, d: Dart) void {
-    sm.dart_data.freeIndex(d);
     const corner_index = sm.dart_corner_index.value(d);
     if (corner_index != invalid_index) {
         sm.corner_data.unrefIndex(corner_index);
@@ -428,6 +429,7 @@ fn removeDart(sm: *SurfaceMesh, d: Dart) void {
     if (face_index != invalid_index) {
         sm.face_data.unrefIndex(face_index);
     }
+    sm.dart_data.freeIndex(d);
 }
 
 pub fn phi1(sm: *const SurfaceMesh, dart: Dart) Dart {
@@ -473,6 +475,24 @@ pub fn isBoundaryDart(sm: *const SurfaceMesh, d: Dart) bool {
 
 pub fn isValidDart(sm: *const SurfaceMesh, d: Dart) bool {
     return sm.dart_data.isActiveIndex(d);
+}
+
+pub fn isIncidentToBoundary(sm: *const SurfaceMesh, cell: Cell) bool {
+    return switch (cell.cellType()) {
+        // a vertex is incident to a boundary face if one of its darts is part of a boundary face
+        .vertex => blk: {
+            var dart_it = sm.cellDartIterator(cell);
+            while (dart_it.next()) |d| {
+                if (sm.isBoundaryDart(d)) {
+                    break :blk true;
+                }
+            }
+            break :blk false;
+        },
+        // an edge is incident to a boundary face if one of its 2 darts is part of a boundary face
+        .edge => sm.isBoundaryDart(cell.dart()) or sm.isBoundaryDart(sm.phi2(cell.dart())),
+        else => unreachable,
+    };
 }
 
 pub fn setDartCellIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u32) void {
@@ -548,9 +568,92 @@ pub fn dump(sm: *SurfaceMesh, writer: *std.Io.Writer) void {
     }
 }
 
-// TODO: implement
-pub fn checkIntegrity() bool {
-    return true;
+pub fn checkIntegrity(sm: *SurfaceMesh) !void {
+    var d_it = sm.dartIterator();
+    while (d_it.next()) |d| {
+        const d2 = sm.phi2(d);
+        if (d2 == d) {
+            zgp_log.warn("Dart {d} is phi2-linked to itself", .{d});
+        }
+        if (sm.phi2(d2) != d) {
+            zgp_log.warn("Inconsistent phi2: phi2(phi2({d}) != {d}", .{ d, d });
+        }
+        const d1 = sm.phi1(d);
+        if (sm.phi_1(d1) != d) {
+            zgp_log.warn("Inconsistent phi_1: phi_1(phi1({d}) != {d}", .{ d, d });
+        }
+        const d_1 = sm.phi_1(d);
+        if (sm.phi1(d_1) != d) {
+            zgp_log.warn("Inconsistent phi1: phi1(phi_1({d}) != {d}", .{ d, d });
+        }
+        if (sm.isBoundaryDart(d)) {
+            if (!sm.isBoundaryDart(d1)) {
+                zgp_log.warn("Inconsistent boundary face marking: {d} and {d}", .{ d, d1 });
+            }
+            if (sm.isBoundaryDart(d2)) {
+                zgp_log.warn("Adjacent boundary faces: {d} and {d}", .{ d, d2 });
+            }
+        }
+        inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
+            if (sm.isBoundaryDart(d) and (cell_type == .face or cell_type == .corner)) {
+                // boundary faces & boundary corners are not indexed
+            } else {
+                const index = sm.dartCellIndex(d, cell_type);
+                if (index == invalid_index) {
+                    zgp_log.warn("Dart {d} has invalid {s} index", .{ d, @tagName(cell_type) });
+                }
+            }
+        }
+    }
+
+    inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
+        const index_count = try sm.addData(cell_type, u32, "index_count");
+        defer sm.removeData(cell_type, index_count.gen());
+        index_count.data.fill(0);
+
+        const cell_darts_count = try sm.addData(cell_type, u32, "cell_darts_count");
+        defer sm.removeData(cell_type, cell_darts_count.gen());
+        cell_darts_count.data.fill(0);
+
+        var cell_it = try CellIterator(cell_type).init(sm);
+        defer cell_it.deinit();
+        while (cell_it.next()) |cell| {
+            index_count.valuePtr(cell).* += 1;
+            const idx = sm.cellIndex(cell);
+            if (idx == invalid_index) {
+                zgp_log.warn("{s} of dart {d} has invalid index", .{ @tagName(cell_type), cell.dart() });
+            }
+            var cell_darts_it = sm.cellDartIterator(cell);
+            while (cell_darts_it.next()) |d| {
+                const d_idx = sm.dartCellIndex(d, cell_type);
+                if (d_idx != idx) {
+                    zgp_log.warn("Inconsistent {s} index for dart {d}: {d} != {d}", .{ @tagName(cell_type), d, d_idx, idx });
+                }
+                cell_darts_count.valuePtr(cell).* += 1;
+            }
+        }
+        var data_container = switch (cell_type) {
+            .corner => &sm.corner_data,
+            .vertex => &sm.vertex_data,
+            .edge => &sm.edge_data,
+            .face => &sm.face_data,
+            else => unreachable,
+        };
+        var idx = data_container.firstIndex();
+        while (idx != data_container.lastIndex()) : (idx = data_container.nextIndex(idx)) {
+            const ref_count = data_container.nb_refs.value(idx);
+            const darts_count = cell_darts_count.data.value(idx);
+            if (ref_count != darts_count) {
+                zgp_log.warn("Inconsistent {s} index {d}: ref count {d} != actual count {d}", .{ @tagName(cell_type), idx, ref_count, darts_count });
+            }
+            const count = index_count.data.value(idx);
+            if (count == 0) {
+                zgp_log.warn("Unused {s} index {d}", .{ @tagName(cell_type), idx });
+            } else if (count > 1) {
+                zgp_log.warn("Non-unique {s} index {d}: used {d} times", .{ @tagName(cell_type), idx, count });
+            }
+        }
+    }
 }
 
 /// Returns the number of cells of the given CellType in the given SurfaceMesh
@@ -583,7 +686,15 @@ pub fn codegree(sm: *const SurfaceMesh, cell: Cell) u32 {
         .edge => 2,
         // nb refs is equal to the number of darts of the face which is equal to its codegree
         // (more efficient than iterating through the darts of the face)
-        .face => sm.face_data.nb_refs.value(sm.cellIndex(cell)),
+        .face => blk: {
+            // boundary faces are not indexed and thus do not have an associated ref count
+            if (sm.isBoundaryDart(cell.dart())) {
+                var res: u32 = 0;
+                var dart_it = sm.cellDartIterator(cell);
+                while (dart_it.next()) |_| : (res += 1) {}
+                break :blk res;
+            } else break :blk sm.face_data.nb_refs.value(sm.cellIndex(cell));
+        },
         else => unreachable,
     };
 }
@@ -653,20 +764,72 @@ pub fn close(sm: *SurfaceMesh) !u32 {
     return nb_boundary_faces;
 }
 
-/// Flips the given edge.
-/// TODO: write a more detailed comment
-pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) !void {
+/// Cuts the given edge by inserting a new vertex.
+/// The new vertex is returned: its representative dart is the one that
+/// belongs to the same face as the representative dart of the given edge.
+/// The edge of the representative dart of the given edge keeps the same edge index
+/// (a new edge index is given to the other new edge).
+pub fn cutEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
     assert(edge.cellType() == .edge);
 
     const d = edge.dart();
     const dd = sm.phi2(d);
+    sm.phi2Unsew(d);
 
-    // TODO: should not allow the flip if the degree of an incident vertex is <= 2?
+    const d1 = try sm.addDart();
+    sm.phi1Sew(d, d1);
+    const dd1 = try sm.addDart();
+    sm.phi1Sew(dd, dd1);
 
-    if (sm.isBoundaryDart(d) or sm.isBoundaryDart(dd)) {
-        return error.FlippingBoundaryEdgeNotAllowed;
+    sm.phi2Sew(d, dd1);
+    sm.phi2Sew(dd, d1);
+
+    sm.dart_boundary_marker.valuePtr(d1).* = sm.dart_boundary_marker.value(d);
+    sm.dart_boundary_marker.valuePtr(dd1).* = sm.dart_boundary_marker.value(dd);
+
+    {
+        // Corner indices.
+        if (!sm.isBoundaryDart(d1)) { // corners in boundary faces are not indexed
+            const index = try sm.newDataIndex(.corner);
+            sm.setDartCellIndex(d1, .corner, index);
+        }
+        if (!sm.isBoundaryDart(dd1)) { // corners in boundary faces are not indexed
+            const index = try sm.newDataIndex(.corner);
+            sm.setDartCellIndex(dd1, .corner, index);
+        }
+    }
+    {
+        // Vertex index.
+        const index = try sm.newDataIndex(.vertex);
+        sm.setDartCellIndex(d1, .vertex, index);
+        sm.setDartCellIndex(dd1, .vertex, index);
+    }
+    {
+        // Edge indices.
+        // The edge of d keeps the index of the original edge.
+        sm.setDartCellIndex(dd1, .edge, sm.dartCellIndex(d, .edge));
+        // The edge of dd gets a new index.
+        const index = try sm.newDataIndex(.edge);
+        sm.setDartCellIndex(dd, .edge, index);
+        sm.setDartCellIndex(d1, .edge, index);
+    }
+    {
+        // Face indices.
+        sm.setDartCellIndex(d1, .face, sm.dartCellIndex(d, .face));
+        sm.setDartCellIndex(dd1, .face, sm.dartCellIndex(dd, .face));
     }
 
+    return .{ .vertex = d1 };
+}
+
+/// Flips the given edge.
+/// Should only be called after a call to `canFlipEdge`.
+/// TODO: write a more detailed comment
+pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) void {
+    assert(edge.cellType() == .edge);
+
+    const d = edge.dart();
+    const dd = sm.phi2(d);
     const d1 = sm.phi1(d);
     const d_1 = sm.phi_1(d);
     const dd1 = sm.phi1(dd);
@@ -697,67 +860,33 @@ pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) !void {
     }
 }
 
-/// Cuts the given edge by inserting a new vertex.
-/// The new vertex is returned: its representative dart is the one that
-/// belongs to the same face as the representative dart of the given edge.
-/// The edge of the representative dart of the given edge keeps the same edge index
-/// (a new edge index is given to the other new edge).
-pub fn cutEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
+/// Check if the given edge can be flipped. Edges that cannot be flipped:
+///  1 - boundary edges
+///  2 - edges having an incident vertex of degree 2
+/// No geometry conditions are checked here.
+pub fn canFlipEdge(sm: *SurfaceMesh, edge: Cell) bool {
     assert(edge.cellType() == .edge);
 
     const d = edge.dart();
     const dd = sm.phi2(d);
-    sm.phi2Unsew(d);
 
-    const d1 = try sm.addDart();
-    sm.phi1Sew(d, d1);
-    const dd1 = try sm.addDart();
-    sm.phi1Sew(dd, dd1);
-
-    sm.phi2Sew(d, dd1);
-    sm.phi2Sew(dd, d1);
-
-    sm.dart_boundary_marker.valuePtr(d1).* = sm.dart_boundary_marker.value(d);
-    sm.dart_boundary_marker.valuePtr(dd1).* = sm.dart_boundary_marker.value(dd);
-
-    {
-        // Corner indices.
-        if (!sm.isBoundaryDart(d1)) { // corners in boundary faces are not indexed
-            const index = sm.dartCellIndex(d1, .corner);
-            sm.setDartCellIndex(d1, .corner, index);
-        }
-        if (!sm.isBoundaryDart(dd1)) { // corners in boundary faces are not indexed
-            const index = sm.dartCellIndex(dd1, .corner);
-            sm.setDartCellIndex(dd1, .corner, index);
-        }
-    }
-    {
-        // Vertex index.
-        const index = try sm.newDataIndex(.vertex);
-        sm.setDartCellIndex(d1, .vertex, index);
-        sm.setDartCellIndex(dd1, .vertex, index);
-    }
-    {
-        // Edge indices.
-        // The edge of d keeps the index of the original edge.
-        sm.setDartCellIndex(dd1, .edge, sm.dartCellIndex(d, .edge));
-        // The edge of dd gets a new index.
-        const index = try sm.newDataIndex(.edge);
-        sm.setDartCellIndex(dd, .edge, index);
-        sm.setDartCellIndex(d1, .edge, index);
-    }
-    {
-        // Face indices.
-        sm.setDartCellIndex(d1, .face, sm.dartCellIndex(d, .face));
-        sm.setDartCellIndex(dd1, .face, sm.dartCellIndex(dd, .face));
+    // condition 1: do not flip boundary edges
+    if (sm.isIncidentToBoundary(edge)) {
+        return false;
     }
 
-    return .{ .vertex = d1 };
+    // condition 2: avoid creating degree 1 vertices
+    if (sm.degree(.{ .vertex = d }) == 2 or sm.degree(.{ .vertex = dd }) == 2) {
+        return false;
+    }
+
+    return true;
 }
 
 /// Collapses the given edge.
+/// Should only be called after a call to `canCollapseEdge`.
 /// TODO: write a more detailed comment
-pub fn collapseEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
+pub fn collapseEdge(sm: *SurfaceMesh, edge: Cell) Cell {
     assert(edge.cellType() == .edge);
 
     const d = edge.dart();
@@ -814,6 +943,47 @@ pub fn collapseEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
     }
 
     return .{ .vertex = d_12 };
+}
+
+/// Checks if the given edge can be collapsed. Edges that cannot be collapsed:
+///  1 - edges whose incident triangle face has the third vertex of degree < 4
+///  2 - edges whose incident vertices share a common adjacent vertex other than themselves and the third vertex of incident triangle faces
+/// No geometry conditions are checked here.
+pub fn canCollapseEdge(sm: *const SurfaceMesh, edge: Cell) bool {
+    assert(edge.cellType() == .edge);
+
+    const d = edge.dart();
+    const d12 = sm.phi2(sm.phi1(d));
+    const d_1 = sm.phi_1(d);
+    const d_12 = sm.phi2(d_1);
+    const dd = sm.phi2(d);
+    const dd12 = sm.phi2(sm.phi1(dd));
+    const dd_1 = sm.phi_1(dd);
+    const dd_12 = sm.phi2(dd_1);
+
+    // condition 1: avoid creating vertices of degree 2
+    if (sm.codegree(.{ .face = d }) == 3 and sm.degree(.{ .vertex = d_1 }) < 4) {
+        return false;
+    }
+    if (sm.codegree(.{ .face = dd }) == 3 and sm.degree(.{ .vertex = dd_1 }) < 4) {
+        return false;
+    }
+
+    // condition 2: avoid _pinching_ the surface
+    var buf: [32]u32 = undefined; // TODO: arbitrary limit of 32 only to avoid dynamic memory allocation here
+    var adjacentVertices = std.ArrayList(u32).initBuffer(&buf);
+    var d_it = sm.phi_1(d_12);
+    while (d_it != dd12) : (d_it = sm.phi_1(sm.phi2(d_it))) {
+        adjacentVertices.appendBounded(sm.dartCellIndex(d_it, .vertex)) catch {};
+    }
+    d_it = sm.phi_1(dd_12);
+    while (d_it != d12) : (d_it = sm.phi_1(sm.phi2(d_it))) {
+        if (std.mem.indexOfScalar(u32, adjacentVertices.items, sm.dartCellIndex(d_it, .vertex)) != null) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 /// Cuts a face by inserting a new edge between the two given darts.

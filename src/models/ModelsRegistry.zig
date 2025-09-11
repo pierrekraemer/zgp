@@ -656,5 +656,8 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
     try sm.indexCells(.edge);
     try sm.indexCells(.face);
 
+    // TODO: only check in debug builds
+    try sm.checkIntegrity();
+
     return sm;
 }

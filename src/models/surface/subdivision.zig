@@ -1,19 +1,17 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const zgp = @import("../../main.zig");
-
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
-/// Triangulate the polygonal faces of the given SurfaceMesh
-/// TODO: should perform ear-triangulation instead of just a triangle fan
+/// Triangulate the polygonal faces of the given SurfaceMesh.
+/// TODO: should perform ear-triangulation instead of just a triangle fan.
 pub fn triangulateFaces(sm: *SurfaceMesh) !void {
     var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
     defer face_it.deinit();
     while (face_it.next()) |f| {
-        const d_start = f.dart();
+        var d_start = f.dart();
         const d_end = sm.phi_1(d_start);
         var d_next = sm.phi1(d_start);
         if (d_next == d_start) continue; // 1-sided face
@@ -21,12 +19,13 @@ pub fn triangulateFaces(sm: *SurfaceMesh) !void {
         if (d_next == d_start) continue; // 2-sided face
         while (d_next != d_end) : (d_next = sm.phi1(d_next)) {
             _ = try sm.cutFace(d_start, d_next);
+            d_start = sm.phi_1(d_next);
         }
     }
 }
 
-/// Cut all edges of the given SurfaceMesh
-/// The positions of the new vertices is the edge midpoints
+/// Cut all edges of the given SurfaceMesh.
+/// The positions of the new vertices is the edge midpoints.
 pub fn cutAllEdges(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),

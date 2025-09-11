@@ -320,7 +320,7 @@ pub const DataContainer = struct {
 
     pub fn releaseMarker(dc: *DataContainer, marker: *Data(bool)) void {
         assert(marker.gen.container == dc);
-        const marker_index = std.mem.indexOf(*Data(bool), dc.markers.items, (&marker)[0..1]);
+        const marker_index = std.mem.indexOfScalar(*Data(bool), dc.markers.items, marker);
         if (marker_index) |i| {
             dc.available_markers_indices.append(dc.allocator, @intCast(i)) catch |err| {
                 std.debug.print("Error releasing marker: {}\n", .{err});
@@ -337,12 +337,12 @@ pub const DataContainer = struct {
         } else blk: {
             const index = dc.capacity;
             dc.capacity += 1;
-            var it = dc.datas.iterator();
             for (dc.markers.items) |marker| {
                 try marker.ensureLength(dc.capacity);
                 marker.valuePtr(index).* = false; // reset the markers at this index
             }
-            while (it.next()) |entry| {
+            var datas_it = dc.datas.iterator();
+            while (datas_it.next()) |entry| {
                 try entry.value_ptr.*.ensureLength(dc.capacity);
             }
             try dc.is_active.ensureLength(dc.capacity);
@@ -355,7 +355,8 @@ pub const DataContainer = struct {
     }
 
     pub fn freeIndex(dc: *DataContainer, index: u32) void {
-        assert(index < dc.capacity and dc.is_active.valuePtr(index).*);
+        assert(index < dc.capacity);
+        assert(dc.is_active.value(index));
         dc.is_active.valuePtr(index).* = false;
         dc.nb_refs.valuePtr(index).* = 0;
         dc.free_indices.append(dc.allocator, index) catch |err| {
@@ -364,14 +365,16 @@ pub const DataContainer = struct {
     }
 
     pub fn refIndex(dc: *DataContainer, index: u32) void {
-        assert(index < dc.capacity and dc.is_active.valuePtr(index).*);
+        assert(index < dc.capacity);
+        assert(dc.is_active.value(index));
         dc.nb_refs.valuePtr(index).* += 1;
     }
 
     pub fn unrefIndex(dc: *DataContainer, index: u32) void {
-        assert(index < dc.capacity and dc.is_active.valuePtr(index).*);
+        assert(index < dc.capacity);
+        assert(dc.is_active.value(index));
         dc.nb_refs.valuePtr(index).* -= 1;
-        if (dc.nb_refs.valuePtr(index).* == 0) {
+        if (dc.nb_refs.value(index) == 0) {
             dc.freeIndex(index);
         }
     }
