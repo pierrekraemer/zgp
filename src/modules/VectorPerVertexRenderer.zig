@@ -15,7 +15,7 @@ const Module = @import("Module.zig");
 
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
-const SurfaceMeshStandardData = ModelsRegistry.SurfaceMeshStandardData;
+const SurfaceMeshStdData = ModelsRegistry.SurfaceMeshStdData;
 
 const PointVector = @import("../rendering/shaders/point_vector/PointVector.zig");
 const VBO = @import("../rendering/VBO.zig");
@@ -70,16 +70,16 @@ pub fn surfaceMeshAdded(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMe
     try vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init());
 }
 
-pub fn surfaceMeshStandardDataChanged(
+pub fn surfaceMeshStdDataChanged(
     vpvr: *VectorPerVertexRenderer,
     surface_mesh: *SurfaceMesh,
-    std_data: SurfaceMeshStandardData,
+    std_data: SurfaceMeshStdData,
 ) !void {
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position.data);
+                const position_vbo = try zgp.models_registry.dataVBO(Vec3, vertex_position.data);
                 p.point_vector_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_vector_shader_parameters.unsetVertexAttribArray(.position);
@@ -93,7 +93,7 @@ fn setSurfaceMeshVectorData(vpvr: *VectorPerVertexRenderer, surface_mesh: *Surfa
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     p.vector_data = vector;
     if (p.vector_data) |v| {
-        const vector_vbo = try zgp.models_registry.getDataVBO(Vec3, v.data);
+        const vector_vbo = try zgp.models_registry.dataVBO(Vec3, v.data);
         p.point_vector_shader_parameters.setVertexAttribArray(.vector, vector_vbo, 0, 0);
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);
@@ -105,7 +105,7 @@ pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4, projection_matrix
     var sm_it = zgp.models_registry.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const surface_mesh = entry.value_ptr.*;
-        const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse continue;
+        const surface_mesh_info = zgp.models_registry.surfaceMeshInfo(surface_mesh);
         const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(surface_mesh) orelse continue;
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.model_view_matrix = @bitCast(view_matrix);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.projection_matrix = @bitCast(projection_matrix);

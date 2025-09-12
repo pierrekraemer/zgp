@@ -10,9 +10,9 @@ const mat = @import("../geometry/mat.zig");
 const Mat4 = mat.Mat4;
 
 const PointCloud = ModelsRegistry.PointCloud;
-const PointCloudStandardData = ModelsRegistry.PointCloudStandardData;
+const PointCloudStdData = ModelsRegistry.PointCloudStdData;
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
-const SurfaceMeshStandardData = ModelsRegistry.SurfaceMeshStandardData;
+const SurfaceMeshStdData = ModelsRegistry.SurfaceMeshStdData;
 
 ptr: *anyopaque, // pointer to the concrete Module
 vtable: *const VTable,
@@ -21,11 +21,11 @@ const VTable = struct {
     name: *const fn (ptr: *anyopaque) []const u8,
 
     pointCloudAdded: *const fn (ptr: *anyopaque, point_cloud: *PointCloud) anyerror!void,
-    pointCloudStandardDataChanged: *const fn (ptr: *anyopaque, point_cloud: *PointCloud, std_data: PointCloudStandardData) anyerror!void,
+    pointCloudStdDataChanged: *const fn (ptr: *anyopaque, point_cloud: *PointCloud, std_data: PointCloudStdData) anyerror!void,
     pointCloudDataUpdated: *const fn (ptr: *anyopaque, point_cloud: *PointCloud, data_gen: *const DataGen) anyerror!void,
 
     surfaceMeshAdded: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh) anyerror!void,
-    surfaceMeshStandardDataChanged: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStandardData) anyerror!void,
+    surfaceMeshStdDataChanged: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) anyerror!void,
     surfaceMeshConnectivityUpdated: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh) anyerror!void,
     surfaceMeshDataUpdated: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) anyerror!void,
 
@@ -53,10 +53,10 @@ pub fn init(ptr: anytype) Module {
             const impl: Ptr = @ptrCast(@alignCast(pointer));
             try impl.pointCloudAdded(point_cloud);
         }
-        fn pointCloudStandardDataChanged(pointer: *anyopaque, point_cloud: *PointCloud, std_data: PointCloudStandardData) !void {
-            if (!@hasDecl(ModuleType, "pointCloudStandardDataChanged")) return;
+        fn pointCloudStdDataChanged(pointer: *anyopaque, point_cloud: *PointCloud, std_data: PointCloudStdData) !void {
+            if (!@hasDecl(ModuleType, "pointCloudStdDataChanged")) return;
             const impl: Ptr = @ptrCast(@alignCast(pointer));
-            try impl.pointCloudStandardDataChanged(point_cloud, std_data);
+            try impl.pointCloudStdDataChanged(point_cloud, std_data);
         }
         fn pointCloudDataUpdated(pointer: *anyopaque, point_cloud: *PointCloud, data_gen: *const DataGen) !void {
             if (!@hasDecl(ModuleType, "pointCloudDataUpdated")) return;
@@ -68,10 +68,10 @@ pub fn init(ptr: anytype) Module {
             const impl: Ptr = @ptrCast(@alignCast(pointer));
             try impl.surfaceMeshAdded(surface_mesh);
         }
-        fn surfaceMeshStandardDataChanged(pointer: *anyopaque, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStandardData) !void {
-            if (!@hasDecl(ModuleType, "surfaceMeshStandardDataChanged")) return;
+        fn surfaceMeshStdDataChanged(pointer: *anyopaque, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) !void {
+            if (!@hasDecl(ModuleType, "surfaceMeshStdDataChanged")) return;
             const impl: Ptr = @ptrCast(@alignCast(pointer));
-            try impl.surfaceMeshStandardDataChanged(surface_mesh, std_data);
+            try impl.surfaceMeshStdDataChanged(surface_mesh, std_data);
         }
         fn surfaceMeshConnectivityUpdated(pointer: *anyopaque, surface_mesh: *SurfaceMesh) !void {
             if (!@hasDecl(ModuleType, "surfaceMeshConnectivityUpdated")) return;
@@ -105,10 +105,10 @@ pub fn init(ptr: anytype) Module {
         .vtable = comptime &.{
             .name = gen.name,
             .pointCloudAdded = gen.pointCloudAdded,
-            .pointCloudStandardDataChanged = gen.pointCloudStandardDataChanged,
+            .pointCloudStdDataChanged = gen.pointCloudStdDataChanged,
             .pointCloudDataUpdated = gen.pointCloudDataUpdated,
             .surfaceMeshAdded = gen.surfaceMeshAdded,
-            .surfaceMeshStandardDataChanged = gen.surfaceMeshStandardDataChanged,
+            .surfaceMeshStdDataChanged = gen.surfaceMeshStdDataChanged,
             .surfaceMeshConnectivityUpdated = gen.surfaceMeshConnectivityUpdated,
             .surfaceMeshDataUpdated = gen.surfaceMeshDataUpdated,
             .uiPanel = gen.uiPanel,
@@ -128,8 +128,8 @@ pub fn name(m: *Module) []const u8 {
 pub fn pointCloudAdded(m: *Module, pc: *PointCloud) !void {
     try m.vtable.pointCloudAdded(m.ptr, pc);
 }
-pub fn pointCloudStandardDataChanged(m: *Module, pc: *PointCloud, data: PointCloudStandardData) !void {
-    try m.vtable.pointCloudStandardDataChanged(m.ptr, pc, data);
+pub fn pointCloudStdDataChanged(m: *Module, pc: *PointCloud, data: PointCloudStdData) !void {
+    try m.vtable.pointCloudStdDataChanged(m.ptr, pc, data);
 }
 pub fn pointCloudDataUpdated(m: *Module, pc: *PointCloud, data_gen: *const DataGen) !void {
     try m.vtable.pointCloudDataUpdated(m.ptr, pc, data_gen);
@@ -137,8 +137,8 @@ pub fn pointCloudDataUpdated(m: *Module, pc: *PointCloud, data_gen: *const DataG
 pub fn surfaceMeshAdded(m: *Module, sm: *SurfaceMesh) !void {
     try m.vtable.surfaceMeshAdded(m.ptr, sm);
 }
-pub fn surfaceMeshStandardDataChanged(m: *Module, sm: *SurfaceMesh, data: SurfaceMeshStandardData) !void {
-    try m.vtable.surfaceMeshStandardDataChanged(m.ptr, sm, data);
+pub fn surfaceMeshStdDataChanged(m: *Module, sm: *SurfaceMesh, data: SurfaceMeshStdData) !void {
+    try m.vtable.surfaceMeshStdDataChanged(m.ptr, sm, data);
 }
 pub fn surfaceMeshConnectivityUpdated(m: *Module, sm: *SurfaceMesh) !void {
     try m.vtable.surfaceMeshConnectivityUpdated(m.ptr, sm);

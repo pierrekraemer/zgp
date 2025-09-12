@@ -14,7 +14,7 @@ const Module = @import("Module.zig");
 
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const PointCloud = ModelsRegistry.PointCloud;
-const PointCloudStandardData = ModelsRegistry.PointCloudStandardData;
+const PointCloudStdData = ModelsRegistry.PointCloudStdData;
 
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const VBO = @import("../rendering/VBO.zig");
@@ -70,16 +70,16 @@ pub fn pointCloudAdded(pcr: *PointCloudRenderer, point_cloud: *PointCloud) !void
     try pcr.parameters.put(point_cloud, PointCloudRendererParameters.init());
 }
 
-pub fn pointCloudStandardDataChanged(
+pub fn pointCloudStdDataChanged(
     pcr: *PointCloudRenderer,
     point_cloud: *PointCloud,
-    std_data: PointCloudStandardData,
+    std_data: PointCloudStdData,
 ) !void {
     const p = pcr.parameters.getPtr(point_cloud) orelse return;
     switch (std_data) {
         .position => |maybe_position| {
             if (maybe_position) |position| {
-                const position_vbo = try zgp.models_registry.getDataVBO(Vec3, position.data);
+                const position_vbo = try zgp.models_registry.dataVBO(Vec3, position.data);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
@@ -87,7 +87,7 @@ pub fn pointCloudStandardDataChanged(
         },
         .color => |maybe_color| {
             if (maybe_color) |color| {
-                const color_vbo = try zgp.models_registry.getDataVBO(Vec3, color.data);
+                const color_vbo = try zgp.models_registry.dataVBO(Vec3, color.data);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.color);
@@ -101,7 +101,7 @@ pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4, projection_matrix: Mat4
     var pc_it = zgp.models_registry.point_clouds.iterator();
     while (pc_it.next()) |entry| {
         const pc = entry.value_ptr.*;
-        const info = zgp.models_registry.getPointCloudInfo(pc) orelse continue;
+        const info = zgp.models_registry.pointCloudInfo(pc);
         const p = pcr.parameters.getPtr(pc) orelse continue;
         if (p.draw_points) {
             p.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);

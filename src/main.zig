@@ -18,7 +18,7 @@ const Module = @import("modules/Module.zig");
 const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
-const SurfaceMeshModeling = @import("modules/SurfaceMeshModeling.zig");
+const SurfaceMeshProcessing = @import("modules/SurfaceMeshProcessing.zig");
 
 const vec = @import("geometry/vec.zig");
 const Vec3 = vec.Vec3;
@@ -60,7 +60,7 @@ pub var modules: std.ArrayList(Module) = .empty;
 var point_cloud_renderer: PointCloudRenderer = undefined;
 var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
-var surface_mesh_modeling: SurfaceMeshModeling = undefined;
+var surface_mesh_processing: SurfaceMeshProcessing = undefined;
 
 /// Application SDL Window & OpenGL context
 var window: *c.SDL_Window = undefined;
@@ -209,12 +209,12 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_renderer.deinit();
     vector_per_vertex_renderer = try VectorPerVertexRenderer.init(allocator);
     errdefer vector_per_vertex_renderer.deinit();
-    surface_mesh_modeling = .{};
+    surface_mesh_processing = .{};
 
     try modules.append(allocator, point_cloud_renderer.module());
     try modules.append(allocator, surface_mesh_renderer.module());
     try modules.append(allocator, vector_per_vertex_renderer.module());
-    try modules.append(allocator, surface_mesh_modeling.module());
+    try modules.append(allocator, surface_mesh_processing.module());
     errdefer modules.deinit(allocator);
 
     // TODO: remove example meshes
@@ -254,14 +254,13 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const edge_dihedral_angle = try sm.addData(.edge, f32, "dihedral_angle");
         try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
 
-        try models_registry.setSurfaceMeshStandardData(sm, .{ .corner_angle = corner_angle });
-        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_position = vertex_position });
-        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_normal = vertex_normal });
-        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_color = vertex_color });
-        try models_registry.setSurfaceMeshStandardData(sm, .{ .edge_length = edge_length });
-        try models_registry.setSurfaceMeshStandardData(sm, .{ .edge_dihedral_angle = edge_dihedral_angle });
-        // try models_registry.setSurfaceMeshStandardData(sm, .{ .face_area = face_area });
-        try models_registry.setSurfaceMeshStandardData(sm, .{ .face_normal = face_normal });
+        try models_registry.setSurfaceMeshStdData(sm, .{ .corner_angle = corner_angle });
+        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
+        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_normal = vertex_normal });
+        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_color = vertex_color });
+        try models_registry.setSurfaceMeshStdData(sm, .{ .edge_length = edge_length });
+        try models_registry.setSurfaceMeshStdData(sm, .{ .edge_dihedral_angle = edge_dihedral_angle });
+        try models_registry.setSurfaceMeshStdData(sm, .{ .face_normal = face_normal });
 
         try models_registry.surfaceMeshConnectivityUpdated(sm);
     }
@@ -303,9 +302,9 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const edge_dihedral_angle = try sm.addData(.edge, f32, "dihedral_angle");
         try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
 
-        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_position = vertex_position });
-        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_normal = vertex_normal });
-        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_color = vertex_color });
+        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
+        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_normal = vertex_normal });
+        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_color = vertex_color });
 
         try models_registry.surfaceMeshConnectivityUpdated(sm);
 
@@ -327,7 +326,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
     {
         const UiData = struct {
-            var background_color: [4]f32 = .{ 0.65, 0.65, 0.65, 1 };
+            var background_color: [4]f32 = .{ 0.48, 0.48, 0.48, 1 };
         };
 
         gl.ClearColor(UiData.background_color[0], UiData.background_color[1], UiData.background_color[2], UiData.background_color[3]);
