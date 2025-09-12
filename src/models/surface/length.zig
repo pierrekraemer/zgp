@@ -8,17 +8,15 @@ const Vec3 = vec.Vec3;
 /// Compute and return the length of the given edge.
 pub fn edgeLength(
     sm: *const SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     edge: SurfaceMesh.Cell,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
 ) f32 {
     assert(edge.cellType() == .edge);
     const d = edge.dart();
-    const v1: SurfaceMesh.Cell = .{ .vertex = d };
-    const v2: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
     return vec.norm3(
         vec.sub3(
-            vertex_position.value(v2),
-            vertex_position.value(v1),
+            vertex_position.value(.{ .vertex = sm.phi1(d) }),
+            vertex_position.value(.{ .vertex = d }),
         ),
     );
 }
@@ -33,11 +31,16 @@ pub fn computeEdgeLengths(
     var it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer it.deinit();
     while (it.next()) |edge| {
-        edge_length.valuePtr(edge).* = edgeLength(sm, vertex_position, edge);
+        edge_length.valuePtr(edge).* = edgeLength(
+            sm,
+            edge,
+            vertex_position,
+        );
     }
 }
 
 /// Compute and return the mean edge length of the given SurfaceMesh.
+/// TODO: take a edge_length data instead of computing on the fly?
 pub fn meanEdgeLength(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
@@ -46,12 +49,11 @@ pub fn meanEdgeLength(
     if (nb_edges == 0) {
         return 0.0;
     }
-
     var total_length: f32 = 0.0;
     var it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer it.deinit();
     while (it.next()) |edge| {
-        total_length += edgeLength(sm, vertex_position, edge);
+        total_length += edgeLength(sm, edge, vertex_position);
     }
     return total_length / @as(f32, @floatFromInt(nb_edges));
 }

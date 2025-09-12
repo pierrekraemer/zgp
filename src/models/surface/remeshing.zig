@@ -47,8 +47,18 @@ pub fn pliantRemeshing(
     const mean_edge_length = try length.meanEdgeLength(sm, vertex_position);
     const length_goal_squared = mean_edge_length * mean_edge_length * length_factor * length_factor;
 
+    // local temporary datas because they must be updated during the algorithm
+    // TODO: maybe getOrAdd a standard data for these quantities from the ModelsRegistry?
+    const corner_angle = try sm.addData(.corner, f32, "__corner_angle");
+    defer sm.removeData(.corner, corner_angle.gen());
+    const face_area = try sm.addData(.face, f32, "__face_area");
+    defer sm.removeData(.face, face_area.gen());
+    const face_normal = try sm.addData(.face, Vec3, "__face_normal");
+    defer sm.removeData(.face, face_normal.gen());
     const vertex_area = try sm.addData(.vertex, f32, "__vertex_area");
     defer sm.removeData(.vertex, vertex_area.gen());
+    const vertex_normal = try sm.addData(.vertex, Vec3, "__vertex_normal");
+    defer sm.removeData(.vertex, vertex_normal.gen());
 
     var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer edge_it.deinit();
@@ -56,6 +66,7 @@ pub fn pliantRemeshing(
     defer vertex_it.deinit();
 
     // detect features
+    try normal.computeFaceNormals(sm, vertex_position, face_normal);
     var feature_edge = try SurfaceMesh.CellMarker(.edge).init(sm);
     defer feature_edge.deinit();
     var feature_vertex = try SurfaceMesh.CellMarker(.vertex).init(sm);
@@ -64,7 +75,7 @@ pub fn pliantRemeshing(
     defer feature_corner.deinit();
     const angle_threshold: f32 = 60.0 * (std.math.pi / 180.0);
     while (edge_it.next()) |edge| {
-        if (@abs(angle.edgeDihedralAngle(sm, vertex_position, edge)) > angle_threshold) {
+        if (@abs(angle.edgeDihedralAngle(sm, edge, vertex_position, face_normal)) > angle_threshold) {
             feature_edge.valuePtr(edge).* = true;
             const v1: SurfaceMesh.Cell = .{ .vertex = edge.dart() };
             const v2: SurfaceMesh.Cell = .{ .vertex = sm.phi1(edge.dart()) };
@@ -183,7 +194,11 @@ pub fn pliantRemeshing(
         }
 
         // tangential relaxation
-        try area.computeVerticesArea(sm, vertex_position, vertex_area);
+        try angle.computeCornerAngles(sm, vertex_position, corner_angle);
+        try area.computeFaceAreas(sm, vertex_position, face_area);
+        try normal.computeFaceNormals(sm, vertex_position, face_normal);
+        try area.computeVertexAreas(sm, face_area, vertex_area);
+        try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
         while (vertex_it.next()) |vertex| {
             if (sm.isIncidentToBoundary(vertex) or feature_corner.value(vertex) or feature_vertex.value(vertex)) {
                 continue;
@@ -193,7 +208,7 @@ pub fn pliantRemeshing(
             var dart_it = sm.cellDartIterator(vertex);
             while (dart_it.next()) |dart| {
                 const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(dart) };
-                const a = area.vertexArea(sm, vertex_position, nv);
+                const a = vertex_area.value(nv);
                 q = vec.add3(
                     q,
                     vec.mulScalar3(vertex_position.value(nv), a),
@@ -202,7 +217,7 @@ pub fn pliantRemeshing(
             }
             if (w > 0.0) {
                 q = vec.divScalar3(q, w);
-                const n = normal.vertexNormal(sm, vertex_position, vertex);
+                const n = vertex_normal.value(vertex);
                 const p = vertex_position.value(vertex);
                 vertex_position.valuePtr(vertex).* = vec.add3(
                     q,

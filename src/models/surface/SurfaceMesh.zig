@@ -12,14 +12,15 @@ const Data = data.Data;
 
 pub const Dart = u32;
 
+// TODO: try to have a type for the different cell types rather than having to assert the type through the Cell active tag
+
 pub const Cell = union(enum) {
     corner: Dart,
     vertex: Dart,
-    // orientedEdge: Dart, // TODO: consider adding orientedEdge as a cell type?
     edge: Dart,
     face: Dart,
-    // boundary face (a polygonal face composed of boundary darts)
-    // this cell type is not used to manage data, only to be able to iterate over boundary faces
+    // boundary faces are polygonal faces composed of boundary darts
+    // this cell type is not used to manage data but only to be able to iterate over boundary faces
     boundary: Dart,
 
     pub fn dart(c: Cell) Dart {

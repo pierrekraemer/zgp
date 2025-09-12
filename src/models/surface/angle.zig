@@ -6,22 +6,21 @@ const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
 const geometry_utils = @import("../../geometry/utils.zig");
-const normal = @import("normal.zig");
 
 /// Compute and return the angle of the given corner.
 pub fn cornerAngle(
     sm: *const SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     corner: SurfaceMesh.Cell,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
 ) f32 {
     assert(corner.cellType() == .corner);
     const d = corner.dart();
-    const v1: SurfaceMesh.Cell = .{ .vertex = d };
-    const v2: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
-    const v3: SurfaceMesh.Cell = .{ .vertex = sm.phi_1(d) };
+    const d1 = sm.phi1(d);
+    const d_1 = sm.phi_1(d);
+    const p1 = vertex_position.value(.{ .vertex = d });
     return geometry_utils.angle(
-        vec.sub3(vertex_position.value(v2), vertex_position.value(v1)),
-        vec.sub3(vertex_position.value(v3), vertex_position.value(v1)),
+        vec.sub3(vertex_position.value(.{ .vertex = d1 }), p1),
+        vec.sub3(vertex_position.value(.{ .vertex = d_1 }), p1),
     );
 }
 
@@ -35,7 +34,11 @@ pub fn computeCornerAngles(
     var it = try SurfaceMesh.CellIterator(.corner).init(sm);
     defer it.deinit();
     while (it.next()) |corner| {
-        corner_angle.valuePtr(corner).* = cornerAngle(sm, vertex_position, corner);
+        corner_angle.valuePtr(corner).* = cornerAngle(
+            sm,
+            corner,
+            vertex_position,
+        );
     }
 }
 
@@ -43,8 +46,9 @@ pub fn computeCornerAngles(
 /// Return 0.0 if the edge is a boundary edge.
 pub fn edgeDihedralAngle(
     sm: *const SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     edge: SurfaceMesh.Cell,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3),
 ) f32 {
     assert(edge.cellType() == .edge);
     if (sm.isIncidentToBoundary(edge)) {
@@ -52,8 +56,8 @@ pub fn edgeDihedralAngle(
     }
     const d = edge.dart();
     const d2 = sm.phi2(d);
-    const n1 = normal.faceNormal(sm, vertex_position, .{ .face = d });
-    const n2 = normal.faceNormal(sm, vertex_position, .{ .face = d2 });
+    const n1 = face_normal.value(.{ .face = d });
+    const n2 = face_normal.value(.{ .face = d2 });
     return std.math.atan2(
         vec.dot3(
             vec.sub3(
@@ -71,11 +75,17 @@ pub fn edgeDihedralAngle(
 pub fn computeEdgeDihedralAngles(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3),
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
 ) !void {
     var it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer it.deinit();
     while (it.next()) |edge| {
-        edge_dihedral_angle.valuePtr(edge).* = edgeDihedralAngle(sm, vertex_position, edge);
+        edge_dihedral_angle.valuePtr(edge).* = edgeDihedralAngle(
+            sm,
+            edge,
+            vertex_position,
+            face_normal,
+        );
     }
 }

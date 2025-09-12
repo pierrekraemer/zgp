@@ -11,8 +11,8 @@ const geometry_utils = @import("../../geometry/utils.zig");
 /// TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan.
 pub fn faceArea(
     sm: *const SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     face: SurfaceMesh.Cell,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
 ) f32 {
     assert(face.cellType() == .face);
     var area: f32 = 0.0;
@@ -33,33 +33,62 @@ pub fn faceArea(
     return area;
 }
 
+/// Compute the areas of all faces of the given SurfaceMesh
+/// and store them in the given face_area data.
+pub fn computeFaceAreas(
+    sm: *SurfaceMesh,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    face_area: SurfaceMesh.CellData(.face, f32),
+) !void {
+    var it = try SurfaceMesh.CellIterator(.face).init(sm);
+    defer it.deinit();
+    while (it.next()) |face| {
+        face_area.valuePtr(face).* = faceArea(
+            sm,
+            face,
+            vertex_position,
+        );
+    }
+}
+
 /// Compute and return the area of the given vertex.
-/// The area of a vertex is defined as the sum of 1/3 of the areas of its incident faces.
+/// The area of a vertex is defined as a sum of contributions from its incident faces.
+/// Each incident face f contributes 1/codegree(f) of its area to the area of the vertex.
 pub fn vertexArea(
     sm: *const SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     vertex: SurfaceMesh.Cell,
+    face_area: SurfaceMesh.CellData(.face, f32),
 ) f32 {
     assert(vertex.cellType() == .vertex);
     var area: f32 = 0.0;
     var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
         if (sm.isBoundaryDart(d)) continue; // skip boundary faces
-        area += faceArea(sm, vertex_position, .{ .face = d }) / 3.0;
+        const f: SurfaceMesh.Cell = .{ .face = d };
+        const cd: f32 = @floatFromInt(sm.codegree(f));
+        area += face_area.value(f) / cd;
     }
     return area;
 }
 
 /// Compute the areas of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_area data.
-pub fn computeVerticesArea(
+/// The area of a vertex is defined as a sum of contributions from its incident faces.
+/// Each incident face f contributes 1/codegree(f) of its area to the area of the vertex.
+pub fn computeVertexAreas(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    face_area: SurfaceMesh.CellData(.face, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
-    var it = try SurfaceMesh.CellIterator(.vertex).init(sm);
+    vertex_area.data.fill(0.0);
+    var it = try SurfaceMesh.CellIterator(.face).init(sm);
     defer it.deinit();
-    while (it.next()) |vertex| {
-        vertex_area.valuePtr(vertex).* = vertexArea(sm, vertex_position, vertex);
+    while (it.next()) |face| {
+        const cd: f32 = @floatFromInt(sm.codegree(face));
+        const a = face_area.value(face) / cd;
+        var dart_it = sm.cellDartIterator(face);
+        while (dart_it.next()) |d| {
+            vertex_area.valuePtr(.{ .vertex = d }).* += a;
+        }
     }
 }
