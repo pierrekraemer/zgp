@@ -87,10 +87,9 @@ pub fn surfaceMeshStandardDataChanged(
     std_data: SurfaceMeshStandardData,
 ) !void {
     const p = smr.parameters.getPtr(surface_mesh) orelse return;
-    const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse return;
     switch (std_data) {
-        .vertex_position => {
-            if (surface_mesh_info.vertex_position) |vertex_position| {
+        .vertex_position => |maybe_vertex_position| {
+            if (maybe_vertex_position) |vertex_position| {
                 const position_vbo: VBO = try zgp.models_registry.getDataVBO(Vec3, vertex_position.data);
                 p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.line_bold_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -101,8 +100,8 @@ pub fn surfaceMeshStandardDataChanged(
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
             }
         },
-        .vertex_color => {
-            if (surface_mesh_info.vertex_color) |vertex_color| {
+        .vertex_color => |maybe_vertex_color| {
+            if (maybe_vertex_color) |vertex_color| {
                 const color_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_color.data);
                 p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);

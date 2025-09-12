@@ -29,7 +29,7 @@ pub fn name(_: *SurfaceMeshModeling) []const u8 {
 fn cutAllEdges() !void {
     const sm = zgp.models_registry.selected_surface_mesh orelse return;
     const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse return;
-    if (surface_mesh_info.vertex_position) |vertex_position| {
+    if (surface_mesh_info.std_data.vertex_position) |vertex_position| {
         try subdivision.cutAllEdges(sm, vertex_position);
         try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
         try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
@@ -47,7 +47,7 @@ fn triangulateFaces() !void {
 fn remesh(length_factor: f32) !void {
     const sm = zgp.models_registry.selected_surface_mesh orelse return;
     const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse return;
-    if (surface_mesh_info.vertex_position) |vertex_position| {
+    if (surface_mesh_info.std_data.vertex_position) |vertex_position| {
         try remeshing.pliantRemeshing(sm, vertex_position, length_factor);
         try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
         try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
@@ -70,7 +70,7 @@ fn collapseEdge(dart: SurfaceMesh.Dart) !void {
     const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(sm) orelse return;
     const edge: SurfaceMesh.Cell = .{ .edge = dart };
     if (sm.canCollapseEdge(edge)) {
-        if (surface_mesh_info.vertex_position) |vertex_position| {
+        if (surface_mesh_info.std_data.vertex_position) |vertex_position| {
             const new_pos = vec.mulScalar3(
                 vec.add3(
                     vertex_position.value(.{ .vertex = dart }),

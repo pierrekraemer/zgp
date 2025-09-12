@@ -331,6 +331,8 @@ const DartMarker = struct {
 pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
     return struct {
         const Self = @This();
+        pub const CellType = cell_type;
+        pub const DataType = T;
 
         surface_mesh: *const SurfaceMesh,
         data: *Data(T),

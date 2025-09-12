@@ -8,6 +8,8 @@ const c = @cImport({
 const imgui_utils = @import("../utils/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 
+const types_utils = @import("../utils/types.zig");
+
 const zgp = @import("../main.zig");
 const zgp_log = std.log.scoped(.zgp);
 
@@ -23,31 +25,37 @@ const IBO = @import("../rendering/IBO.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
-pub const PointCloudStandardData = enum {
-    position,
-    normal,
-    color,
+pub const PointCloudStandardData = union(enum) {
+    position: ?PointCloud.CellData(Vec3),
+    normal: ?PointCloud.CellData(Vec3),
+    color: ?PointCloud.CellData(Vec3),
 };
+pub const PointCloudStandardDataType = std.meta.Tag(PointCloudStandardData);
+// this function generates a struct with one field for each entry of the given union
+const PointCloudStandardDataStruct = types_utils.StructFromUnion(PointCloudStandardData);
 
 const PointCloudInfo = struct {
-    position: ?PointCloud.CellData(Vec3) = null,
-    normal: ?PointCloud.CellData(Vec3) = null,
-    color: ?PointCloud.CellData(Vec3) = null,
-
+    std_data: PointCloudStandardDataStruct,
     points_ibo: IBO,
 };
 
-pub const SurfaceMeshStandardData = enum {
-    vertex_position,
-    vertex_normal,
-    vertex_color,
+pub const SurfaceMeshStandardData = union(enum) {
+    corner_angle: ?SurfaceMesh.CellData(.corner, f32),
+    vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_area: ?SurfaceMesh.CellData(.vertex, f32),
+    vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_color: ?SurfaceMesh.CellData(.vertex, Vec3),
+    edge_length: ?SurfaceMesh.CellData(.edge, f32),
+    edge_dihedral_angle: ?SurfaceMesh.CellData(.edge, f32),
+    face_area: ?SurfaceMesh.CellData(.face, f32),
+    face_normal: ?SurfaceMesh.CellData(.face, Vec3),
 };
+pub const SurfaceMeshStandardDataType = std.meta.Tag(SurfaceMeshStandardData);
+// this function generates a struct with one field for each entry of the given union
+const SurfaceMeshStandardDataStruct = types_utils.StructFromUnion(SurfaceMeshStandardData);
 
 const SurfaceMeshInfo = struct {
-    vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
-    vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
-    vertex_color: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
-
+    std_data: SurfaceMeshStandardDataStruct,
     points_ibo: IBO,
     lines_ibo: IBO,
     triangles_ibo: IBO,
@@ -118,6 +126,19 @@ pub fn deinit(mr: *ModelsRegistry) void {
     mr.vbo_registry.deinit();
 }
 
+pub fn pointCloudDataUpdated(mr: *ModelsRegistry, pc: *PointCloud, comptime T: type, data: PointCloud.CellData(T)) !void {
+    // if it exists, update the VBO with the data
+    const maybe_vbo = mr.vbo_registry.getPtr(data.gen());
+    if (maybe_vbo) |vbo| {
+        try vbo.fillFrom(T, data.data);
+    }
+
+    for (zgp.modules.items) |*module| {
+        try module.pointCloudDataUpdated(pc, data.gen());
+    }
+    zgp.requestRedraw();
+}
+
 pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) !void {
     const info = mr.surface_meshes_info.getPtr(sm).?;
     try info.points_ibo.fillFrom(sm, .vertex, mr.allocator);
@@ -173,19 +194,15 @@ pub fn getSurfaceMeshInfo(mr: *ModelsRegistry, sm: *const SurfaceMesh) ?*Surface
 pub fn setPointCloudStandardData(
     mr: *ModelsRegistry,
     pc: *PointCloud,
-    std_data: PointCloudStandardData,
-    comptime T: type,
-    data: ?PointCloud.CellData(T),
+    data: PointCloudStandardData,
 ) !void {
     const info = mr.point_clouds_info.getPtr(pc).?;
-    switch (std_data) {
-        .position => info.position = data,
-        .normal => info.normal = data,
-        .color => info.color = data,
+    switch (data) {
+        inline else => |val, tag| @field(info.std_data, @tagName(tag)) = val,
     }
 
     for (zgp.modules.items) |*module| {
-        try module.pointCloudStandardDataChanged(pc, std_data);
+        try module.pointCloudStandardDataChanged(pc, data);
     }
     zgp.requestRedraw();
 }
@@ -193,20 +210,15 @@ pub fn setPointCloudStandardData(
 pub fn setSurfaceMeshStandardData(
     mr: *ModelsRegistry,
     sm: *SurfaceMesh,
-    std_data: SurfaceMeshStandardData,
-    comptime cell_type: SurfaceMesh.CellType,
-    comptime T: type,
-    data: ?SurfaceMesh.CellData(cell_type, T),
+    data: SurfaceMeshStandardData,
 ) !void {
     const info = mr.surface_meshes_info.getPtr(sm).?;
-    switch (std_data) {
-        .vertex_position => info.vertex_position = data,
-        .vertex_normal => info.vertex_normal = data,
-        .vertex_color => info.vertex_color = data,
+    switch (data) {
+        inline else => |val, tag| @field(info.std_data, @tagName(tag)) = val,
     }
 
     for (zgp.modules.items) |*module| {
-        try module.surfaceMeshStandardDataChanged(sm, std_data);
+        try module.surfaceMeshStandardDataChanged(sm, data);
     }
     zgp.requestRedraw();
 }
@@ -221,13 +233,23 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
         fn onSurfaceMeshSelected(sm: ?*SurfaceMesh, ctx: SurfaceMeshSelectedContext) void {
             ctx.models_registry.selected_surface_mesh = sm;
         }
-        const SurfaceMeshDataSelectedContext = struct {
-            models_registry: *ModelsRegistry,
-            surface_mesh: *SurfaceMesh,
-            std_data: SurfaceMeshStandardData,
-        };
-        fn onSurfaceMeshStandardDataSelected(comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: ?SurfaceMesh.CellData(cell_type, T), ctx: SurfaceMeshDataSelectedContext) void {
-            ctx.models_registry.setSurfaceMeshStandardData(ctx.surface_mesh, ctx.std_data, cell_type, T, data) catch |err| {
+        fn SurfaceMeshDataSelectedContext(sdt: SurfaceMeshStandardDataType) type {
+            return struct {
+                const std_data_type = sdt;
+                models_registry: *ModelsRegistry,
+                surface_mesh: *SurfaceMesh,
+            };
+        }
+        fn onSurfaceMeshStandardDataSelected(
+            comptime cell_type: SurfaceMesh.CellType,
+            comptime T: type,
+            data: ?SurfaceMesh.CellData(cell_type, T),
+            ctx: anytype,
+        ) void {
+            ctx.models_registry.setSurfaceMeshStandardData(
+                ctx.surface_mesh,
+                @unionInit(SurfaceMeshStandardData, @tagName(@TypeOf(ctx).std_data_type), data),
+            ) catch |err| {
                 imgui_log.err("Error setting surface mesh standard data: {}\n", .{err});
             };
         }
@@ -237,13 +259,22 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
         fn onPointCloudSelected(pc: ?*PointCloud, ctx: PointCloudSelectedContext) void {
             ctx.models_registry.selected_point_cloud = pc;
         }
-        const PointCloudDataSelectedContext = struct {
-            models_registry: *ModelsRegistry,
-            point_cloud: *PointCloud,
-            std_data: PointCloudStandardData,
-        };
-        fn onPointCloudStandardDataSelected(comptime T: type, data: ?PointCloud.CellData(T), ctx: PointCloudDataSelectedContext) void {
-            ctx.models_registry.setPointCloudStandardData(ctx.point_cloud, ctx.std_data, T, data) catch |err| {
+        fn PointCloudDataSelectedContext(sdt: PointCloudStandardDataType) type {
+            return struct {
+                const std_data_type = sdt;
+                models_registry: *ModelsRegistry,
+                point_cloud: *PointCloud,
+            };
+        }
+        fn onPointCloudStandardDataSelected(
+            comptime T: type,
+            data: ?PointCloud.CellData(T),
+            ctx: anytype,
+        ) void {
+            ctx.models_registry.setPointCloudStandardData(
+                ctx.point_cloud,
+                @unionInit(PointCloudStandardData, @tagName(@TypeOf(ctx).std_data_type), data),
+            ) catch |err| {
                 imgui_log.err("Error setting point cloud standard data: {}\n", .{err});
             };
         }
@@ -265,9 +296,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
 
         if (mr.selected_surface_mesh) |sm| {
             c.ImGui_SeparatorText("#Cells");
-
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
-
             c.ImGui_Text("Vertex");
             c.ImGui_SameLine();
             const nbvertices = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.vertex)}) catch "";
@@ -285,39 +314,16 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
             c.ImGui_Text(nbfaces.ptr);
 
             c.ImGui_SeparatorText("Standard Data");
-
-            const maybe_info = mr.surface_meshes_info.getPtr(sm);
-            if (maybe_info) |info| {
-                c.ImGui_Text("Vertex Position");
-                c.ImGui_PushID("Vertex Position");
+            const info = mr.surface_meshes_info.getPtr(sm).?;
+            inline for (@typeInfo(SurfaceMeshStandardDataStruct).@"struct".fields) |*field| {
+                c.ImGui_Text(field.name);
+                c.ImGui_PushID(field.name);
                 imgui_utils.surfaceMeshCellDataComboBox(
                     sm,
-                    .vertex,
-                    Vec3,
-                    info.vertex_position,
-                    UiCB.SurfaceMeshDataSelectedContext{ .models_registry = mr, .surface_mesh = sm, .std_data = .vertex_position },
-                    &UiCB.onSurfaceMeshStandardDataSelected,
-                );
-                c.ImGui_PopID();
-                c.ImGui_Text("Vertex Color");
-                c.ImGui_PushID("Vertex Color");
-                imgui_utils.surfaceMeshCellDataComboBox(
-                    sm,
-                    .vertex,
-                    Vec3,
-                    info.vertex_color,
-                    UiCB.SurfaceMeshDataSelectedContext{ .models_registry = mr, .surface_mesh = sm, .std_data = .vertex_color },
-                    &UiCB.onSurfaceMeshStandardDataSelected,
-                );
-                c.ImGui_PopID();
-                c.ImGui_Text("Vertex Normal");
-                c.ImGui_PushID("Vertex Normal");
-                imgui_utils.surfaceMeshCellDataComboBox(
-                    sm,
-                    .vertex,
-                    Vec3,
-                    info.vertex_normal,
-                    UiCB.SurfaceMeshDataSelectedContext{ .models_registry = mr, .surface_mesh = sm, .std_data = .vertex_normal },
+                    @typeInfo(field.type).optional.child.CellType,
+                    @typeInfo(field.type).optional.child.DataType,
+                    @field(info.std_data, field.name),
+                    UiCB.SurfaceMeshDataSelectedContext(@field(SurfaceMeshStandardDataType, field.name)){ .models_registry = mr, .surface_mesh = sm },
                     &UiCB.onSurfaceMeshStandardDataSelected,
                 );
                 c.ImGui_PopID();
@@ -342,35 +348,24 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
         );
 
         if (mr.selected_point_cloud) |pc| {
-            const maybe_info = mr.point_clouds_info.getPtr(pc);
-            if (maybe_info) |info| {
-                c.ImGui_Text("Vertex Position");
-                c.ImGui_PushID("Vertex Position");
+            c.ImGui_SeparatorText("#Cells");
+            var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
+            c.ImGui_Text("Point");
+            c.ImGui_SameLine();
+            const nbpoints = std.fmt.bufPrintZ(&buf, "{d}", .{pc.nbPoints()}) catch "";
+            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - c.ImGui_CalcTextSize(nbpoints.ptr).x));
+            c.ImGui_Text(nbpoints.ptr);
+
+            c.ImGui_SeparatorText("Standard Data");
+            const info = mr.point_clouds_info.getPtr(pc).?;
+            inline for (@typeInfo(PointCloudStandardDataStruct).@"struct".fields) |*field| {
+                c.ImGui_Text(field.name);
+                c.ImGui_PushID(field.name);
                 imgui_utils.pointCloudDataComboBox(
                     pc,
-                    Vec3,
-                    info.position,
-                    UiCB.PointCloudDataSelectedContext{ .models_registry = mr, .point_cloud = pc, .std_data = .position },
-                    &UiCB.onPointCloudStandardDataSelected,
-                );
-                c.ImGui_PopID();
-                c.ImGui_Text("Vertex Color");
-                c.ImGui_PushID("Vertex Color");
-                imgui_utils.pointCloudDataComboBox(
-                    pc,
-                    Vec3,
-                    info.color,
-                    UiCB.PointCloudDataSelectedContext{ .models_registry = mr, .point_cloud = pc, .std_data = .color },
-                    &UiCB.onPointCloudStandardDataSelected,
-                );
-                c.ImGui_PopID();
-                c.ImGui_Text("Vertex Normal");
-                c.ImGui_PushID("Vertex Normal");
-                imgui_utils.pointCloudDataComboBox(
-                    pc,
-                    Vec3,
-                    info.normal,
-                    UiCB.PointCloudDataSelectedContext{ .models_registry = mr, .point_cloud = pc, .std_data = .normal },
+                    @typeInfo(field.type).optional.child.DataType,
+                    @field(info.std_data, field.name),
+                    UiCB.PointCloudDataSelectedContext(@field(PointCloudStandardDataType, field.name)){ .models_registry = mr, .point_cloud = pc },
                     &UiCB.onPointCloudStandardDataSelected,
                 );
                 c.ImGui_PopID();
@@ -420,6 +415,7 @@ pub fn createSurfaceMesh(mr: *ModelsRegistry, name: []const u8) !*SurfaceMesh {
     try mr.surface_meshes.put(name, sm);
     errdefer _ = mr.surface_meshes.remove(name);
     try mr.surface_meshes_info.put(sm, .{
+        .std_data = .{},
         .points_ibo = IBO.init(),
         .lines_ibo = IBO.init(),
         .triangles_ibo = IBO.init(),

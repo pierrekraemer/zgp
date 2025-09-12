@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const typeId = @import("typeId.zig").typeId;
+const typeId = @import("types.zig").typeId;
 
 pub const DataGen = struct {
     name: []const u8,

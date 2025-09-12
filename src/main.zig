@@ -254,9 +254,14 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const edge_dihedral_angle = try sm.addData(.edge, f32, "dihedral_angle");
         try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
 
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, .vertex, Vec3, vertex_position);
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, .vertex, Vec3, vertex_normal);
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, .vertex, Vec3, vertex_color);
+        try models_registry.setSurfaceMeshStandardData(sm, .{ .corner_angle = corner_angle });
+        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_position = vertex_position });
+        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_normal = vertex_normal });
+        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_color = vertex_color });
+        try models_registry.setSurfaceMeshStandardData(sm, .{ .edge_length = edge_length });
+        try models_registry.setSurfaceMeshStandardData(sm, .{ .edge_dihedral_angle = edge_dihedral_angle });
+        // try models_registry.setSurfaceMeshStandardData(sm, .{ .face_area = face_area });
+        try models_registry.setSurfaceMeshStandardData(sm, .{ .face_normal = face_normal });
 
         try models_registry.surfaceMeshConnectivityUpdated(sm);
     }
@@ -298,9 +303,9 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const edge_dihedral_angle = try sm.addData(.edge, f32, "dihedral_angle");
         try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
 
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_position, .vertex, Vec3, vertex_position);
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_normal, .vertex, Vec3, vertex_normal);
-        try models_registry.setSurfaceMeshStandardData(sm, .vertex_color, .vertex, Vec3, vertex_color);
+        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_position = vertex_position });
+        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_normal = vertex_normal });
+        try models_registry.setSurfaceMeshStandardData(sm, .{ .vertex_color = vertex_color });
 
         try models_registry.surfaceMeshConnectivityUpdated(sm);
 
@@ -397,7 +402,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         }, 0);
         c.ImGui_SetNextWindowBgAlpha(0.2);
         if (c.ImGui_Begin("Models Registry", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
-            c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus))
+            c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
         {
             defer c.ImGui_End();
             models_registry.uiPanel();
@@ -413,7 +418,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         }, 0);
         c.ImGui_SetNextWindowBgAlpha(0.2);
         if (c.ImGui_Begin("Modules", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
-            c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus))
+            c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
         {
             defer c.ImGui_End();
             for (modules.items) |*module| {

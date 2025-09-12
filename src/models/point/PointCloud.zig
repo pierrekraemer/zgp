@@ -52,6 +52,7 @@ pub fn clearRetainingCapacity(pc: *PointCloud) void {
 pub fn CellData(comptime T: type) type {
     return struct {
         const Self = @This();
+        pub const DataType = T;
 
         point_cloud: *const PointCloud,
         data: *Data(T),

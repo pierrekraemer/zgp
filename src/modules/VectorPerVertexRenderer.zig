@@ -76,10 +76,9 @@ pub fn surfaceMeshStandardDataChanged(
     std_data: SurfaceMeshStandardData,
 ) !void {
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
-    const surface_mesh_info = zgp.models_registry.getSurfaceMeshInfo(surface_mesh) orelse return;
     switch (std_data) {
-        .vertex_position => {
-            if (surface_mesh_info.vertex_position) |vertex_position| {
+        .vertex_position => |maybe_vertex_position| {
+            if (maybe_vertex_position) |vertex_position| {
                 const position_vbo = try zgp.models_registry.getDataVBO(Vec3, vertex_position.data);
                 p.point_vector_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
