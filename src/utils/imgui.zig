@@ -11,6 +11,15 @@ const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 
 const Data = @import("../utils/Data.zig").Data;
 
+pub fn tooltip(text: []const u8) void {
+    if (c.ImGui_BeginItemTooltip()) {
+        c.ImGui_PushTextWrapPos(c.ImGui_GetFontSize() * 35.0);
+        c.ImGui_TextUnformatted(text.ptr);
+        c.ImGui_PopTextWrapPos();
+        c.ImGui_EndTooltip();
+    }
+}
+
 pub fn disabledButton(buttonText: []const u8, tooltipText: []const u8) void {
     c.ImGui_BeginDisabled(true);
     defer c.ImGui_EndDisabled();
@@ -21,6 +30,32 @@ pub fn disabledButton(buttonText: []const u8, tooltipText: []const u8) void {
         c.ImGui_PopTextWrapPos();
         c.ImGui_EndTooltip();
     }
+}
+
+pub fn addDataButton(
+    id: []const u8,
+    button_text: []const u8,
+    data_name: []u8,
+) bool {
+    c.ImGui_PushID(id.ptr);
+    defer c.ImGui_PopID();
+    if (c.ImGui_Button("+")) {
+        c.ImGui_OpenPopup("add_data_popup", c.ImGuiPopupFlags_NoReopen);
+    }
+    if (c.ImGui_BeginPopup("add_data_popup", 0)) {
+        defer c.ImGui_EndPopup();
+        _ = c.ImGui_InputText(
+            "name",
+            data_name.ptr,
+            data_name.len,
+            c.ImGuiInputTextFlags_CharsNoBlank,
+        );
+        if (c.ImGui_Button(button_text.ptr)) {
+            c.ImGui_CloseCurrentPopup();
+            return true;
+        }
+    }
+    return false;
 }
 
 pub fn surfaceMeshListBox(

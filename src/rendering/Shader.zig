@@ -59,7 +59,7 @@ pub fn setShader(s: *Shader, shader_type: ShaderType, shader_source: []const u8)
         &.{ shader_version.len, @intCast(shader_source.len) },
     );
     gl.CompileShader(shader);
-    gl.GetShaderiv(shader, gl.COMPILE_STATUS, &success);
+    gl.GetShaderiv(shader, gl.COMPILE_STATUS, (&success)[0..1]);
     if (success == gl.FALSE) {
         gl_log.err("Failed to compile shader: {}", .{shader_type});
         gl.GetShaderInfoLog(shader, info_log_buf.len, null, &info_log_buf);
@@ -73,7 +73,7 @@ pub fn linkProgram(s: *Shader) !void {
     var success: c_int = undefined;
     var info_log_buf: [512:0]u8 = undefined;
     gl.LinkProgram(s.index);
-    gl.GetProgramiv(s.index, gl.LINK_STATUS, &success);
+    gl.GetProgramiv(s.index, gl.LINK_STATUS, (&success)[0..1]);
     if (success == gl.FALSE) {
         gl_log.err("Failed to link program: {}", .{s.index});
         gl.GetProgramInfoLog(s.index, info_log_buf.len, null, &info_log_buf);
@@ -81,7 +81,7 @@ pub fn linkProgram(s: *Shader) !void {
         return error.GlLinkProgramFailed;
     }
     var nb_attached_shaders: c_int = undefined;
-    gl.GetProgramiv(s.index, gl.ATTACHED_SHADERS, &nb_attached_shaders);
+    gl.GetProgramiv(s.index, gl.ATTACHED_SHADERS, (&nb_attached_shaders)[0..1]);
     if (nb_attached_shaders > 0) {
         var attached_shaders: [16]c_uint = undefined;
         gl.GetAttachedShaders(s.index, attached_shaders.len, &nb_attached_shaders, &attached_shaders);

@@ -114,10 +114,10 @@ pub const Parameters = struct {
     pub fn draw(p: *Parameters, ibo: IBO) void {
         gl.UseProgram(p.shader.program.index);
         defer gl.UseProgram(0);
-        gl.UniformMatrix4fv(p.shader.model_view_matrix_uniform, 1, gl.FALSE, &p.model_view_matrix);
-        gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, &p.projection_matrix);
+        gl.UniformMatrix4fv(p.shader.model_view_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.model_view_matrix));
+        gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
         gl.Uniform1f(p.shader.vector_scale_uniform, p.vector_scale);
-        gl.Uniform4fv(p.shader.vector_color_uniform, 1, &p.vector_color);
+        gl.Uniform4fv(p.shader.vector_color_uniform, 1, @ptrCast(&p.vector_color));
         // var viewport: [4]i32 = .{ 0, 0, 0, 0 };
         // gl.GetIntegerv(gl.VIEWPORT, &viewport);
         // gl.Uniform2f(p.shader.vector_width_uniform, p.vector_width / @as(f32, @floatFromInt(viewport[2])), p.vector_width / @as(f32, @floatFromInt(viewport[3])));

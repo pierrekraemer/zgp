@@ -57,10 +57,33 @@ fn triangulateFaces(sm: *SurfaceMesh) !void {
 fn remesh(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    corner_angle: SurfaceMesh.CellData(.corner, f32),
+    face_area: SurfaceMesh.CellData(.face, f32),
+    face_normal: SurfaceMesh.CellData(.face, Vec3),
+    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
+    vertex_area: SurfaceMesh.CellData(.vertex, f32),
+    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
     length_factor: f32,
 ) !void {
-    try remeshing.pliantRemeshing(sm, vertex_position, length_factor);
+    try remeshing.pliantRemeshing(
+        sm,
+        vertex_position,
+        corner_angle,
+        face_area,
+        face_normal,
+        edge_dihedral_angle,
+        vertex_area,
+        vertex_normal,
+        length_factor,
+    );
+    // TODO: VBO.fillFrom does not currently support scalar data
     try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+    // try zgp.models_registry.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
+    // try zgp.models_registry.surfaceMeshDataUpdated(sm, .face, f32, face_area);
+    try zgp.models_registry.surfaceMeshDataUpdated(sm, .face, Vec3, face_normal);
+    // try zgp.models_registry.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
+    // try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
+    try zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_normal);
     try zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
     if (builtin.mode == .Debug) {
         try sm.checkIntegrity();
@@ -75,6 +98,27 @@ fn computeCornerAngles(
     try angle.computeCornerAngles(sm, vertex_position, corner_angle);
     // TODO: VBO.fillFrom does not currently support scalar data
     // try zgp.models_registry.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
+}
+
+fn computeEdgeLengths(
+    sm: *SurfaceMesh,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    edge_length: SurfaceMesh.CellData(.edge, f32),
+) !void {
+    try length.computeEdgeLengths(sm, vertex_position, edge_length);
+    // TODO: VBO.fillFrom does not currently support scalar data
+    // try zgp.models_registry.surfaceMeshDataUpdated(sm, .edge, f32, edge_length);
+}
+
+fn computeEdgeDihedralAngles(
+    sm: *SurfaceMesh,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3),
+    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
+) !void {
+    try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
+    // TODO: VBO.fillFrom does not currently support scalar data
+    // try zgp.models_registry.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
 }
 
 fn computeFaceAreas(
@@ -119,6 +163,8 @@ fn computeVertexNormals(
 pub fn uiPanel(_: *SurfaceMeshProcessing) void {
     const UiData = struct {
         var length_factor: f32 = 1.0;
+        var button_text_buf: [64]u8 = undefined;
+        var new_data_name: [32]u8 = undefined;
     };
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
@@ -135,7 +181,7 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
                 };
             }
         } else {
-            imgui_utils.disabledButton("Cut all edges", "Missing vertex_position data");
+            imgui_utils.disabledButton("Cut all edges", "Missing std vertex_position data");
         }
 
         if (c.ImGui_Button("Triangulate faces")) {
@@ -144,15 +190,35 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
             };
         }
 
-        _ = c.ImGui_SliderFloat("Length factor", &UiData.length_factor, 0.1, 10.0);
-        if (info.std_data.vertex_position) |vertex_position| {
+        c.ImGui_Text("Length factor");
+        c.ImGui_PushID("Length factor");
+        _ = c.ImGui_SliderFloatEx("", &UiData.length_factor, 0.1, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
+        c.ImGui_PopID();
+        if (info.std_data.vertex_position != null and
+            info.std_data.corner_angle != null and
+            info.std_data.face_area != null and
+            info.std_data.face_normal != null and
+            info.std_data.edge_dihedral_angle != null and
+            info.std_data.vertex_area != null and
+            info.std_data.vertex_normal != null)
+        {
             if (c.ImGui_Button("Remesh")) {
-                remesh(sm, vertex_position, UiData.length_factor) catch |err| {
+                remesh(
+                    sm,
+                    info.std_data.vertex_position.?,
+                    info.std_data.corner_angle.?,
+                    info.std_data.face_area.?,
+                    info.std_data.face_normal.?,
+                    info.std_data.edge_dihedral_angle.?,
+                    info.std_data.vertex_area.?,
+                    info.std_data.vertex_normal.?,
+                    UiData.length_factor,
+                ) catch |err| {
                     std.debug.print("Error remeshing: {}\n", .{err});
                 };
             }
         } else {
-            imgui_utils.disabledButton("Remesh", "Missing vertex_position data");
+            imgui_utils.disabledButton("Remesh", "Missing std data among:\n- vertex_position\n- corner_angle\n- face_area\n- face_normal\n- edge_dihedral_angle\n- vertex_area\n- vertex_normal");
         }
 
         c.ImGui_SeparatorText("Geometry Computations");
@@ -167,8 +233,23 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
                     std.debug.print("Error computing corner angles: {}\n", .{err});
                 };
             }
+            imgui_utils.tooltip("Read: vertex_position\nWrite: corner_angle");
         } else {
-            imgui_utils.disabledButton("corner angles", "Missing one of (vertex_position, corner_angle) data");
+            imgui_utils.disabledButton("corner angles", "Missing std data among:\n-vertex_position\n-corner_angle");
+        }
+        c.ImGui_SameLine();
+        c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
+        var button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.corner), @typeName(f32) }) catch "";
+        if (imgui_utils.addDataButton("corner angles", button_text, &UiData.new_data_name)) {
+            const maybe_data = sm.addData(.corner, f32, &UiData.new_data_name);
+            if (maybe_data) |data| {
+                if (info.std_data.corner_angle == null) {
+                    info.std_data.corner_angle = data;
+                }
+            } else |err| {
+                std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.corner), @typeName(f32), err });
+            }
+            UiData.new_data_name[0] = 0;
         }
 
         if (info.std_data.vertex_position != null and info.std_data.face_area != null) {
@@ -181,8 +262,23 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
                     std.debug.print("Error computing face areas: {}\n", .{err});
                 };
             }
+            imgui_utils.tooltip("Read: vertex_position\nWrite: face_area");
         } else {
-            imgui_utils.disabledButton("face areas", "Missing one of (vertex_position, face_area) data");
+            imgui_utils.disabledButton("face areas", "Missing std data among:\n-vertex_position\n-face_area");
+        }
+        c.ImGui_SameLine();
+        c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
+        button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.face), @typeName(f32) }) catch "";
+        if (imgui_utils.addDataButton("face areas", button_text, &UiData.new_data_name)) {
+            const maybe_data = sm.addData(.face, f32, &UiData.new_data_name);
+            if (maybe_data) |data| {
+                if (info.std_data.face_area == null) {
+                    info.std_data.face_area = data;
+                }
+            } else |err| {
+                std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.face), @typeName(f32), err });
+            }
+            UiData.new_data_name[0] = 0;
         }
 
         if (info.std_data.vertex_position != null and info.std_data.face_normal != null) {
@@ -195,8 +291,82 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
                     std.debug.print("Error computing face normals: {}\n", .{err});
                 };
             }
+            imgui_utils.tooltip("Read: vertex_position\nWrite: face_normal");
         } else {
-            imgui_utils.disabledButton("face normals", "Missing one of (vertex_position, face_normal) data");
+            imgui_utils.disabledButton("face normals", "Missing std data among:\n-vertex_position\n-face_normal");
+        }
+        c.ImGui_SameLine();
+        c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
+        button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.face), @typeName(Vec3) }) catch "";
+        if (imgui_utils.addDataButton("face normals", button_text, &UiData.new_data_name)) {
+            const maybe_data = sm.addData(.face, Vec3, &UiData.new_data_name);
+            if (maybe_data) |data| {
+                if (info.std_data.face_normal == null) {
+                    info.std_data.face_normal = data;
+                }
+            } else |err| {
+                std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.face), @typeName(f32), err });
+            }
+            UiData.new_data_name[0] = 0;
+        }
+
+        if (info.std_data.vertex_position != null and info.std_data.edge_length != null) {
+            if (c.ImGui_Button("edge lengths")) {
+                computeEdgeLengths(
+                    sm,
+                    info.std_data.vertex_position.?,
+                    info.std_data.edge_length.?,
+                ) catch |err| {
+                    std.debug.print("Error computing edge lengths: {}\n", .{err});
+                };
+            }
+            imgui_utils.tooltip("Read: vertex_position\nWrite: edge_length");
+        } else {
+            imgui_utils.disabledButton("edge lengths", "Missing std data among:\n-vertex_position\n-edge_length");
+        }
+        c.ImGui_SameLine();
+        c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
+        button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.edge), @typeName(f32) }) catch "";
+        if (imgui_utils.addDataButton("edge lengths", button_text, &UiData.new_data_name)) {
+            const maybe_data = sm.addData(.edge, f32, &UiData.new_data_name);
+            if (maybe_data) |data| {
+                if (info.std_data.edge_length == null) {
+                    info.std_data.edge_length = data;
+                }
+            } else |err| {
+                std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.edge), @typeName(f32), err });
+            }
+            UiData.new_data_name[0] = 0;
+        }
+
+        if (info.std_data.vertex_position != null and info.std_data.face_normal != null and info.std_data.edge_dihedral_angle != null) {
+            if (c.ImGui_Button("edge dihedral angles")) {
+                computeEdgeDihedralAngles(
+                    sm,
+                    info.std_data.vertex_position.?,
+                    info.std_data.face_normal.?,
+                    info.std_data.edge_dihedral_angle.?,
+                ) catch |err| {
+                    std.debug.print("Error computing edge dihedral angles: {}\n", .{err});
+                };
+            }
+            imgui_utils.tooltip("Read: vertex_position, face_normal\nWrite: edge_dihedral_angle");
+        } else {
+            imgui_utils.disabledButton("edge dihedral angles", "Missing std data among:\n-vertex_position\n-face_normal\n-edge_dihedral_angle");
+        }
+        c.ImGui_SameLine();
+        c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
+        button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.edge), @typeName(f32) }) catch "";
+        if (imgui_utils.addDataButton("edge dihedral angles", button_text, &UiData.new_data_name)) {
+            const maybe_data = sm.addData(.edge, f32, &UiData.new_data_name);
+            if (maybe_data) |data| {
+                if (info.std_data.edge_dihedral_angle == null) {
+                    info.std_data.edge_dihedral_angle = data;
+                }
+            } else |err| {
+                std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.edge), @typeName(f32), err });
+            }
+            UiData.new_data_name[0] = 0;
         }
 
         if (info.std_data.face_area != null and info.std_data.vertex_area != null) {
@@ -209,8 +379,23 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
                     std.debug.print("Error computing vertex areas: {}\n", .{err});
                 };
             }
+            imgui_utils.tooltip("Read: face_area\nWrite: vertex_area");
         } else {
-            imgui_utils.disabledButton("vertex areas", "Missing one of (face_area, vertex_area) data");
+            imgui_utils.disabledButton("vertex areas", "Missing std data among:\n-face_area\n-vertex_area");
+        }
+        c.ImGui_SameLine();
+        c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
+        button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.vertex), @typeName(f32) }) catch "";
+        if (imgui_utils.addDataButton("vertex areas", button_text, &UiData.new_data_name)) {
+            const maybe_data = sm.addData(.vertex, f32, &UiData.new_data_name);
+            if (maybe_data) |data| {
+                if (info.std_data.vertex_area == null) {
+                    info.std_data.vertex_area = data;
+                }
+            } else |err| {
+                std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.face), @typeName(f32), err });
+            }
+            UiData.new_data_name[0] = 0;
         }
 
         if (info.std_data.corner_angle != null and info.std_data.face_normal != null and info.std_data.vertex_normal != null) {
@@ -224,8 +409,23 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
                     std.debug.print("Error computing vertex normals: {}\n", .{err});
                 };
             }
+            imgui_utils.tooltip("Read: corner_angle, face_normal\nWrite: vertex_normal");
         } else {
-            imgui_utils.disabledButton("vertex normals", "Missing one of (corner_angle, face_normal, vertex_normal) data");
+            imgui_utils.disabledButton("vertex normals", "Missing std data among:\n-corner_angle\n-face_normal\n-vertex_normal");
+        }
+        c.ImGui_SameLine();
+        c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
+        button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.vertex), @typeName(Vec3) }) catch "";
+        if (imgui_utils.addDataButton("vertex normals", button_text, &UiData.new_data_name)) {
+            const maybe_data = sm.addData(.vertex, Vec3, &UiData.new_data_name);
+            if (maybe_data) |data| {
+                if (info.std_data.vertex_normal == null) {
+                    info.std_data.vertex_normal = data;
+                }
+            } else |err| {
+                std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.vertex), @typeName(Vec3), err });
+            }
+            UiData.new_data_name[0] = 0;
         }
     } else {
         c.ImGui_Text("No Surface Mesh selected");

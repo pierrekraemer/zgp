@@ -109,10 +109,10 @@ pub const Parameters = struct {
     pub fn draw(p: *Parameters, ibo: IBO) void {
         gl.UseProgram(p.shader.program.index);
         defer gl.UseProgram(0);
-        gl.UniformMatrix4fv(p.shader.model_view_matrix_uniform, 1, gl.FALSE, &p.model_view_matrix);
-        gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, &p.projection_matrix);
-        gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, &p.ambiant_color);
-        gl.Uniform3fv(p.shader.light_position_uniform, 1, &p.light_position);
+        gl.UniformMatrix4fv(p.shader.model_view_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.model_view_matrix));
+        gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
+        gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
+        gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);

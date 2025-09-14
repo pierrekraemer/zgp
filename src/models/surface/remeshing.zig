@@ -40,6 +40,12 @@ fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
 pub fn pliantRemeshing(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    corner_angle: SurfaceMesh.CellData(.corner, f32),
+    face_area: SurfaceMesh.CellData(.face, f32),
+    face_normal: SurfaceMesh.CellData(.face, Vec3),
+    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
+    vertex_area: SurfaceMesh.CellData(.vertex, f32),
+    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
     length_factor: f32,
 ) !void {
     try subdivision.triangulateFaces(sm);
@@ -47,26 +53,12 @@ pub fn pliantRemeshing(
     const mean_edge_length = try length.meanEdgeLength(sm, vertex_position);
     const length_goal_squared = mean_edge_length * mean_edge_length * length_factor * length_factor;
 
-    // local temporary datas because they must be updated during the algorithm
-    // TODO: maybe getOrAdd a standard data for these quantities from the ModelsRegistry?
-    const corner_angle = try sm.addData(.corner, f32, "__corner_angle");
-    defer sm.removeData(.corner, corner_angle.gen());
-    const face_area = try sm.addData(.face, f32, "__face_area");
-    defer sm.removeData(.face, face_area.gen());
-    const face_normal = try sm.addData(.face, Vec3, "__face_normal");
-    defer sm.removeData(.face, face_normal.gen());
-    const vertex_area = try sm.addData(.vertex, f32, "__vertex_area");
-    defer sm.removeData(.vertex, vertex_area.gen());
-    const vertex_normal = try sm.addData(.vertex, Vec3, "__vertex_normal");
-    defer sm.removeData(.vertex, vertex_normal.gen());
-
     var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer edge_it.deinit();
     var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
     defer vertex_it.deinit();
 
     // detect features
-    try normal.computeFaceNormals(sm, vertex_position, face_normal);
     var feature_edge = try SurfaceMesh.CellMarker(.edge).init(sm);
     defer feature_edge.deinit();
     var feature_vertex = try SurfaceMesh.CellMarker(.vertex).init(sm);
@@ -75,7 +67,7 @@ pub fn pliantRemeshing(
     defer feature_corner.deinit();
     const angle_threshold: f32 = 60.0 * (std.math.pi / 180.0);
     while (edge_it.next()) |edge| {
-        if (@abs(angle.edgeDihedralAngle(sm, edge, vertex_position, face_normal)) > angle_threshold) {
+        if (@abs(edge_dihedral_angle.value(edge)) > angle_threshold) {
             feature_edge.valuePtr(edge).* = true;
             const v1: SurfaceMesh.Cell = .{ .vertex = edge.dart() };
             const v2: SurfaceMesh.Cell = .{ .vertex = sm.phi1(edge.dart()) };
@@ -232,4 +224,12 @@ pub fn pliantRemeshing(
             }
         }
     }
+
+    // update dependent datas one last time after remeshing
+    try angle.computeCornerAngles(sm, vertex_position, corner_angle);
+    try area.computeFaceAreas(sm, vertex_position, face_area);
+    try normal.computeFaceNormals(sm, vertex_position, face_normal);
+    try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
+    try area.computeVertexAreas(sm, face_area, vertex_area);
+    try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
 }

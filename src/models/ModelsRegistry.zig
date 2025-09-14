@@ -303,6 +303,11 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
         if (mr.selected_surface_mesh) |sm| {
             c.ImGui_SeparatorText("#Cells");
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
+            c.ImGui_Text("Corner");
+            c.ImGui_SameLine();
+            const nbcorners = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.corner)}) catch "";
+            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - c.ImGui_CalcTextSize(nbcorners.ptr).x));
+            c.ImGui_Text(nbcorners.ptr);
             c.ImGui_Text("Vertex");
             c.ImGui_SameLine();
             const nbvertices = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.vertex)}) catch "";

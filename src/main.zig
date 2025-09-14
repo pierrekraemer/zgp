@@ -222,8 +222,9 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // ***********************************
 
     {
-        // const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/julius_388k.off");
-        const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/grid_tri.off");
+        var timer = try std.time.Timer.start();
+
+        const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/cow_3k.off");
         errdefer sm.deinit();
 
         const vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
@@ -261,50 +262,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         try models_registry.setSurfaceMeshStdData(sm, .{ .edge_length = edge_length });
         try models_registry.setSurfaceMeshStdData(sm, .{ .edge_dihedral_angle = edge_dihedral_angle });
         try models_registry.setSurfaceMeshStdData(sm, .{ .face_normal = face_normal });
-
-        try models_registry.surfaceMeshConnectivityUpdated(sm);
-    }
-
-    {
-        var timer = try std.time.Timer.start();
-
-        const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/iphi_fine_50k.off");
-        // const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/elephant_isotropic_25k.off");
-        // const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Desktop/elephant_quad_25k.off");
-        // const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/cow_3k.off");
-        errdefer sm.deinit();
-
-        const vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
-        // scale the mesh position in the range [0, 1] and center it on the origin
-        const bb_min, const bb_max = geometry_utils.boundingBox(vertex_position.data);
-        geometry_utils.scale(vertex_position.data, 1.0 / vec.maxComponent3(vec.sub3(bb_max, bb_min)));
-        geometry_utils.centerAround(vertex_position.data, vec.zero3);
-
-        const vertex_color = try sm.addData(.vertex, Vec3, "color");
-        var col_it = vertex_color.data.iterator();
-        const r = rng.random();
-        while (col_it.next()) |col| {
-            col.* = vec.random3(r);
-        }
-
-        const corner_angle = try sm.addData(.corner, f32, "angle");
-        try angle.computeCornerAngles(sm, vertex_position, corner_angle);
-
-        const face_normal = try sm.addData(.face, Vec3, "normal");
-        try normal.computeFaceNormals(sm, vertex_position, face_normal);
-
-        const vertex_normal = try sm.addData(.vertex, Vec3, "normal");
-        try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
-
-        const edge_length = try sm.addData(.edge, f32, "length");
-        try length.computeEdgeLengths(sm, vertex_position, edge_length);
-
-        const edge_dihedral_angle = try sm.addData(.edge, f32, "dihedral_angle");
-        try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
-
-        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
-        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_normal = vertex_normal });
-        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_color = vertex_color });
 
         try models_registry.surfaceMeshConnectivityUpdated(sm);
 
