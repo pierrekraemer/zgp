@@ -41,9 +41,17 @@ const sdl_log = std.log.scoped(.sdl);
 const imgui_log = std.log.scoped(.imgui);
 const zgp_log = std.log.scoped(.zgp);
 
+// use a lib like:
+// https://github.com/joegm/flags
+// https://github.com/Hejsil/zig-clap
+const CLIArgs = @import("utils/CLIArgs.zig");
+var cli_args: CLIArgs = undefined;
+
 var fully_initialized = false;
 
 var allocator: std.mem.Allocator = undefined;
+
+// TODO: use the thread pool to parallelize stuff (cell iterators, etc.)
 
 /// Global elements publicly accessible from all modules:
 /// - random number generator
@@ -217,28 +225,30 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(allocator, surface_mesh_processing.module());
     errdefer modules.deinit(allocator);
 
-    // TODO: remove example meshes
-    // Example surface mesh initialization
-    // ***********************************
-
-    {
+    for (cli_args.mesh_files) |mesh_file| {
         var timer = try std.time.Timer.start();
 
-        const sm = try models_registry.loadSurfaceMeshFromFile("/Users/kraemer/Data/surface/cow_3k.off");
+        const sm = try models_registry.loadSurfaceMeshFromFile(mesh_file);
         errdefer sm.deinit();
 
-        const vertex_position = sm.getData(.vertex, Vec3, "position") orelse try sm.addData(.vertex, Vec3, "position");
-        // scale the mesh position in the range [0, 1] and center it on the origin
-        const bb_min, const bb_max = geometry_utils.boundingBox(vertex_position.data);
-        geometry_utils.scale(vertex_position.data, 1.0 / vec.maxComponent3(vec.sub3(bb_max, bb_min)));
-        geometry_utils.centerAround(vertex_position.data, vec.zero3);
+        const vertex_position = sm.getData(.vertex, Vec3, "position").?;
+
+        if (cli_args.normalize) {
+            // scale the mesh position in the range [0, 1] and center it on the origin
+            const bb_min, const bb_max = geometry_utils.boundingBox(vertex_position.data);
+            geometry_utils.scale(vertex_position.data, 1.0 / vec.maxComponent3(vec.sub3(bb_max, bb_min)));
+        }
+        if (cli_args.center) {
+            geometry_utils.centerAround(vertex_position.data, vec.zero3);
+        }
 
         const vertex_color = try sm.addData(.vertex, Vec3, "color");
-        var col_it = vertex_color.data.iterator();
-        const r = rng.random();
-        while (col_it.next()) |col| {
-            col.* = vec.random3(r);
-        }
+        vertex_color.data.fill(.{ 0.8, 0.8, 0.8 });
+        // var col_it = vertex_color.data.iterator();
+        // const r = rng.random();
+        // while (col_it.next()) |col| {
+        //     col.* = vec.random3(r);
+        // }
 
         const corner_angle = try sm.addData(.corner, f32, "angle");
         try angle.computeCornerAngles(sm, vertex_position, corner_angle);
@@ -509,20 +519,30 @@ pub fn main() !u8 {
     app_err.reset();
     var empty_argv: [0:null]?[*:0]u8 = .{};
 
-    // TODO: manage command-line options
-
     var da: std.heap.DebugAllocator(.{}) = .init;
     defer _ = da.deinit();
     defer _ = da.detectLeaks();
     allocator = da.allocator();
     // allocator = std.heap.smp_allocator;
 
+    const argv = std.process.argsAlloc(allocator) catch {
+        std.debug.print("Failed to get command line arguments\n", .{});
+        return 1;
+    };
+    defer std.process.argsFree(allocator, argv);
+    cli_args = CLIArgs.init(argv) catch |err| {
+        switch (err) {
+            error.MissingArgs => return c.SDL_APP_FAILURE,
+            error.InvalidArgs => return c.SDL_APP_FAILURE,
+        }
+    };
+
     rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
 
     try thread_pool.init(.{ .allocator = allocator });
     defer thread_pool.deinit();
 
-    const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(empty_argv.len, @ptrCast(&empty_argv), sdlMainC, null))));
+    const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(@intCast(empty_argv.len), @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;
 }
 
