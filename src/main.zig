@@ -226,7 +226,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer modules.deinit(allocator);
 
     for (cli_args.mesh_files) |mesh_file| {
-        var timer = try std.time.Timer.start();
+        // var timer = try std.time.Timer.start();
 
         const sm = try models_registry.loadSurfaceMeshFromFile(mesh_file);
         errdefer sm.deinit();
@@ -243,40 +243,22 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         }
 
         const vertex_color = try sm.addData(.vertex, Vec3, "color");
-        vertex_color.data.fill(.{ 0.8, 0.8, 0.8 });
+        vertex_color.data.fill(.{ 0.9, 0.9, 0.9 });
         // var col_it = vertex_color.data.iterator();
         // const r = rng.random();
         // while (col_it.next()) |col| {
         //     col.* = vec.random3(r);
         // }
 
-        const corner_angle = try sm.addData(.corner, f32, "angle");
-        try angle.computeCornerAngles(sm, vertex_position, corner_angle);
+        models_registry.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
+        models_registry.setSurfaceMeshStdData(sm, .{ .vertex_color = vertex_color });
 
-        const face_normal = try sm.addData(.face, Vec3, "normal");
-        try normal.computeFaceNormals(sm, vertex_position, face_normal);
+        models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+        models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_color);
+        models_registry.surfaceMeshConnectivityUpdated(sm);
 
-        const vertex_normal = try sm.addData(.vertex, Vec3, "normal");
-        try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
-
-        const edge_length = try sm.addData(.edge, f32, "length");
-        try length.computeEdgeLengths(sm, vertex_position, edge_length);
-
-        const edge_dihedral_angle = try sm.addData(.edge, f32, "dihedral_angle");
-        try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
-
-        try models_registry.setSurfaceMeshStdData(sm, .{ .corner_angle = corner_angle });
-        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
-        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_normal = vertex_normal });
-        try models_registry.setSurfaceMeshStdData(sm, .{ .vertex_color = vertex_color });
-        try models_registry.setSurfaceMeshStdData(sm, .{ .edge_length = edge_length });
-        try models_registry.setSurfaceMeshStdData(sm, .{ .edge_dihedral_angle = edge_dihedral_angle });
-        try models_registry.setSurfaceMeshStdData(sm, .{ .face_normal = face_normal });
-
-        try models_registry.surfaceMeshConnectivityUpdated(sm);
-
-        const elapsed: f64 = @floatFromInt(timer.read());
-        zgp_log.info("Time elapsed is: {d:.3}ms\n", .{elapsed / std.time.ns_per_ms});
+        // const elapsed: f64 = @floatFromInt(timer.read());
+        // zgp_log.info("Time elapsed is: {d:.3}ms\n", .{elapsed / std.time.ns_per_ms});
     }
 
     // Init end

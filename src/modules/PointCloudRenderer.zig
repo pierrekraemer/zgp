@@ -58,28 +58,41 @@ pub fn deinit(pcr: *PointCloudRenderer) void {
     pcr.parameters.deinit();
 }
 
+/// Return a Module interface for the PointCloudRenderer.
 pub fn module(pcr: *PointCloudRenderer) Module {
     return Module.init(pcr);
 }
 
+/// Part of the Module interface.
+/// Return the name of the module.
 pub fn name(_: *PointCloudRenderer) []const u8 {
     return "Point Cloud Renderer";
 }
 
-pub fn pointCloudAdded(pcr: *PointCloudRenderer, point_cloud: *PointCloud) !void {
-    try pcr.parameters.put(point_cloud, PointCloudRendererParameters.init());
+/// Part of the Module interface.
+/// Create and store a PointCloudRendererParameters for the new PointCloud.
+pub fn pointCloudAdded(pcr: *PointCloudRenderer, point_cloud: *PointCloud) void {
+    pcr.parameters.put(point_cloud, PointCloudRendererParameters.init()) catch {
+        std.debug.print("Failed to create PointCloudRendererParameters for new PointCloud\n", .{});
+        return;
+    };
 }
 
+/// Part of the Module interface.
+/// Update the PointCloudRendererParameters when a standard data of the PointCloud changes.
 pub fn pointCloudStdDataChanged(
     pcr: *PointCloudRenderer,
     point_cloud: *PointCloud,
     std_data: PointCloudStdData,
-) !void {
+) void {
     const p = pcr.parameters.getPtr(point_cloud) orelse return;
     switch (std_data) {
         .position => |maybe_position| {
             if (maybe_position) |position| {
-                const position_vbo = try zgp.models_registry.dataVBO(Vec3, position.data);
+                const position_vbo = zgp.models_registry.dataVBO(Vec3, position.data) catch {
+                    std.debug.print("Failed to get VBO for vertex positions\n", .{});
+                    return;
+                };
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
@@ -87,7 +100,10 @@ pub fn pointCloudStdDataChanged(
         },
         .color => |maybe_color| {
             if (maybe_color) |color| {
-                const color_vbo = try zgp.models_registry.dataVBO(Vec3, color.data);
+                const color_vbo = zgp.models_registry.dataVBO(Vec3, color.data) catch {
+                    std.debug.print("Failed to get VBO for vertex colors\n", .{});
+                    return;
+                };
                 p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.color);
@@ -97,6 +113,8 @@ pub fn pointCloudStdDataChanged(
     }
 }
 
+/// Part of the Module interface.
+/// Render all PointClouds with their PointCloudRendererParameters and the given view and projection matrices.
 pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
     var pc_it = zgp.models_registry.point_clouds.iterator();
     while (pc_it.next()) |entry| {
@@ -111,6 +129,8 @@ pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4, projection_matrix: Mat4
     }
 }
 
+/// Part of the Module interface.
+/// Show a UI panel to control the PointCloudRendererParameters of the selected PointCloud.
 pub fn uiPanel(pcr: *PointCloudRenderer) void {
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 

@@ -58,28 +58,40 @@ pub fn deinit(vpvr: *VectorPerVertexRenderer) void {
     vpvr.parameters.deinit();
 }
 
+/// Return a Module interface for the VectorPerVertexRenderer.
 pub fn module(vpvr: *VectorPerVertexRenderer) Module {
     return Module.init(vpvr);
 }
 
+/// Part of the Module interface.
+/// Return the name of the module.
 pub fn name(_: *VectorPerVertexRenderer) []const u8 {
     return "Vector Per Vertex Renderer";
 }
 
-pub fn surfaceMeshAdded(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMesh) !void {
-    try vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init());
+/// Part of the Module interface.
+/// Create and store a VectorPerVertexRendererParameters for the new SurfaceMesh.
+pub fn surfaceMeshAdded(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMesh) void {
+    vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init()) catch {
+        std.debug.print("Failed to create VectorPerVertexRendererParameters for new SurfaceMesh\n", .{});
+    };
 }
 
+/// Part of the Module interface.
+/// Update the VectorPerVertexRendererParameters when a standard data of the SurfaceMesh changes.
 pub fn surfaceMeshStdDataChanged(
     vpvr: *VectorPerVertexRenderer,
     surface_mesh: *SurfaceMesh,
     std_data: SurfaceMeshStdData,
-) !void {
+) void {
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo = try zgp.models_registry.dataVBO(Vec3, vertex_position.data);
+                const position_vbo = zgp.models_registry.dataVBO(Vec3, vertex_position.data) catch {
+                    std.debug.print("Failed to get VBO for vertex positions\n", .{});
+                    return;
+                };
                 p.point_vector_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_vector_shader_parameters.unsetVertexAttribArray(.position);
@@ -101,6 +113,8 @@ fn setSurfaceMeshVectorData(vpvr: *VectorPerVertexRenderer, surface_mesh: *Surfa
     zgp.requestRedraw();
 }
 
+/// Part of the Module interface.
+/// Render all SurfaceMeshes with their VectorPerVertexRendererParameters and the given view and projection matrices.
 pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
     var sm_it = zgp.models_registry.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
@@ -113,6 +127,8 @@ pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4, projection_matrix
     }
 }
 
+/// Part of the Module interface.
+/// Show a UI panel to control the VectorPerVertexRendererParameters of the selected SurfaceMesh.
 pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
     const UiCB = struct {
         const DataSelectedContext = struct {

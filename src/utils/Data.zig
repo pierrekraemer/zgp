@@ -65,8 +65,11 @@ pub fn Data(comptime T: type) type {
     return struct {
         const Self = @This();
 
+        // TODO: evaluate if SegmentedList is the right choice here
+        const SegmentedList = std.SegmentedList(T, 512);
+
         gen: DataGen = undefined,
-        data: std.SegmentedList(T, 32) = .{},
+        data: SegmentedList = .{},
 
         const init: Self = .{};
 
@@ -119,11 +122,11 @@ pub fn Data(comptime T: type) type {
             return self.data.len * @sizeOf(T);
         }
 
-        pub fn rawIterator(self: *Self) std.SegmentedList(T, 32).Iterator {
+        pub fn rawIterator(self: *Self) SegmentedList.Iterator {
             return self.data.iterator(0);
         }
 
-        pub fn rawConstIterator(self: *const Self) std.SegmentedList(T, 32).ConstIterator {
+        pub fn rawConstIterator(self: *const Self) SegmentedList.ConstIterator {
             return self.data.constIterator(0);
         }
 

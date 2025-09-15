@@ -69,28 +69,41 @@ pub fn deinit(smr: *SurfaceMeshRenderer) void {
     smr.parameters.deinit();
 }
 
+/// Return a Module interface for the SurfaceMeshRenderer.
 pub fn module(smr: *SurfaceMeshRenderer) Module {
     return Module.init(smr);
 }
 
+/// Part of the Module interface.
+/// Return the name of the module.
 pub fn name(_: *SurfaceMeshRenderer) []const u8 {
     return "Surface Mesh Renderer";
 }
 
-pub fn surfaceMeshAdded(smr: *SurfaceMeshRenderer, surface_mesh: *SurfaceMesh) !void {
-    try smr.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init());
+/// Part of the Module interface.
+/// Create and store a SurfaceMeshRendererParameters for the new SurfaceMesh.
+pub fn surfaceMeshAdded(smr: *SurfaceMeshRenderer, surface_mesh: *SurfaceMesh) void {
+    smr.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init()) catch {
+        std.debug.print("Failed to create SurfaceMeshRendererParameters for new SurfaceMesh\n", .{});
+        return;
+    };
 }
 
+/// Part of the Module interface.
+/// Update the SurfaceMeshRendererParameters when a standard data of the SurfaceMesh changes.
 pub fn surfaceMeshStdDataChanged(
     smr: *SurfaceMeshRenderer,
     surface_mesh: *SurfaceMesh,
     std_data: SurfaceMeshStdData,
-) !void {
+) void {
     const p = smr.parameters.getPtr(surface_mesh) orelse return;
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo: VBO = try zgp.models_registry.dataVBO(Vec3, vertex_position.data);
+                const position_vbo: VBO = zgp.models_registry.dataVBO(Vec3, vertex_position.data) catch {
+                    std.debug.print("Failed to get VBO for vertex positions\n", .{});
+                    return;
+                };
                 p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.line_bold_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -102,7 +115,10 @@ pub fn surfaceMeshStdDataChanged(
         },
         .vertex_color => |maybe_vertex_color| {
             if (maybe_vertex_color) |vertex_color| {
-                const color_vbo = try zgp.models_registry.dataVBO(Vec3, vertex_color.data);
+                const color_vbo = zgp.models_registry.dataVBO(Vec3, vertex_color.data) catch {
+                    std.debug.print("Failed to get VBO for vertex colors\n", .{});
+                    return;
+                };
                 p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.color, color_vbo, 0, 0);
             } else {
@@ -114,6 +130,8 @@ pub fn surfaceMeshStdDataChanged(
     }
 }
 
+/// Part of the Module interface.
+/// Render all SurfaceMeshes with their SurfaceMeshRendererParameters and the given view and projection matrices.
 pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
     var sm_it = zgp.models_registry.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
@@ -145,6 +163,8 @@ pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4, projection_matrix: Mat
     }
 }
 
+/// Part of the Module interface.
+/// Show a UI panel to control the SurfaceMeshRendererParameters of the selected SurfaceMesh.
 pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
 

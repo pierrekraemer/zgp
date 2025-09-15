@@ -22,9 +22,13 @@ pub fn deinit(v: *VBO) void {
 
 pub fn fillFrom(v: *VBO, comptime T: type, data: *const Data(T)) !void {
     const vec_size = switch (@typeInfo(T)) {
+        .float => 1,
         .array => @typeInfo(T).array.len,
-        else => @compileError("VBO.fillFrom only supports array types"),
+        else => @compileError("VBO.fillFrom only supports float & array of float types"),
     };
+    if (@typeInfo(T) == .array and @typeInfo(@typeInfo(T).array.child) != .float) {
+        @compileError("VBO.fillFrom only supports float & array of float types");
+    }
     const buf_size = data.rawSize();
     gl.BindBuffer(gl.ARRAY_BUFFER, v.index);
     defer gl.BindBuffer(gl.ARRAY_BUFFER, 0);
@@ -37,7 +41,11 @@ pub fn fillFrom(v: *VBO, comptime T: type, data: *const Data(T)) !void {
         while (it.next()) |value| {
             defer index += 1;
             const offset = index * vec_size;
-            @memcpy(buffer_f32[offset .. offset + vec_size], value);
+            switch (@typeInfo(T)) {
+                .float => buffer_f32[offset] = value.*,
+                .array => @memcpy(buffer_f32[offset .. offset + vec_size], value),
+                else => @compileError("VBO.fillFrom only supports float & array of float types"),
+            }
         }
         _ = gl.UnmapBuffer(gl.ARRAY_BUFFER);
     } else {
