@@ -1,6 +1,6 @@
 const std = @import("std");
 const gl = @import("gl");
-const c = @cImport({
+pub const c = @cImport({
     @cDefine("SDL_DISABLE_OLD_NAMES", {});
     @cInclude("SDL3/SDL.h");
     @cInclude("SDL3/SDL_revision.h");
@@ -348,7 +348,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             .x = imgui_viewport.*.Size.x * 0.22,
             .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
         }, 0);
-        c.ImGui_SetNextWindowBgAlpha(0.2);
+        c.ImGui_SetNextWindowBgAlpha(0.4);
         if (c.ImGui_Begin("Models Registry", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
             c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
         {
@@ -364,7 +364,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             .x = imgui_viewport.*.Size.x * 0.22,
             .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
         }, 0);
-        c.ImGui_SetNextWindowBgAlpha(0.2);
+        c.ImGui_SetNextWindowBgAlpha(0.4);
         if (c.ImGui_Begin("Modules", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
             c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
         {

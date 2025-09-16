@@ -1,17 +1,16 @@
 const ModelsRegistry = @This();
 
 const std = @import("std");
-
-const c = @cImport({
-    @cInclude("dcimgui.h");
-});
-const imgui_utils = @import("../utils/imgui.zig");
-const imgui_log = std.log.scoped(.imgui);
-
-const types_utils = @import("../utils/types.zig");
+const builtin = @import("builtin");
 
 const zgp = @import("../main.zig");
+const c = zgp.c;
+
+const imgui_utils = @import("../utils/imgui.zig");
+const imgui_log = std.log.scoped(.imgui);
 const zgp_log = std.log.scoped(.zgp);
+
+const types_utils = @import("../utils/types.zig");
 
 pub const PointCloud = @import("point/PointCloud.zig");
 pub const SurfaceMesh = @import("surface/SurfaceMesh.zig");
@@ -34,9 +33,10 @@ pub const PointCloudStdData = union(enum) {
     color: ?PointCloud.CellData(Vec3),
 };
 pub const PointCloudStdDataTag = std.meta.Tag(PointCloudStdData);
-// the following function generates a struct with one field for each entry of the given union
-// fun but does not allow completion in the IDE
+// the following function call generates a struct with one field for each entry of the given union
 // const PointCloudStdDatas = types_utils.StructFromUnion(PointCloudStdData);
+// fun, but does not allow completion in the IDE
+// TODO: try the other way around: generate the union of data types from the struct?
 const PointCloudStdDatas = struct {
     position: ?PointCloud.CellData(Vec3) = null,
     normal: ?PointCloud.CellData(Vec3) = null,
@@ -62,9 +62,10 @@ pub const SurfaceMeshStdData = union(enum) {
     face_normal: ?SurfaceMesh.CellData(.face, Vec3),
 };
 pub const SurfaceMeshStdDataTag = std.meta.Tag(SurfaceMeshStdData);
-// the following function generates a struct with one field for each entry of the given union
-// fun but does not allow completion in the IDE
+// the following function call generates a struct with one field for each entry of the given union
 // const SurfaceMeshStdDatas = types_utils.StructFromUnion(SurfaceMeshStdData);
+// fun, but does not allow completion in the IDE
+// TODO: try the other way around: generate the union of data types from the struct?
 const SurfaceMeshStdDatas = struct {
     corner_angle: ?SurfaceMesh.CellData(.corner, f32) = null,
     vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
@@ -182,31 +183,6 @@ pub fn pointCloudDataUpdated(
     zgp.requestRedraw();
 }
 
-pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) void {
-    const info = mr.surface_meshes_info.getPtr(sm).?;
-    info.points_ibo.fillFrom(sm, .vertex, mr.allocator) catch {
-        std.debug.print("Failed to fill points IBO for SurfaceMesh\n", .{});
-        return;
-    };
-    info.lines_ibo.fillFrom(sm, .edge, mr.allocator) catch {
-        std.debug.print("Failed to fill lines IBO for SurfaceMesh\n", .{});
-        return;
-    };
-    info.triangles_ibo.fillFrom(sm, .face, mr.allocator) catch {
-        std.debug.print("Failed to fill triangles IBO for SurfaceMesh\n", .{});
-        return;
-    };
-    info.boundaries_ibo.fillFrom(sm, .boundary, mr.allocator) catch {
-        std.debug.print("Failed to fill boundaries IBO for SurfaceMesh\n", .{});
-        return;
-    };
-
-    for (zgp.modules.items) |*module| {
-        module.surfaceMeshConnectivityUpdated(sm);
-    }
-    zgp.requestRedraw();
-}
-
 pub fn surfaceMeshDataUpdated(
     mr: *ModelsRegistry,
     sm: *SurfaceMesh,
@@ -234,6 +210,31 @@ pub fn surfaceMeshDataUpdated(
 
     for (zgp.modules.items) |*module| {
         module.surfaceMeshDataUpdated(sm, cell_type, data.gen());
+    }
+    zgp.requestRedraw();
+}
+
+pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) void {
+    const info = mr.surface_meshes_info.getPtr(sm).?;
+    info.points_ibo.fillFrom(sm, .vertex, mr.allocator) catch {
+        std.debug.print("Failed to fill points IBO for SurfaceMesh\n", .{});
+        return;
+    };
+    info.lines_ibo.fillFrom(sm, .edge, mr.allocator) catch {
+        std.debug.print("Failed to fill lines IBO for SurfaceMesh\n", .{});
+        return;
+    };
+    info.triangles_ibo.fillFrom(sm, .face, mr.allocator) catch {
+        std.debug.print("Failed to fill triangles IBO for SurfaceMesh\n", .{});
+        return;
+    };
+    info.boundaries_ibo.fillFrom(sm, .boundary, mr.allocator) catch {
+        std.debug.print("Failed to fill boundaries IBO for SurfaceMesh\n", .{});
+        return;
+    };
+
+    for (zgp.modules.items) |*module| {
+        module.surfaceMeshConnectivityUpdated(sm);
     }
     zgp.requestRedraw();
 }
@@ -373,6 +374,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
 
         if (mr.selected_surface_mesh) |sm| {
             c.ImGui_SeparatorText("#Cells");
+
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
             c.ImGui_Text("Corner");
             c.ImGui_SameLine();
@@ -396,10 +398,15 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
             c.ImGui_Text(nbfaces.ptr);
 
             c.ImGui_SeparatorText("Standard Data");
+
             const info = mr.surface_meshes_info.getPtr(sm).?;
             inline for (@typeInfo(SurfaceMeshStdDatas).@"struct".fields) |*field| {
                 c.ImGui_Text(field.name);
+                c.ImGui_SameLine();
                 c.ImGui_PushID(field.name);
+                const combobox_width = @min(c.ImGui_GetWindowWidth() * 0.5, c.ImGui_GetContentRegionAvail().x);
+                c.ImGui_SetNextItemWidth(combobox_width);
+                c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - combobox_width));
                 imgui_utils.surfaceMeshCellDataComboBox(
                     sm,
                     @typeInfo(field.type).optional.child.CellType,
@@ -735,8 +742,9 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
     try sm.indexCells(.edge);
     try sm.indexCells(.face);
 
-    // TODO: only check in debug builds
-    try sm.checkIntegrity();
+    if (builtin.mode == .Debug) {
+        try sm.checkIntegrity();
+    }
 
     return sm;
 }

@@ -1,10 +1,7 @@
 const std = @import("std");
 
-const c = @cImport({
-    @cInclude("dcimgui.h");
-});
-
 const zgp = @import("../main.zig");
+const c = zgp.c;
 
 const PointCloud = @import("../models/point/PointCloud.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
@@ -15,18 +12,6 @@ pub fn tooltip(text: []const u8) void {
     if (c.ImGui_BeginItemTooltip()) {
         c.ImGui_PushTextWrapPos(c.ImGui_GetFontSize() * 35.0);
         c.ImGui_TextUnformatted(text.ptr);
-        c.ImGui_PopTextWrapPos();
-        c.ImGui_EndTooltip();
-    }
-}
-
-pub fn disabledButton(buttonText: []const u8, tooltipText: []const u8) void {
-    c.ImGui_BeginDisabled(true);
-    defer c.ImGui_EndDisabled();
-    _ = c.ImGui_Button(buttonText.ptr);
-    if (c.ImGui_BeginItemTooltip()) {
-        c.ImGui_PushTextWrapPos(c.ImGui_GetFontSize() * 35.0);
-        c.ImGui_TextUnformatted(tooltipText.ptr);
         c.ImGui_PopTextWrapPos();
         c.ImGui_EndTooltip();
     }
@@ -114,10 +99,10 @@ pub fn surfaceMeshCellDataComboBox(
     context: anytype,
     on_selected: *const fn (comptime cell_type: SurfaceMesh.CellType, comptime T: type, ?SurfaceMesh.CellData(cell_type, T), @TypeOf(context)) void,
 ) void {
-    if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "--none--", 0)) {
+    if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "-- none --", 0)) {
         defer c.ImGui_EndCombo();
         const none_selected = if (selected_data) |_| false else true;
-        if (c.ImGui_SelectableEx("--none--", none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+        if (c.ImGui_SelectableEx("-- none --", none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
             if (!none_selected) {
                 on_selected(cell_type, T, null, context); // only call on_selected if it was not previously selected
             }
@@ -154,10 +139,10 @@ pub fn pointCloudDataComboBox(
     context: anytype,
     on_selected: *const fn (comptime T: type, ?PointCloud.CellData(T), @TypeOf(context)) void,
 ) void {
-    if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "--none--", 0)) {
+    if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "-- none --", 0)) {
         defer c.ImGui_EndCombo();
         const none_selected = if (selected_data) |_| false else true;
-        if (c.ImGui_SelectableEx("--none--", none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+        if (c.ImGui_SelectableEx("-- none --", none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
             if (!none_selected) {
                 on_selected(T, null, context); // only call on_selected if it was not previously selected
             }

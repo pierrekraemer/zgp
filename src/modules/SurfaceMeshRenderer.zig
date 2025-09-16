@@ -3,12 +3,10 @@ const SurfaceMeshRenderer = @This();
 const std = @import("std");
 const gl = @import("gl");
 
-const c = @cImport({
-    @cInclude("dcimgui.h");
-});
-const imgui_utils = @import("../utils/imgui.zig");
-
 const zgp = @import("../main.zig");
+const c = zgp.c;
+
+const imgui_utils = @import("../utils/imgui.zig");
 
 const Module = @import("Module.zig");
 

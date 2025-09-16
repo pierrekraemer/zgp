@@ -50,11 +50,6 @@ pub fn init(argv: [][:0]u8) ArgParseError!CLIArgs {
     program_name = std.fs.path.basename(argv[0]);
     var args: CLIArgs = .{};
 
-    std.debug.print("program_name: {s}\n", .{program_name});
-    for (argv, 0..) |arg, i| {
-        std.debug.print("argv[{d}]: '{s}'\n", .{ i, arg });
-    }
-
     // parse optional arguments i.e. anything that start with a dash '-'
     var optind: usize = 1;
     while (optind < argv.len and argv[optind][0] == '-') : (optind += 1) {
@@ -86,8 +81,6 @@ pub fn init(argv: [][:0]u8) ArgParseError!CLIArgs {
             return error.InvalidArgs;
         }
     }
-
-    std.debug.print("optind: {d}\n", .{optind});
 
     // validate and parse positional arguments
     if (argv.len - optind < 1) {

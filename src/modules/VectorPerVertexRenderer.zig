@@ -3,13 +3,11 @@ const VectorPerVertexRenderer = @This();
 const std = @import("std");
 const gl = @import("gl");
 
-const c = @cImport({
-    @cInclude("dcimgui.h");
-});
+const zgp = @import("../main.zig");
+const c = zgp.c;
+
 const imgui_utils = @import("../utils/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
-
-const zgp = @import("../main.zig");
 
 const Module = @import("Module.zig");
 

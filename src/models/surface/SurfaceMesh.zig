@@ -470,8 +470,6 @@ pub fn phi2Unsew(sm: *SurfaceMesh, d: Dart) void {
     sm.dart_phi2.valuePtr(d2).* = d2;
 }
 
-// TODO: implement isBoundaryFace & isIncidentToBoundary functions?
-
 pub fn isBoundaryDart(sm: *const SurfaceMesh, d: Dart) bool {
     return sm.dart_boundary_marker.value(d);
 }
@@ -534,10 +532,20 @@ pub fn dartCellIndex(sm: *const SurfaceMesh, d: Dart, cell_type: CellType) u32 {
 }
 
 fn setCellIndex(sm: *SurfaceMesh, c: Cell, index: u32) void {
-    // TODO: optimize for corners & edges
-    var dart_it = sm.cellDartIterator(c);
-    while (dart_it.next()) |d| {
-        sm.setDartCellIndex(d, c.cellType(), index);
+    switch (c) {
+        .corner => sm.setDartCellIndex(c.dart(), .corner, index),
+        .edge => {
+            const d = c.dart();
+            sm.setDartCellIndex(d, .edge, index);
+            sm.setDartCellIndex(sm.phi2(d), .edge, index);
+        },
+        .vertex, .face => {
+            var dart_it = sm.cellDartIterator(c);
+            while (dart_it.next()) |d| {
+                sm.setDartCellIndex(d, c.cellType(), index);
+            }
+        },
+        else => unreachable,
     }
 }
 
@@ -666,6 +674,7 @@ pub fn nbCells(sm: *const SurfaceMesh, cell_type: CellType) u32 {
         .vertex => sm.vertex_data.nbElements(),
         .edge => sm.edge_data.nbElements(),
         .face => sm.face_data.nbElements(),
+        // TODO: count boundary faces
         else => unreachable,
     };
 }
