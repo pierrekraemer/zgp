@@ -43,6 +43,7 @@ pub fn pliantRemeshing(
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3),
+    edge_length: SurfaceMesh.CellData(.edge, f32),
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
@@ -51,7 +52,7 @@ pub fn pliantRemeshing(
     try subdivision.triangulateFaces(sm);
 
     const mean_edge_length = try length.meanEdgeLength(sm, vertex_position);
-    const length_goal_squared = mean_edge_length * mean_edge_length * edge_length_factor * edge_length_factor;
+    const length_goal = mean_edge_length * edge_length_factor;
 
     var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer edge_it.deinit();
@@ -108,29 +109,35 @@ pub fn pliantRemeshing(
             if (!edge_marker.value(edge)) {
                 const d = edge.dart();
                 const dd = sm.phi2(d);
-                const v1: SurfaceMesh.Cell = .{ .vertex = d };
-                const v2: SurfaceMesh.Cell = .{ .vertex = dd };
-                const length_squared = vec.squaredNorm3(vec.sub3(vertex_position.value(v2), vertex_position.value(v1)));
-                if (length_squared > length_goal_squared * 4.0) {
+                // const length_squared = vec.squaredNorm3(vec.sub3(vertex_position.value(v2), vertex_position.value(v1)));
+                const l = edge_length.value(edge);
+                if (l > length_goal * 2.0) {
                     const new_pos = vec.mulScalar3(
-                        vec.add3(vertex_position.value(v1), vertex_position.value(v2)),
+                        vec.add3(
+                            vertex_position.value(.{ .vertex = d }),
+                            vertex_position.value(.{ .vertex = dd }),
+                        ),
                         0.5,
                     );
                     const v = try sm.cutEdge(edge);
                     vertex_position.valuePtr(v).* = new_pos;
-                    // triangulate adjacent (non-boundary) faces
-                    const d1 = sm.phi1(d);
-                    const dd1 = sm.phi1(dd);
+                    edge_length.valuePtr(.{ .edge = d }).* = l * 0.5;
+                    edge_length.valuePtr(.{ .edge = dd }).* = l * 0.5;
                     if (feature_edge.value(edge)) {
                         feature_edge.valuePtr(.{ .edge = dd }).* = true;
                         feature_vertex.valuePtr(v).* = true;
                     }
+                    // triangulate adjacent (non-boundary) faces
+                    const d1 = sm.phi1(d);
+                    const dd1 = sm.phi1(dd);
                     if (!sm.isBoundaryDart(d1)) {
                         const e = try sm.cutFace(d1, sm.phi1(sm.phi1(d1)));
+                        edge_length.valuePtr(e).* = length.edgeLength(sm, e, vertex_position);
                         edge_marker.valuePtr(e).* = true; // do not process new edges in the same pass
                     }
                     if (!sm.isBoundaryDart(dd1)) {
                         const e = try sm.cutFace(dd1, sm.phi1(sm.phi1(dd1)));
+                        edge_length.valuePtr(e).* = length.edgeLength(sm, e, vertex_position);
                         edge_marker.valuePtr(e).* = true; // do not process new edges in the same pass
                     }
                 }
@@ -154,8 +161,8 @@ pub fn pliantRemeshing(
             {
                 continue;
             }
-            const length_squared = vec.squaredNorm3(vec.sub3(vertex_position.value(v2), vertex_position.value(v1)));
-            if (length_squared < length_goal_squared * 0.25) {
+            const l = edge_length.value(edge);
+            if (l < length_goal * 0.5) {
                 if (sm.canCollapseEdge(edge)) {
                     var new_pos = vec.mulScalar3(
                         vec.add3(vertex_position.value(v1), vertex_position.value(v2)),
@@ -169,6 +176,11 @@ pub fn pliantRemeshing(
                         }
                     }
                     const v = sm.collapseEdge(edge);
+                    var dart_it = sm.cellDartIterator(v);
+                    while (dart_it.next()) |vd| {
+                        const e: SurfaceMesh.Cell = .{ .edge = vd };
+                        edge_length.valuePtr(e).* = length.edgeLength(sm, e, vertex_position);
+                    }
                     vertex_position.valuePtr(v).* = new_pos;
                 }
             }
@@ -182,6 +194,7 @@ pub fn pliantRemeshing(
             }
             if (sm.canFlipEdge(edge) and edgeShouldFlip(sm, edge)) {
                 sm.flipEdge(edge);
+                edge_length.valuePtr(edge).* = length.edgeLength(sm, edge, vertex_position);
             }
         }
 
