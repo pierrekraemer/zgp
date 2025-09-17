@@ -1,9 +1,10 @@
+//! TODO: write docs for SurfaceMesh
+const SurfaceMesh = @This();
+
 const std = @import("std");
 const assert = std.debug.assert;
 
 const zgp_log = std.log.scoped(.zgp);
-
-const SurfaceMesh = @This();
 
 const data = @import("../../utils/Data.zig");
 const DataContainer = data.DataContainer;

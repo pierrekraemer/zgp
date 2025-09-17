@@ -33,3 +33,31 @@ pub fn StructFromUnion(U: type) type {
         .is_tuple = false,
     } });
 }
+
+pub fn UnionFromStruct(S: type) type {
+    const nbfields = @typeInfo(S).@"struct".fields.len;
+    var union_fields: [nbfields]std.builtin.Type.UnionField = undefined;
+    var enum_fields: [nbfields]std.builtin.Type.EnumField = undefined;
+    inline for (@typeInfo(S).@"struct".fields, 0..nbfields) |*struct_field, i| {
+        union_fields[i] = .{
+            .name = struct_field.name,
+            .type = struct_field.type,
+            .alignment = @alignOf(struct_field.type),
+        };
+        enum_fields[i] = .{
+            .name = struct_field.name,
+            .value = i,
+        };
+    }
+    return @Type(.{ .@"union" = .{
+        .layout = .auto,
+        .tag_type = @Type(.{ .@"enum" = .{
+            .tag_type = if (nbfields <= 256) u8 else if (nbfields <= 65536) u16 else u32,
+            .fields = &enum_fields,
+            .decls = &.{},
+            .is_exhaustive = true,
+        } }),
+        .fields = &union_fields,
+        .decls = &.{},
+    } });
+}

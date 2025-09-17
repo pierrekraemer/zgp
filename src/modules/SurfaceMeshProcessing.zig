@@ -64,7 +64,7 @@ fn remesh(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
-    length_factor: f32,
+    edge_length_factor: f32,
 ) !void {
     try remeshing.pliantRemeshing(
         sm,
@@ -75,7 +75,7 @@ fn remesh(
         edge_dihedral_angle,
         vertex_area,
         vertex_normal,
-        length_factor,
+        edge_length_factor,
     );
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
     zgp.models_registry.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
@@ -155,9 +155,28 @@ fn computeVertexNormals(
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_normal);
 }
 
+fn computeVertexGaussianCurvatures(
+    sm: *SurfaceMesh,
+    corner_angle: SurfaceMesh.CellData(.corner, f32),
+    vertex_gaussian_curvature: SurfaceMesh.CellData(.vertex, f32),
+) !void {
+    try curvature.computeVertexGaussianCurvatures(sm, corner_angle, vertex_gaussian_curvature);
+    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_gaussian_curvature);
+}
+
+fn computeVertexMeanCurvatures(
+    sm: *SurfaceMesh,
+    edge_length: SurfaceMesh.CellData(.edge, f32),
+    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
+    vertex_mean_curvature: SurfaceMesh.CellData(.vertex, f32),
+) !void {
+    try curvature.computeVertexMeanCurvatures(sm, edge_length, edge_dihedral_angle, vertex_mean_curvature);
+    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_mean_curvature);
+}
+
 pub fn uiPanel(_: *SurfaceMeshProcessing) void {
     const UiData = struct {
-        var length_factor: f32 = 1.0;
+        var edge_length_factor: f32 = 1.0;
         var button_text_buf: [64]u8 = undefined;
         var new_data_name: [32]u8 = undefined;
     };
@@ -202,9 +221,9 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
         }
 
         {
-            c.ImGui_Text("Length factor");
-            c.ImGui_PushID("Length factor");
-            _ = c.ImGui_SliderFloatEx("", &UiData.length_factor, 0.1, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
+            c.ImGui_Text("Edge length factor");
+            c.ImGui_PushID("Edge length factor");
+            _ = c.ImGui_SliderFloatEx("", &UiData.edge_length_factor, 0.1, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
             c.ImGui_PopID();
             const disabled = info.std_data.vertex_position == null or
                 info.std_data.corner_angle == null or
@@ -226,7 +245,7 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
                     info.std_data.edge_dihedral_angle.?,
                     info.std_data.vertex_area.?,
                     info.std_data.vertex_normal.?,
-                    UiData.length_factor,
+                    UiData.edge_length_factor,
                 ) catch |err| {
                     std.debug.print("Error remeshing: {}\n", .{err});
                 };
@@ -261,8 +280,8 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
 
         {
             const disabled = info.std_data.vertex_position == null or info.std_data.corner_angle == null;
-            const vertex_position_last_update = mr.dataLastUpdate(info.std_data.vertex_position.?.gen());
-            const corner_angle_last_update = mr.dataLastUpdate(info.std_data.corner_angle.?.gen());
+            const vertex_position_last_update = if (info.std_data.vertex_position) |d| mr.dataLastUpdate(d.gen()) else null;
+            const corner_angle_last_update = if (info.std_data.corner_angle) |d| mr.dataLastUpdate(d.gen()) else null;
             const out_of_date =
                 vertex_position_last_update == null or corner_angle_last_update == null or
                 corner_angle_last_update.?.order(vertex_position_last_update.?) == .lt;
@@ -314,8 +333,8 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
 
         {
             const disabled = info.std_data.vertex_position == null or info.std_data.face_area == null;
-            const vertex_position_last_update = mr.dataLastUpdate(info.std_data.vertex_position.?.gen());
-            const face_area_last_update = mr.dataLastUpdate(info.std_data.face_area.?.gen());
+            const vertex_position_last_update = if (info.std_data.vertex_position) |d| mr.dataLastUpdate(d.gen()) else null;
+            const face_area_last_update = if (info.std_data.face_area) |d| mr.dataLastUpdate(d.gen()) else null;
             const out_of_date =
                 vertex_position_last_update == null or face_area_last_update == null or
                 face_area_last_update.?.order(vertex_position_last_update.?) == .lt;
@@ -367,8 +386,8 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
 
         {
             const disabled = info.std_data.vertex_position == null or info.std_data.face_normal == null;
-            const vertex_position_last_update = mr.dataLastUpdate(info.std_data.vertex_position.?.gen());
-            const face_normal_last_update = mr.dataLastUpdate(info.std_data.face_normal.?.gen());
+            const vertex_position_last_update = if (info.std_data.vertex_position) |d| mr.dataLastUpdate(d.gen()) else null;
+            const face_normal_last_update = if (info.std_data.face_normal) |d| mr.dataLastUpdate(d.gen()) else null;
             const out_of_date =
                 vertex_position_last_update == null or face_normal_last_update == null or
                 face_normal_last_update.?.order(vertex_position_last_update.?) == .lt;
@@ -420,8 +439,8 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
 
         {
             const disabled = info.std_data.vertex_position == null or info.std_data.edge_length == null;
-            const vertex_position_last_update = mr.dataLastUpdate(info.std_data.vertex_position.?.gen());
-            const edge_length_last_update = mr.dataLastUpdate(info.std_data.edge_length.?.gen());
+            const vertex_position_last_update = if (info.std_data.vertex_position) |d| mr.dataLastUpdate(d.gen()) else null;
+            const edge_length_last_update = if (info.std_data.edge_length) |d| mr.dataLastUpdate(d.gen()) else null;
             const out_of_date =
                 vertex_position_last_update == null or edge_length_last_update == null or
                 edge_length_last_update.?.order(vertex_position_last_update.?) == .lt;
@@ -473,9 +492,9 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
 
         {
             const disabled = info.std_data.vertex_position == null or info.std_data.face_normal == null or info.std_data.edge_dihedral_angle == null;
-            const vertex_position_last_update = mr.dataLastUpdate(info.std_data.vertex_position.?.gen());
-            const face_normal_last_update = mr.dataLastUpdate(info.std_data.face_normal.?.gen());
-            const edge_dihedral_angle_last_update = mr.dataLastUpdate(info.std_data.edge_dihedral_angle.?.gen());
+            const vertex_position_last_update = if (info.std_data.vertex_position) |d| mr.dataLastUpdate(d.gen()) else null;
+            const face_normal_last_update = if (info.std_data.face_normal) |d| mr.dataLastUpdate(d.gen()) else null;
+            const edge_dihedral_angle_last_update = if (info.std_data.edge_dihedral_angle) |d| mr.dataLastUpdate(d.gen()) else null;
             const out_of_date =
                 vertex_position_last_update == null or face_normal_last_update == null or edge_dihedral_angle_last_update == null or
                 edge_dihedral_angle_last_update.?.order(vertex_position_last_update.?) == .lt or
@@ -530,8 +549,8 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
 
         {
             const disabled = info.std_data.face_area == null or info.std_data.vertex_area == null;
-            const face_area_last_update = mr.dataLastUpdate(info.std_data.face_area.?.gen());
-            const vertex_area_last_update = mr.dataLastUpdate(info.std_data.vertex_area.?.gen());
+            const face_area_last_update = if (info.std_data.face_area) |d| mr.dataLastUpdate(d.gen()) else null;
+            const vertex_area_last_update = if (info.std_data.vertex_area) |d| mr.dataLastUpdate(d.gen()) else null;
             const out_of_date =
                 face_area_last_update == null or vertex_area_last_update == null or
                 vertex_area_last_update.?.order(face_area_last_update.?) == .lt;
@@ -583,9 +602,9 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
 
         {
             const disabled = info.std_data.corner_angle == null or info.std_data.face_normal == null or info.std_data.vertex_normal == null;
-            const corner_angle_last_update = mr.dataLastUpdate(info.std_data.corner_angle.?.gen());
-            const face_normal_last_update = mr.dataLastUpdate(info.std_data.face_normal.?.gen());
-            const vertex_normal_last_update = mr.dataLastUpdate(info.std_data.vertex_normal.?.gen());
+            const corner_angle_last_update = if (info.std_data.corner_angle) |d| mr.dataLastUpdate(d.gen()) else null;
+            const face_normal_last_update = if (info.std_data.face_normal) |d| mr.dataLastUpdate(d.gen()) else null;
+            const vertex_normal_last_update = if (info.std_data.vertex_normal) |d| mr.dataLastUpdate(d.gen()) else null;
             const out_of_date =
                 corner_angle_last_update == null or face_normal_last_update == null or vertex_normal_last_update == null or
                 vertex_normal_last_update.?.order(corner_angle_last_update.?) == .lt or

@@ -24,48 +24,26 @@ const IBO = @import("../rendering/IBO.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
-/// Declare the standard PointCloud datas.
-/// For each PointCloud, these datas can be set via the setPointCloudStdData function
-/// and accessed in the PointCloudInfo.std_data field (the PointCloudInfo is available via the pointCloudInfo function)
-pub const PointCloudStdData = union(enum) {
-    position: ?PointCloud.CellData(Vec3),
-    normal: ?PointCloud.CellData(Vec3),
-    color: ?PointCloud.CellData(Vec3),
-};
-pub const PointCloudStdDataTag = std.meta.Tag(PointCloudStdData);
-// the following function call generates a struct with one field for each entry of the given union
-// const PointCloudStdDatas = types_utils.StructFromUnion(PointCloudStdData);
-// fun, but does not allow completion in the IDE
-// TODO: try the other way around: generate the union of data types from the struct?
+/// Standard PointCloud data name & types.
 const PointCloudStdDatas = struct {
     position: ?PointCloud.CellData(Vec3) = null,
     normal: ?PointCloud.CellData(Vec3) = null,
     color: ?PointCloud.CellData(Vec3) = null,
 };
+/// This union is generated from the PointCloudStdDatas struct and allows to easily provide a single
+/// data entry to the setPointCloudStdData function.
+pub const PointCloudStdData = types_utils.UnionFromStruct(PointCloudStdDatas);
+pub const PointCloudStdDataTag = std.meta.Tag(PointCloudStdData);
+
+/// This struct holds all the information related to a PointCloud,
+/// including the standard datas and the IBOs for rendering.
+/// Each PointCloud in the ModelsRegistry has an associated PointCloudInfo which can be accessed via the pointCloudInfo function.
 const PointCloudInfo = struct {
     std_data: PointCloudStdDatas = .{},
     points_ibo: IBO,
 };
 
-/// Declare the standard SurfaceMesh data name & types.
-/// For each SurfaceMesh, these datas can be set via the setSurfaceMeshStdData function
-/// and accessed in the SurfaceMeshInfo.std_data field (the SurfaceMeshInfo is available via the surfaceMeshInfo function)
-pub const SurfaceMeshStdData = union(enum) {
-    corner_angle: ?SurfaceMesh.CellData(.corner, f32),
-    vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3),
-    vertex_area: ?SurfaceMesh.CellData(.vertex, f32),
-    vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3),
-    vertex_color: ?SurfaceMesh.CellData(.vertex, Vec3),
-    edge_length: ?SurfaceMesh.CellData(.edge, f32),
-    edge_dihedral_angle: ?SurfaceMesh.CellData(.edge, f32),
-    face_area: ?SurfaceMesh.CellData(.face, f32),
-    face_normal: ?SurfaceMesh.CellData(.face, Vec3),
-};
-pub const SurfaceMeshStdDataTag = std.meta.Tag(SurfaceMeshStdData);
-// the following function call generates a struct with one field for each entry of the given union
-// const SurfaceMeshStdDatas = types_utils.StructFromUnion(SurfaceMeshStdData);
-// fun, but does not allow completion in the IDE
-// TODO: try the other way around: generate the union of data types from the struct?
+/// Standard SurfaceMesh data name & types.
 const SurfaceMeshStdDatas = struct {
     corner_angle: ?SurfaceMesh.CellData(.corner, f32) = null,
     vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
@@ -77,6 +55,14 @@ const SurfaceMeshStdDatas = struct {
     face_area: ?SurfaceMesh.CellData(.face, f32) = null,
     face_normal: ?SurfaceMesh.CellData(.face, Vec3) = null,
 };
+/// This union is generated from the SurfaceMeshStdDatas struct and allows to easily provide a single
+/// data entry to the setSurfaceMeshStdData function.
+pub const SurfaceMeshStdData = types_utils.UnionFromStruct(SurfaceMeshStdDatas);
+pub const SurfaceMeshStdDataTag = std.meta.Tag(SurfaceMeshStdData);
+
+/// This struct holds all the information related to a SurfaceMesh,
+/// including the standard datas and the IBOs for rendering.
+/// Each SurfaceMesh in the ModelsRegistry has an associated SurfaceMeshInfo which can be accessed via the surfaceMeshInfo function.
 const SurfaceMeshInfo = struct {
     std_data: SurfaceMeshStdDatas = .{},
     points_ibo: IBO,
@@ -239,14 +225,6 @@ pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) voi
     zgp.requestRedraw();
 }
 
-// pub fn updateDataVBO(mr: *ModelsRegistry, comptime T: type, data: *const Data(T)) !void {
-//     const vbo = try mr.data_vbo.getOrPut(&data.gen);
-//     if (!vbo.found_existing) {
-//         vbo.value_ptr.* = VBO.init();
-//     }
-//     try vbo.value_ptr.*.fillFrom(T, data);
-// }
-
 pub fn dataVBO(mr: *ModelsRegistry, comptime T: type, data: *const Data(T)) !VBO {
     const vbo = try mr.data_vbo.getOrPut(&data.gen);
     if (!vbo.found_existing) {
@@ -265,8 +243,28 @@ pub fn pointCloudInfo(mr: *ModelsRegistry, pc: *const PointCloud) *PointCloudInf
     return mr.point_clouds_info.getPtr(pc).?; // should always exist
 }
 
+pub fn pointCloudName(mr: *ModelsRegistry, pc: *const PointCloud) ?[]const u8 {
+    const it = mr.point_clouds.iterator();
+    while (it.next()) |entry| {
+        if (entry.value_ptr.* == pc) {
+            return entry.key_ptr.*;
+        }
+    }
+    return null;
+}
+
 pub fn surfaceMeshInfo(mr: *ModelsRegistry, sm: *const SurfaceMesh) *SurfaceMeshInfo {
     return mr.surface_meshes_info.getPtr(sm).?; // should always exist
+}
+
+pub fn surfaceMeshName(mr: *ModelsRegistry, sm: *const SurfaceMesh) ?[]const u8 {
+    const it = mr.surface_meshes.iterator();
+    while (it.next()) |entry| {
+        if (entry.value_ptr.* == sm) {
+            return entry.key_ptr.*;
+        }
+    }
+    return null;
 }
 
 pub fn setPointCloudStdData(
@@ -373,49 +371,32 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
         );
 
         if (mr.selected_surface_mesh) |sm| {
-            c.ImGui_SeparatorText("#Cells");
-
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
-            c.ImGui_Text("Corner");
-            c.ImGui_SameLine();
-            const nbcorners = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.corner)}) catch "";
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - c.ImGui_CalcTextSize(nbcorners.ptr).x));
-            c.ImGui_Text(nbcorners.ptr);
-            c.ImGui_Text("Vertex");
-            c.ImGui_SameLine();
-            const nbvertices = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.vertex)}) catch "";
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - c.ImGui_CalcTextSize(nbvertices.ptr).x));
-            c.ImGui_Text(nbvertices.ptr);
-            c.ImGui_Text("Edge");
-            c.ImGui_SameLine();
-            const nbedges = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.edge)}) catch "";
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - c.ImGui_CalcTextSize(nbedges.ptr).x));
-            c.ImGui_Text(nbedges.ptr);
-            c.ImGui_Text("Face");
-            c.ImGui_SameLine();
-            const nbfaces = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(.face)}) catch "";
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - c.ImGui_CalcTextSize(nbfaces.ptr).x));
-            c.ImGui_Text(nbfaces.ptr);
-
-            c.ImGui_SeparatorText("Standard Data");
-
             const info = mr.surface_meshes_info.getPtr(sm).?;
-            inline for (@typeInfo(SurfaceMeshStdDatas).@"struct".fields) |*field| {
-                c.ImGui_Text(field.name);
+            inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
+                c.ImGui_SeparatorText(@tagName(cell_type));
+                c.ImGui_Text("# = ");
                 c.ImGui_SameLine();
-                c.ImGui_PushID(field.name);
-                const combobox_width = @min(c.ImGui_GetWindowWidth() * 0.5, c.ImGui_GetContentRegionAvail().x);
-                c.ImGui_SetNextItemWidth(combobox_width);
-                c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - combobox_width));
-                imgui_utils.surfaceMeshCellDataComboBox(
-                    sm,
-                    @typeInfo(field.type).optional.child.CellType,
-                    @typeInfo(field.type).optional.child.DataType,
-                    @field(info.std_data, field.name),
-                    UiCB.SurfaceMeshDataSelectedContext(@field(SurfaceMeshStdDataTag, field.name)){ .models_registry = mr, .surface_mesh = sm },
-                    &UiCB.onSurfaceMeshStdDataSelected,
-                );
-                c.ImGui_PopID();
+                const nb_cells = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(cell_type)}) catch "";
+                c.ImGui_Text(nb_cells.ptr);
+                inline for (@typeInfo(SurfaceMeshStdDatas).@"struct".fields) |*field| {
+                    if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
+                    c.ImGui_Text(field.name);
+                    c.ImGui_SameLine();
+                    c.ImGui_PushID(field.name);
+                    const combobox_width = @min(c.ImGui_GetWindowWidth() * 0.5, c.ImGui_GetContentRegionAvail().x);
+                    c.ImGui_SetNextItemWidth(combobox_width);
+                    c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - combobox_width));
+                    imgui_utils.surfaceMeshCellDataComboBox(
+                        sm,
+                        @typeInfo(field.type).optional.child.CellType,
+                        @typeInfo(field.type).optional.child.DataType,
+                        @field(info.std_data, field.name),
+                        UiCB.SurfaceMeshDataSelectedContext(@field(SurfaceMeshStdDataTag, field.name)){ .models_registry = mr, .surface_mesh = sm },
+                        &UiCB.onSurfaceMeshStdDataSelected,
+                    );
+                    c.ImGui_PopID();
+                }
             }
         } else {
             c.ImGui_Text("No Surface Mesh selected");
@@ -437,27 +418,30 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
         );
 
         if (mr.selected_point_cloud) |pc| {
-            c.ImGui_SeparatorText("#Cells");
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
-            c.ImGui_Text("Point");
-            c.ImGui_SameLine();
-            const nbpoints = std.fmt.bufPrintZ(&buf, "{d}", .{pc.nbPoints()}) catch "";
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - c.ImGui_CalcTextSize(nbpoints.ptr).x));
-            c.ImGui_Text(nbpoints.ptr);
-
-            c.ImGui_SeparatorText("Standard Data");
             const info = mr.point_clouds_info.getPtr(pc).?;
-            inline for (@typeInfo(PointCloudStdDatas).@"struct".fields) |*field| {
-                c.ImGui_Text(field.name);
-                c.ImGui_PushID(field.name);
-                imgui_utils.pointCloudDataComboBox(
-                    pc,
-                    @typeInfo(field.type).optional.child.DataType,
-                    @field(info.std_data, field.name),
-                    UiCB.PointCloudDataSelectedContext(@field(PointCloudStdDataTag, field.name)){ .models_registry = mr, .point_cloud = pc },
-                    &UiCB.onPointCloudStdDataSelected,
-                );
-                c.ImGui_PopID();
+            inline for (.{.point}) |cell_type| { // a bit silly with only one cell type for now
+                c.ImGui_SeparatorText(@tagName(cell_type));
+                c.ImGui_Text("# = ");
+                c.ImGui_SameLine();
+                const nb_cells = std.fmt.bufPrintZ(&buf, "{d}", .{pc.nbPoints()}) catch "";
+                c.ImGui_Text(nb_cells.ptr);
+                inline for (@typeInfo(PointCloudStdDatas).@"struct".fields) |*field| {
+                    c.ImGui_Text(field.name);
+                    c.ImGui_SameLine();
+                    c.ImGui_PushID(field.name);
+                    const combobox_width = @min(c.ImGui_GetWindowWidth() * 0.5, c.ImGui_GetContentRegionAvail().x);
+                    c.ImGui_SetNextItemWidth(combobox_width);
+                    c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - combobox_width));
+                    imgui_utils.pointCloudDataComboBox(
+                        pc,
+                        @typeInfo(field.type).optional.child.DataType,
+                        @field(info.std_data, field.name),
+                        UiCB.PointCloudDataSelectedContext(@field(PointCloudStdDataTag, field.name)){ .models_registry = mr, .point_cloud = pc },
+                        &UiCB.onPointCloudStdDataSelected,
+                    );
+                    c.ImGui_PopID();
+                }
             }
         } else {
             c.ImGui_Text("No Point Cloud selected");

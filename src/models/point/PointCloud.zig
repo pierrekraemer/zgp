@@ -1,6 +1,7 @@
-const std = @import("std");
-
+//! TODO: write docs for PointCloud
 const PointCloud = @This();
+
+const std = @import("std");
 
 const data = @import("../../utils/Data.zig");
 const DataContainer = data.DataContainer;

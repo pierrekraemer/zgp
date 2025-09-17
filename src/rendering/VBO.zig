@@ -20,6 +20,8 @@ pub fn deinit(v: *VBO) void {
     }
 }
 
+// TODO: improve performance by exploiting the blocks of the Data's underlying storage (SegmentedList)
+// instead of iterating element by element.
 pub fn fillFrom(v: *VBO, comptime T: type, data: *const Data(T)) !void {
     const vec_size = switch (@typeInfo(T)) {
         .float => 1,

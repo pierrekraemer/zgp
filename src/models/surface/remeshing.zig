@@ -46,12 +46,12 @@ pub fn pliantRemeshing(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
-    length_factor: f32,
+    edge_length_factor: f32,
 ) !void {
     try subdivision.triangulateFaces(sm);
 
     const mean_edge_length = try length.meanEdgeLength(sm, vertex_position);
-    const length_goal_squared = mean_edge_length * mean_edge_length * length_factor * length_factor;
+    const length_goal_squared = mean_edge_length * mean_edge_length * edge_length_factor * edge_length_factor;
 
     var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer edge_it.deinit();
