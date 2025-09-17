@@ -12,6 +12,8 @@ const Module = @import("Module.zig");
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
 const SurfaceMeshStdData = ModelsRegistry.SurfaceMeshStdData;
+const SurfaceMeshStdDatas = ModelsRegistry.SurfaceMeshStdDatas;
+const SurfaceMeshStdDataTag = ModelsRegistry.SurfaceMeshStdDataTag;
 
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
@@ -174,6 +176,122 @@ fn computeVertexMeanCurvatures(
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_mean_curvature);
 }
 
+fn StdDataComputationFunc(comptime sdc: StdDataComputation) type {
+    const nbparams = sdc.reads.len + 2; // the 2 correspond to the SurfaceMesh + the computed data
+    var params: [nbparams]std.builtin.Type.Fn.Param = undefined;
+    params[0] = .{
+        .is_generic = false,
+        .is_noalias = false,
+        .type = *SurfaceMesh,
+    };
+    inline for (sdc.reads, 0..sdc.reads.len) |read_tag, i| {
+        params[i + 1] = .{
+            .is_generic = false,
+            .is_noalias = false,
+            .type = @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(read_tag))).optional.child,
+        };
+    }
+    params[nbparams - 1] = .{
+        .is_generic = false,
+        .is_noalias = false,
+        .type = @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(sdc.computes))).optional.child,
+    };
+    return @Type(.{ .@"fn" = .{
+        .calling_convention = .auto,
+        .is_generic = false,
+        .is_var_args = false,
+        .return_type = anyerror!void,
+        .params = &params,
+    } });
+}
+fn StdDataComputationFuncArgs(comptime sdc: StdDataComputation) type {
+    const nbparams = sdc.reads.len + 2; // the 2 correspond to the SurfaceMesh + the computed data
+    var args_fields: [nbparams]std.builtin.Type.StructField = undefined;
+    args_fields[0] = .{
+        .name = "0",
+        .type = *SurfaceMesh,
+        .alignment = @alignOf(*SurfaceMesh),
+        .default_value_ptr = null,
+        .is_comptime = false,
+    };
+    inline for (sdc.reads, 0..sdc.reads.len) |read_tag, i| {
+        args_fields[i + 1] = .{
+            .name = std.fmt.comptimePrint("{d}", .{i + 1}),
+            .type = @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(read_tag))).optional.child,
+            .alignment = @alignOf(@FieldType(SurfaceMeshStdDatas, @tagName(read_tag))),
+            .default_value_ptr = null,
+            .is_comptime = false,
+        };
+    }
+    args_fields[nbparams - 1] = .{
+        .name = std.fmt.comptimePrint("{d}", .{nbparams - 1}),
+        .type = @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(sdc.computes))).optional.child,
+        .alignment = @alignOf(@FieldType(SurfaceMeshStdDatas, @tagName(sdc.computes))),
+        .default_value_ptr = null,
+        .is_comptime = false,
+    };
+    return @Type(.{ .@"struct" = .{
+        .fields = &args_fields,
+        .decls = &.{},
+        .is_tuple = true,
+        .layout = .auto,
+    } });
+}
+
+const StdDataComputation = struct {
+    computes: SurfaceMeshStdDataTag,
+    reads: []const SurfaceMeshStdDataTag,
+};
+const StdDataComputations = struct {
+    pub const corner_angle: StdDataComputation = .{
+        .computes = .corner_angle,
+        .reads = &.{.vertex_position},
+    };
+    pub const face_area: StdDataComputation = .{
+        .computes = .face_area,
+        .reads = &.{.vertex_position},
+    };
+    pub const face_normal: StdDataComputation = .{
+        .computes = .face_normal,
+        .reads = &.{.vertex_position},
+    };
+    pub const edge_length: StdDataComputation = .{
+        .computes = .edge_length,
+        .reads = &.{.vertex_position},
+    };
+    pub const edge_dihedral_angle: StdDataComputation = .{
+        .computes = .edge_dihedral_angle,
+        .reads = &.{ .vertex_position, .face_normal },
+    };
+    pub const vertex_area: StdDataComputation = .{
+        .computes = .vertex_area,
+        .reads = &.{.face_area},
+    };
+    pub const vertex_normal: StdDataComputation = .{
+        .computes = .vertex_normal,
+        .reads = &.{ .corner_angle, .face_normal },
+    };
+    pub const vertex_gaussian_curvature: StdDataComputation = .{
+        .computes = .vertex_gaussian_curvature,
+        .reads = &.{.corner_angle},
+    };
+    pub const vertex_mean_curvature: StdDataComputation = .{
+        .computes = .vertex_mean_curvature,
+        .reads = &.{ .edge_length, .edge_dihedral_angle },
+    };
+};
+const StdDataComputationFuncs = struct {
+    pub const corner_angle: StdDataComputationFunc(StdDataComputations.corner_angle) = computeCornerAngles;
+    pub const edge_length: StdDataComputationFunc(StdDataComputations.edge_length) = computeEdgeLengths;
+    pub const edge_dihedral_angle: StdDataComputationFunc(StdDataComputations.edge_dihedral_angle) = computeEdgeDihedralAngles;
+    pub const face_area: StdDataComputationFunc(StdDataComputations.face_area) = computeFaceAreas;
+    pub const face_normal: StdDataComputationFunc(StdDataComputations.face_normal) = computeFaceNormals;
+    pub const vertex_area: StdDataComputationFunc(StdDataComputations.vertex_area) = computeVertexAreas;
+    pub const vertex_normal: StdDataComputationFunc(StdDataComputations.vertex_normal) = computeVertexNormals;
+    pub const vertex_gaussian_curvature: StdDataComputationFunc(StdDataComputations.vertex_gaussian_curvature) = computeVertexGaussianCurvatures;
+    pub const vertex_mean_curvature: StdDataComputationFunc(StdDataComputations.vertex_mean_curvature) = computeVertexMeanCurvatures;
+};
+
 pub fn uiPanel(_: *SurfaceMeshProcessing) void {
     const UiData = struct {
         var edge_length_factor: f32 = 1.0;
@@ -276,382 +394,84 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
 
         c.ImGui_SeparatorText("Geometry Computations");
 
-        // TODO: most of this code is very repetitive, could be factored out with comptime parameters and inline functions
-
-        {
-            const disabled = info.std_data.vertex_position == null or info.std_data.corner_angle == null;
-            const vertex_position_last_update = if (info.std_data.vertex_position) |d| mr.dataLastUpdate(d.gen()) else null;
-            const corner_angle_last_update = if (info.std_data.corner_angle) |d| mr.dataLastUpdate(d.gen()) else null;
-            const out_of_date =
-                vertex_position_last_update == null or corner_angle_last_update == null or
-                corner_angle_last_update.?.order(vertex_position_last_update.?) == .lt;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
+        inline for (@typeInfo(StdDataComputations).@"struct".decls) |dc| {
+            var disabled = false;
+            var outdated = false;
+            const computes_tag = @field(StdDataComputations, dc.name).computes;
+            const computes_cell_type = @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(computes_tag))).optional.child.CellType;
+            const computes_data_type = @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(computes_tag))).optional.child.DataType;
+            const computes_data = @field(info.std_data, @tagName(computes_tag));
+            if (computes_data == null) {
+                disabled = true;
             }
-            if (out_of_date) {
-                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
+            const computes_last_update = if (computes_data) |d| mr.dataLastUpdate(d.gen()) else null;
+            if (computes_last_update == null) {
+                outdated = true;
             }
-            if (c.ImGui_ButtonEx("corner angles", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x - 30.0, .y = 0.0 })) {
-                computeCornerAngles(
-                    sm,
-                    info.std_data.vertex_position.?,
-                    info.std_data.corner_angle.?,
-                ) catch |err| {
-                    std.debug.print("Error computing corner angles: {}\n", .{err});
-                };
-            }
-            if (out_of_date) {
-                c.ImGui_PopStyleColorEx(3);
-            }
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - vertex_position
-                \\ Write:
-                \\ - corner_angle
-            );
-            c.ImGui_SameLine();
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
-            const button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.corner), @typeName(f32) }) catch "";
-            _ = std.fmt.bufPrintZ(&UiData.new_data_name, "angle", .{}) catch "";
-            if (imgui_utils.addDataButton("corner angles", button_text, &UiData.new_data_name)) {
-                const maybe_data = sm.addData(.corner, f32, &UiData.new_data_name);
-                if (maybe_data) |data| {
-                    if (info.std_data.corner_angle == null) {
-                        mr.setSurfaceMeshStdData(sm, .{ .corner_angle = data });
-                    }
-                } else |err| {
-                    std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.corner), @typeName(f32), err });
+            const reads_tags = @field(StdDataComputations, dc.name).reads;
+            inline for (reads_tags) |reads_tag| {
+                const reads_data = @field(info.std_data, @tagName(reads_tag));
+                if (reads_data == null) {
+                    disabled = true;
                 }
-                UiData.new_data_name[0] = 0;
-            }
-        }
-
-        {
-            const disabled = info.std_data.vertex_position == null or info.std_data.face_area == null;
-            const vertex_position_last_update = if (info.std_data.vertex_position) |d| mr.dataLastUpdate(d.gen()) else null;
-            const face_area_last_update = if (info.std_data.face_area) |d| mr.dataLastUpdate(d.gen()) else null;
-            const out_of_date =
-                vertex_position_last_update == null or face_area_last_update == null or
-                face_area_last_update.?.order(vertex_position_last_update.?) == .lt;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (out_of_date) {
-                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
-            }
-            if (c.ImGui_ButtonEx("face areas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x - 30.0, .y = 0.0 })) {
-                computeFaceAreas(
-                    sm,
-                    info.std_data.vertex_position.?,
-                    info.std_data.face_area.?,
-                ) catch |err| {
-                    std.debug.print("Error computing face areas: {}\n", .{err});
-                };
-            }
-            if (out_of_date) {
-                c.ImGui_PopStyleColorEx(3);
-            }
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - vertex_position
-                \\ Write:
-                \\ - face_area
-            );
-            c.ImGui_SameLine();
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
-            const button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.face), @typeName(f32) }) catch "";
-            _ = std.fmt.bufPrintZ(&UiData.new_data_name, "area", .{}) catch "";
-            if (imgui_utils.addDataButton("face areas", button_text, &UiData.new_data_name)) {
-                const maybe_data = sm.addData(.face, f32, &UiData.new_data_name);
-                if (maybe_data) |data| {
-                    if (info.std_data.face_area == null) {
-                        mr.setSurfaceMeshStdData(sm, .{ .face_area = data });
-                    }
-                } else |err| {
-                    std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.face), @typeName(f32), err });
+                const reads_last_update = if (reads_data) |d| mr.dataLastUpdate(d.gen()) else null;
+                if (computes_last_update == null or reads_last_update == null or computes_last_update.?.order(reads_last_update.?) == .lt) {
+                    outdated = true;
                 }
-                UiData.new_data_name[0] = 0;
             }
-        }
-
-        {
-            const disabled = info.std_data.vertex_position == null or info.std_data.face_normal == null;
-            const vertex_position_last_update = if (info.std_data.vertex_position) |d| mr.dataLastUpdate(d.gen()) else null;
-            const face_normal_last_update = if (info.std_data.face_normal) |d| mr.dataLastUpdate(d.gen()) else null;
-            const out_of_date =
-                vertex_position_last_update == null or face_normal_last_update == null or
-                face_normal_last_update.?.order(vertex_position_last_update.?) == .lt;
             if (disabled) {
                 c.ImGui_BeginDisabled(true);
             }
-            if (out_of_date) {
+            if (outdated) {
                 c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
                 c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
                 c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
             }
-            if (c.ImGui_ButtonEx("face normals", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x - 30.0, .y = 0.0 })) {
-                computeFaceNormals(
-                    sm,
-                    info.std_data.vertex_position.?,
-                    info.std_data.face_normal.?,
-                ) catch |err| {
-                    std.debug.print("Error computing face normals: {}\n", .{err});
-                };
-            }
-            if (out_of_date) {
-                c.ImGui_PopStyleColorEx(3);
-            }
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - vertex_position
-                \\ Write:
-                \\ - face_normal
-            );
-            c.ImGui_SameLine();
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
-            const button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.face), @typeName(Vec3) }) catch "";
-            _ = std.fmt.bufPrintZ(&UiData.new_data_name, "normal", .{}) catch "";
-            if (imgui_utils.addDataButton("face normals", button_text, &UiData.new_data_name)) {
-                const maybe_data = sm.addData(.face, Vec3, &UiData.new_data_name);
-                if (maybe_data) |data| {
-                    if (info.std_data.face_normal == null) {
-                        mr.setSurfaceMeshStdData(sm, .{ .face_normal = data });
-                    }
-                } else |err| {
-                    std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.face), @typeName(f32), err });
+            if (c.ImGui_ButtonEx(@tagName(computes_tag), c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x - 30.0, .y = 0.0 })) {
+                const func = @field(StdDataComputationFuncs, dc.name);
+                var args: StdDataComputationFuncArgs(@field(StdDataComputations, dc.name)) = undefined;
+                args[0] = sm;
+                inline for (reads_tags, 0..) |reads_tag, i| {
+                    args[i + 1] = @field(info.std_data, @tagName(reads_tag)).?;
                 }
-                UiData.new_data_name[0] = 0;
-            }
-        }
-
-        {
-            const disabled = info.std_data.vertex_position == null or info.std_data.edge_length == null;
-            const vertex_position_last_update = if (info.std_data.vertex_position) |d| mr.dataLastUpdate(d.gen()) else null;
-            const edge_length_last_update = if (info.std_data.edge_length) |d| mr.dataLastUpdate(d.gen()) else null;
-            const out_of_date =
-                vertex_position_last_update == null or edge_length_last_update == null or
-                edge_length_last_update.?.order(vertex_position_last_update.?) == .lt;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (out_of_date) {
-                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
-            }
-            if (c.ImGui_ButtonEx("edge lengths", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x - 30.0, .y = 0.0 })) {
-                computeEdgeLengths(
-                    sm,
-                    info.std_data.vertex_position.?,
-                    info.std_data.edge_length.?,
+                args[reads_tags.len + 1] = computes_data.?;
+                @call(
+                    .auto,
+                    func,
+                    args,
                 ) catch |err| {
-                    std.debug.print("Error computing edge lengths: {}\n", .{err});
+                    std.debug.print("Error computing {s}: {}\n", .{ @tagName(computes_tag), err });
                 };
             }
-            if (out_of_date) {
+            if (outdated) {
                 c.ImGui_PopStyleColorEx(3);
             }
             if (disabled) {
                 c.ImGui_EndDisabled();
             }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - vertex_position
-                \\ Write:
-                \\ - edge_length
-            );
+            // TODO: generate tooltip from reads_tags & computes_tag
+            // imgui_utils.tooltip(
+            //     \\ Read:
+            //     \\ - vertex_position
+            //     \\ Write:
+            //     \\ - corner_angle
+            // );
             c.ImGui_SameLine();
             c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
-            const button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.edge), @typeName(f32) }) catch "";
-            _ = std.fmt.bufPrintZ(&UiData.new_data_name, "length", .{}) catch "";
-            if (imgui_utils.addDataButton("edge lengths", button_text, &UiData.new_data_name)) {
-                const maybe_data = sm.addData(.edge, f32, &UiData.new_data_name);
+            const button_text = std.fmt.bufPrintZ(
+                &UiData.button_text_buf,
+                "Add {s} data ({s})",
+                .{ @tagName(computes_cell_type), @typeName(computes_data_type) },
+            ) catch "";
+            _ = std.fmt.bufPrintZ(&UiData.new_data_name, @tagName(computes_tag), .{}) catch "";
+            if (imgui_utils.addDataButton(@tagName(computes_tag), button_text, &UiData.new_data_name)) {
+                const maybe_data = sm.addData(computes_cell_type, computes_data_type, &UiData.new_data_name);
                 if (maybe_data) |data| {
-                    if (info.std_data.edge_length == null) {
-                        mr.setSurfaceMeshStdData(sm, .{ .edge_length = data });
+                    if (computes_data == null) {
+                        mr.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, @tagName(computes_tag), data));
                     }
                 } else |err| {
-                    std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.edge), @typeName(f32), err });
-                }
-                UiData.new_data_name[0] = 0;
-            }
-        }
-
-        {
-            const disabled = info.std_data.vertex_position == null or info.std_data.face_normal == null or info.std_data.edge_dihedral_angle == null;
-            const vertex_position_last_update = if (info.std_data.vertex_position) |d| mr.dataLastUpdate(d.gen()) else null;
-            const face_normal_last_update = if (info.std_data.face_normal) |d| mr.dataLastUpdate(d.gen()) else null;
-            const edge_dihedral_angle_last_update = if (info.std_data.edge_dihedral_angle) |d| mr.dataLastUpdate(d.gen()) else null;
-            const out_of_date =
-                vertex_position_last_update == null or face_normal_last_update == null or edge_dihedral_angle_last_update == null or
-                edge_dihedral_angle_last_update.?.order(vertex_position_last_update.?) == .lt or
-                edge_dihedral_angle_last_update.?.order(face_normal_last_update.?) == .lt;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (out_of_date) {
-                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
-            }
-            if (c.ImGui_ButtonEx("edge dihedral angles", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x - 30.0, .y = 0.0 })) {
-                computeEdgeDihedralAngles(
-                    sm,
-                    info.std_data.vertex_position.?,
-                    info.std_data.face_normal.?,
-                    info.std_data.edge_dihedral_angle.?,
-                ) catch |err| {
-                    std.debug.print("Error computing edge dihedral angles: {}\n", .{err});
-                };
-            }
-            if (out_of_date) {
-                c.ImGui_PopStyleColorEx(3);
-            }
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - vertex_position
-                \\ - face_normal
-                \\ Write:
-                \\ - edge_dihedral_angle
-            );
-            c.ImGui_SameLine();
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
-            const button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.edge), @typeName(f32) }) catch "";
-            _ = std.fmt.bufPrintZ(&UiData.new_data_name, "dihedral angle", .{}) catch "";
-            if (imgui_utils.addDataButton("edge dihedral angles", button_text, &UiData.new_data_name)) {
-                const maybe_data = sm.addData(.edge, f32, &UiData.new_data_name);
-                if (maybe_data) |data| {
-                    if (info.std_data.edge_dihedral_angle == null) {
-                        mr.setSurfaceMeshStdData(sm, .{ .edge_dihedral_angle = data });
-                    }
-                } else |err| {
-                    std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.edge), @typeName(f32), err });
-                }
-                UiData.new_data_name[0] = 0;
-            }
-        }
-
-        {
-            const disabled = info.std_data.face_area == null or info.std_data.vertex_area == null;
-            const face_area_last_update = if (info.std_data.face_area) |d| mr.dataLastUpdate(d.gen()) else null;
-            const vertex_area_last_update = if (info.std_data.vertex_area) |d| mr.dataLastUpdate(d.gen()) else null;
-            const out_of_date =
-                face_area_last_update == null or vertex_area_last_update == null or
-                vertex_area_last_update.?.order(face_area_last_update.?) == .lt;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (out_of_date) {
-                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
-            }
-            if (c.ImGui_ButtonEx("vertex areas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x - 30.0, .y = 0.0 })) {
-                computeVertexAreas(
-                    sm,
-                    info.std_data.face_area.?,
-                    info.std_data.vertex_area.?,
-                ) catch |err| {
-                    std.debug.print("Error computing vertex areas: {}\n", .{err});
-                };
-            }
-            if (out_of_date) {
-                c.ImGui_PopStyleColorEx(3);
-            }
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - face_area
-                \\ Write:
-                \\ - vertex_area
-            );
-            c.ImGui_SameLine();
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
-            const button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.vertex), @typeName(f32) }) catch "";
-            _ = std.fmt.bufPrintZ(&UiData.new_data_name, "area", .{}) catch "";
-            if (imgui_utils.addDataButton("vertex areas", button_text, &UiData.new_data_name)) {
-                const maybe_data = sm.addData(.vertex, f32, &UiData.new_data_name);
-                if (maybe_data) |data| {
-                    if (info.std_data.vertex_area == null) {
-                        mr.setSurfaceMeshStdData(sm, .{ .vertex_area = data });
-                    }
-                } else |err| {
-                    std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.face), @typeName(f32), err });
-                }
-                UiData.new_data_name[0] = 0;
-            }
-        }
-
-        {
-            const disabled = info.std_data.corner_angle == null or info.std_data.face_normal == null or info.std_data.vertex_normal == null;
-            const corner_angle_last_update = if (info.std_data.corner_angle) |d| mr.dataLastUpdate(d.gen()) else null;
-            const face_normal_last_update = if (info.std_data.face_normal) |d| mr.dataLastUpdate(d.gen()) else null;
-            const vertex_normal_last_update = if (info.std_data.vertex_normal) |d| mr.dataLastUpdate(d.gen()) else null;
-            const out_of_date =
-                corner_angle_last_update == null or face_normal_last_update == null or vertex_normal_last_update == null or
-                vertex_normal_last_update.?.order(corner_angle_last_update.?) == .lt or
-                vertex_normal_last_update.?.order(face_normal_last_update.?) == .lt;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (out_of_date) {
-                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
-            }
-            if (c.ImGui_ButtonEx("vertex normals", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x - 30.0, .y = 0.0 })) {
-                computeVertexNormals(
-                    sm,
-                    info.std_data.corner_angle.?,
-                    info.std_data.face_normal.?,
-                    info.std_data.vertex_normal.?,
-                ) catch |err| {
-                    std.debug.print("Error computing vertex normals: {}\n", .{err});
-                };
-            }
-            if (out_of_date) {
-                c.ImGui_PopStyleColorEx(3);
-            }
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - corner_angle
-                \\ - face_normal
-                \\ Write:
-                \\ - vertex_normal
-            );
-            c.ImGui_SameLine();
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
-            const button_text = std.fmt.bufPrintZ(&UiData.button_text_buf, "Add {s} data ({s})", .{ @tagName(.vertex), @typeName(Vec3) }) catch "";
-            _ = std.fmt.bufPrintZ(&UiData.new_data_name, "normal", .{}) catch "";
-            if (imgui_utils.addDataButton("vertex normals", button_text, &UiData.new_data_name)) {
-                const maybe_data = sm.addData(.vertex, Vec3, &UiData.new_data_name);
-                if (maybe_data) |data| {
-                    if (info.std_data.vertex_normal == null) {
-                        mr.setSurfaceMeshStdData(sm, .{ .vertex_normal = data });
-                    }
-                } else |err| {
-                    std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(.vertex), @typeName(Vec3), err });
+                    std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(computes_cell_type), @typeName(computes_data_type), err });
                 }
                 UiData.new_data_name[0] = 0;
             }

@@ -25,7 +25,7 @@ const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
 /// Standard PointCloud data name & types.
-const PointCloudStdDatas = struct {
+pub const PointCloudStdDatas = struct {
     position: ?PointCloud.CellData(Vec3) = null,
     normal: ?PointCloud.CellData(Vec3) = null,
     color: ?PointCloud.CellData(Vec3) = null,
@@ -44,12 +44,14 @@ const PointCloudInfo = struct {
 };
 
 /// Standard SurfaceMesh data name & types.
-const SurfaceMeshStdDatas = struct {
+pub const SurfaceMeshStdDatas = struct {
     corner_angle: ?SurfaceMesh.CellData(.corner, f32) = null,
     vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
     vertex_area: ?SurfaceMesh.CellData(.vertex, f32) = null,
     vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
     vertex_color: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
+    vertex_gaussian_curvature: ?SurfaceMesh.CellData(.vertex, f32) = null,
+    vertex_mean_curvature: ?SurfaceMesh.CellData(.vertex, f32) = null,
     edge_length: ?SurfaceMesh.CellData(.edge, f32) = null,
     edge_dihedral_angle: ?SurfaceMesh.CellData(.edge, f32) = null,
     face_area: ?SurfaceMesh.CellData(.face, f32) = null,
