@@ -11,6 +11,8 @@ const imgui_log = std.log.scoped(.imgui);
 
 const Module = @import("Module.zig");
 
+// TODO: this module should also work with PointClouds
+
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
 const SurfaceMeshStdData = ModelsRegistry.SurfaceMeshStdData;
@@ -26,7 +28,8 @@ const Mat4 = mat.Mat4;
 
 const VectorPerVertexRendererParameters = struct {
     point_vector_shader_parameters: PointVector.Parameters,
-    vector_data: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
+
+    vertex_vector: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
 
     pub fn init() VectorPerVertexRendererParameters {
         return .{
@@ -99,11 +102,18 @@ pub fn surfaceMeshStdDataChanged(
     }
 }
 
-fn setSurfaceMeshVectorData(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMesh, vector: ?SurfaceMesh.CellData(.vertex, Vec3)) !void {
+fn setSurfaceMeshVectorData(
+    vpvr: *VectorPerVertexRenderer,
+    surface_mesh: *SurfaceMesh,
+    vertex_vector: ?SurfaceMesh.CellData(.vertex, Vec3),
+) void {
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
-    p.vector_data = vector;
-    if (p.vector_data) |v| {
-        const vector_vbo = try zgp.models_registry.dataVBO(Vec3, v.data);
+    p.vertex_vector = vertex_vector;
+    if (p.vertex_vector) |v| {
+        const vector_vbo = zgp.models_registry.dataVBO(Vec3, v.data) catch {
+            imgui_log.err("Failed to get VBO for vertex vectors\n", .{});
+            return;
+        };
         p.point_vector_shader_parameters.setVertexAttribArray(.vector, vector_vbo, 0, 0);
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);
@@ -133,10 +143,13 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
             vector_per_vertex_renderer: *VectorPerVertexRenderer,
             surface_mesh: *SurfaceMesh,
         };
-        fn onVectorDataSelected(comptime cell_type: SurfaceMesh.CellType, comptime T: type, data: ?SurfaceMesh.CellData(cell_type, T), ctx: DataSelectedContext) void {
-            ctx.vector_per_vertex_renderer.setSurfaceMeshVectorData(ctx.surface_mesh, data) catch |err| {
-                imgui_log.err("Error setting vector data: {}", .{err});
-            };
+        fn onVectorDataSelected(
+            comptime cell_type: SurfaceMesh.CellType,
+            comptime T: type,
+            data: ?SurfaceMesh.CellData(cell_type, T),
+            ctx: DataSelectedContext,
+        ) void {
+            ctx.vector_per_vertex_renderer.setSurfaceMeshVectorData(ctx.surface_mesh, data);
         }
     };
 
@@ -146,28 +159,25 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
         const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(sm);
         if (vector_per_vertex_renderer_parameters) |p| {
             c.ImGui_Text("Vector");
-            c.ImGui_PushID("Vector");
+            c.ImGui_PushID("VectorData");
             imgui_utils.surfaceMeshCellDataComboBox(
                 sm,
                 .vertex,
                 Vec3,
-                p.vector_data,
+                p.vertex_vector,
                 UiCB.DataSelectedContext{ .vector_per_vertex_renderer = vpvr, .surface_mesh = sm },
                 &UiCB.onVectorDataSelected,
             );
             c.ImGui_PopID();
-            c.ImGui_Text("scale");
-            c.ImGui_PushID("scale");
+            c.ImGui_Text("Vector scale");
+            c.ImGui_PushID("VectorScale");
             if (c.ImGui_SliderFloatEx("", &p.point_vector_shader_parameters.vector_scale, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
                 zgp.requestRedraw();
             }
             c.ImGui_PopID();
-            c.ImGui_Text("color");
-            c.ImGui_PushID("color");
-            if (c.ImGui_ColorEdit3("", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs)) {
+            if (c.ImGui_ColorEdit3("Vector color", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs)) {
                 zgp.requestRedraw();
             }
-            c.ImGui_PopID();
         } else {
             c.ImGui_Text("No parameters found for the selected Surface Mesh");
         }

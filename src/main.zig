@@ -219,6 +219,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer vector_per_vertex_renderer.deinit();
     surface_mesh_processing = .{};
 
+    // TODO: find a way to tag Modules with the type of model they can handle (PointCloud, SurfaceMesh, etc.)
+    // and only show them in the UI when a compatible model is selected
     try modules.append(allocator, point_cloud_renderer.module());
     try modules.append(allocator, surface_mesh_renderer.module());
     try modules.append(allocator, vector_per_vertex_renderer.module());
@@ -242,19 +244,9 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             geometry_utils.centerAround(vertex_position.data, vec.zero3);
         }
 
-        const vertex_color = try sm.addData(.vertex, Vec3, "color");
-        vertex_color.data.fill(.{ 0.9, 0.9, 0.9 });
-        // var col_it = vertex_color.data.iterator();
-        // const r = rng.random();
-        // while (col_it.next()) |col| {
-        //     col.* = vec.random3(r);
-        // }
-
         models_registry.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
-        models_registry.setSurfaceMeshStdData(sm, .{ .vertex_color = vertex_color });
 
         models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
-        models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_color);
         models_registry.surfaceMeshConnectivityUpdated(sm);
 
         // const elapsed: f64 = @floatFromInt(timer.read());

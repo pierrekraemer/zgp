@@ -1,4 +1,4 @@
-const PointSphere = @This();
+const TriFlat = @This();
 
 const std = @import("std");
 const gl = @import("gl");
@@ -8,12 +8,12 @@ const VAO = @import("../../VAO.zig");
 const VBO = @import("../../VBO.zig");
 const IBO = @import("../../IBO.zig");
 
-var global_instance: PointSphere = undefined;
+var global_instance: TriFlat = undefined;
 var init_global_once = std.once(init_global);
 fn init_global() void {
     global_instance = init() catch unreachable;
 }
-pub fn instance() *PointSphere {
+pub fn instance() *TriFlat {
     init_global_once.call();
     return &global_instance;
 }
@@ -24,60 +24,55 @@ model_view_matrix_uniform: c_int = undefined,
 projection_matrix_uniform: c_int = undefined,
 ambiant_color_uniform: c_int = undefined,
 light_position_uniform: c_int = undefined,
-point_size_uniform: c_int = undefined,
-point_color_uniform: c_int = undefined,
+vertex_color_uniform: c_int = undefined,
 
 position_attrib: VAO.VertexAttribInfo = undefined,
 
-fn init() !PointSphere {
-    var ps: PointSphere = .{
+const VertexAttrib = enum {
+    position,
+};
+
+fn init() !TriFlat {
+    var tf: TriFlat = .{
         .program = Shader.init(),
     };
 
     const vertex_shader_source = @embedFile("vs.glsl");
-    const geometry_shader_source = @embedFile("gs.glsl");
     const fragment_shader_source = @embedFile("fs.glsl");
 
-    try ps.program.setShader(.vertex, vertex_shader_source);
-    try ps.program.setShader(.geometry, geometry_shader_source);
-    try ps.program.setShader(.fragment, fragment_shader_source);
-    try ps.program.linkProgram();
+    try tf.program.setShader(.vertex, vertex_shader_source);
+    try tf.program.setShader(.fragment, fragment_shader_source);
+    try tf.program.linkProgram();
 
-    ps.model_view_matrix_uniform = gl.GetUniformLocation(ps.program.index, "u_model_view_matrix");
-    ps.projection_matrix_uniform = gl.GetUniformLocation(ps.program.index, "u_projection_matrix");
-    ps.ambiant_color_uniform = gl.GetUniformLocation(ps.program.index, "u_ambiant_color");
-    ps.light_position_uniform = gl.GetUniformLocation(ps.program.index, "u_light_position");
-    ps.point_size_uniform = gl.GetUniformLocation(ps.program.index, "u_point_size");
-    ps.point_color_uniform = gl.GetUniformLocation(ps.program.index, "u_point_color");
+    tf.model_view_matrix_uniform = gl.GetUniformLocation(tf.program.index, "u_model_view_matrix");
+    tf.projection_matrix_uniform = gl.GetUniformLocation(tf.program.index, "u_projection_matrix");
+    tf.ambiant_color_uniform = gl.GetUniformLocation(tf.program.index, "u_ambiant_color");
+    tf.light_position_uniform = gl.GetUniformLocation(tf.program.index, "u_light_position");
+    tf.vertex_color_uniform = gl.GetUniformLocation(tf.program.index, "u_vertex_color");
 
-    ps.position_attrib = .{
-        .index = @intCast(gl.GetAttribLocation(ps.program.index, "a_position")),
+    tf.position_attrib = .{
+        .index = @intCast(gl.GetAttribLocation(tf.program.index, "a_position")),
         .size = 3,
         .type = gl.FLOAT,
         .normalized = false,
     };
 
-    return ps;
+    return tf;
 }
 
-pub fn deinit(ps: *PointSphere) void {
-    ps.program.deinit();
+pub fn deinit(tf: *TriFlat) void {
+    tf.program.deinit();
 }
 
 pub const Parameters = struct {
-    shader: *const PointSphere,
+    shader: *const TriFlat,
     vao: VAO,
 
     model_view_matrix: [16]f32 = undefined,
     projection_matrix: [16]f32 = undefined,
     ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
-    light_position: [3]f32 = .{ -100, 0, 100 },
-    point_size: f32 = 0.001,
-    point_color: [4]f32 = .{ 0.8, 0.8, 0.8, 1 },
-
-    const VertexAttrib = enum {
-        position,
-    };
+    light_position: [3]f32 = .{ 10, 0, 100 },
+    vertex_color: [4]f32 = .{ 0.8, 0.8, 0.8, 1 },
 
     pub fn init() Parameters {
         return .{
@@ -111,12 +106,11 @@ pub const Parameters = struct {
         gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
         gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
         gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
-        gl.Uniform1f(p.shader.point_size_uniform, p.point_size);
-        gl.Uniform4fv(p.shader.point_color_uniform, 1, @ptrCast(&p.point_color));
+        gl.Uniform4fv(p.shader.vertex_color_uniform, 1, @ptrCast(&p.vertex_color));
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);
         defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
-        gl.DrawElements(gl.POINTS, @intCast(ibo.nb_indices), gl.UNSIGNED_INT, 0);
+        gl.DrawElements(gl.TRIANGLES, @intCast(ibo.nb_indices), gl.UNSIGNED_INT, 0);
     }
 };

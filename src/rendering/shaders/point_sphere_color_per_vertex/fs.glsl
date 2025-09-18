@@ -2,9 +2,9 @@ uniform mat4 u_projection_matrix;
 uniform vec4 u_ambiant_color;
 uniform vec3 u_light_position;
 uniform float u_point_size;
-uniform vec4 u_point_color;
 
 in vec3 sphere_center;
+in vec4 sphere_color;
 in vec2 sprite_coord;
 
 out vec4 f_color;
@@ -24,7 +24,7 @@ void main() {
   vec3 N = normalize(frag_position_eye - sphere_center);
   vec3 L = normalize (u_light_position - frag_position_eye);
   float lambert_term = dot(N, L);
-  vec4 result = vec4(u_point_color.rgb * lambert_term, 1.0);
+  vec4 result = vec4(sphere_color.rgb * lambert_term, 1.0);
   result += vec4(u_ambiant_color.rgb, 0.0);
   f_color = result;
 }
