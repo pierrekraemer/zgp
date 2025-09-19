@@ -16,6 +16,8 @@ const SurfaceMeshStdDataTag = ModelsRegistry.SurfaceMeshStdDataTag;
 
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
+const mat = @import("../geometry/mat.zig");
+const Mat4 = mat.Mat4;
 
 const angle = @import("../models/surface/angle.zig");
 const area = @import("../models/surface/area.zig");
@@ -24,6 +26,7 @@ const length = @import("../models/surface/length.zig");
 const normal = @import("../models/surface/normal.zig");
 const subdivision = @import("../models/surface/subdivision.zig");
 const remeshing = @import("../models/surface/remeshing.zig");
+const qem = @import("../models/surface/qem.zig");
 const decimation = @import("../models/surface/decimation.zig");
 
 // TODO: useful to keep an allocator here rather than exposing & using zgp.allocator?
@@ -106,9 +109,13 @@ fn decimate(
     smp: *SurfaceMeshProcessing,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3),
     nb_vertices_to_remove: u32,
 ) !void {
-    try decimation.decimateQEM(smp.allocator, sm, vertex_position, nb_vertices_to_remove);
+    var vertex_qem = try sm.addData(.vertex, Mat4, "vertex_qem");
+    defer sm.removeData(.vertex, vertex_qem.gen());
+    try qem.computeVertexQEMs(sm, vertex_position, face_normal, vertex_qem);
+    try decimation.decimateQEM(smp.allocator, sm, vertex_position, vertex_qem, nb_vertices_to_remove);
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
     zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
 }
@@ -356,7 +363,7 @@ pub fn uiPanel(smp: *SurfaceMeshProcessing) void {
             c.ImGui_PushID("% vertices to keep");
             _ = c.ImGui_SliderIntEx("", &UiData.percent_vertices_to_keep, 1, 100, "%d", c.ImGuiSliderFlags_AlwaysClamp);
             c.ImGui_PopID();
-            const disabled = info.std_data.vertex_position == null;
+            const disabled = info.std_data.vertex_position == null or info.std_data.face_normal == null;
             if (disabled) {
                 c.ImGui_BeginDisabled(true);
             }
@@ -366,6 +373,7 @@ pub fn uiPanel(smp: *SurfaceMeshProcessing) void {
                     smp.decimate(
                         sm,
                         info.std_data.vertex_position.?,
+                        info.std_data.face_normal.?,
                         nb_vertices_to_remove,
                     ) catch |err| {
                         std.debug.print("Error decimating: {}\n", .{err});

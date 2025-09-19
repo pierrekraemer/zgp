@@ -44,6 +44,7 @@ pub fn computeCornerAngles(
 
 /// Compute and return the dihedral angle of the given edge.
 /// Return 0.0 if the edge is a boundary edge.
+/// Face normals are assumed to be normalized.
 pub fn edgeDihedralAngle(
     sm: *const SurfaceMesh,
     edge: SurfaceMesh.Cell,
@@ -72,6 +73,7 @@ pub fn edgeDihedralAngle(
 
 /// Compute the dihedral angles of all edges of the given SurfaceMesh
 /// and store them in the given edge_dihedral_angle data.
+/// Face normals are assumed to be normalized.
 pub fn computeEdgeDihedralAngles(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),

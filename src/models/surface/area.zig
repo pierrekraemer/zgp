@@ -75,6 +75,7 @@ pub fn vertexArea(
 /// and store them in the given vertex_area data.
 /// The area of a vertex is defined as a sum of contributions from its incident faces.
 /// Each incident face f contributes 1/codegree(f) of its area to the area of the vertex.
+/// Executed here in a face-centric manner for better performance.
 pub fn computeVertexAreas(
     sm: *SurfaceMesh,
     face_area: SurfaceMesh.CellData(.face, f32),

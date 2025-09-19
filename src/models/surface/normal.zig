@@ -57,6 +57,7 @@ pub fn computeFaceNormals(
 /// Compute and return the normal of the given vertex.
 /// The normal of a vertex is computed as the average of the normals of its incident faces
 /// weighted by the angle of the corresponding corners.
+/// Face normals are assumed to be normalized.
 pub fn vertexNormal(
     sm: *const SurfaceMesh,
     vertex: SurfaceMesh.Cell,
@@ -82,6 +83,7 @@ pub fn vertexNormal(
 
 /// Compute the normals of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_normal data.
+/// Face normals are assumed to be normalized.
 pub fn computeVertexNormals(
     sm: *SurfaceMesh,
     corner_angle: SurfaceMesh.CellData(.corner, f32),
