@@ -1,7 +1,6 @@
 const SurfaceMeshProcessing = @This();
 
 const std = @import("std");
-const builtin = @import("builtin");
 
 const imgui_utils = @import("../utils/imgui.zig");
 
@@ -25,6 +24,18 @@ const length = @import("../models/surface/length.zig");
 const normal = @import("../models/surface/normal.zig");
 const subdivision = @import("../models/surface/subdivision.zig");
 const remeshing = @import("../models/surface/remeshing.zig");
+const decimation = @import("../models/surface/decimation.zig");
+
+// TODO: useful to keep an allocator here rather than exposing & using zgp.allocator?
+allocator: std.mem.Allocator,
+
+pub fn init(allocator: std.mem.Allocator) !SurfaceMeshProcessing {
+    return .{
+        .allocator = allocator,
+    };
+}
+
+pub fn deinit(_: *SurfaceMeshProcessing) void {}
 
 /// Return a Module interface for the SurfaceMeshProcessing.
 pub fn module(smp: *SurfaceMeshProcessing) Module {
@@ -38,26 +49,25 @@ pub fn name(_: *SurfaceMeshProcessing) []const u8 {
 }
 
 fn cutAllEdges(
+    _: *SurfaceMeshProcessing,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
 ) !void {
     try subdivision.cutAllEdges(sm, vertex_position);
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
     zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
-    if (builtin.mode == .Debug) {
-        try sm.checkIntegrity();
-    }
 }
 
-fn triangulateFaces(sm: *SurfaceMesh) !void {
+fn triangulateFaces(
+    _: *SurfaceMeshProcessing,
+    sm: *SurfaceMesh,
+) !void {
     try subdivision.triangulateFaces(sm);
     zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
-    if (builtin.mode == .Debug) {
-        try sm.checkIntegrity();
-    }
 }
 
 fn remesh(
+    _: *SurfaceMeshProcessing,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
@@ -90,9 +100,17 @@ fn remesh(
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_normal);
     zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
-    if (builtin.mode == .Debug) {
-        try sm.checkIntegrity();
-    }
+}
+
+fn decimate(
+    smp: *SurfaceMeshProcessing,
+    sm: *SurfaceMesh,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    nb_vertices_to_remove: u32,
+) !void {
+    try decimation.decimateQEM(smp.allocator, sm, vertex_position, nb_vertices_to_remove);
+    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+    zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
 }
 
 fn computeCornerAngles(
@@ -184,23 +202,6 @@ const StdDataComputation = struct {
     computes: SurfaceMeshStdDataTag,
     func: *const anyopaque,
 
-    fn compute(comptime self: *const StdDataComputation, sm: *SurfaceMesh) void {
-        const info = zgp.models_registry.surfaceMeshInfo(sm);
-        const func: *const self.ComputeFuncType() = @ptrCast(@alignCast(self.func));
-        var args: self.ComputeFuncArgsType() = undefined;
-        args[0] = sm;
-        inline for (self.reads, 0..) |reads_tag, i| {
-            args[i + 1] = @field(info.std_data, @tagName(reads_tag)).?;
-        }
-        args[self.reads.len + 1] = @field(info.std_data, @tagName(self.computes)).?;
-        @call(
-            .auto,
-            func,
-            args,
-        ) catch |err| {
-            std.debug.print("Error computing {s}: {}\n", .{ @tagName(self.computes), err });
-        };
-    }
     fn ComputesCellType(comptime self: *const StdDataComputation) SurfaceMesh.CellType {
         return @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(self.computes))).optional.child.CellType;
     }
@@ -235,38 +236,23 @@ const StdDataComputation = struct {
             .params = &params,
         } });
     }
-    fn ComputeFuncArgsType(comptime self: *const StdDataComputation) type {
-        const nbparams = self.reads.len + 2; // SurfaceMesh + read datas + computed data
-        var args_fields: [nbparams]std.builtin.Type.StructField = undefined;
-        args_fields[0] = .{
-            .name = "0",
-            .type = *SurfaceMesh,
-            .alignment = @alignOf(*SurfaceMesh),
-            .default_value_ptr = null,
-            .is_comptime = false,
-        };
-        inline for (self.reads, 0..self.reads.len) |read_tag, i| {
-            args_fields[i + 1] = .{
-                .name = std.fmt.comptimePrint("{d}", .{i + 1}),
-                .type = @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(read_tag))).optional.child,
-                .alignment = @alignOf(@FieldType(SurfaceMeshStdDatas, @tagName(read_tag))),
-                .default_value_ptr = null,
-                .is_comptime = false,
-            };
+
+    fn compute(comptime self: *const StdDataComputation, sm: *SurfaceMesh) void {
+        const info = zgp.models_registry.surfaceMeshInfo(sm);
+        const func: *const self.ComputeFuncType() = @ptrCast(@alignCast(self.func));
+        var args: std.meta.ArgsTuple(self.ComputeFuncType()) = undefined;
+        args[0] = sm;
+        inline for (self.reads, 0..) |reads_tag, i| {
+            args[i + 1] = @field(info.std_data, @tagName(reads_tag)).?;
         }
-        args_fields[nbparams - 1] = .{
-            .name = std.fmt.comptimePrint("{d}", .{nbparams - 1}),
-            .type = @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(self.computes))).optional.child,
-            .alignment = @alignOf(@FieldType(SurfaceMeshStdDatas, @tagName(self.computes))),
-            .default_value_ptr = null,
-            .is_comptime = false,
+        args[self.reads.len + 1] = @field(info.std_data, @tagName(self.computes)).?;
+        @call(
+            .auto,
+            func,
+            args,
+        ) catch |err| {
+            std.debug.print("Error computing {s}: {}\n", .{ @tagName(self.computes), err });
         };
-        return @Type(.{ .@"struct" = .{
-            .fields = &args_fields,
-            .decls = &.{},
-            .is_tuple = true,
-            .layout = .auto,
-        } });
     }
 };
 
@@ -318,9 +304,10 @@ const std_data_computations: []const StdDataComputation = &.{
     },
 };
 
-pub fn uiPanel(_: *SurfaceMeshProcessing) void {
+pub fn uiPanel(smp: *SurfaceMeshProcessing) void {
     const UiData = struct {
         var edge_length_factor: f32 = 1.0;
+        var percent_vertices_to_keep: i32 = 75;
         var button_text_buf: [64]u8 = undefined;
         var new_data_name: [32]u8 = undefined;
     };
@@ -341,7 +328,7 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
                 c.ImGui_BeginDisabled(true);
             }
             if (c.ImGui_ButtonEx("Cut all edges", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                cutAllEdges(sm, info.std_data.vertex_position.?) catch |err| {
+                smp.cutAllEdges(sm, info.std_data.vertex_position.?) catch |err| {
                     std.debug.print("Error cutting all edges: {}\n", .{err});
                 };
             }
@@ -357,11 +344,44 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
 
         {
             if (c.ImGui_ButtonEx("Triangulate faces", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                triangulateFaces(sm) catch |err| {
+                smp.triangulateFaces(sm) catch |err| {
                     std.debug.print("Error triangulating faces: {}\n", .{err});
                 };
             }
             imgui_utils.tooltip("Update connectivity");
+        }
+
+        {
+            c.ImGui_Text("% vertices to keep");
+            c.ImGui_PushID("% vertices to keep");
+            _ = c.ImGui_SliderIntEx("", &UiData.percent_vertices_to_keep, 1, 100, "%d", c.ImGuiSliderFlags_AlwaysClamp);
+            c.ImGui_PopID();
+            const disabled = info.std_data.vertex_position == null;
+            if (disabled) {
+                c.ImGui_BeginDisabled(true);
+            }
+            if (c.ImGui_ButtonEx("Decimate (QEM)", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                const nb_vertices_to_remove: u32 = @intFromFloat(@as(f32, @floatFromInt(sm.nbCells(.vertex))) * (1.0 - (@as(f32, @floatFromInt(UiData.percent_vertices_to_keep)) / 100.0)));
+                if (nb_vertices_to_remove > 0) {
+                    smp.decimate(
+                        sm,
+                        info.std_data.vertex_position.?,
+                        nb_vertices_to_remove,
+                    ) catch |err| {
+                        std.debug.print("Error decimating: {}\n", .{err});
+                    };
+                }
+            }
+            imgui_utils.tooltip(
+                \\ Read:
+                \\ - vertex_position
+                \\ Write:
+                \\ - vertex_position
+                \\ Update connectivity
+            );
+            if (disabled) {
+                c.ImGui_EndDisabled();
+            }
         }
 
         {
@@ -381,7 +401,7 @@ pub fn uiPanel(_: *SurfaceMeshProcessing) void {
                 c.ImGui_BeginDisabled(true);
             }
             if (c.ImGui_ButtonEx("Remesh", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                remesh(
+                smp.remesh(
                     sm,
                     info.std_data.vertex_position.?,
                     info.std_data.corner_angle.?,

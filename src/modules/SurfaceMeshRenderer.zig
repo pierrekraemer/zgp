@@ -468,6 +468,17 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
             if (c.ImGui_Checkbox("draw edges", &p.draw_edges)) {
                 zgp.requestRedraw();
             }
+            if (p.draw_edges) {
+                c.ImGui_Text("Width");
+                c.ImGui_PushID("DrawEdgesWidth");
+                if (c.ImGui_SliderFloatEx("", &p.line_bold_shader_parameters.line_width, 0.1, 10.0, "%.1f", c.ImGuiSliderFlags_Logarithmic)) {
+                    zgp.requestRedraw();
+                }
+                c.ImGui_PopID();
+                if (c.ImGui_ColorEdit4("Global color", &p.line_bold_shader_parameters.line_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    zgp.requestRedraw();
+                }
+            }
             c.ImGui_SeparatorText("Faces");
             if (c.ImGui_Checkbox("draw faces", &p.draw_faces)) {
                 zgp.requestRedraw();

@@ -13,6 +13,16 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
+    // ZEIGEN
+
+    const zeigen_dep = b.dependency("zeigen", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    // const zeigen_lib = zeigen_dep.artifact("zeigen");
+    // exe_mod.linkLibrary(zeigen_lib);
+    exe_mod.addImport("zeigen", zeigen_dep.module("zeigen"));
+
     // SDL
 
     const sdl_dep = b.dependency("sdl", .{

@@ -202,6 +202,13 @@ pub fn surfaceMeshDataUpdated(
 }
 
 pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) void {
+    if (builtin.mode == .Debug) {
+        sm.checkIntegrity() catch {
+            std.debug.print("SurfaceMesh integrity check failed after connectivity update\n", .{});
+            return;
+        };
+    }
+
     const info = mr.surface_meshes_info.getPtr(sm).?;
     info.points_ibo.fillFrom(sm, .vertex, mr.allocator) catch {
         std.debug.print("Failed to fill points IBO for SurfaceMesh\n", .{});

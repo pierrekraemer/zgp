@@ -66,7 +66,7 @@ pub const Parameters = struct {
 
     model_view_matrix: [16]f32 = undefined,
     projection_matrix: [16]f32 = undefined,
-    line_color: [4]f32 = .{ 0.0, 0.0, 0.1, 1.0 },
+    line_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1.0 },
     line_width: f32 = 1.0,
 
     const VertexAttrib = enum {
