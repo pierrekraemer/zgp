@@ -109,12 +109,13 @@ fn decimate(
     smp: *SurfaceMeshProcessing,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3),
     nb_vertices_to_remove: u32,
 ) !void {
     var vertex_qem = try sm.addData(.vertex, Mat4, "vertex_qem");
     defer sm.removeData(.vertex, vertex_qem.gen());
-    try qem.computeVertexQEMs(sm, vertex_position, face_normal, vertex_qem);
+    try qem.computeVertexQEMs(sm, vertex_position, face_area, face_normal, vertex_qem);
     try decimation.decimateQEM(smp.allocator, sm, vertex_position, vertex_qem, nb_vertices_to_remove);
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
     zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
@@ -359,11 +360,13 @@ pub fn uiPanel(smp: *SurfaceMeshProcessing) void {
         }
 
         {
-            c.ImGui_Text("% vertices to keep");
-            c.ImGui_PushID("% vertices to keep");
-            _ = c.ImGui_SliderIntEx("", &UiData.percent_vertices_to_keep, 1, 100, "%d", c.ImGuiSliderFlags_AlwaysClamp);
+            c.ImGui_Text("vertices to keep");
+            c.ImGui_PushID("vertices to keep");
+            _ = c.ImGui_SliderIntEx("", &UiData.percent_vertices_to_keep, 1, 100, "%d%%", c.ImGuiSliderFlags_AlwaysClamp);
             c.ImGui_PopID();
-            const disabled = info.std_data.vertex_position == null or info.std_data.face_normal == null;
+            const disabled = info.std_data.vertex_position == null or
+                info.std_data.face_area == null or
+                info.std_data.face_normal == null;
             if (disabled) {
                 c.ImGui_BeginDisabled(true);
             }
@@ -373,6 +376,7 @@ pub fn uiPanel(smp: *SurfaceMeshProcessing) void {
                     smp.decimate(
                         sm,
                         info.std_data.vertex_position.?,
+                        info.std_data.face_area.?,
                         info.std_data.face_normal.?,
                         nb_vertices_to_remove,
                     ) catch |err| {
@@ -383,6 +387,8 @@ pub fn uiPanel(smp: *SurfaceMeshProcessing) void {
             imgui_utils.tooltip(
                 \\ Read:
                 \\ - vertex_position
+                \\ - face_area
+                \\ - face_normal
                 \\ Write:
                 \\ - vertex_position
                 \\ Update connectivity

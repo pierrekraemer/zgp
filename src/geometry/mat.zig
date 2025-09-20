@@ -49,19 +49,28 @@ pub fn mul4(a: Mat4, b: Mat4) Mat4 {
     return result;
 }
 
-pub fn preMulVec3(v: Vec3, m: Mat3) Vec3 {
-    return .{
-        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
-        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
-        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
-    };
-}
-
 pub fn mulVec3(m: Mat3, v: Vec3) Vec3 {
     return .{
         m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2],
         m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2],
         m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2],
+    };
+}
+
+pub fn mulVec4(m: Mat4, v: Vec4) Vec4 {
+    return .{
+        m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
+        m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
+        m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
+        m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
+    };
+}
+
+pub fn preMulVec3(v: Vec3, m: Mat3) Vec3 {
+    return .{
+        m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
+        m[1][0] * v[0] + m[1][1] * v[1] + m[1][2] * v[2],
+        m[2][0] * v[0] + m[2][1] * v[1] + m[2][2] * v[2],
     };
 }
 
@@ -74,12 +83,20 @@ pub fn preMulVec4(v: Vec4, m: Mat4) Vec4 {
     };
 }
 
-pub fn mulVec4(m: Mat4, v: Vec4) Vec4 {
+pub fn mulScalar3(m: Mat3, s: Scalar) Mat3 {
     return .{
-        m[0][0] * v[0] + m[1][0] * v[1] + m[2][0] * v[2] + m[3][0] * v[3],
-        m[0][1] * v[0] + m[1][1] * v[1] + m[2][1] * v[2] + m[3][1] * v[3],
-        m[0][2] * v[0] + m[1][2] * v[1] + m[2][2] * v[2] + m[3][2] * v[3],
-        m[0][3] * v[0] + m[1][3] * v[1] + m[2][3] * v[2] + m[3][3] * v[3],
+        vec.mulScalar3(m[0], s),
+        vec.mulScalar3(m[1], s),
+        vec.mulScalar3(m[2], s),
+    };
+}
+
+pub fn mulScalar4(m: Mat4, s: Scalar) Mat4 {
+    return .{
+        vec.mulScalar4(m[0], s),
+        vec.mulScalar4(m[1], s),
+        vec.mulScalar4(m[2], s),
+        vec.mulScalar4(m[3], s),
     };
 }
 

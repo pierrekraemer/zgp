@@ -635,13 +635,37 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !void {
             if (idx == invalid_index) {
                 zgp_log.warn("{s} of dart {d} has invalid index", .{ @tagName(cell_type), cell.dart() });
             }
+            const c = cell_darts_count.valuePtr(cell);
             var cell_darts_it = sm.cellDartIterator(cell);
             while (cell_darts_it.next()) |d| {
                 const d_idx = sm.dartCellIndex(d, cell_type);
                 if (d_idx != idx) {
                     zgp_log.warn("Inconsistent {s} index for dart {d}: {d} != {d}", .{ @tagName(cell_type), d, d_idx, idx });
                 }
-                cell_darts_count.valuePtr(cell).* += 1;
+                c.* += 1;
+            }
+            switch (cell_type) {
+                .corner => {
+                    if (c.* != 1) {
+                        zgp_log.warn("Inconsistent corner darts count for corner {d}: {d} != 1", .{ cell.dart(), c.* });
+                    }
+                },
+                .vertex => {
+                    if (c.* < 3) {
+                        zgp_log.warn("Inconsistent vertex darts count for vertex {d}: {d} < 3", .{ cell.dart(), c.* });
+                    }
+                },
+                .edge => {
+                    if (c.* != 2) {
+                        zgp_log.warn("Inconsistent edge darts count for edge {d}: {d} != 2", .{ cell.dart(), c.* });
+                    }
+                },
+                .face => {
+                    if (c.* < 3) {
+                        zgp_log.warn("Inconsistent face darts count for face {d}: {d} < 3", .{ cell.dart(), c.* });
+                    }
+                },
+                else => unreachable,
             }
         }
         var data_container = switch (cell_type) {

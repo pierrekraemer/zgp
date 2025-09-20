@@ -8,6 +8,7 @@ const Vec4 = vec.Vec4;
 const mat = @import("../../geometry/mat.zig");
 const Mat4 = mat.Mat4;
 
+const zeigen = @import("zeigen");
 const geometry_utils = @import("../../geometry/utils.zig");
 
 /// Compute and return the QEM of the given vertex.
@@ -18,6 +19,7 @@ pub fn vertexQEM(
     sm: *const SurfaceMesh,
     vertex: SurfaceMesh.Cell,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3),
 ) Mat4 {
     assert(vertex.cellType() == .vertex);
@@ -26,9 +28,13 @@ pub fn vertexQEM(
     var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
         if (!sm.isBoundaryDart(d)) {
-            const n = face_normal.value(.{ .face = d });
+            const face: SurfaceMesh.Cell = .{ .face = d };
+            const n = face_normal.value(face);
             const plane: Vec4 = .{ n[0], n[1], n[2], -vec.dot3(p, n) };
-            const fq = mat.outerProduct4(plane, plane);
+            const fq = mat.mulScalar4(
+                mat.outerProduct4(plane, plane),
+                face_area.value(face),
+            );
             vq = mat.add4(vq, fq);
         }
     }
@@ -41,6 +47,7 @@ pub fn vertexQEM(
 pub fn computeVertexQEMs(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3),
     vertex_qem: SurfaceMesh.CellData(.vertex, Mat4),
 ) !void {
@@ -51,7 +58,10 @@ pub fn computeVertexQEMs(
         const n = face_normal.value(face);
         const p = vertex_position.value(.{ .vertex = face.dart() });
         const plane: Vec4 = .{ n[0], n[1], n[2], -vec.dot3(p, n) };
-        const fq = mat.outerProduct4(plane, plane);
+        const fq = mat.mulScalar4(
+            mat.outerProduct4(plane, plane),
+            face_area.value(face),
+        );
         var dart_it = sm.cellDartIterator(face);
         while (dart_it.next()) |d| {
             const v: SurfaceMesh.Cell = .{ .vertex = d };
@@ -61,4 +71,15 @@ pub fn computeVertexQEMs(
             );
         }
     }
+}
+
+pub fn optimalPoint(q: Mat4) ?Vec3 {
+    var m = q;
+    m[0][3] = 0.0;
+    m[1][3] = 0.0;
+    m[2][3] = 0.0;
+    m[3][3] = 1.0;
+    var inv: Mat4 = undefined;
+    const invertible = zeigen.computeInverseWithCheck(&m, &inv);
+    return if (invertible) .{ inv[3][0], inv[3][1], inv[3][2] } else null;
 }
