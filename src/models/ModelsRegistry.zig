@@ -383,10 +383,10 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
         );
 
         if (mr.selected_surface_mesh) |sm| {
-            var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
+            var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name + count
             const info = mr.surface_meshes_info.getPtr(sm).?;
             inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
-                const cells = std.fmt.bufPrintZ(&buf, " | " ++ @tagName(cell_type) ++ " | {d} |", .{sm.nbCells(cell_type)}) catch "";
+                const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type) ++ " | {d} |", .{sm.nbCells(cell_type)}) catch "";
                 c.ImGui_SeparatorText(cells.ptr);
                 inline for (@typeInfo(SurfaceMeshStdDatas).@"struct".fields) |*field| {
                     if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
