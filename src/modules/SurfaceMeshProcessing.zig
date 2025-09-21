@@ -113,10 +113,11 @@ fn decimate(
     face_normal: SurfaceMesh.CellData(.face, Vec3),
     nb_vertices_to_remove: u32,
 ) !void {
+    _ = nb_vertices_to_remove;
     var vertex_qem = try sm.addData(.vertex, Mat4, "vertex_qem");
     defer sm.removeData(.vertex, vertex_qem.gen());
     try qem.computeVertexQEMs(sm, vertex_position, face_area, face_normal, vertex_qem);
-    try decimation.decimateQEM(smp.allocator, sm, vertex_position, vertex_qem, nb_vertices_to_remove);
+    try decimation.decimateQEM(smp.allocator, sm, vertex_position, vertex_qem, 1000);
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
     zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
 }

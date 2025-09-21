@@ -14,12 +14,15 @@ const Module = @import("Module.zig");
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
 const SurfaceMeshStdData = ModelsRegistry.SurfaceMeshStdData;
+const DataGen = @import("../utils/Data.zig").DataGen;
 
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const PointSphereColorPerVertex = @import("../rendering/shaders/point_sphere_color_per_vertex/PointSphereColorPerVertex.zig");
+const PointSphereScalarPerVertex = @import("../rendering/shaders/point_sphere_scalar_per_vertex/PointSphereScalarPerVertex.zig");
 const LineBold = @import("../rendering/shaders/line_bold/LineBold.zig");
 const TriFlat = @import("../rendering/shaders/tri_flat/TriFlat.zig");
 const TriFlatColorPerVertex = @import("../rendering/shaders/tri_flat_color_per_vertex/TriFlatColorPerVertex.zig");
+const TriFlatScalarPerVertex = @import("../rendering/shaders/tri_flat_scalar_per_vertex/TriFlatScalarPerVertex.zig");
 const VBO = @import("../rendering/VBO.zig");
 
 const vec = @import("../geometry/vec.zig");
@@ -50,9 +53,11 @@ const ColorParameters = struct {
 const SurfaceMeshRendererParameters = struct {
     point_sphere_shader_parameters: PointSphere.Parameters,
     point_sphere_color_per_vertex_shader_parameters: PointSphereColorPerVertex.Parameters,
+    point_sphere_scalar_per_vertex_shader_parameters: PointSphereScalarPerVertex.Parameters,
     line_bold_shader_parameters: LineBold.Parameters,
     tri_flat_shader_parameters: TriFlat.Parameters,
     tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters,
+    tri_flat_scalar_per_vertex_shader_parameters: TriFlatScalarPerVertex.Parameters,
 
     draw_vertices: bool = true,
     draw_edges: bool = true,
@@ -70,18 +75,22 @@ const SurfaceMeshRendererParameters = struct {
         return .{
             .point_sphere_shader_parameters = PointSphere.Parameters.init(),
             .point_sphere_color_per_vertex_shader_parameters = PointSphereColorPerVertex.Parameters.init(),
+            .point_sphere_scalar_per_vertex_shader_parameters = PointSphereScalarPerVertex.Parameters.init(),
             .line_bold_shader_parameters = LineBold.Parameters.init(),
             .tri_flat_shader_parameters = TriFlat.Parameters.init(),
             .tri_flat_color_per_vertex_shader_parameters = TriFlatColorPerVertex.Parameters.init(),
+            .tri_flat_scalar_per_vertex_shader_parameters = TriFlatScalarPerVertex.Parameters.init(),
         };
     }
 
     pub fn deinit(self: *SurfaceMeshRendererParameters) void {
         self.point_sphere_shader_parameters.deinit();
         self.point_sphere_color_per_vertex_shader_parameters.deinit();
+        self.point_sphere_scalar_per_vertex_shader_parameters.deinit();
         self.line_bold_shader_parameters.deinit();
         self.tri_flat_shader_parameters.deinit();
         self.tri_flat_color_per_vertex_shader_parameters.deinit();
+        self.tri_flat_scalar_per_vertex_shader_parameters.deinit();
     }
 };
 
@@ -139,18 +148,69 @@ pub fn surfaceMeshStdDataChanged(
                 };
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+                p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.line_bold_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.tri_flat_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+                p.tri_flat_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
                 p.point_sphere_color_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
+                p.point_sphere_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
                 p.line_bold_shader_parameters.unsetVertexAttribArray(.position);
                 p.tri_flat_shader_parameters.unsetVertexAttribArray(.position);
                 p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
+                p.tri_flat_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
             }
         },
         else => return, // Ignore other standard data changes
+    }
+}
+
+/// Part of the Module interface.
+/// Check if the updated data is used here for coloring and update the associated min/max values.
+pub fn surfaceMeshDataUpdated(
+    smr: *SurfaceMeshRenderer,
+    surface_mesh: *SurfaceMesh,
+    cell_type: SurfaceMesh.CellType,
+    data_gen: *const DataGen,
+) void {
+    const p = smr.parameters.getPtr(surface_mesh) orelse return;
+    switch (cell_type) {
+        .vertex => {
+            if (p.draw_vertices_color.vertex_scalar_data != null and
+                p.draw_vertices_color.vertex_scalar_data.?.gen() == data_gen)
+            {
+                var min: f32 = std.math.floatMax(f32);
+                var max: f32 = std.math.floatMin(f32);
+                var it = p.draw_vertices_color.vertex_scalar_data.?.data.iterator();
+                while (it.next()) |v| {
+                    if (v.* < min) min = v.*;
+                    if (v.* > max) max = v.*;
+                }
+                p.point_sphere_scalar_per_vertex_shader_parameters.min_value = min;
+                p.point_sphere_scalar_per_vertex_shader_parameters.max_value = max;
+                p.tri_flat_scalar_per_vertex_shader_parameters.min_value = min;
+                p.tri_flat_scalar_per_vertex_shader_parameters.max_value = max;
+            }
+        },
+        .face => {
+            if (p.draw_vertices_color.face_scalar_data != null and
+                p.draw_vertices_color.face_scalar_data.?.gen() == data_gen)
+            {
+                var min: f32 = std.math.floatMax(f32);
+                var max: f32 = std.math.floatMin(f32);
+                var it = p.draw_vertices_color.face_scalar_data.?.data.iterator();
+                while (it.next()) |v| {
+                    if (v.* < min) min = v.*;
+                    if (v.* > max) max = v.*;
+                }
+                // Not supported yet
+                // p.tri_flat_scalar_per_face_shader_parameters.min_value = min;
+                // p.tri_flat_scalar_per_face_shader_parameters.max_value = max;
+            }
+        },
+        else => return, // Ignore other cell types
     }
 }
 
@@ -164,19 +224,29 @@ fn setSurfaceMeshDrawVerticesColorData(
     const p = smr.parameters.getPtr(surface_mesh) orelse return;
     switch (@typeInfo(T)) {
         .float => {
+            var min: f32 = std.math.floatMax(f32);
+            var max: f32 = std.math.floatMin(f32);
+            if (data) |d| {
+                var it = d.data.iterator();
+                while (it.next()) |v| {
+                    if (v.* < min) min = v.*;
+                    if (v.* > max) max = v.*;
+                }
+            }
             switch (cell_type) {
                 .vertex => {
                     p.draw_vertices_color.vertex_scalar_data = data;
-                    // Not supported yet
-                    // if (p.draw_vertices_color.vertex_scalar_data) |scalar| {
-                    // const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch {
-                    //     imgui_log.err("Failed to get VBO for vertex scalar colors\n", .{});
-                    //     return;
-                    // };
-                    // p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
-                    // } else {
-                    // p.point_sphere_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
-                    // }
+                    if (p.draw_vertices_color.vertex_scalar_data) |scalar| {
+                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch {
+                            imgui_log.err("Failed to get VBO for vertex scalar colors\n", .{});
+                            return;
+                        };
+                        p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
+                    } else {
+                        p.point_sphere_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
+                    }
+                    p.point_sphere_scalar_per_vertex_shader_parameters.min_value = min;
+                    p.point_sphere_scalar_per_vertex_shader_parameters.max_value = max;
                 },
                 else => unreachable,
             }
@@ -216,19 +286,29 @@ fn setSurfaceMeshDrawFacesColorData(
     const p = smr.parameters.getPtr(surface_mesh) orelse return;
     switch (@typeInfo(T)) {
         .float => {
+            var min: f32 = std.math.floatMax(f32);
+            var max: f32 = std.math.floatMin(f32);
+            if (data) |d| {
+                var it = d.data.iterator();
+                while (it.next()) |v| {
+                    if (v.* < min) min = v.*;
+                    if (v.* > max) max = v.*;
+                }
+            }
             switch (cell_type) {
                 .vertex => {
                     p.draw_faces_color.vertex_scalar_data = data;
-                    // Not supported yet
-                    // if (p.draw_faces_color.vertex_scalar_data) |scalar| {
-                    // const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch {
-                    //     imgui_log.err("Failed to get VBO for vertex scalar colors\n", .{});
-                    //     return;
-                    // };
-                    // p.tri_flat_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
-                    // } else {
-                    // p.tri_flat_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
-                    // }
+                    if (p.draw_faces_color.vertex_scalar_data) |scalar| {
+                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch {
+                            imgui_log.err("Failed to get VBO for vertex scalar colors\n", .{});
+                            return;
+                        };
+                        p.tri_flat_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
+                    } else {
+                        p.tri_flat_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
+                    }
+                    p.tri_flat_scalar_per_vertex_shader_parameters.min_value = min;
+                    p.tri_flat_scalar_per_vertex_shader_parameters.max_value = max;
                 },
                 .face => {
                     p.draw_faces_color.face_scalar_data = data;
@@ -242,6 +322,8 @@ fn setSurfaceMeshDrawFacesColorData(
                     // } else {
                     // p.tri_flat_scalar_per_face_shader_parameters.unsetVertexAttribArray(.scalar);
                     // }
+                    // p.tri_flat_scalar_per_face_shader_parameters.min_value = min;
+                    // p.tri_flat_scalar_per_face_shader_parameters.max_value = max;
                 },
                 else => unreachable,
             }
@@ -302,8 +384,9 @@ pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4, projection_matrix: Mat
                 .vertex => {
                     switch (p.draw_faces_color.type) {
                         .scalar => {
-                            // Not supported yet
-                            // TODO: write TriFlatScalarPerVertexShader
+                            p.tri_flat_scalar_per_vertex_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+                            p.tri_flat_scalar_per_vertex_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+                            p.tri_flat_scalar_per_vertex_shader_parameters.draw(info.triangles_ibo);
                         },
                         .vector => {
                             p.tri_flat_color_per_vertex_shader_parameters.model_view_matrix = @bitCast(view_matrix);
@@ -342,8 +425,9 @@ pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4, projection_matrix: Mat
                 .vertex => {
                     switch (p.draw_vertices_color.type) {
                         .scalar => {
-                            // Not supported yet
-                            // TODO: write PointSphereScalarPerVertexShader
+                            p.point_sphere_scalar_per_vertex_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+                            p.point_sphere_scalar_per_vertex_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+                            p.point_sphere_scalar_per_vertex_shader_parameters.draw(info.points_ibo);
                         },
                         .vector => {
                             p.point_sphere_color_per_vertex_shader_parameters.model_view_matrix = @bitCast(view_matrix);
@@ -400,7 +484,8 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
                 c.ImGui_Text("Size");
                 c.ImGui_PushID("DrawVerticesSize");
                 if (c.ImGui_SliderFloatEx("", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                    // sync value to color per vertex shader
+                    // sync value to other point sphere shaders
+                    p.point_sphere_scalar_per_vertex_shader_parameters.point_size = p.point_sphere_shader_parameters.point_size;
                     p.point_sphere_color_per_vertex_shader_parameters.point_size = p.point_sphere_shader_parameters.point_size;
                     zgp.requestRedraw();
                 }

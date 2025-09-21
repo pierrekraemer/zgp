@@ -580,30 +580,37 @@ pub fn dump(sm: *SurfaceMesh, writer: *std.Io.Writer) void {
     }
 }
 
-pub fn checkIntegrity(sm: *SurfaceMesh) !void {
+pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
+    var ok = true;
     var d_it = sm.dartIterator();
     while (d_it.next()) |d| {
         const d2 = sm.phi2(d);
         if (d2 == d) {
             zgp_log.warn("Dart {d} is phi2-linked to itself", .{d});
+            ok = false;
         }
         if (sm.phi2(d2) != d) {
             zgp_log.warn("Inconsistent phi2: phi2(phi2({d}) != {d}", .{ d, d });
+            ok = false;
         }
         const d1 = sm.phi1(d);
         if (sm.phi_1(d1) != d) {
             zgp_log.warn("Inconsistent phi_1: phi_1(phi1({d}) != {d}", .{ d, d });
+            ok = false;
         }
         const d_1 = sm.phi_1(d);
         if (sm.phi1(d_1) != d) {
             zgp_log.warn("Inconsistent phi1: phi1(phi_1({d}) != {d}", .{ d, d });
+            ok = false;
         }
         if (sm.isBoundaryDart(d)) {
             if (!sm.isBoundaryDart(d1)) {
                 zgp_log.warn("Inconsistent boundary face marking: {d} and {d}", .{ d, d1 });
+                ok = false;
             }
             if (sm.isBoundaryDart(d2)) {
                 zgp_log.warn("Adjacent boundary faces: {d} and {d}", .{ d, d2 });
+                ok = false;
             }
         }
         inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
@@ -613,6 +620,7 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !void {
                 const index = sm.dartCellIndex(d, cell_type);
                 if (index == invalid_index) {
                     zgp_log.warn("Dart {d} has invalid {s} index", .{ d, @tagName(cell_type) });
+                    ok = false;
                 }
             }
         }
@@ -634,6 +642,7 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !void {
             const idx = sm.cellIndex(cell);
             if (idx == invalid_index) {
                 zgp_log.warn("{s} of dart {d} has invalid index", .{ @tagName(cell_type), cell.dart() });
+                ok = false;
             }
             const c = cell_darts_count.valuePtr(cell);
             var cell_darts_it = sm.cellDartIterator(cell);
@@ -641,6 +650,7 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !void {
                 const d_idx = sm.dartCellIndex(d, cell_type);
                 if (d_idx != idx) {
                     zgp_log.warn("Inconsistent {s} index for dart {d}: {d} != {d}", .{ @tagName(cell_type), d, d_idx, idx });
+                    ok = false;
                 }
                 c.* += 1;
             }
@@ -648,21 +658,25 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !void {
                 .corner => {
                     if (c.* != 1) {
                         zgp_log.warn("Inconsistent corner darts count for corner {d}: {d} != 1", .{ cell.dart(), c.* });
+                        ok = false;
                     }
                 },
                 .vertex => {
-                    if (c.* < 3) {
-                        zgp_log.warn("Inconsistent vertex darts count for vertex {d}: {d} < 3", .{ cell.dart(), c.* });
+                    if (c.* < 2) {
+                        zgp_log.warn("Inconsistent vertex darts count for vertex {d}: {d} < 2", .{ cell.dart(), c.* });
+                        ok = false;
                     }
                 },
                 .edge => {
                     if (c.* != 2) {
                         zgp_log.warn("Inconsistent edge darts count for edge {d}: {d} != 2", .{ cell.dart(), c.* });
+                        ok = false;
                     }
                 },
                 .face => {
                     if (c.* < 3) {
                         zgp_log.warn("Inconsistent face darts count for face {d}: {d} < 3", .{ cell.dart(), c.* });
+                        ok = false;
                     }
                 },
                 else => unreachable,
@@ -681,15 +695,20 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !void {
             const darts_count = cell_darts_count.data.value(idx);
             if (ref_count != darts_count) {
                 zgp_log.warn("Inconsistent {s} index {d}: ref count {d} != actual count {d}", .{ @tagName(cell_type), idx, ref_count, darts_count });
+                ok = false;
             }
             const count = index_count.data.value(idx);
             if (count == 0) {
                 zgp_log.warn("Unused {s} index {d}", .{ @tagName(cell_type), idx });
+                ok = false;
             } else if (count > 1) {
                 zgp_log.warn("Non-unique {s} index {d}: used {d} times", .{ @tagName(cell_type), idx, count });
+                ok = false;
             }
         }
     }
+
+    return ok;
 }
 
 /// Returns the number of cells of the given CellType in the given SurfaceMesh

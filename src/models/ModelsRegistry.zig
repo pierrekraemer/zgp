@@ -203,10 +203,14 @@ pub fn surfaceMeshDataUpdated(
 
 pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) void {
     if (builtin.mode == .Debug) {
-        sm.checkIntegrity() catch {
-            std.debug.print("SurfaceMesh integrity check failed after connectivity update\n", .{});
+        const ok = sm.checkIntegrity() catch {
+            std.debug.print("Failed to check integrity after connectivity update\n", .{});
             return;
         };
+        if (!ok) {
+            std.debug.print("SurfaceMesh integrity check failed after connectivity update\n", .{});
+            return;
+        }
     }
 
     const info = mr.surface_meshes_info.getPtr(sm).?;
@@ -382,7 +386,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
             const info = mr.surface_meshes_info.getPtr(sm).?;
             inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
-                const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type) ++ " | {d}", .{sm.nbCells(cell_type)}) catch "";
+                const cells = std.fmt.bufPrintZ(&buf, " | " ++ @tagName(cell_type) ++ " | {d} |", .{sm.nbCells(cell_type)}) catch "";
                 c.ImGui_SeparatorText(cells.ptr);
                 inline for (@typeInfo(SurfaceMeshStdDatas).@"struct".fields) |*field| {
                     if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
@@ -732,7 +736,11 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
     try sm.indexCells(.face);
 
     if (builtin.mode == .Debug) {
-        try sm.checkIntegrity();
+        const ok = try sm.checkIntegrity();
+        if (!ok) {
+            zgp_log.err("SurfaceMesh integrity check failed after loading from file", .{});
+            return error.InvalidSurfaceMesh;
+        }
     }
 
     return sm;

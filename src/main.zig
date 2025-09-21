@@ -12,8 +12,6 @@ pub const c = @cImport({
     @cInclude("backends/dcimgui_impl_opengl3.h");
 });
 
-const zeigen = @import("zeigen");
-
 const ModelsRegistry = @import("models/ModelsRegistry.zig");
 
 const Module = @import("modules/Module.zig");
@@ -495,18 +493,6 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
 pub fn main() !u8 {
     app_err.reset();
     var empty_argv: [0:null]?[*:0]u8 = .{};
-
-    // Test zeigen
-    const m: Mat4 = .{
-        .{ 3, 4, 3, 0 },
-        .{ 2, 3, 2, 3 },
-        .{ 3, 1, 4, 1 },
-        .{ 1, 0, 1, 1 },
-    };
-    std.debug.print("mat = {any}\n", .{m});
-    var inv: Mat4 = undefined;
-    const invertible = zeigen.computeInverseWithCheck(&m, &inv);
-    std.debug.print("mat is invertible = {any}\nmat inverse = {any}\n", .{ invertible, inv });
 
     var da: std.heap.DebugAllocator(.{}) = .init;
     defer _ = da.deinit();
