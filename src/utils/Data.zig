@@ -1,6 +1,8 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const SegmentedList = @import("SegmentedList.zig").SegmentedList;
+
 const typeId = @import("types.zig").typeId;
 
 pub const DataGen = struct {
@@ -65,11 +67,11 @@ pub fn Data(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        // TODO: evaluate if SegmentedList is the right choice here
-        const SegmentedList = std.SegmentedList(T, 512);
+        // TODO: evaluate if SegmentedList is the right choice here (vs a simple ArrayList)
+        const DataSegmentedList = SegmentedList(T, 512);
 
         gen: DataGen = undefined,
-        data: SegmentedList = .{},
+        data: DataSegmentedList = .{},
 
         const init: Self = .{};
 
@@ -122,11 +124,11 @@ pub fn Data(comptime T: type) type {
             return self.data.len * @sizeOf(T);
         }
 
-        pub fn rawIterator(self: *Self) SegmentedList.Iterator {
+        pub fn rawIterator(self: *Self) DataSegmentedList.Iterator {
             return self.data.iterator(0);
         }
 
-        pub fn rawConstIterator(self: *const Self) SegmentedList.ConstIterator {
+        pub fn rawConstIterator(self: *const Self) DataSegmentedList.ConstIterator {
             return self.data.constIterator(0);
         }
 

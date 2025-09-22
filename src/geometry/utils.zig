@@ -56,24 +56,52 @@ pub fn scale(data: *Data(Vec3), s: Scalar) void {
     }
 }
 
-/// Compute and return the centroid of the given data points.
-pub fn centroid(data: *const Data(Vec3)) Vec3 {
-    var c = vec.zero3;
-    var it = data.constIterator();
-    while (it.next()) |pos| {
-        c = vec.add3(c, pos.*);
-    }
-    const nb_elements = data.nbElements();
+/// Compute and return the mean value of the given data.
+/// Supports float, int, or array of float/int types.
+pub fn meanValue(comptime T: type, data: *const Data(T)) T {
+    var sum: T = switch (@typeInfo(T)) {
+        .float, .int => 0,
+        .array => blk: {
+            const elem_info = @typeInfo(@typeInfo(T).array.child);
+            if (elem_info != .float and elem_info != .int) {
+                @compileError("meanValue only supports float, int, or array of float/int types");
+            }
+            break :blk @splat(0);
+        },
+        else => @compileError("meanValue only supports float, int, or array of float/int types"),
+    };
+    const nb_elements: usize = data.nbElements();
     if (nb_elements == 0) {
-        return c; // return zero vector if no elements
+        return sum; // return zero if no elements
     }
-    const nb_elements_f: Scalar = @floatFromInt(nb_elements);
-    return vec.mulScalar3(c, 1.0 / nb_elements_f);
+    var it = data.constIterator();
+    while (it.next()) |v| {
+        switch (@typeInfo(T)) {
+            .float, .int => sum += v.*,
+            .array => {
+                inline for (0..@typeInfo(T).array.len) |i| {
+                    sum[i] += v.*[i];
+                }
+            },
+            else => unreachable,
+        }
+    }
+    return switch (@typeInfo(T)) {
+        .float => sum / @as(T, @floatFromInt(nb_elements)),
+        .int => sum / @as(T, @intCast(nb_elements)),
+        .array => blk: {
+            inline for (0..@typeInfo(T).array.len) |i| {
+                sum[i] = sum[i] / @as(@TypeOf(sum[i]), @floatFromInt(nb_elements));
+            }
+            break :blk sum;
+        },
+        else => unreachable,
+    };
 }
 
 /// Translate the given data points to center around the given point.
 pub fn centerAround(data: *Data(Vec3), v: Vec3) void {
-    const c = centroid(data);
+    const c = meanValue(Vec3, data);
     const offset = vec.sub3(v, c);
     var it = data.iterator();
     while (it.next()) |pos| {

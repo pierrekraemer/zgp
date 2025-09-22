@@ -40,6 +40,8 @@ pub const CellType = std.meta.Tag(Cell);
 
 const invalid_index = std.math.maxInt(u32);
 
+allocator: std.mem.Allocator,
+
 /// Data containers for darts & the different cell types.
 dart_data: DataContainer,
 corner_data: DataContainer,
@@ -59,6 +61,7 @@ dart_boundary_marker: *Data(bool) = undefined, // boundary marker
 
 pub fn init(allocator: std.mem.Allocator) !SurfaceMesh {
     var sm: SurfaceMesh = .{
+        .allocator = allocator,
         .dart_data = try DataContainer.init(allocator),
         .corner_data = try DataContainer.init(allocator),
         .vertex_data = try DataContainer.init(allocator),
@@ -328,6 +331,71 @@ const DartMarker = struct {
         dm.marker.fill(false);
     }
 };
+
+pub fn CellSet(comptime cell_type: CellType) type {
+    return struct {
+        const Self = @This();
+
+        surface_mesh: *SurfaceMesh,
+        marker: CellMarker(cell_type),
+        cells: std.ArrayList(Cell),
+        indices: std.ArrayList(u32),
+
+        pub fn init(sm: *SurfaceMesh) !Self {
+            return .{
+                .surface_mesh = sm,
+                .marker = try CellMarker(cell_type).init(sm),
+                .cells = .empty,
+                .indices = .empty,
+            };
+        }
+        pub fn deinit(self: *Self) void {
+            self.marker.deinit();
+            self.cells.deinit(self.surface_mesh.allocator);
+            self.indices.deinit(self.surface_mesh.allocator);
+        }
+
+        pub fn contains(self: *Self, c: Cell) bool {
+            assert(c.cellType() == cell_type);
+            return self.marker.value(c);
+        }
+        pub fn add(self: *Self, c: Cell) !void {
+            assert(c.cellType() == cell_type);
+            self.marker.valuePtr(c).* = true;
+            try self.cells.append(self.surface_mesh.allocator, c);
+            try self.indices.append(self.surface_mesh.allocator, self.surface_mesh.cellIndex(c));
+        }
+        pub fn remove(self: *Self, c: Cell) void {
+            assert(c.cellType() == cell_type);
+            self.marker.valuePtr(self.surface_mesh.cellIndex(c)).* = false;
+            const c_index = self.surface_mesh.cellIndex(c);
+            for (self.cells.indices, 0..) |index, i| {
+                if (index == c_index) {
+                    self.cells.swapRemove(i);
+                    self.indices.swapRemove(i);
+                    break;
+                }
+            }
+        }
+        pub fn clear(self: *Self) void {
+            self.marker.reset();
+            self.cells.clearRetainingCapacity();
+            self.indices.clearRetainingCapacity();
+        }
+        pub fn update(self: *Self) !void {
+            self.cells.clearRetainingCapacity();
+            self.indices.clearRetainingCapacity();
+            var it = try CellIterator(cell_type).init(self.surface_mesh);
+            defer it.deinit();
+            while (it.next()) |c| {
+                if (self.contains(c)) {
+                    try self.cells.append(self.surface_mesh.allocator, c);
+                    try self.indices.append(self.surface_mesh.allocator, self.surface_mesh.cellIndex(c));
+                }
+            }
+        }
+    };
+}
 
 pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
     return struct {
@@ -1025,12 +1093,19 @@ pub fn canCollapseEdge(sm: *const SurfaceMesh, edge: Cell) bool {
         return false;
     }
 
-    // condition 2: avoid _pinching_ the surface
-    var buf: [32]u32 = undefined; // TODO: arbitrary limit of 32 only to avoid dynamic memory allocation here
+    // condition 2: avoid creating vertices of degree > 14
+    if (sm.degree(.{ .vertex = d }) + sm.degree(.{ .vertex = dd }) > 14) {
+        return false;
+    }
+
+    // condition 3: avoid _pinching_ the surface
+    var buf: [64]u32 = undefined; // TODO: arbitrary limit of 64 only to avoid dynamic memory allocation here
     var adjacentVertices = std.ArrayList(u32).initBuffer(&buf);
     var d_it = sm.phi_1(d_12);
     while (d_it != dd12) : (d_it = sm.phi_1(sm.phi2(d_it))) {
-        adjacentVertices.appendBounded(sm.dartCellIndex(d_it, .vertex)) catch {};
+        adjacentVertices.appendBounded(sm.dartCellIndex(d_it, .vertex)) catch {
+            std.debug.panic("Error: cannot check edge collapse condition 2 because the number of adjacent vertices exceeds {d}\n", .{buf.len});
+        };
     }
     d_it = sm.phi_1(dd_12);
     while (d_it != d12) : (d_it = sm.phi_1(sm.phi2(d_it))) {

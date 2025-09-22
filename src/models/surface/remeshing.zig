@@ -10,6 +10,7 @@ const subdivision = @import("subdivision.zig");
 const area = @import("area.zig");
 const normal = @import("normal.zig");
 
+const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
@@ -51,7 +52,7 @@ pub fn pliantRemeshing(
 ) !void {
     try subdivision.triangulateFaces(sm);
 
-    const mean_edge_length = try length.meanEdgeLength(sm, vertex_position);
+    const mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
     const length_goal = mean_edge_length * edge_length_factor;
 
     var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
@@ -99,51 +100,49 @@ pub fn pliantRemeshing(
     defer edge_marker.deinit();
 
     for (0..5) |_| {
-        // reset edge marker & iterators
+        // cut long edges
         edge_marker.reset();
         edge_it.reset();
-        vertex_it.reset();
-
-        // cut long edges
         while (edge_it.next()) |edge| {
-            if (!edge_marker.value(edge)) {
-                const d = edge.dart();
-                const dd = sm.phi2(d);
-                // const length_squared = vec.squaredNorm3(vec.sub3(vertex_position.value(v2), vertex_position.value(v1)));
-                const l = edge_length.value(edge);
-                if (l > length_goal * 2.0) {
-                    const new_pos = vec.mulScalar3(
-                        vec.add3(
-                            vertex_position.value(.{ .vertex = d }),
-                            vertex_position.value(.{ .vertex = dd }),
-                        ),
-                        0.5,
-                    );
-                    const v = try sm.cutEdge(edge);
-                    vertex_position.valuePtr(v).* = new_pos;
-                    edge_length.valuePtr(.{ .edge = d }).* = l * 0.5;
-                    edge_length.valuePtr(.{ .edge = dd }).* = l * 0.5;
-                    if (feature_edge.value(edge)) {
-                        feature_edge.valuePtr(.{ .edge = dd }).* = true;
-                        feature_vertex.valuePtr(v).* = true;
-                    }
-                    // triangulate adjacent (non-boundary) faces
-                    const d1 = sm.phi1(d);
-                    const dd1 = sm.phi1(dd);
-                    if (!sm.isBoundaryDart(d1)) {
-                        const e = try sm.cutFace(d1, sm.phi1(sm.phi1(d1)));
-                        edge_length.valuePtr(e).* = length.edgeLength(sm, e, vertex_position);
-                        edge_marker.valuePtr(e).* = true; // do not process new edges in the same pass
-                    }
-                    if (!sm.isBoundaryDart(dd1)) {
-                        const e = try sm.cutFace(dd1, sm.phi1(sm.phi1(dd1)));
-                        edge_length.valuePtr(e).* = length.edgeLength(sm, e, vertex_position);
-                        edge_marker.valuePtr(e).* = true; // do not process new edges in the same pass
-                    }
-                }
-                edge_marker.valuePtr(edge).* = true;
-                edge_marker.valuePtr(.{ .edge = dd }).* = true;
+            if (edge_marker.value(edge)) {
+                continue;
             }
+            const d = edge.dart();
+            const dd = sm.phi2(d);
+            // const length_squared = vec.squaredNorm3(vec.sub3(vertex_position.value(v2), vertex_position.value(v1)));
+            const l = edge_length.value(edge);
+            if (l > length_goal * 1.8) {
+                const new_pos = vec.mulScalar3(
+                    vec.add3(
+                        vertex_position.value(.{ .vertex = d }),
+                        vertex_position.value(.{ .vertex = dd }),
+                    ),
+                    0.5,
+                );
+                const v = try sm.cutEdge(edge);
+                vertex_position.valuePtr(v).* = new_pos;
+                edge_length.valuePtr(.{ .edge = d }).* = l * 0.5;
+                edge_length.valuePtr(.{ .edge = dd }).* = l * 0.5;
+                if (feature_edge.value(edge)) {
+                    feature_edge.valuePtr(.{ .edge = dd }).* = true;
+                    feature_vertex.valuePtr(v).* = true;
+                }
+                // triangulate adjacent (non-boundary) faces
+                const d1 = sm.phi1(d);
+                const dd1 = sm.phi1(dd);
+                if (!sm.isBoundaryDart(d1)) {
+                    const e = try sm.cutFace(d1, sm.phi1(sm.phi1(d1)));
+                    edge_length.valuePtr(e).* = length.edgeLength(sm, e, vertex_position);
+                    edge_marker.valuePtr(e).* = true; // do not process new edges in the same pass
+                }
+                if (!sm.isBoundaryDart(dd1)) {
+                    const e = try sm.cutFace(dd1, sm.phi1(sm.phi1(dd1)));
+                    edge_length.valuePtr(e).* = length.edgeLength(sm, e, vertex_position);
+                    edge_marker.valuePtr(e).* = true; // do not process new edges in the same pass
+                }
+            }
+            edge_marker.valuePtr(edge).* = true;
+            edge_marker.valuePtr(.{ .edge = dd }).* = true;
         }
 
         // collapse short edges
@@ -162,7 +161,7 @@ pub fn pliantRemeshing(
                 continue;
             }
             const l = edge_length.value(edge);
-            if (l < length_goal * 0.5) {
+            if (l < length_goal * 0.6) {
                 if (sm.canCollapseEdge(edge)) {
                     var new_pos = vec.mulScalar3(
                         vec.add3(vertex_position.value(v1), vertex_position.value(v2)),
@@ -204,6 +203,7 @@ pub fn pliantRemeshing(
         try normal.computeFaceNormals(sm, vertex_position, face_normal);
         try area.computeVertexAreas(sm, face_area, vertex_area);
         try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
+        vertex_it.reset();
         while (vertex_it.next()) |vertex| {
             if (sm.isIncidentToBoundary(vertex) or feature_corner.value(vertex) or feature_vertex.value(vertex)) {
                 continue;
@@ -211,8 +211,8 @@ pub fn pliantRemeshing(
             var q = vec.zero3;
             var w: f32 = 0.0;
             var dart_it = sm.cellDartIterator(vertex);
-            while (dart_it.next()) |dart| {
-                const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(dart) };
+            while (dart_it.next()) |d| {
+                const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
                 const a = vertex_area.value(nv);
                 q = vec.add3(
                     q,

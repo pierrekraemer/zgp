@@ -66,6 +66,9 @@ pub const SurfaceMeshStdDataTag = std.meta.Tag(SurfaceMeshStdData);
 /// Each SurfaceMesh in the ModelsRegistry has an associated SurfaceMeshInfo which can be accessed via the surfaceMeshInfo function.
 const SurfaceMeshInfo = struct {
     std_data: SurfaceMeshStdDatas = .{},
+    vertex_set: SurfaceMesh.CellSet(.vertex),
+    edge_set: SurfaceMesh.CellSet(.edge),
+    face_set: SurfaceMesh.CellSet(.face),
     points_ibo: IBO,
     lines_ibo: IBO,
     triangles_ibo: IBO,
@@ -116,6 +119,9 @@ pub fn deinit(mr: *ModelsRegistry) void {
     var sm_info_it = mr.surface_meshes_info.iterator();
     while (sm_info_it.next()) |entry| {
         var info = entry.value_ptr.*;
+        info.vertex_set.deinit();
+        info.edge_set.deinit();
+        info.face_set.deinit();
         info.points_ibo.deinit();
         info.lines_ibo.deinit();
         info.triangles_ibo.deinit();
@@ -214,20 +220,34 @@ pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) voi
     }
 
     const info = mr.surface_meshes_info.getPtr(sm).?;
-    info.points_ibo.fillFrom(sm, .vertex, mr.allocator) catch {
-        std.debug.print("Failed to fill points IBO for SurfaceMesh\n", .{});
+
+    info.vertex_set.update() catch |err| {
+        std.debug.print("Failed to update vertex set for SurfaceMesh: {}\n", .{err});
         return;
     };
-    info.lines_ibo.fillFrom(sm, .edge, mr.allocator) catch {
-        std.debug.print("Failed to fill lines IBO for SurfaceMesh\n", .{});
+    info.edge_set.update() catch |err| {
+        std.debug.print("Failed to update edge set for SurfaceMesh: {}\n", .{err});
         return;
     };
-    info.triangles_ibo.fillFrom(sm, .face, mr.allocator) catch {
-        std.debug.print("Failed to fill triangles IBO for SurfaceMesh\n", .{});
+    info.face_set.update() catch |err| {
+        std.debug.print("Failed to update face set for SurfaceMesh: {}\n", .{err});
         return;
     };
-    info.boundaries_ibo.fillFrom(sm, .boundary, mr.allocator) catch {
-        std.debug.print("Failed to fill boundaries IBO for SurfaceMesh\n", .{});
+
+    info.points_ibo.fillFrom(sm, .vertex, mr.allocator) catch |err| {
+        std.debug.print("Failed to fill points IBO for SurfaceMesh: {}\n", .{err});
+        return;
+    };
+    info.lines_ibo.fillFrom(sm, .edge, mr.allocator) catch |err| {
+        std.debug.print("Failed to fill lines IBO for SurfaceMesh: {}\n", .{err});
+        return;
+    };
+    info.triangles_ibo.fillFrom(sm, .face, mr.allocator) catch |err| {
+        std.debug.print("Failed to fill triangles IBO for SurfaceMesh: {}\n", .{err});
+        return;
+    };
+    info.boundaries_ibo.fillFrom(sm, .boundary, mr.allocator) catch |err| {
+        std.debug.print("Failed to fill boundaries IBO for SurfaceMesh: {}\n", .{err});
         return;
     };
 
@@ -490,13 +510,16 @@ pub fn createSurfaceMesh(mr: *ModelsRegistry, name: []const u8) !*SurfaceMesh {
     if (maybe_surface_mesh) |_| {
         return error.ModelNameAlreadyExists;
     }
-    const sm = try mr.allocator.create(SurfaceMesh);
+    var sm = try mr.allocator.create(SurfaceMesh);
     errdefer mr.allocator.destroy(sm);
     sm.* = try SurfaceMesh.init(mr.allocator);
     errdefer sm.deinit();
     try mr.surface_meshes.put(name, sm);
     errdefer _ = mr.surface_meshes.remove(name);
     try mr.surface_meshes_info.put(sm, .{
+        .vertex_set = try SurfaceMesh.CellSet(.vertex).init(sm),
+        .edge_set = try SurfaceMesh.CellSet(.edge).init(sm),
+        .face_set = try SurfaceMesh.CellSet(.face).init(sm),
         .points_ibo = IBO.init(),
         .lines_ibo = IBO.init(),
         .triangles_ibo = IBO.init(),
