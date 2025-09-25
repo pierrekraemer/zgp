@@ -46,6 +46,7 @@ const PointCloudInfo = struct {
 /// Standard SurfaceMesh data name & types.
 pub const SurfaceMeshStdDatas = struct {
     corner_angle: ?SurfaceMesh.CellData(.corner, f32) = null,
+    halfedge_cotan_weight: ?SurfaceMesh.CellData(.halfedge, f32) = null,
     vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
     vertex_area: ?SurfaceMesh.CellData(.vertex, f32) = null,
     vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3) = null,

@@ -1,4 +1,21 @@
-//! TODO: write docs for SurfaceMesh
+//! A SurfaceMesh is a combinatorial map representing a 2-manifold surface mesh.
+//! A combinatorial map is a topological data structure based on darts and relations between them
+//! (see https://en.wikipedia.org/wiki/Combinatorial_map).
+//! Each cell of the mesh is a subset of darts (formally defined as orbits),
+//! and each dart belongs to exactly one cell of each dimension (vertex, edge, face in 2D).
+//! Consequently, a cell can be represented by any of its darts
+//! and a dart can be interpreted as the representative of any of the cells it belongs to.
+//!
+//! In this implementation, a dart is simply represented by an integer index.
+//! A DataContainer (index-based synchronized collection of arrays with empty space management)
+//! is used to store the data associated to each dart:
+//! - the phi1, phi_1 and phi2 relations that define the combinatorial map,
+//! - the indices of the corner, vertex, edge and face cells the dart belongs to,
+//! These cell indices refer to entries in other DataContainers that are used to store data
+//! associated to halfedges, corners, vertices, edges and faces.
+//!
+//! TODO: talk about boundary management
+
 const SurfaceMesh = @This();
 
 const std = @import("std");
@@ -13,13 +30,15 @@ const Data = data.Data;
 
 pub const Dart = u32;
 
-// TODO: try to have a type for the different cell types rather than having to assert the type through the Cell active tag
-
+/// A cell is a tagged union containing a dart that belongs to the cell of the current tag.
+/// Convenience functions are provided to get the representing dart and the cell type.
 pub const Cell = union(enum) {
+    halfedge: Dart,
     corner: Dart,
     vertex: Dart,
     edge: Dart,
     face: Dart,
+
     // boundary faces are polygonal faces composed of boundary darts
     // this cell type is not used to manage data but only to be able to iterate over boundary faces
     boundary: Dart,
@@ -35,15 +54,22 @@ pub const Cell = union(enum) {
         return std.meta.activeTag(c);
     }
 };
-
 pub const CellType = std.meta.Tag(Cell);
+
+// TODO: try to have a type for the different cell types rather than having to assert the type through the Cell active tag
 
 const invalid_index = std.math.maxInt(u32);
 
 allocator: std.mem.Allocator,
 
+// TODO: corner & halfedge containers & index could be optimized away
+// and transparently managed through the dart container
+// (only difference is that corner & halfedge indices (and thus corresponding entries in data containers)
+// do not exist for boundary darts)
+
 /// Data containers for darts & the different cell types.
 dart_data: DataContainer,
+halfedge_data: DataContainer,
 corner_data: DataContainer,
 vertex_data: DataContainer,
 edge_data: DataContainer,
@@ -53,6 +79,7 @@ face_data: DataContainer,
 dart_phi1: *Data(Dart) = undefined,
 dart_phi_1: *Data(Dart) = undefined,
 dart_phi2: *Data(Dart) = undefined,
+dart_halfedge_index: *Data(u32) = undefined,
 dart_corner_index: *Data(u32) = undefined,
 dart_vertex_index: *Data(u32) = undefined,
 dart_edge_index: *Data(u32) = undefined,
@@ -63,6 +90,7 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMesh {
     var sm: SurfaceMesh = .{
         .allocator = allocator,
         .dart_data = try DataContainer.init(allocator),
+        .halfedge_data = try DataContainer.init(allocator),
         .corner_data = try DataContainer.init(allocator),
         .vertex_data = try DataContainer.init(allocator),
         .edge_data = try DataContainer.init(allocator),
@@ -71,6 +99,7 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMesh {
     sm.dart_phi1 = try sm.dart_data.addData(Dart, "phi1");
     sm.dart_phi_1 = try sm.dart_data.addData(Dart, "phi_1");
     sm.dart_phi2 = try sm.dart_data.addData(Dart, "phi2");
+    sm.dart_halfedge_index = try sm.dart_data.addData(u32, "halfedge_index");
     sm.dart_corner_index = try sm.dart_data.addData(u32, "corner_index");
     sm.dart_vertex_index = try sm.dart_data.addData(u32, "vertex_index");
     sm.dart_edge_index = try sm.dart_data.addData(u32, "edge_index");
@@ -81,6 +110,7 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMesh {
 
 pub fn deinit(sm: *SurfaceMesh) void {
     sm.dart_data.deinit();
+    sm.halfedge_data.deinit();
     sm.corner_data.deinit();
     sm.vertex_data.deinit();
     sm.edge_data.deinit();
@@ -89,6 +119,7 @@ pub fn deinit(sm: *SurfaceMesh) void {
 
 pub fn clearRetainingCapacity(sm: *SurfaceMesh) void {
     sm.dart_data.clearRetainingCapacity();
+    sm.halfedge_data.clearRetainingCapacity();
     sm.corner_data.clearRetainingCapacity();
     sm.vertex_data.clearRetainingCapacity();
     sm.edge_data.clearRetainingCapacity();
@@ -131,6 +162,7 @@ const CellDartIterator = struct {
         defer {
             if (it.current_dart) |current_dart| {
                 it.current_dart = switch (it.cell) {
+                    .halfedge => current_dart,
                     .corner => current_dart,
                     .vertex => it.surface_mesh.phi2(it.surface_mesh.phi_1(current_dart)),
                     .edge => it.surface_mesh.phi2(current_dart),
@@ -218,8 +250,8 @@ pub fn CellIterator(comptime cell_type: CellType) type {
         pub fn init(sm: *SurfaceMesh) !Self {
             return .{
                 .surface_mesh = sm,
-                // no marker needed for corner iterator (a corner is a single dart)
-                .marker = if (cell_type != .corner) try DartMarker.init(sm) else null,
+                // no marker needed for halfedge/corner iterator (a halfedge/corner is a single dart)
+                .marker = if (cell_type != .halfedge and cell_type != .corner) try DartMarker.init(sm) else null,
                 .current_dart = if (cell_type == .boundary) sm.firstBoundaryDart() else sm.firstNonBoundaryDart(),
             };
         }
@@ -232,11 +264,11 @@ pub fn CellIterator(comptime cell_type: CellType) type {
             if (self.current_dart == self.surface_mesh.dart_data.lastIndex()) {
                 return null;
             }
-            // special case for corner iterator: a corner is a single dart, so there is no need to mark the darts of the cell
-            if (cell_type == .corner) {
+            // special case for halfedge/corner iterator: a halfedge/corner is a single dart, so there is no need to mark the darts of the cell
+            if (cell_type == .halfedge or cell_type == .corner) {
                 // prepare current_dart for next iteration
                 defer self.current_dart = self.surface_mesh.nextNonBoundaryDart(self.current_dart);
-                return .{ .corner = self.current_dart };
+                return @unionInit(Cell, @tagName(cell_type), self.current_dart);
             }
             // other cells: mark the darts of the cell
             const cell = @unionInit(Cell, @tagName(cell_type), self.current_dart);
@@ -275,6 +307,7 @@ pub fn CellMarker(comptime cell_type: CellType) type {
             return .{
                 .surface_mesh = sm,
                 .marker = try switch (cell_type) {
+                    .halfedge => sm.halfedge_data.getMarker(),
                     .corner => sm.corner_data.getMarker(),
                     .vertex => sm.vertex_data.getMarker(),
                     .edge => sm.edge_data.getMarker(),
@@ -285,6 +318,7 @@ pub fn CellMarker(comptime cell_type: CellType) type {
         }
         pub fn deinit(self: *Self) void {
             switch (cell_type) {
+                .halfedge => self.surface_mesh.halfedge_data.releaseMarker(self.marker),
                 .corner => self.surface_mesh.corner_data.releaseMarker(self.marker),
                 .vertex => self.surface_mesh.vertex_data.releaseMarker(self.marker),
                 .edge => self.surface_mesh.edge_data.releaseMarker(self.marker),
@@ -425,6 +459,7 @@ pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
 
 pub fn addData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
     const d = switch (cell_type) {
+        .halfedge => try sm.halfedge_data.addData(T, name),
         .corner => try sm.corner_data.addData(T, name),
         .vertex => try sm.vertex_data.addData(T, name),
         .edge => try sm.edge_data.addData(T, name),
@@ -436,6 +471,7 @@ pub fn addData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type,
 
 pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) ?CellData(cell_type, T) {
     if (switch (cell_type) {
+        .halfedge => sm.halfedge_data.getData(T, name),
         .corner => sm.corner_data.getData(T, name),
         .vertex => sm.vertex_data.getData(T, name),
         .edge => sm.edge_data.getData(T, name),
@@ -449,6 +485,7 @@ pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T:
 
 pub fn removeData(sm: *SurfaceMesh, comptime cell_type: CellType, attribute_gen: *DataGen) void {
     switch (cell_type) {
+        .halfedge => sm.halfedge_data.removeData(attribute_gen),
         .corner => sm.corner_data.removeData(attribute_gen),
         .vertex => sm.vertex_data.removeData(attribute_gen),
         .edge => sm.edge_data.removeData(attribute_gen),
@@ -463,6 +500,7 @@ pub fn removeData(sm: *SurfaceMesh, comptime cell_type: CellType, attribute_gen:
 /// in use until it is associated to the darts of a cell of the mesh (see setCellIndex)
 pub fn newDataIndex(sm: *SurfaceMesh, cell_type: CellType) !u32 {
     switch (cell_type) {
+        .halfedge => return sm.halfedge_data.newIndex(),
         .corner => return sm.corner_data.newIndex(),
         .vertex => return sm.vertex_data.newIndex(),
         .edge => return sm.edge_data.newIndex(),
@@ -485,6 +523,10 @@ fn addDart(sm: *SurfaceMesh) !Dart {
 }
 
 fn removeDart(sm: *SurfaceMesh, d: Dart) void {
+    const halfedge_index = sm.dart_edge_index.value(d);
+    if (halfedge_index != invalid_index) {
+        sm.halfedge_data.unrefIndex(halfedge_index);
+    }
     const corner_index = sm.dart_corner_index.value(d);
     if (corner_index != invalid_index) {
         sm.corner_data.unrefIndex(corner_index);
@@ -567,6 +609,7 @@ pub fn isIncidentToBoundary(sm: *const SurfaceMesh, cell: Cell) bool {
 
 pub fn setDartCellIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u32) void {
     var index_data = switch (cell_type) {
+        .halfedge => sm.dart_halfedge_index,
         .corner => sm.dart_corner_index,
         .vertex => sm.dart_vertex_index,
         .edge => sm.dart_edge_index,
@@ -574,6 +617,7 @@ pub fn setDartCellIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u
         else => unreachable,
     };
     var data_container = switch (cell_type) {
+        .halfedge => &sm.halfedge_data,
         .corner => &sm.corner_data,
         .vertex => &sm.vertex_data,
         .edge => &sm.edge_data,
@@ -592,6 +636,7 @@ pub fn setDartCellIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u
 
 pub fn dartCellIndex(sm: *const SurfaceMesh, d: Dart, cell_type: CellType) u32 {
     switch (cell_type) {
+        .halfedge => return sm.dart_halfedge_index.value(d),
         .corner => return sm.dart_corner_index.value(d),
         .vertex => return sm.dart_vertex_index.value(d),
         .edge => return sm.dart_edge_index.value(d),
@@ -602,6 +647,7 @@ pub fn dartCellIndex(sm: *const SurfaceMesh, d: Dart, cell_type: CellType) u32 {
 
 fn setCellIndex(sm: *SurfaceMesh, c: Cell, index: u32) void {
     switch (c) {
+        .halfedge => sm.setDartCellIndex(c.dart(), .halfedge, index),
         .corner => sm.setDartCellIndex(c.dart(), .corner, index),
         .edge => {
             const d = c.dart();
@@ -681,9 +727,9 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
                 ok = false;
             }
         }
-        inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
-            if (sm.isBoundaryDart(d) and (cell_type == .face or cell_type == .corner)) {
-                // boundary faces & boundary corners are not indexed
+        inline for (.{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
+            if (sm.isBoundaryDart(d) and (cell_type == .face or cell_type == .corner or cell_type == .halfedge)) {
+                // boundary faces & boundary corners & boundary halfedges are not indexed
             } else {
                 const index = sm.dartCellIndex(d, cell_type);
                 if (index == invalid_index) {
@@ -694,7 +740,7 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
         }
     }
 
-    inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
+    inline for (.{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
         const index_count = try sm.addData(cell_type, u32, "index_count");
         defer sm.removeData(cell_type, index_count.gen());
         index_count.data.fill(0);
@@ -723,6 +769,12 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
                 c.* += 1;
             }
             switch (cell_type) {
+                .halfedge => {
+                    if (c.* != 1) {
+                        zgp_log.warn("Inconsistent halfedge darts count for halfedge {d}: {d} != 1", .{ cell.dart(), c.* });
+                        ok = false;
+                    }
+                },
                 .corner => {
                     if (c.* != 1) {
                         zgp_log.warn("Inconsistent corner darts count for corner {d}: {d} != 1", .{ cell.dart(), c.* });
@@ -751,6 +803,7 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
             }
         }
         var data_container = switch (cell_type) {
+            .halfedge => &sm.halfedge_data,
             .corner => &sm.corner_data,
             .vertex => &sm.vertex_data,
             .edge => &sm.edge_data,
@@ -782,6 +835,7 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
 /// Returns the number of cells of the given CellType in the given SurfaceMesh
 pub fn nbCells(sm: *const SurfaceMesh, cell_type: CellType) u32 {
     return switch (cell_type) {
+        .halfedge => sm.halfedge_data.nbElements(),
         .corner => sm.corner_data.nbElements(),
         .vertex => sm.vertex_data.nbElements(),
         .edge => sm.edge_data.nbElements(),
@@ -825,7 +879,7 @@ pub fn codegree(sm: *const SurfaceMesh, cell: Cell) u32 {
 
 /// Creates a new face with the given number of vertices.
 /// Unbounded means that the face is not linked to any boundary "outer" face (all its darts are phi2-linked to themselves).
-/// None of the face darts are associated to vertex/edge/face indices and the face is not closed by a boundary face.
+/// None of the face darts are associated to halfedge/corner/vertex/edge/face indices and the face is not closed by a boundary face.
 /// This function is only intended for use in SurfaceMesh creation process (import, ...) as the SurfaceMesh is not
 /// valid after this function is called.
 pub fn addUnboundedFace(sm: *SurfaceMesh, nb_vertices: u32) !Cell {
@@ -857,6 +911,7 @@ pub fn close(sm: *SurfaceMesh) !u32 {
             const b_first = try sm.addDart();
             sm.dart_boundary_marker.valuePtr(b_first).* = true;
             sm.phi2Sew(d, b_first);
+            // boundary darts do not represent a valid halfedge, thus they do not have a halfedge index
             // boundary darts do not represent a valid corner, thus they do not have a corner index
             sm.setDartCellIndex(b_first, .vertex, sm.dartCellIndex(sm.phi1(d), .vertex));
             sm.setDartCellIndex(b_first, .edge, sm.dartCellIndex(d, .edge));
@@ -876,6 +931,7 @@ pub fn close(sm: *SurfaceMesh) !u32 {
                 sm.dart_boundary_marker.valuePtr(b_next).* = true;
                 sm.phi2Sew(d_current, b_next);
                 sm.phi1Sew(b_first, b_next);
+                // boundary darts do not represent a valid halfedge, thus they do not have a halfedge index
                 // boundary darts do not represent a valid corner, thus they do not have a corner index
                 sm.setDartCellIndex(b_next, .vertex, sm.dartCellIndex(sm.phi1(d_current), .vertex));
                 sm.setDartCellIndex(b_next, .edge, sm.dartCellIndex(d_current, .edge));
@@ -911,6 +967,17 @@ pub fn cutEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
     sm.dart_boundary_marker.valuePtr(d1).* = sm.dart_boundary_marker.value(d);
     sm.dart_boundary_marker.valuePtr(dd1).* = sm.dart_boundary_marker.value(dd);
 
+    {
+        // Halfedge indices.
+        if (!sm.isBoundaryDart(d1)) { // halfedges in boundary faces are not indexed
+            const index = try sm.newDataIndex(.halfedge);
+            sm.setDartCellIndex(d1, .halfedge, index);
+        }
+        if (!sm.isBoundaryDart(dd1)) { // halfedges in boundary faces are not indexed
+            const index = try sm.newDataIndex(.halfedge);
+            sm.setDartCellIndex(dd1, .halfedge, index);
+        }
+    }
     {
         // Corner indices.
         if (!sm.isBoundaryDart(d1)) { // corners in boundary faces are not indexed
@@ -964,6 +1031,10 @@ pub fn flipEdge(sm: *SurfaceMesh, edge: Cell) void {
     sm.phi1Sew(d, d1);
     sm.phi1Sew(dd, dd1);
 
+    {
+        // Halfedge indices.
+        // no new halfedges are created & no existing halfedges are modified
+    }
     {
         // Corner indices.
         // no new corners are created & no existing corners are modified
@@ -1046,6 +1117,10 @@ pub fn collapseEdge(sm: *SurfaceMesh, edge: Cell) Cell {
         sm.removeDart(dd_1);
     }
 
+    {
+        // Halfedge indices.
+        // no new halfedges are created & no existing halfedges are modified
+    }
     {
         // Corner indices.
         // no new corners are created & no existing corners are modified
@@ -1136,6 +1211,13 @@ pub fn cutFace(sm: *SurfaceMesh, d1: Dart, d2: Dart) !Cell {
     sm.phi1Sew(d_1, d_2);
     sm.phi2Sew(d_1, d_2);
 
+    {
+        // Halfedge indices.
+        const index1 = try sm.newDataIndex(.halfedge);
+        sm.setDartCellIndex(d_1, .halfedge, index1);
+        const index2 = try sm.newDataIndex(.halfedge);
+        sm.setDartCellIndex(d_2, .halfedge, index2);
+    }
     {
         // Corner indices.
         const index1 = try sm.newDataIndex(.corner);

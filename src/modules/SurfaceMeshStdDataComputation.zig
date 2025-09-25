@@ -1,4 +1,4 @@
-const SurfaceMeshProcessing = @This();
+const SurfaceMeshStdDataComputation = @This();
 
 const std = @import("std");
 
@@ -16,109 +16,29 @@ const SurfaceMeshStdDataTag = ModelsRegistry.SurfaceMeshStdDataTag;
 
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
-const mat = @import("../geometry/mat.zig");
-const Mat4 = mat.Mat4;
 
 const angle = @import("../models/surface/angle.zig");
 const area = @import("../models/surface/area.zig");
 const curvature = @import("../models/surface/curvature.zig");
+const laplacian = @import("../models/surface/laplacian.zig");
 const length = @import("../models/surface/length.zig");
 const normal = @import("../models/surface/normal.zig");
-const subdivision = @import("../models/surface/subdivision.zig");
-const remeshing = @import("../models/surface/remeshing.zig");
-const qem = @import("../models/surface/qem.zig");
-const decimation = @import("../models/surface/decimation.zig");
 
-// TODO: useful to keep an allocator here rather than exposing & using zgp.allocator?
-allocator: std.mem.Allocator,
-
-pub fn init(allocator: std.mem.Allocator) !SurfaceMeshProcessing {
-    return .{
-        .allocator = allocator,
-    };
+pub fn init() !SurfaceMeshStdDataComputation {
+    return .{};
 }
 
-pub fn deinit(_: *SurfaceMeshProcessing) void {}
+pub fn deinit(_: *SurfaceMeshStdDataComputation) void {}
 
-/// Return a Module interface for the SurfaceMeshProcessing.
-pub fn module(smp: *SurfaceMeshProcessing) Module {
-    return Module.init(smp);
+/// Return a Module interface for the SurfaceMeshStdDataComputation.
+pub fn module(smsdc: *SurfaceMeshStdDataComputation) Module {
+    return Module.init(smsdc);
 }
 
 /// Part of the Module interface.
 /// Return the name of the module.
-pub fn name(_: *SurfaceMeshProcessing) []const u8 {
-    return "Surface Mesh Processing";
-}
-
-fn cutAllEdges(
-    _: *SurfaceMeshProcessing,
-    sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
-) !void {
-    try subdivision.cutAllEdges(sm, vertex_position);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
-    zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
-}
-
-fn triangulateFaces(
-    _: *SurfaceMeshProcessing,
-    sm: *SurfaceMesh,
-) !void {
-    try subdivision.triangulateFaces(sm);
-    zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
-}
-
-fn remesh(
-    _: *SurfaceMeshProcessing,
-    sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
-    edge_length_factor: f32,
-) !void {
-    try remeshing.pliantRemeshing(
-        sm,
-        vertex_position,
-        corner_angle,
-        face_area,
-        face_normal,
-        edge_length,
-        edge_dihedral_angle,
-        vertex_area,
-        vertex_normal,
-        edge_length_factor,
-    );
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .face, f32, face_area);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .face, Vec3, face_normal);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .edge, f32, edge_length);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_normal);
-    zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
-}
-
-fn decimate(
-    smp: *SurfaceMeshProcessing,
-    sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
-    nb_vertices_to_remove: u32,
-) !void {
-    var vertex_qem = try sm.addData(.vertex, Mat4, "vertex_qem");
-    defer sm.removeData(.vertex, vertex_qem.gen());
-    try qem.computeVertexQEMs(sm, vertex_position, face_area, face_normal, vertex_qem);
-    try decimation.decimateQEM(smp.allocator, sm, vertex_position, vertex_qem, nb_vertices_to_remove);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
-    zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+pub fn name(_: *SurfaceMeshStdDataComputation) []const u8 {
+    return "Surface Mesh Std Data Computation";
 }
 
 fn computeCornerAngles(
@@ -128,6 +48,15 @@ fn computeCornerAngles(
 ) !void {
     try angle.computeCornerAngles(sm, vertex_position, corner_angle);
     zgp.models_registry.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
+}
+
+fn computeHalfedgeCotanWeights(
+    sm: *SurfaceMesh,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+) !void {
+    try laplacian.computeHalfedgeCotanWeights(sm, vertex_position, halfedge_cotan_weight);
+    zgp.models_registry.surfaceMeshDataUpdated(sm, .halfedge, f32, halfedge_cotan_weight);
 }
 
 fn computeEdgeLengths(
@@ -272,6 +201,11 @@ const std_data_computations: []const StdDataComputation = &.{
     },
     .{
         .reads = &.{.vertex_position},
+        .computes = .halfedge_cotan_weight,
+        .func = &computeHalfedgeCotanWeights,
+    },
+    .{
+        .reads = &.{.vertex_position},
         .computes = .face_area,
         .func = &computeFaceAreas,
     },
@@ -312,7 +246,7 @@ const std_data_computations: []const StdDataComputation = &.{
     },
 };
 
-pub fn uiPanel(smp: *SurfaceMeshProcessing) void {
+pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
     const UiData = struct {
         var edge_length_factor: f32 = 1.0;
         var percent_vertices_to_keep: i32 = 75;
@@ -327,136 +261,6 @@ pub fn uiPanel(smp: *SurfaceMeshProcessing) void {
 
     if (mr.selected_surface_mesh) |sm| {
         const info = mr.surfaceMeshInfo(sm);
-
-        c.ImGui_SeparatorText("Mesh Operations");
-
-        {
-            const disabled = info.std_data.vertex_position == null;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (c.ImGui_ButtonEx("Cut all edges", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                smp.cutAllEdges(sm, info.std_data.vertex_position.?) catch |err| {
-                    std.debug.print("Error cutting all edges: {}\n", .{err});
-                };
-            }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - vertex_position
-                \\ Update connectivity
-            );
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-        }
-
-        {
-            if (c.ImGui_ButtonEx("Triangulate faces", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                smp.triangulateFaces(sm) catch |err| {
-                    std.debug.print("Error triangulating faces: {}\n", .{err});
-                };
-            }
-            imgui_utils.tooltip("Update connectivity");
-        }
-
-        {
-            c.ImGui_Text("vertices to keep");
-            c.ImGui_PushID("vertices to keep");
-            _ = c.ImGui_SliderIntEx("", &UiData.percent_vertices_to_keep, 1, 100, "%d%%", c.ImGuiSliderFlags_AlwaysClamp);
-            c.ImGui_PopID();
-            const disabled = info.std_data.vertex_position == null or
-                info.std_data.face_area == null or
-                info.std_data.face_normal == null;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (c.ImGui_ButtonEx("Decimate (QEM)", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                const nb_vertices_to_remove: u32 = @intFromFloat(@as(f32, @floatFromInt(sm.nbCells(.vertex))) * (1.0 - (@as(f32, @floatFromInt(UiData.percent_vertices_to_keep)) / 100.0)));
-                if (nb_vertices_to_remove > 0) {
-                    smp.decimate(
-                        sm,
-                        info.std_data.vertex_position.?,
-                        info.std_data.face_area.?,
-                        info.std_data.face_normal.?,
-                        nb_vertices_to_remove,
-                    ) catch |err| {
-                        std.debug.print("Error decimating: {}\n", .{err});
-                    };
-                }
-            }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - vertex_position
-                \\ - face_area
-                \\ - face_normal
-                \\ Write:
-                \\ - vertex_position
-                \\ Update connectivity
-            );
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-        }
-
-        {
-            c.ImGui_Text("Edge length factor");
-            c.ImGui_PushID("Edge length factor");
-            _ = c.ImGui_SliderFloatEx("", &UiData.edge_length_factor, 0.1, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
-            c.ImGui_PopID();
-            const disabled = info.std_data.vertex_position == null or
-                info.std_data.corner_angle == null or
-                info.std_data.face_area == null or
-                info.std_data.face_normal == null or
-                info.std_data.edge_length == null or
-                info.std_data.edge_dihedral_angle == null or
-                info.std_data.vertex_area == null or
-                info.std_data.vertex_normal == null;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (c.ImGui_ButtonEx("Remesh", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                smp.remesh(
-                    sm,
-                    info.std_data.vertex_position.?,
-                    info.std_data.corner_angle.?,
-                    info.std_data.face_area.?,
-                    info.std_data.face_normal.?,
-                    info.std_data.edge_length.?,
-                    info.std_data.edge_dihedral_angle.?,
-                    info.std_data.vertex_area.?,
-                    info.std_data.vertex_normal.?,
-                    UiData.edge_length_factor,
-                ) catch |err| {
-                    std.debug.print("Error remeshing: {}\n", .{err});
-                };
-            }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - vertex_position
-                \\ - corner_angle
-                \\ - face_area
-                \\ - face_normal
-                \\ - edge_length
-                \\ - edge_dihedral_angle
-                \\ - vertex_area
-                \\ - vertex_normal
-                \\ Write:
-                \\ - vertex_position
-                \\ - corner_angle
-                \\ - face_area
-                \\ - face_normal
-                \\ - edge_length
-                \\ - edge_dihedral_angle
-                \\ - vertex_area
-                \\ - vertex_normal
-                \\ Update connectivity
-            );
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-        }
-
-        c.ImGui_SeparatorText("Geometry Computations");
 
         inline for (std_data_computations) |dc| {
             var disabled = false;
@@ -511,6 +315,7 @@ pub fn uiPanel(smp: *SurfaceMeshProcessing) void {
                 "Add {s} data ({s})",
                 .{ @tagName(dc.ComputesCellType()), @typeName(dc.ComputesDataType()) },
             ) catch "";
+            // TODO: fix -> the next line does not allow to enter a custom name
             _ = std.fmt.bufPrintZ(&UiData.new_data_name, @tagName(dc.computes), .{}) catch "";
             if (imgui_utils.addDataButton(@tagName(dc.computes), button_text, &UiData.new_data_name)) {
                 const maybe_data = sm.addData(dc.ComputesCellType(), dc.ComputesDataType(), &UiData.new_data_name);

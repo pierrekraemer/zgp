@@ -190,6 +190,17 @@ pub fn surfaceMeshDataUpdated(
                 }
                 p.point_sphere_scalar_per_vertex_shader_parameters.min_value = min;
                 p.point_sphere_scalar_per_vertex_shader_parameters.max_value = max;
+            }
+            if (p.draw_faces_color.vertex_scalar_data != null and
+                p.draw_faces_color.vertex_scalar_data.?.gen() == data_gen)
+            {
+                var min: f32 = std.math.floatMax(f32);
+                var max: f32 = std.math.floatMin(f32);
+                var it = p.draw_faces_color.vertex_scalar_data.?.data.iterator();
+                while (it.next()) |v| {
+                    if (v.* < min) min = v.*;
+                    if (v.* > max) max = v.*;
+                }
                 p.tri_flat_scalar_per_vertex_shader_parameters.min_value = min;
                 p.tri_flat_scalar_per_vertex_shader_parameters.max_value = max;
             }

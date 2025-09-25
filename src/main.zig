@@ -18,7 +18,9 @@ const Module = @import("modules/Module.zig");
 const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
-const SurfaceMeshProcessing = @import("modules/SurfaceMeshProcessing.zig");
+const SurfaceMeshStdDataComputation = @import("modules/SurfaceMeshStdDataComputation.zig");
+const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
+const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
 
 const vec = @import("geometry/vec.zig");
 const Vec3 = vec.Vec3;
@@ -68,7 +70,9 @@ pub var modules: std.ArrayList(Module) = .empty;
 var point_cloud_renderer: PointCloudRenderer = undefined;
 var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
-var surface_mesh_processing: SurfaceMeshProcessing = undefined;
+var surface_mesh_std_data_computation: SurfaceMeshStdDataComputation = undefined;
+var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
+var surface_mesh_distance: SurfaceMeshDistance = undefined;
 
 /// Application SDL Window & OpenGL context
 var window: *c.SDL_Window = undefined;
@@ -217,15 +221,21 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_renderer.deinit();
     vector_per_vertex_renderer = try VectorPerVertexRenderer.init(allocator);
     errdefer vector_per_vertex_renderer.deinit();
-    surface_mesh_processing = try SurfaceMeshProcessing.init(allocator);
-    errdefer surface_mesh_processing.deinit();
+    surface_mesh_std_data_computation = try SurfaceMeshStdDataComputation.init();
+    errdefer surface_mesh_std_data_computation.deinit();
+    surface_mesh_connectivity = try SurfaceMeshConnectivity.init(allocator);
+    errdefer surface_mesh_connectivity.deinit();
+    surface_mesh_distance = try SurfaceMeshDistance.init(allocator);
+    errdefer surface_mesh_distance.deinit();
 
     // TODO: find a way to tag Modules with the type of model they can handle (PointCloud, SurfaceMesh, etc.)
     // and only show them in the UI when a compatible model is selected
     try modules.append(allocator, point_cloud_renderer.module());
     try modules.append(allocator, surface_mesh_renderer.module());
     try modules.append(allocator, vector_per_vertex_renderer.module());
-    try modules.append(allocator, surface_mesh_processing.module());
+    try modules.append(allocator, surface_mesh_std_data_computation.module());
+    try modules.append(allocator, surface_mesh_connectivity.module());
+    try modules.append(allocator, surface_mesh_distance.module());
     errdefer modules.deinit(allocator);
 
     for (cli_args.mesh_files) |mesh_file| {
