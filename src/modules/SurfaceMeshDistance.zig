@@ -38,6 +38,7 @@ pub fn name(_: *SurfaceMeshDistance) []const u8 {
     return "Surface Mesh Distance";
 }
 
+// TODO: allow selecting multiple source vertices
 fn computeVertexGeodesicDistancesFromSource(
     smd: *SurfaceMeshDistance,
     sm: *SurfaceMesh,
@@ -73,22 +74,13 @@ pub fn uiPanel(smd: *SurfaceMeshDistance) void {
         var diffusion_time: f32 = 1.0;
         var vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null;
     };
-    const UiCB = struct {
-        const DataSelectedContext = struct {};
-        fn onDistanceDataSelected(
-            comptime cell_type: SurfaceMesh.CellType,
-            comptime T: type,
-            data: ?SurfaceMesh.CellData(cell_type, T),
-            _: DataSelectedContext,
-        ) void {
-            UiData.vertex_distance = data;
-        }
-    };
 
     const mr = &zgp.models_registry;
 
-    const item_spacing = c.ImGui_GetStyle().*.ItemSpacing.x;
-    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - item_spacing * 2);
+    const style = c.ImGui_GetStyle();
+
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+    defer c.ImGui_PopItemWidth();
 
     if (mr.selected_surface_mesh) |sm| {
         const info = mr.surfaceMeshInfo(sm);
@@ -96,14 +88,14 @@ pub fn uiPanel(smd: *SurfaceMeshDistance) void {
         {
             c.ImGui_Text("Distance");
             c.ImGui_PushID("DistanceData");
-            imgui_utils.surfaceMeshCellDataComboBox(
+            if (imgui_utils.surfaceMeshCellDataComboBox(
                 sm,
                 .vertex,
                 f32,
                 UiData.vertex_distance,
-                UiCB.DataSelectedContext{},
-                &UiCB.onDistanceDataSelected,
-            );
+            )) |data| {
+                UiData.vertex_distance = data;
+            }
             c.ImGui_PopID();
             c.ImGui_Text("Diffusion time");
             c.ImGui_PushID("Diffusion time");
@@ -121,6 +113,8 @@ pub fn uiPanel(smd: *SurfaceMeshDistance) void {
                 c.ImGui_BeginDisabled(true);
             }
             if (c.ImGui_ButtonEx("Compute geodesic distance", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                // TODO: select source vertex from a CellSet
+                UiData.source_vertex = .{ .vertex = sm.vertex_data.firstIndex() };
                 smd.computeVertexGeodesicDistancesFromSource(
                     sm,
                     UiData.source_vertex,
@@ -138,14 +132,14 @@ pub fn uiPanel(smd: *SurfaceMeshDistance) void {
             }
             imgui_utils.tooltip(
                 \\ Read:
-                \\ - halfedge_cotan_weight
-                \\ - vertex_position
-                \\ - vertex_area
-                \\ - edge_length
-                \\ - face_area
-                \\ - face_normal
+                \\ - std halfedge_cotan_weight
+                \\ - std vertex_position
+                \\ - std vertex_area
+                \\ - std edge_length
+                \\ - std face_area
+                \\ - std face_normal
                 \\ Write:
-                \\ - vertex_distance
+                \\ - given distance data
             );
             if (disabled) {
                 c.ImGui_EndDisabled();
@@ -154,6 +148,4 @@ pub fn uiPanel(smd: *SurfaceMeshDistance) void {
     } else {
         c.ImGui_Text("No Surface Mesh selected");
     }
-
-    c.ImGui_PopItemWidth();
 }

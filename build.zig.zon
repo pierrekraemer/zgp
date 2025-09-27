@@ -17,8 +17,10 @@
             .hash = "cimgui_zig-1.0.0-2Xubkvp8XwBlaeHTR58KF9iYfZNf2Kt9UCN8WGH38FDO",
         },
         .zeigen = .{
-            .url = "git+https://github.com/pierrekraemer/zeigen.git#012ef6b5a7f40674fdbe82b0fcd3368c85fb15a9",
-            .hash = "zeigen-0.0.0-c5WQK4BiBgFqRk4tUBeHplIdyExr2uxpg8Lgg22lO7-c",
+            .path = "../zeigen",
+            // Uncomment the following lines to use the git dependency instead of the local path
+            // .url = "git+https://github.com/pierrekraemer/zeigen.git#012ef6b5a7f40674fdbe82b0fcd3368c85fb15a9",
+            // .hash = "zeigen-0.0.0-c5WQK4BiBgFqRk4tUBeHplIdyExr2uxpg8Lgg22lO7-c",
         },
     },
     .paths = .{

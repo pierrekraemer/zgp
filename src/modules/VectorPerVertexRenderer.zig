@@ -70,11 +70,13 @@ pub fn name(_: *VectorPerVertexRenderer) []const u8 {
     return "Vector Per Vertex Renderer";
 }
 
+// TODO: add functions to manage PointClouds
+
 /// Part of the Module interface.
 /// Create and store a VectorPerVertexRendererParameters for the new SurfaceMesh.
 pub fn surfaceMeshAdded(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMesh) void {
-    vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init()) catch {
-        std.debug.print("Failed to create VectorPerVertexRendererParameters for new SurfaceMesh\n", .{});
+    vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init()) catch |err| {
+        std.debug.print("Failed to create VectorPerVertexRendererParameters for new SurfaceMesh: {}\n", .{err});
     };
 }
 
@@ -89,8 +91,8 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo = zgp.models_registry.dataVBO(Vec3, vertex_position.data) catch {
-                    std.debug.print("Failed to get VBO for vertex positions\n", .{});
+                const position_vbo = zgp.models_registry.dataVBO(Vec3, vertex_position.data) catch |err| {
+                    std.debug.print("Failed to get VBO for vertex positions: {}\n", .{err});
                     return;
                 };
                 p.point_vector_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -110,8 +112,8 @@ fn setSurfaceMeshVectorData(
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     p.vertex_vector = vertex_vector;
     if (p.vertex_vector) |v| {
-        const vector_vbo = zgp.models_registry.dataVBO(Vec3, v.data) catch {
-            imgui_log.err("Failed to get VBO for vertex vectors\n", .{});
+        const vector_vbo = zgp.models_registry.dataVBO(Vec3, v.data) catch |err| {
+            imgui_log.err("Failed to get VBO for vertex vectors: {}\n", .{err});
             return;
         };
         p.point_vector_shader_parameters.setVertexAttribArray(.vector, vector_vbo, 0, 0);
@@ -138,36 +140,24 @@ pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4, projection_matrix
 /// Part of the Module interface.
 /// Show a UI panel to control the VectorPerVertexRendererParameters of the selected SurfaceMesh.
 pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
-    const UiCB = struct {
-        const DataSelectedContext = struct {
-            vector_per_vertex_renderer: *VectorPerVertexRenderer,
-            surface_mesh: *SurfaceMesh,
-        };
-        fn onVectorDataSelected(
-            comptime cell_type: SurfaceMesh.CellType,
-            comptime T: type,
-            data: ?SurfaceMesh.CellData(cell_type, T),
-            ctx: DataSelectedContext,
-        ) void {
-            ctx.vector_per_vertex_renderer.setSurfaceMeshVectorData(ctx.surface_mesh, data);
-        }
-    };
+    const style = c.ImGui_GetStyle();
 
-    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+    defer c.ImGui_PopItemWidth();
 
     if (zgp.models_registry.selected_surface_mesh) |sm| {
         const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(sm);
         if (vector_per_vertex_renderer_parameters) |p| {
             c.ImGui_Text("Vector");
             c.ImGui_PushID("VectorData");
-            imgui_utils.surfaceMeshCellDataComboBox(
+            if (imgui_utils.surfaceMeshCellDataComboBox(
                 sm,
                 .vertex,
                 Vec3,
                 p.vertex_vector,
-                UiCB.DataSelectedContext{ .vector_per_vertex_renderer = vpvr, .surface_mesh = sm },
-                &UiCB.onVectorDataSelected,
-            );
+            )) |data| {
+                vpvr.setSurfaceMeshVectorData(sm, data);
+            }
             c.ImGui_PopID();
             c.ImGui_Text("Vector scale");
             c.ImGui_PushID("VectorScale");
@@ -184,6 +174,4 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
     } else {
         c.ImGui_Text("No Surface Mesh selected");
     }
-
-    c.ImGui_PopItemWidth();
 }

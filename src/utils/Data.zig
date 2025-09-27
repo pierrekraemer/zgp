@@ -116,6 +116,58 @@ pub fn Data(comptime T: type) type {
             }
         }
 
+        pub fn minValue(
+            self: *Self,
+            context: anytype,
+            comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
+        ) T {
+            assert(self.nbElements() > 0);
+            var best = self.value(self.gen.container.firstIndex());
+            var it = self.constIterator();
+            while (it.next()) |element| {
+                if (compareFn(context, element.*, best) == .lt) {
+                    best = element.*;
+                }
+            }
+            return best;
+        }
+
+        pub fn maxValue(
+            self: *Self,
+            context: anytype,
+            comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
+        ) T {
+            assert(self.nbElements() > 0);
+            var best = self.value(self.gen.container.firstIndex());
+            var it = self.constIterator();
+            while (it.next()) |element| {
+                if (compareFn(context, element.*, best) == .gt) {
+                    best = element.*;
+                }
+            }
+            return best;
+        }
+
+        pub fn minMaxValues(
+            self: *Self,
+            context: anytype,
+            comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
+        ) struct { T, T } {
+            assert(self.nbElements() > 0);
+            var min = self.value(self.gen.container.firstIndex());
+            var max = min;
+            var it = self.constIterator();
+            while (it.next()) |element| {
+                if (compareFn(context, element.*, min) == .lt) {
+                    min = element.*;
+                }
+                if (compareFn(context, element.*, max) == .gt) {
+                    max = element.*;
+                }
+            }
+            return .{ min, max };
+        }
+
         pub fn rawLength(self: *const Self) usize {
             return self.data.len;
         }

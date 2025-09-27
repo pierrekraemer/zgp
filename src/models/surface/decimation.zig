@@ -18,7 +18,6 @@ const EdgeInfo = struct {
     edge: SurfaceMesh.Cell,
     edge_index: u32,
     cost: f32,
-
     pub fn cmp(_: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
         const cost_order = std.math.order(a.cost, b.cost);
         if (cost_order != .eq) return cost_order;

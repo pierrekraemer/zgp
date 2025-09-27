@@ -125,8 +125,8 @@ pub fn name(_: *SurfaceMeshRenderer) []const u8 {
 /// Part of the Module interface.
 /// Create and store a SurfaceMeshRendererParameters for the new SurfaceMesh.
 pub fn surfaceMeshAdded(smr: *SurfaceMeshRenderer, surface_mesh: *SurfaceMesh) void {
-    smr.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init()) catch {
-        std.debug.print("Failed to create SurfaceMeshRendererParameters for new SurfaceMesh\n", .{});
+    smr.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init()) catch |err| {
+        std.debug.print("Failed to create SurfaceMeshRendererParameters for new SurfaceMesh: {}\n", .{err});
         return;
     };
 }
@@ -142,8 +142,8 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo: VBO = zgp.models_registry.dataVBO(Vec3, vertex_position.data) catch {
-                    std.debug.print("Failed to get VBO for vertex positions\n", .{});
+                const position_vbo: VBO = zgp.models_registry.dataVBO(Vec3, vertex_position.data) catch |err| {
+                    std.debug.print("Failed to get VBO for vertex positions: {}\n", .{err});
                     return;
                 };
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -167,6 +167,11 @@ pub fn surfaceMeshStdDataChanged(
     }
 }
 
+const CompareScalarContext = struct {};
+fn compareScalar(_: CompareScalarContext, a: f32, b: f32) std.math.Order {
+    return std.math.order(a, b);
+}
+
 /// Part of the Module interface.
 /// Check if the updated data is used here for coloring and update the associated min/max values.
 pub fn surfaceMeshDataUpdated(
@@ -181,26 +186,14 @@ pub fn surfaceMeshDataUpdated(
             if (p.draw_vertices_color.vertex_scalar_data != null and
                 p.draw_vertices_color.vertex_scalar_data.?.gen() == data_gen)
             {
-                var min: f32 = std.math.floatMax(f32);
-                var max: f32 = std.math.floatMin(f32);
-                var it = p.draw_vertices_color.vertex_scalar_data.?.data.iterator();
-                while (it.next()) |v| {
-                    if (v.* < min) min = v.*;
-                    if (v.* > max) max = v.*;
-                }
+                const min, const max = p.draw_vertices_color.vertex_scalar_data.?.data.minMaxValues(CompareScalarContext{}, compareScalar);
                 p.point_sphere_scalar_per_vertex_shader_parameters.min_value = min;
                 p.point_sphere_scalar_per_vertex_shader_parameters.max_value = max;
             }
             if (p.draw_faces_color.vertex_scalar_data != null and
                 p.draw_faces_color.vertex_scalar_data.?.gen() == data_gen)
             {
-                var min: f32 = std.math.floatMax(f32);
-                var max: f32 = std.math.floatMin(f32);
-                var it = p.draw_faces_color.vertex_scalar_data.?.data.iterator();
-                while (it.next()) |v| {
-                    if (v.* < min) min = v.*;
-                    if (v.* > max) max = v.*;
-                }
+                const min, const max = p.draw_faces_color.vertex_scalar_data.?.data.minMaxValues(CompareScalarContext{}, compareScalar);
                 p.tri_flat_scalar_per_vertex_shader_parameters.min_value = min;
                 p.tri_flat_scalar_per_vertex_shader_parameters.max_value = max;
             }
@@ -209,14 +202,8 @@ pub fn surfaceMeshDataUpdated(
             if (p.draw_vertices_color.face_scalar_data != null and
                 p.draw_vertices_color.face_scalar_data.?.gen() == data_gen)
             {
-                var min: f32 = std.math.floatMax(f32);
-                var max: f32 = std.math.floatMin(f32);
-                var it = p.draw_vertices_color.face_scalar_data.?.data.iterator();
-                while (it.next()) |v| {
-                    if (v.* < min) min = v.*;
-                    if (v.* > max) max = v.*;
-                }
                 // Not supported yet
+                // const min, const max = p.draw_vertices_color.face_scalar_data.?.data.minMaxValues(.{}, compareScalar);
                 // p.tri_flat_scalar_per_face_shader_parameters.min_value = min;
                 // p.tri_flat_scalar_per_face_shader_parameters.max_value = max;
             }
@@ -228,8 +215,8 @@ pub fn surfaceMeshDataUpdated(
 fn setSurfaceMeshDrawVerticesColorData(
     smr: *SurfaceMeshRenderer,
     surface_mesh: *SurfaceMesh,
-    T: type,
     comptime cell_type: SurfaceMesh.CellType,
+    T: type,
     data: ?SurfaceMesh.CellData(cell_type, T),
 ) void {
     const p = smr.parameters.getPtr(surface_mesh) orelse return;
@@ -248,8 +235,8 @@ fn setSurfaceMeshDrawVerticesColorData(
                 .vertex => {
                     p.draw_vertices_color.vertex_scalar_data = data;
                     if (p.draw_vertices_color.vertex_scalar_data) |scalar| {
-                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch {
-                            imgui_log.err("Failed to get VBO for vertex scalar colors\n", .{});
+                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch |err| {
+                            imgui_log.err("Failed to get VBO for vertex scalar colors: {}\n", .{err});
                             return;
                         };
                         p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
@@ -270,8 +257,8 @@ fn setSurfaceMeshDrawVerticesColorData(
                 .vertex => {
                     p.draw_vertices_color.vertex_vector_data = data;
                     if (p.draw_vertices_color.vertex_vector_data) |vector| {
-                        const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch {
-                            imgui_log.err("Failed to get VBO for vertex vector colors\n", .{});
+                        const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch |err| {
+                            imgui_log.err("Failed to get VBO for vertex vector colors: {}\n", .{err});
                             return;
                         };
                         p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
@@ -290,8 +277,8 @@ fn setSurfaceMeshDrawVerticesColorData(
 fn setSurfaceMeshDrawFacesColorData(
     smr: *SurfaceMeshRenderer,
     surface_mesh: *SurfaceMesh,
-    T: type,
     comptime cell_type: SurfaceMesh.CellType,
+    T: type,
     data: ?SurfaceMesh.CellData(cell_type, T),
 ) void {
     const p = smr.parameters.getPtr(surface_mesh) orelse return;
@@ -310,8 +297,8 @@ fn setSurfaceMeshDrawFacesColorData(
                 .vertex => {
                     p.draw_faces_color.vertex_scalar_data = data;
                     if (p.draw_faces_color.vertex_scalar_data) |scalar| {
-                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch {
-                            imgui_log.err("Failed to get VBO for vertex scalar colors\n", .{});
+                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch |err| {
+                            imgui_log.err("Failed to get VBO for vertex scalar colors: {}\n", .{err});
                             return;
                         };
                         p.tri_flat_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
@@ -325,8 +312,8 @@ fn setSurfaceMeshDrawFacesColorData(
                     p.draw_faces_color.face_scalar_data = data;
                     // Not supported yet
                     // if (p.draw_faces_color.face_scalar_data) |scalar| {
-                    // const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch {
-                    //     imgui_log.err("Failed to get VBO for face scalarcolors\n", .{});
+                    // const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch |err| {
+                    //     imgui_log.err("Failed to get VBO for face scalar colors: {}\n", .{err});
                     //     return;
                     // };
                     // p.tri_flat_scalar_per_face_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
@@ -347,8 +334,8 @@ fn setSurfaceMeshDrawFacesColorData(
                 .vertex => {
                     p.draw_faces_color.vertex_vector_data = data;
                     if (p.draw_faces_color.vertex_vector_data) |vector| {
-                        const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch {
-                            imgui_log.err("Failed to get VBO for vertex vector colors\n", .{});
+                        const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch |err| {
+                            imgui_log.err("Failed to get VBO for vertex vector colors: {}\n", .{err});
                             return;
                         };
                         p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
@@ -360,8 +347,8 @@ fn setSurfaceMeshDrawFacesColorData(
                     p.draw_faces_color.face_vector_data = data;
                     // Not supported yet
                     // if (p.draw_faces_color.face_vector_data) |vector| {
-                    // const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch {
-                    //     imgui_log.err("Failed to get VBO for faces vector colors\n", .{});
+                    // const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch |err| {
+                    //     imgui_log.err("Failed to get VBO for faces vector colors: {}\n", .{err});
                     //     return;
                     // };
                     // p.tri_flat_color_per_face_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
@@ -462,27 +449,10 @@ pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4, projection_matrix: Mat
 /// Part of the Module interface.
 /// Show a UI panel to control the SurfaceMeshRendererParameters of the selected SurfaceMesh.
 pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
-    const UiCB = struct {
-        const ColorDataSelectedContext = struct {
-            surface_mesh_renderer: *SurfaceMeshRenderer,
-            surface_mesh: *SurfaceMesh,
-            draw_cell_type: SurfaceMesh.CellType, // .vertex or .face
-        };
-        fn onColorDataSelected(
-            comptime cell_type: SurfaceMesh.CellType,
-            comptime T: type,
-            data: ?SurfaceMesh.CellData(cell_type, T),
-            ctx: ColorDataSelectedContext,
-        ) void {
-            switch (ctx.draw_cell_type) {
-                .vertex => ctx.surface_mesh_renderer.setSurfaceMeshDrawVerticesColorData(ctx.surface_mesh, T, cell_type, data),
-                .face => ctx.surface_mesh_renderer.setSurfaceMeshDrawFacesColorData(ctx.surface_mesh, T, cell_type, data),
-                else => unreachable,
-            }
-        }
-    };
+    const style = c.ImGui_GetStyle();
 
-    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+    defer c.ImGui_PopItemWidth();
 
     if (zgp.models_registry.selected_surface_mesh) |sm| {
         const surface_mesh_renderer_parameters = smr.parameters.getPtr(sm);
@@ -501,7 +471,6 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
                     zgp.requestRedraw();
                 }
                 c.ImGui_PopID();
-
                 c.ImGui_Text("Color");
                 {
                     c.ImGui_BeginGroup();
@@ -538,28 +507,29 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
                         }
                         c.ImGui_PushID("DrawVerticesColorVertexData");
                         switch (p.draw_vertices_color.type) {
-                            .scalar => imgui_utils.surfaceMeshCellDataComboBox(
+                            .scalar => if (imgui_utils.surfaceMeshCellDataComboBox(
                                 sm,
                                 .vertex,
                                 f32,
                                 p.draw_vertices_color.vertex_scalar_data,
-                                UiCB.ColorDataSelectedContext{ .surface_mesh_renderer = smr, .surface_mesh = sm, .draw_cell_type = .vertex },
-                                &UiCB.onColorDataSelected,
-                            ),
-                            .vector => imgui_utils.surfaceMeshCellDataComboBox(
+                            )) |data| {
+                                smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, f32, data);
+                            },
+                            .vector => if (imgui_utils.surfaceMeshCellDataComboBox(
                                 sm,
                                 .vertex,
                                 Vec3,
                                 p.draw_vertices_color.vertex_vector_data,
-                                UiCB.ColorDataSelectedContext{ .surface_mesh_renderer = smr, .surface_mesh = sm, .draw_cell_type = .vertex },
-                                &UiCB.onColorDataSelected,
-                            ),
+                            )) |data| {
+                                smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, Vec3, data);
+                            },
                         }
                         c.ImGui_PopID();
                     },
                     else => unreachable,
                 }
             }
+
             c.ImGui_SeparatorText("Edges");
             if (c.ImGui_Checkbox("draw edges", &p.draw_edges)) {
                 zgp.requestRedraw();
@@ -575,6 +545,7 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
                     zgp.requestRedraw();
                 }
             }
+
             c.ImGui_SeparatorText("Faces");
             if (c.ImGui_Checkbox("draw faces", &p.draw_faces)) {
                 zgp.requestRedraw();
@@ -621,22 +592,33 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
                         }
                         c.ImGui_PushID("DrawFacesColorVertexData");
                         switch (p.draw_faces_color.type) {
-                            .scalar => imgui_utils.surfaceMeshCellDataComboBox(
-                                sm,
-                                .vertex,
-                                f32,
-                                p.draw_faces_color.vertex_scalar_data,
-                                UiCB.ColorDataSelectedContext{ .surface_mesh_renderer = smr, .surface_mesh = sm, .draw_cell_type = .face },
-                                &UiCB.onColorDataSelected,
-                            ),
-                            .vector => imgui_utils.surfaceMeshCellDataComboBox(
+                            .scalar => {
+                                if (imgui_utils.surfaceMeshCellDataComboBox(
+                                    sm,
+                                    .vertex,
+                                    f32,
+                                    p.draw_faces_color.vertex_scalar_data,
+                                )) |data| {
+                                    smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, f32, data);
+                                }
+                                if (c.ImGui_Checkbox("Show isolines", &p.tri_flat_scalar_per_vertex_shader_parameters.show_isolines)) {
+                                    zgp.requestRedraw();
+                                }
+                                c.ImGui_Text("Nb isolines");
+                                c.ImGui_PushID("NbIsolines");
+                                if (c.ImGui_SliderInt("", &p.tri_flat_scalar_per_vertex_shader_parameters.nb_isolines, 1, 50)) {
+                                    zgp.requestRedraw();
+                                }
+                                c.ImGui_PopID();
+                            },
+                            .vector => if (imgui_utils.surfaceMeshCellDataComboBox(
                                 sm,
                                 .vertex,
                                 Vec3,
                                 p.draw_faces_color.vertex_vector_data,
-                                UiCB.ColorDataSelectedContext{ .surface_mesh_renderer = smr, .surface_mesh = sm, .draw_cell_type = .face },
-                                &UiCB.onColorDataSelected,
-                            ),
+                            )) |data| {
+                                smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec3, data);
+                            },
                         }
                         c.ImGui_PopID();
                     },
@@ -656,22 +638,22 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
                         }
                         c.ImGui_PushID("DrawFacesColorFaceData");
                         switch (p.draw_faces_color.type) {
-                            .scalar => imgui_utils.surfaceMeshCellDataComboBox(
+                            .scalar => if (imgui_utils.surfaceMeshCellDataComboBox(
                                 sm,
                                 .face,
                                 f32,
                                 p.draw_faces_color.face_scalar_data,
-                                UiCB.ColorDataSelectedContext{ .surface_mesh_renderer = smr, .surface_mesh = sm, .draw_cell_type = .face },
-                                &UiCB.onColorDataSelected,
-                            ),
-                            .vector => imgui_utils.surfaceMeshCellDataComboBox(
+                            )) |data| {
+                                smr.setSurfaceMeshDrawFacesColorData(sm, .face, f32, data);
+                            },
+                            .vector => if (imgui_utils.surfaceMeshCellDataComboBox(
                                 sm,
                                 .face,
                                 Vec3,
                                 p.draw_faces_color.face_vector_data,
-                                UiCB.ColorDataSelectedContext{ .surface_mesh_renderer = smr, .surface_mesh = sm, .draw_cell_type = .face },
-                                &UiCB.onColorDataSelected,
-                            ),
+                            )) |data| {
+                                smr.setSurfaceMeshDrawFacesColorData(sm, .face, Vec3, data);
+                            },
                         }
                         c.ImGui_PopID();
                     },
@@ -688,6 +670,4 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
     } else {
         c.ImGui_Text("No Surface Mesh selected");
     }
-
-    c.ImGui_PopItemWidth();
 }

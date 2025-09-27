@@ -65,7 +65,7 @@ allocator: std.mem.Allocator,
 // TODO: corner & halfedge containers & index could be optimized away
 // and transparently managed through the dart container
 // (only difference is that corner & halfedge indices (and thus corresponding entries in data containers)
-// do not exist for boundary darts)
+// should not exist for boundary darts)
 
 /// Data containers for darts & the different cell types.
 dart_data: DataContainer,
@@ -514,6 +514,7 @@ fn addDart(sm: *SurfaceMesh) !Dart {
     sm.dart_phi1.valuePtr(d).* = d;
     sm.dart_phi_1.valuePtr(d).* = d;
     sm.dart_phi2.valuePtr(d).* = d;
+    sm.dart_halfedge_index.valuePtr(d).* = invalid_index;
     sm.dart_corner_index.valuePtr(d).* = invalid_index;
     sm.dart_vertex_index.valuePtr(d).* = invalid_index;
     sm.dart_edge_index.valuePtr(d).* = invalid_index;
@@ -1178,8 +1179,8 @@ pub fn canCollapseEdge(sm: *const SurfaceMesh, edge: Cell) bool {
     var adjacentVertices = std.ArrayList(u32).initBuffer(&buf);
     var d_it = sm.phi_1(d_12);
     while (d_it != dd12) : (d_it = sm.phi_1(sm.phi2(d_it))) {
-        adjacentVertices.appendBounded(sm.dartCellIndex(d_it, .vertex)) catch {
-            std.debug.panic("Error: cannot check edge collapse condition 2 because the number of adjacent vertices exceeds {d}\n", .{buf.len});
+        adjacentVertices.appendBounded(sm.dartCellIndex(d_it, .vertex)) catch |err| {
+            std.debug.panic("Error: cannot check edge collapse condition 2 because the number of adjacent vertices exceeds {d}: {}\n", .{ buf.len, err });
         };
     }
     d_it = sm.phi_1(dd_12);

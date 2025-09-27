@@ -123,8 +123,10 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
 
     const mr = &zgp.models_registry;
 
-    const item_spacing = c.ImGui_GetStyle().*.ItemSpacing.x;
-    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - item_spacing * 2);
+    const style = c.ImGui_GetStyle();
+
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+    defer c.ImGui_PopItemWidth();
 
     if (mr.selected_surface_mesh) |sm| {
         const info = mr.surfaceMeshInfo(sm);
@@ -141,7 +143,7 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
             }
             imgui_utils.tooltip(
                 \\ Read:
-                \\ - vertex_position
+                \\ - std vertex_position
                 \\ Update connectivity
             );
             if (disabled) {
@@ -185,11 +187,11 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
             }
             imgui_utils.tooltip(
                 \\ Read:
-                \\ - vertex_position
-                \\ - face_area
-                \\ - face_normal
+                \\ - std vertex_position
+                \\ - std face_area
+                \\ - std face_normal
                 \\ Write:
-                \\ - vertex_position
+                \\ - std vertex_position
                 \\ Update connectivity
             );
             if (disabled) {
@@ -231,23 +233,23 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
             }
             imgui_utils.tooltip(
                 \\ Read:
-                \\ - vertex_position
-                \\ - corner_angle
-                \\ - face_area
-                \\ - face_normal
-                \\ - edge_length
-                \\ - edge_dihedral_angle
-                \\ - vertex_area
-                \\ - vertex_normal
+                \\ - std vertex_position
+                \\ - std corner_angle
+                \\ - std face_area
+                \\ - std face_normal
+                \\ - std edge_length
+                \\ - std edge_dihedral_angle
+                \\ - std vertex_area
+                \\ - std vertex_normal
                 \\ Write:
-                \\ - vertex_position
-                \\ - corner_angle
-                \\ - face_area
-                \\ - face_normal
-                \\ - edge_length
-                \\ - edge_dihedral_angle
-                \\ - vertex_area
-                \\ - vertex_normal
+                \\ - std vertex_position
+                \\ - std corner_angle
+                \\ - std face_area
+                \\ - std face_normal
+                \\ - std edge_length
+                \\ - std edge_dihedral_angle
+                \\ - std vertex_area
+                \\ - std vertex_normal
                 \\ Update connectivity
             );
             if (disabled) {
@@ -257,6 +259,4 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
     } else {
         c.ImGui_Text("No Surface Mesh selected");
     }
-
-    c.ImGui_PopItemWidth();
 }

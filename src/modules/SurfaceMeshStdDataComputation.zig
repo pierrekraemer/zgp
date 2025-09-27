@@ -139,12 +139,12 @@ const StdDataComputation = struct {
     computes: SurfaceMeshStdDataTag,
     func: *const anyopaque,
 
-    fn ComputesCellType(comptime self: *const StdDataComputation) SurfaceMesh.CellType {
-        return @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(self.computes))).optional.child.CellType;
-    }
-    fn ComputesDataType(comptime self: *const StdDataComputation) type {
-        return @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(self.computes))).optional.child.DataType;
-    }
+    // fn ComputesCellType(comptime self: *const StdDataComputation) SurfaceMesh.CellType {
+    //     return @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(self.computes))).optional.child.CellType;
+    // }
+    // fn ComputesDataType(comptime self: *const StdDataComputation) type {
+    //     return @typeInfo(@FieldType(SurfaceMeshStdDatas, @tagName(self.computes))).optional.child.DataType;
+    // }
     fn ComputeFuncType(comptime self: *const StdDataComputation) type {
         const nbparams = self.reads.len + 2; // SurfaceMesh + read datas + computed data
         var params: [nbparams]std.builtin.Type.Fn.Param = undefined;
@@ -193,6 +193,10 @@ const StdDataComputation = struct {
     }
 };
 
+/// Declaration of standard data computations.
+/// The order of declaration matters: some computations depend on the result of previous ones
+/// (e.g. vertex normal depends on face normal) and the "Update outdated std datas" button computes them
+/// in the order of declaration.
 const std_data_computations: []const StdDataComputation = &.{
     .{
         .reads = &.{.vertex_position},
@@ -247,17 +251,17 @@ const std_data_computations: []const StdDataComputation = &.{
 };
 
 pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
-    const UiData = struct {
-        var edge_length_factor: f32 = 1.0;
-        var percent_vertices_to_keep: i32 = 75;
-        var button_text_buf: [64]u8 = undefined;
-        var new_data_name: [32]u8 = undefined;
-    };
+    // const UiData = struct {
+    //     var button_text_buf: [64]u8 = undefined;
+    //     var new_data_name: [32]u8 = undefined;
+    // };
+
+    const style = c.ImGui_GetStyle();
 
     const mr = &zgp.models_registry;
 
-    const item_spacing = c.ImGui_GetStyle().*.ItemSpacing.x;
-    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - item_spacing * 2);
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+    defer c.ImGui_PopItemWidth();
 
     if (mr.selected_surface_mesh) |sm| {
         const info = mr.surfaceMeshInfo(sm);
@@ -292,7 +296,7 @@ pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
                 c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
                 c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
             }
-            if (c.ImGui_ButtonEx(@tagName(dc.computes), c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x - 30.0, .y = 0.0 })) {
+            if (c.ImGui_ButtonEx(@tagName(dc.computes), c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 dc.compute(sm);
             }
             if (outdated) {
@@ -301,6 +305,7 @@ pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
             if (disabled) {
                 c.ImGui_EndDisabled();
             }
+
             // TODO: generate tooltip from reads_tags & computes_tag
             // imgui_utils.tooltip(
             //     \\ Read:
@@ -308,30 +313,58 @@ pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
             //     \\ Write:
             //     \\ - corner_angle
             // );
-            c.ImGui_SameLine();
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
-            const button_text = std.fmt.bufPrintZ(
-                &UiData.button_text_buf,
-                "Add {s} data ({s})",
-                .{ @tagName(dc.ComputesCellType()), @typeName(dc.ComputesDataType()) },
-            ) catch "";
-            // TODO: fix -> the next line does not allow to enter a custom name
-            _ = std.fmt.bufPrintZ(&UiData.new_data_name, @tagName(dc.computes), .{}) catch "";
-            if (imgui_utils.addDataButton(@tagName(dc.computes), button_text, &UiData.new_data_name)) {
-                const maybe_data = sm.addData(dc.ComputesCellType(), dc.ComputesDataType(), &UiData.new_data_name);
-                if (maybe_data) |data| {
-                    if (computes_data == null) {
-                        mr.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, @tagName(dc.computes), data));
-                    }
-                } else |err| {
-                    std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(dc.ComputesCellType()), @typeName(dc.ComputesDataType()), err });
+
+            // c.ImGui_SameLine();
+            // c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
+            // const button_text = std.fmt.bufPrintZ(
+            //     &UiData.button_text_buf,
+            //     "Add {s} data ({s})",
+            //     .{ @tagName(dc.ComputesCellType()), @typeName(dc.ComputesDataType()) },
+            // ) catch "";
+            // // TODO: fix -> the next line does not allow to enter a custom name
+            // _ = std.fmt.bufPrintZ(&UiData.new_data_name, @tagName(dc.computes), .{}) catch "";
+            // if (imgui_utils.addDataButton(@tagName(dc.computes), button_text, &UiData.new_data_name)) {
+            //     const maybe_data = sm.addData(dc.ComputesCellType(), dc.ComputesDataType(), &UiData.new_data_name);
+            //     if (maybe_data) |data| {
+            //         if (computes_data == null) {
+            //             mr.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, @tagName(dc.computes), data));
+            //         }
+            //     } else |err| {
+            //         std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(dc.ComputesCellType()), @typeName(dc.ComputesDataType()), err });
+            //     }
+            //     UiData.new_data_name[0] = 0;
+            // }
+        }
+        c.ImGui_Separator();
+        if (c.ImGui_ButtonEx("Update outdated std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            inline for (std_data_computations) |dc| {
+                var disabled = false;
+                var outdated = false;
+                const computes_data = @field(info.std_data, @tagName(dc.computes));
+                if (computes_data == null) {
+                    disabled = true;
                 }
-                UiData.new_data_name[0] = 0;
+                const computes_last_update = if (computes_data) |d| mr.dataLastUpdate(d.gen()) else null;
+                if (computes_last_update == null) {
+                    outdated = true;
+                }
+                const reads_tags = dc.reads;
+                inline for (reads_tags) |reads_tag| {
+                    const reads_data = @field(info.std_data, @tagName(reads_tag));
+                    if (reads_data == null) {
+                        disabled = true;
+                    }
+                    const reads_last_update = if (reads_data) |d| mr.dataLastUpdate(d.gen()) else null;
+                    if (computes_last_update == null or reads_last_update == null or computes_last_update.?.order(reads_last_update.?) == .lt) {
+                        outdated = true;
+                    }
+                }
+                if (!disabled and outdated) {
+                    dc.compute(sm);
+                }
             }
         }
     } else {
         c.ImGui_Text("No Surface Mesh selected");
     }
-
-    c.ImGui_PopItemWidth();
 }

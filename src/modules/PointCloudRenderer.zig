@@ -94,8 +94,8 @@ pub fn name(_: *PointCloudRenderer) []const u8 {
 /// Part of the Module interface.
 /// Create and store a PointCloudRendererParameters for the new PointCloud.
 pub fn pointCloudAdded(pcr: *PointCloudRenderer, point_cloud: *PointCloud) void {
-    pcr.parameters.put(point_cloud, PointCloudRendererParameters.init()) catch {
-        std.debug.print("Failed to create PointCloudRendererParameters for new PointCloud\n", .{});
+    pcr.parameters.put(point_cloud, PointCloudRendererParameters.init()) catch |err| {
+        std.debug.print("Failed to create PointCloudRendererParameters for new PointCloud: {}\n", .{err});
         return;
     };
 }
@@ -111,8 +111,8 @@ pub fn pointCloudStdDataChanged(
     switch (std_data) {
         .position => |maybe_position| {
             if (maybe_position) |position| {
-                const position_vbo = zgp.models_registry.dataVBO(Vec3, position.data) catch {
-                    std.debug.print("Failed to get VBO for vertex positions\n", .{});
+                const position_vbo = zgp.models_registry.dataVBO(Vec3, position.data) catch |err| {
+                    std.debug.print("Failed to get VBO for vertex positions: {}\n", .{err});
                     return;
                 };
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -138,8 +138,8 @@ fn setPointCloudDrawPointsColorData(
             // Not supported yet
             // p.draw_points_color.point_scalar_data = data;
             // if (p.draw_points_color.point_scalar_data) |scalar| {
-            //     const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch {
-            //         imgui_log.err("Failed to get VBO for point scalar colors\n", .{});
+            //     const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch |err| {
+            //         imgui_log.err("Failed to get VBO for point scalar colors: {}\n", .{err});
             //         return;
             //     };
             //     p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
@@ -153,8 +153,8 @@ fn setPointCloudDrawPointsColorData(
             }
             p.draw_points_color.point_vector_data = data;
             if (p.draw_points_color.point_vector_data) |vector| {
-                const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch {
-                    imgui_log.err("Failed to get VBO for point vector colors\n", .{});
+                const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch |err| {
+                    imgui_log.err("Failed to get VBO for point vector colors: {}\n", .{err});
                     return;
                 };
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
@@ -203,21 +203,10 @@ pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4, projection_matrix: Mat4
 /// Part of the Module interface.
 /// Show a UI panel to control the PointCloudRendererParameters of the selected PointCloud.
 pub fn uiPanel(pcr: *PointCloudRenderer) void {
-    const UiCB = struct {
-        const DataSelectedContext = struct {
-            point_cloud_renderer: *PointCloudRenderer,
-            point_cloud: *PointCloud,
-        };
-        fn onColorDataSelected(
-            comptime T: type,
-            data: ?PointCloud.CellData(T),
-            ctx: DataSelectedContext,
-        ) void {
-            ctx.point_cloud_renderer.setPointCloudDrawPointsColorData(ctx.point_cloud, T, data);
-        }
-    };
+    const style = c.ImGui_GetStyle();
 
-    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+    defer c.ImGui_PopItemWidth();
 
     if (zgp.models_registry.selected_point_cloud) |pc| {
         const surface_mesh_renderer_parameters = pcr.parameters.getPtr(pc);
@@ -271,20 +260,20 @@ pub fn uiPanel(pcr: *PointCloudRenderer) void {
                         }
                         c.ImGui_PushID("DrawPointsColorPointData");
                         switch (p.draw_points_color.type) {
-                            .scalar => imgui_utils.pointCloudDataComboBox(
+                            .scalar => if (imgui_utils.pointCloudDataComboBox(
                                 pc,
                                 f32,
                                 p.draw_points_color.point_scalar_data,
-                                UiCB.DataSelectedContext{ .point_cloud_renderer = pcr, .point_cloud = pc },
-                                &UiCB.onColorDataSelected,
-                            ),
-                            .vector => imgui_utils.pointCloudDataComboBox(
+                            )) |data| {
+                                pcr.setPointCloudDrawPointsColorData(pc, f32, data);
+                            },
+                            .vector => if (imgui_utils.pointCloudDataComboBox(
                                 pc,
                                 Vec3,
                                 p.draw_points_color.point_vector_data,
-                                UiCB.DataSelectedContext{ .point_cloud_renderer = pcr, .point_cloud = pc },
-                                &UiCB.onColorDataSelected,
-                            ),
+                            )) |data| {
+                                pcr.setPointCloudDrawPointsColorData(pc, Vec3, data);
+                            },
                         }
                         c.ImGui_PopID();
                     },

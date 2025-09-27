@@ -35,8 +35,7 @@ pub const PointCloudStdDatas = struct {
 pub const PointCloudStdData = types_utils.UnionFromStruct(PointCloudStdDatas);
 pub const PointCloudStdDataTag = std.meta.Tag(PointCloudStdData);
 
-/// This struct holds all the information related to a PointCloud,
-/// including the standard datas and the IBOs for rendering.
+/// This struct holds all the information related to a PointCloud, including the standard datas and the IBOs for rendering.
 /// Each PointCloud in the ModelsRegistry has an associated PointCloudInfo which can be accessed via the pointCloudInfo function.
 const PointCloudInfo = struct {
     std_data: PointCloudStdDatas = .{},
@@ -62,14 +61,15 @@ pub const SurfaceMeshStdDatas = struct {
 pub const SurfaceMeshStdData = types_utils.UnionFromStruct(SurfaceMeshStdDatas);
 pub const SurfaceMeshStdDataTag = std.meta.Tag(SurfaceMeshStdData);
 
-/// This struct holds all the information related to a SurfaceMesh,
-/// including the standard datas and the IBOs for rendering.
+/// This struct holds all the information related to a SurfaceMesh, including the standard datas, cells sets and the IBOs for rendering.
 /// Each SurfaceMesh in the ModelsRegistry has an associated SurfaceMeshInfo which can be accessed via the surfaceMeshInfo function.
 const SurfaceMeshInfo = struct {
     std_data: SurfaceMeshStdDatas = .{},
+
     vertex_set: SurfaceMesh.CellSet(.vertex),
     edge_set: SurfaceMesh.CellSet(.edge),
     face_set: SurfaceMesh.CellSet(.face),
+
     points_ibo: IBO,
     lines_ibo: IBO,
     triangles_ibo: IBO,
@@ -156,18 +156,18 @@ pub fn pointCloudDataUpdated(
     // if it exists, update the VBO with the data
     const maybe_vbo = mr.data_vbo.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
-        vbo.fillFrom(T, data.data) catch {
-            std.debug.print("Failed to update VBO for PointCloud data\n", .{});
+        vbo.fillFrom(T, data.data) catch |err| {
+            std.debug.print("Failed to update VBO for PointCloud data: {}\n", .{err});
             return;
         };
     }
 
-    const now = std.time.Instant.now() catch {
-        std.debug.print("Failed to get current time\n", .{});
+    const now = std.time.Instant.now() catch |err| {
+        std.debug.print("Failed to get current time: {}\n", .{err});
         return;
     };
-    mr.data_last_update.put(data.gen(), now) catch {
-        std.debug.print("Failed to update last update time for PointCloud data\n", .{});
+    mr.data_last_update.put(data.gen(), now) catch |err| {
+        std.debug.print("Failed to update last update time for PointCloud data: {}\n", .{err});
         return;
     };
 
@@ -187,18 +187,18 @@ pub fn surfaceMeshDataUpdated(
     // if it exists, update the VBO with the data
     const maybe_vbo = mr.data_vbo.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
-        vbo.fillFrom(T, data.data) catch {
-            std.debug.print("Failed to update VBO for SurfaceMesh data\n", .{});
+        vbo.fillFrom(T, data.data) catch |err| {
+            std.debug.print("Failed to update VBO for SurfaceMesh data: {}\n", .{err});
             return;
         };
     }
 
-    const now = std.time.Instant.now() catch {
-        std.debug.print("Failed to get current time\n", .{});
+    const now = std.time.Instant.now() catch |err| {
+        std.debug.print("Failed to get current time: {}\n", .{err});
         return;
     };
-    mr.data_last_update.put(data.gen(), now) catch {
-        std.debug.print("Failed to update last update time for SurfaceMesh data\n", .{});
+    mr.data_last_update.put(data.gen(), now) catch |err| {
+        std.debug.print("Failed to update last update time for SurfaceMesh data: {}\n", .{err});
         return;
     };
 
@@ -210,8 +210,8 @@ pub fn surfaceMeshDataUpdated(
 
 pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) void {
     if (builtin.mode == .Debug) {
-        const ok = sm.checkIntegrity() catch {
-            std.debug.print("Failed to check integrity after connectivity update\n", .{});
+        const ok = sm.checkIntegrity() catch |err| {
+            std.debug.print("Failed to check integrity after connectivity update: {}\n", .{err});
             return;
         };
         if (!ok) {
@@ -339,57 +339,18 @@ pub fn setSurfaceMeshStdData(
 pub fn menuBar(_: *ModelsRegistry) void {}
 
 pub fn uiPanel(mr: *ModelsRegistry) void {
-    const UiCB = struct {
-        const SurfaceMeshSelectedContext = struct {
-            models_registry: *ModelsRegistry,
-        };
-        fn onSurfaceMeshSelected(sm: ?*SurfaceMesh, ctx: SurfaceMeshSelectedContext) void {
-            ctx.models_registry.selected_surface_mesh = sm;
-        }
-        fn SurfaceMeshDataSelectedContext(sdt: SurfaceMeshStdDataTag) type {
-            return struct {
-                const std_data_type = sdt;
-                models_registry: *ModelsRegistry,
-                surface_mesh: *SurfaceMesh,
-            };
-        }
-        fn onSurfaceMeshStdDataSelected(
-            comptime cell_type: SurfaceMesh.CellType,
-            comptime T: type,
-            data: ?SurfaceMesh.CellData(cell_type, T),
-            ctx: anytype,
-        ) void {
-            ctx.models_registry.setSurfaceMeshStdData(
-                ctx.surface_mesh,
-                @unionInit(SurfaceMeshStdData, @tagName(@TypeOf(ctx).std_data_type), data),
-            );
-        }
-        const PointCloudSelectedContext = struct {
-            models_registry: *ModelsRegistry,
-        };
-        fn onPointCloudSelected(pc: ?*PointCloud, ctx: PointCloudSelectedContext) void {
-            ctx.models_registry.selected_point_cloud = pc;
-        }
-        fn PointCloudDataSelectedContext(sdt: PointCloudStdDataTag) type {
-            return struct {
-                const std_data_type = sdt;
-                models_registry: *ModelsRegistry,
-                point_cloud: *PointCloud,
-            };
-        }
-        fn onPointCloudStdDataSelected(
-            comptime T: type,
-            data: ?PointCloud.CellData(T),
-            ctx: anytype,
-        ) void {
-            ctx.models_registry.setPointCloudStdData(
-                ctx.point_cloud,
-                @unionInit(PointCloudStdData, @tagName(@TypeOf(ctx).std_data_type), data),
-            );
-        }
+    const CreateDataTypes = union(enum) { f32: f32, Vec3: Vec3 };
+    const CreateDataTypesTag = std.meta.Tag(CreateDataTypes);
+    const UiData = struct {
+        var selected_surface_mesh_cell_type: SurfaceMesh.CellType = .vertex;
+        var selected_data_type: CreateDataTypesTag = .f32;
+        var data_name_buf: [32]u8 = undefined;
     };
 
-    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - c.ImGui_GetStyle().*.ItemSpacing.x * 2);
+    const style = c.ImGui_GetStyle();
+
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+    defer c.ImGui_PopItemWidth();
 
     c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
     c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
@@ -397,35 +358,106 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
     if (c.ImGui_CollapsingHeader("Surface Meshes", c.ImGuiTreeNodeFlags_DefaultOpen)) {
         c.ImGui_PopStyleColorEx(3);
 
-        imgui_utils.surfaceMeshListBox(
+        const nb_surface_meshes_f = @as(f32, @floatFromInt(mr.surface_meshes.count() + 1));
+        if (imgui_utils.surfaceMeshListBox(
             mr.selected_surface_mesh,
-            UiCB.SurfaceMeshSelectedContext{ .models_registry = mr },
-            &UiCB.onSurfaceMeshSelected,
-        );
+            style.*.FontSizeBase * nb_surface_meshes_f + style.*.ItemSpacing.y * nb_surface_meshes_f,
+        )) |sm| {
+            mr.selected_surface_mesh = sm;
+        }
 
         if (mr.selected_surface_mesh) |sm| {
-            var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name + count
+            var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name + cell count
             const info = mr.surface_meshes_info.getPtr(sm).?;
             inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
                 const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type) ++ " | {d} |", .{sm.nbCells(cell_type)}) catch "";
                 c.ImGui_SeparatorText(cells.ptr);
-                inline for (@typeInfo(SurfaceMeshStdDatas).@"struct".fields) |*field| {
+                inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
                     if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
                     c.ImGui_Text(field.name);
-                    c.ImGui_SameLine();
+                    // c.ImGui_SameLine();
                     c.ImGui_PushID(field.name);
-                    const combobox_width = @min(c.ImGui_GetWindowWidth() * 0.5, c.ImGui_GetContentRegionAvail().x);
-                    c.ImGui_SetNextItemWidth(combobox_width);
-                    c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - combobox_width));
-                    imgui_utils.surfaceMeshCellDataComboBox(
+                    // const combobox_width = @min(c.ImGui_GetWindowWidth() * 0.5, c.ImGui_GetContentRegionAvail().x);
+                    // c.ImGui_SetNextItemWidth(combobox_width);
+                    // c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - combobox_width));
+                    if (imgui_utils.surfaceMeshCellDataComboBox(
                         sm,
                         @typeInfo(field.type).optional.child.CellType,
                         @typeInfo(field.type).optional.child.DataType,
                         @field(info.std_data, field.name),
-                        UiCB.SurfaceMeshDataSelectedContext(@field(SurfaceMeshStdDataTag, field.name)){ .models_registry = mr, .surface_mesh = sm },
-                        &UiCB.onSurfaceMeshStdDataSelected,
-                    );
+                    )) |data| {
+                        mr.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
+                    }
                     c.ImGui_PopID();
+                }
+            }
+
+            c.ImGui_Separator();
+
+            if (c.ImGui_ButtonEx("Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
+                    if (@field(info.std_data, field.name) == null) {
+                        const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
+                        if (maybe_data) |data| {
+                            mr.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
+                        } else |err| {
+                            std.debug.print("Error adding {s} ({s}: {s}) data: {}\n", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
+                        }
+                    }
+                }
+            }
+
+            if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                c.ImGui_OpenPopup("Create SurfaceMesh Cell Data", c.ImGuiPopupFlags_NoReopen);
+            }
+            if (c.ImGui_BeginPopupModal("Create SurfaceMesh Cell Data", 0, 0)) {
+                defer c.ImGui_EndPopup();
+                c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+                defer c.ImGui_PopItemWidth();
+                c.ImGui_Text("Cell type:");
+                c.ImGui_PushID("cell type");
+                if (imgui_utils.surfaceMeshCellTypeComboBox(UiData.selected_surface_mesh_cell_type)) |cell_type| {
+                    UiData.selected_surface_mesh_cell_type = cell_type;
+                }
+                c.ImGui_PopID();
+                c.ImGui_Text("Data type:");
+                c.ImGui_PushID("data type");
+                if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
+                    defer c.ImGui_EndCombo();
+                    inline for (@typeInfo(CreateDataTypesTag).@"enum".fields) |*data_type| {
+                        const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
+                        if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                            if (!is_selected) {
+                                UiData.selected_data_type = @enumFromInt(data_type.value);
+                            }
+                        }
+                        if (is_selected) {
+                            c.ImGui_SetItemDefaultFocus();
+                        }
+                    }
+                }
+                c.ImGui_PopID();
+                c.ImGui_Text("Name:");
+                _ = c.ImGui_InputText("##Name", &UiData.data_name_buf, UiData.data_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
+                if (c.ImGui_ButtonEx("Close", c.ImVec2{ .x = 0.5 * c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                    UiData.data_name_buf[0] = 0;
+                    c.ImGui_CloseCurrentPopup();
+                }
+                c.ImGui_SameLine();
+                if (c.ImGui_ButtonEx("Create", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                    switch (UiData.selected_surface_mesh_cell_type) {
+                        inline else => |cell_type| {
+                            switch (UiData.selected_data_type) {
+                                inline else => |data_type| {
+                                    _ = sm.addData(cell_type, @FieldType(CreateDataTypes, @tagName(data_type)), &UiData.data_name_buf) catch |err| {
+                                        imgui_log.err("Error adding {s} ({s}: {s}) data: {}\n", .{ &UiData.data_name_buf, @tagName(cell_type), @tagName(data_type), err });
+                                    };
+                                    UiData.data_name_buf[0] = 0;
+                                },
+                            }
+                        },
+                    }
+                    c.ImGui_CloseCurrentPopup();
                 }
             }
         } else {
@@ -441,11 +473,13 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
     if (c.ImGui_CollapsingHeader("Point Clouds", c.ImGuiTreeNodeFlags_DefaultOpen)) {
         c.ImGui_PopStyleColorEx(3);
 
-        imgui_utils.pointCloudListBox(
+        const nb_point_clouds_f = @as(f32, @floatFromInt(mr.point_clouds.count() + 1));
+        if (imgui_utils.pointCloudListBox(
             mr.selected_point_cloud,
-            UiCB.PointCloudSelectedContext{ .models_registry = mr },
-            &UiCB.onPointCloudSelected,
-        );
+            style.*.FontSizeBase * nb_point_clouds_f + style.*.ItemSpacing.y * nb_point_clouds_f,
+        )) |pc| {
+            mr.selected_point_cloud = pc;
+        }
 
         if (mr.selected_point_cloud) |pc| {
             var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
@@ -463,14 +497,27 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
                     const combobox_width = @min(c.ImGui_GetWindowWidth() * 0.5, c.ImGui_GetContentRegionAvail().x);
                     c.ImGui_SetNextItemWidth(combobox_width);
                     c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - combobox_width));
-                    imgui_utils.pointCloudDataComboBox(
+                    if (imgui_utils.pointCloudDataComboBox(
                         pc,
                         @typeInfo(field.type).optional.child.DataType,
                         @field(info.std_data, field.name),
-                        UiCB.PointCloudDataSelectedContext(@field(PointCloudStdDataTag, field.name)){ .models_registry = mr, .point_cloud = pc },
-                        &UiCB.onPointCloudStdDataSelected,
-                    );
+                    )) |data| {
+                        mr.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
+                    }
                     c.ImGui_PopID();
+                }
+            }
+            c.ImGui_Separator();
+            if (c.ImGui_ButtonEx("Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                inline for (@typeInfo(PointCloudStdData).@"union".fields) |*field| {
+                    const maybe_data = pc.addData(@typeInfo(field.type).optional.child.DataType, field.name);
+                    if (maybe_data) |data| {
+                        if (@field(info.std_data, field.name) == null) {
+                            mr.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
+                        }
+                    } else |err| {
+                        std.debug.print("Error adding {s} ({s}) data: {}\n", .{ field.name, @typeName(@typeInfo(field.type).optional.child.DataType), err });
+                    }
                 }
             }
         } else {
@@ -479,8 +526,6 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
     } else {
         c.ImGui_PopStyleColorEx(3);
     }
-
-    c.ImGui_PopItemWidth();
 }
 
 pub fn createPointCloud(mr: *ModelsRegistry, name: []const u8) !*PointCloud {
@@ -755,6 +800,7 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
     }
 
     // vertices were already indexed above
+    try sm.indexCells(.halfedge);
     try sm.indexCells(.corner);
     try sm.indexCells(.edge);
     try sm.indexCells(.face);
