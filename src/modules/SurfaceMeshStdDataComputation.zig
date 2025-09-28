@@ -10,7 +10,6 @@ const c = zgp.c;
 const Module = @import("Module.zig");
 const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const SurfaceMesh = ModelsRegistry.SurfaceMesh;
-const SurfaceMeshStdData = ModelsRegistry.SurfaceMeshStdData;
 const SurfaceMeshStdDatas = ModelsRegistry.SurfaceMeshStdDatas;
 const SurfaceMeshStdDataTag = ModelsRegistry.SurfaceMeshStdDataTag;
 

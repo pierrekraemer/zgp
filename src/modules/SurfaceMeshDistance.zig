@@ -69,7 +69,7 @@ fn computeVertexGeodesicDistancesFromSource(
     );
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_distance);
     const elapsed: f64 = @floatFromInt(timer.read());
-    zgp_log.info("Geodesic distance computed in : {d:.3}ms\n", .{elapsed / std.time.ns_per_ms});
+    zgp_log.info("Geodesic distance computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
 
 pub fn uiPanel(smd: *SurfaceMeshDistance) void {

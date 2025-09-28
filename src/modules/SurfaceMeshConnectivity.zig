@@ -218,6 +218,7 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
             if (c.ImGui_ButtonEx("Remesh", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 smc.remesh(
                     sm,
+                    UiData.edge_length_factor,
                     info.std_data.vertex_position.?,
                     info.std_data.corner_angle.?,
                     info.std_data.face_area.?,
@@ -226,7 +227,6 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
                     info.std_data.edge_dihedral_angle.?,
                     info.std_data.vertex_area.?,
                     info.std_data.vertex_normal.?,
-                    UiData.edge_length_factor,
                 ) catch |err| {
                     std.debug.print("Error remeshing: {}\n", .{err});
                 };

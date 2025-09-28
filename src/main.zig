@@ -22,17 +22,9 @@ const SurfaceMeshStdDataComputation = @import("modules/SurfaceMeshStdDataComputa
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
 const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
 
+const geometry_utils = @import("geometry/utils.zig");
 const vec = @import("geometry/vec.zig");
 const Vec3 = vec.Vec3;
-const Vec4 = vec.Vec4;
-
-const mat = @import("geometry/mat.zig");
-const Mat4 = mat.Mat4;
-
-const geometry_utils = @import("geometry/utils.zig");
-const normal = @import("models/surface/normal.zig");
-const length = @import("models/surface/length.zig");
-const angle = @import("models/surface/angle.zig");
 
 const Camera = @import("rendering/Camera.zig");
 const View = @import("rendering/View.zig");
@@ -43,7 +35,7 @@ const sdl_log = std.log.scoped(.sdl);
 const imgui_log = std.log.scoped(.imgui);
 const zgp_log = std.log.scoped(.zgp);
 
-// use a lib like:
+// TODO: use a lib like:
 // https://github.com/joegm/flags
 // https://github.com/Hejsil/zig-clap
 const CLIArgs = @import("utils/CLIArgs.zig");
@@ -59,7 +51,7 @@ var allocator: std.mem.Allocator = undefined;
 /// - random number generator
 /// - thread pool
 /// - models registry
-/// - module list
+/// - modules list
 pub var rng: std.Random.DefaultPrng = undefined;
 pub var thread_pool: std.Thread.Pool = undefined;
 pub var models_registry: ModelsRegistry = undefined;
@@ -261,7 +253,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         models_registry.surfaceMeshConnectivityUpdated(sm);
 
         const elapsed: f64 = @floatFromInt(timer.read());
-        zgp_log.info("Mesh loaded in : {d:.3}ms\n", .{elapsed / std.time.ns_per_ms});
+        zgp_log.info("Mesh loaded in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     }
 
     // Init end
@@ -511,7 +503,7 @@ pub fn main() !u8 {
     // allocator = std.heap.smp_allocator;
 
     const argv = std.process.argsAlloc(allocator) catch {
-        std.debug.print("Failed to get command line arguments\n", .{});
+        zgp_log.err("Failed to get command line arguments", .{});
         return 1;
     };
     defer std.process.argsFree(allocator, argv);
