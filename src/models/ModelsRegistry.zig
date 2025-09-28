@@ -24,6 +24,8 @@ const IBO = @import("../rendering/IBO.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
 
+// TODO: separate ModelsRegistry into PointCloudsRegistry, SurfaceMeshesRegistry and VolumeMeshesRegistry?
+
 /// Standard PointCloud data name & types.
 pub const PointCloudStdDatas = struct {
     position: ?PointCloud.CellData(Vec3) = null,
@@ -156,18 +158,15 @@ pub fn pointCloudDataUpdated(
     // if it exists, update the VBO with the data
     const maybe_vbo = mr.data_vbo.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
-        vbo.fillFrom(T, data.data) catch |err| {
-            std.debug.print("Failed to update VBO for PointCloud data: {}\n", .{err});
-            return;
-        };
+        vbo.fillFrom(T, data.data);
     }
 
     const now = std.time.Instant.now() catch |err| {
-        std.debug.print("Failed to get current time: {}\n", .{err});
+        zgp_log.err("Failed to get current time: {}", .{err});
         return;
     };
     mr.data_last_update.put(data.gen(), now) catch |err| {
-        std.debug.print("Failed to update last update time for PointCloud data: {}\n", .{err});
+        zgp_log.err("Failed to update last update time for PointCloud data: {}", .{err});
         return;
     };
 
@@ -187,18 +186,15 @@ pub fn surfaceMeshDataUpdated(
     // if it exists, update the VBO with the data
     const maybe_vbo = mr.data_vbo.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
-        vbo.fillFrom(T, data.data) catch |err| {
-            std.debug.print("Failed to update VBO for SurfaceMesh data: {}\n", .{err});
-            return;
-        };
+        vbo.fillFrom(T, data.data);
     }
 
     const now = std.time.Instant.now() catch |err| {
-        std.debug.print("Failed to get current time: {}\n", .{err});
+        zgp_log.err("Failed to get current time: {}", .{err});
         return;
     };
     mr.data_last_update.put(data.gen(), now) catch |err| {
-        std.debug.print("Failed to update last update time for SurfaceMesh data: {}\n", .{err});
+        zgp_log.err("Failed to update last update time for SurfaceMesh data: {}", .{err});
         return;
     };
 
@@ -211,11 +207,11 @@ pub fn surfaceMeshDataUpdated(
 pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) void {
     if (builtin.mode == .Debug) {
         const ok = sm.checkIntegrity() catch |err| {
-            std.debug.print("Failed to check integrity after connectivity update: {}\n", .{err});
+            zgp_log.err("Failed to check integrity after connectivity update: {}", .{err});
             return;
         };
         if (!ok) {
-            std.debug.print("SurfaceMesh integrity check failed after connectivity update\n", .{});
+            zgp_log.err("SurfaceMesh integrity check failed after connectivity update", .{});
             return;
         }
     }
@@ -223,32 +219,32 @@ pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) voi
     const info = mr.surface_meshes_info.getPtr(sm).?;
 
     info.vertex_set.update() catch |err| {
-        std.debug.print("Failed to update vertex set for SurfaceMesh: {}\n", .{err});
+        zgp_log.err("Failed to update vertex set for SurfaceMesh: {}", .{err});
         return;
     };
     info.edge_set.update() catch |err| {
-        std.debug.print("Failed to update edge set for SurfaceMesh: {}\n", .{err});
+        zgp_log.err("Failed to update edge set for SurfaceMesh: {}", .{err});
         return;
     };
     info.face_set.update() catch |err| {
-        std.debug.print("Failed to update face set for SurfaceMesh: {}\n", .{err});
+        zgp_log.err("Failed to update face set for SurfaceMesh: {}", .{err});
         return;
     };
 
     info.points_ibo.fillFrom(sm, .vertex, mr.allocator) catch |err| {
-        std.debug.print("Failed to fill points IBO for SurfaceMesh: {}\n", .{err});
+        zgp_log.err("Failed to fill points IBO for SurfaceMesh: {}", .{err});
         return;
     };
     info.lines_ibo.fillFrom(sm, .edge, mr.allocator) catch |err| {
-        std.debug.print("Failed to fill lines IBO for SurfaceMesh: {}\n", .{err});
+        zgp_log.err("Failed to fill lines IBO for SurfaceMesh: {}", .{err});
         return;
     };
     info.triangles_ibo.fillFrom(sm, .face, mr.allocator) catch |err| {
-        std.debug.print("Failed to fill triangles IBO for SurfaceMesh: {}\n", .{err});
+        zgp_log.err("Failed to fill triangles IBO for SurfaceMesh: {}", .{err});
         return;
     };
     info.boundaries_ibo.fillFrom(sm, .boundary, mr.allocator) catch |err| {
-        std.debug.print("Failed to fill boundaries IBO for SurfaceMesh: {}\n", .{err});
+        zgp_log.err("Failed to fill boundaries IBO for SurfaceMesh: {}", .{err});
         return;
     };
 
@@ -258,12 +254,15 @@ pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) voi
     zgp.requestRedraw();
 }
 
-pub fn dataVBO(mr: *ModelsRegistry, comptime T: type, data: *const Data(T)) !VBO {
-    const vbo = try mr.data_vbo.getOrPut(&data.gen);
+pub fn dataVBO(mr: *ModelsRegistry, comptime T: type, data: *const Data(T)) VBO {
+    const vbo = mr.data_vbo.getOrPut(&data.gen) catch |err| {
+        zgp_log.err("Failed to get or add VBO in the registry: {}", .{err});
+        return VBO.init(); // return a dummy VBO
+    };
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
         // if the VBO was just created, fill it with the data
-        try vbo.value_ptr.*.fillFrom(T, data);
+        vbo.value_ptr.*.fillFrom(T, data);
     }
     return vbo.value_ptr.*;
 }
@@ -401,7 +400,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
                         if (maybe_data) |data| {
                             mr.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
                         } else |err| {
-                            std.debug.print("Error adding {s} ({s}: {s}) data: {}\n", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
+                            zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
                         }
                     }
                 }
@@ -450,7 +449,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
                             switch (UiData.selected_data_type) {
                                 inline else => |data_type| {
                                     _ = sm.addData(cell_type, @FieldType(CreateDataTypes, @tagName(data_type)), &UiData.data_name_buf) catch |err| {
-                                        imgui_log.err("Error adding {s} ({s}: {s}) data: {}\n", .{ &UiData.data_name_buf, @tagName(cell_type), @tagName(data_type), err });
+                                        zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ &UiData.data_name_buf, @tagName(cell_type), @tagName(data_type), err });
                                     };
                                     UiData.data_name_buf[0] = 0;
                                 },
@@ -516,7 +515,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
                             mr.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
                         }
                     } else |err| {
-                        std.debug.print("Error adding {s} ({s}) data: {}\n", .{ field.name, @typeName(@typeInfo(field.type).optional.child.DataType), err });
+                        zgp_log.err("Error adding {s} ({s}) data: {}", .{ field.name, @typeName(@typeInfo(field.type).optional.child.DataType), err });
                     }
                 }
             }

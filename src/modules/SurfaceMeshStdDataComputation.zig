@@ -251,11 +251,6 @@ const std_data_computations: []const StdDataComputation = &.{
 };
 
 pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
-    // const UiData = struct {
-    //     var button_text_buf: [64]u8 = undefined;
-    //     var new_data_name: [32]u8 = undefined;
-    // };
-
     const style = c.ImGui_GetStyle();
 
     const mr = &zgp.models_registry;
@@ -313,27 +308,6 @@ pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
             //     \\ Write:
             //     \\ - corner_angle
             // );
-
-            // c.ImGui_SameLine();
-            // c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - 20.0));
-            // const button_text = std.fmt.bufPrintZ(
-            //     &UiData.button_text_buf,
-            //     "Add {s} data ({s})",
-            //     .{ @tagName(dc.ComputesCellType()), @typeName(dc.ComputesDataType()) },
-            // ) catch "";
-            // // TODO: fix -> the next line does not allow to enter a custom name
-            // _ = std.fmt.bufPrintZ(&UiData.new_data_name, @tagName(dc.computes), .{}) catch "";
-            // if (imgui_utils.addDataButton(@tagName(dc.computes), button_text, &UiData.new_data_name)) {
-            //     const maybe_data = sm.addData(dc.ComputesCellType(), dc.ComputesDataType(), &UiData.new_data_name);
-            //     if (maybe_data) |data| {
-            //         if (computes_data == null) {
-            //             mr.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, @tagName(dc.computes), data));
-            //         }
-            //     } else |err| {
-            //         std.debug.print("Error adding {s} {s} data: {}\n", .{ @tagName(dc.ComputesCellType()), @typeName(dc.ComputesDataType()), err });
-            //     }
-            //     UiData.new_data_name[0] = 0;
-            // }
         }
         c.ImGui_Separator();
         if (c.ImGui_ButtonEx("Update outdated std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {

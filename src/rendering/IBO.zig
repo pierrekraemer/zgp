@@ -23,7 +23,7 @@ pub fn deinit(i: *IBO) void {
 }
 
 pub fn fillFrom(i: *IBO, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, allocator: std.mem.Allocator) !void {
-    var indices: std.ArrayList(u32) = .empty;
+    var indices = try std.ArrayList(u32).initCapacity(allocator, 1024);
     defer indices.deinit(allocator);
     switch (cell_type) {
         .face => {
@@ -50,10 +50,10 @@ pub fn fillFrom(i: *IBO, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, allo
             var e_it = try SurfaceMesh.CellIterator(.edge).init(sm);
             defer e_it.deinit();
             while (e_it.next()) |e| {
-                var dart_it = sm.cellDartIterator(e);
-                while (dart_it.next()) |d| {
-                    try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
-                }
+                const d = e.dart();
+                const d1 = sm.phi1(d);
+                try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
+                try indices.append(allocator, sm.cellIndex(.{ .vertex = d1 }));
             }
         },
         .vertex => {

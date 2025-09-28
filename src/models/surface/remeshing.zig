@@ -40,6 +40,7 @@ fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
 /// TODO: adaptive sampling guided by a curvature dependent sizing field.
 pub fn pliantRemeshing(
     sm: *SurfaceMesh,
+    edge_length_factor: f32,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
@@ -48,7 +49,6 @@ pub fn pliantRemeshing(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
-    edge_length_factor: f32,
 ) !void {
     try subdivision.triangulateFaces(sm);
 

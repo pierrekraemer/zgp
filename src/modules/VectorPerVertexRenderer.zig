@@ -91,10 +91,7 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo = zgp.models_registry.dataVBO(Vec3, vertex_position.data) catch |err| {
-                    std.debug.print("Failed to get VBO for vertex positions: {}\n", .{err});
-                    return;
-                };
+                const position_vbo = zgp.models_registry.dataVBO(Vec3, vertex_position.data);
                 p.point_vector_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_vector_shader_parameters.unsetVertexAttribArray(.position);
@@ -112,10 +109,7 @@ fn setSurfaceMeshVectorData(
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     p.vertex_vector = vertex_vector;
     if (p.vertex_vector) |v| {
-        const vector_vbo = zgp.models_registry.dataVBO(Vec3, v.data) catch |err| {
-            imgui_log.err("Failed to get VBO for vertex vectors: {}\n", .{err});
-            return;
-        };
+        const vector_vbo = zgp.models_registry.dataVBO(Vec3, v.data);
         p.point_vector_shader_parameters.setVertexAttribArray(.vector, vector_vbo, 0, 0);
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);

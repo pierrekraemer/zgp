@@ -239,7 +239,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer modules.deinit(allocator);
 
     for (cli_args.mesh_files) |mesh_file| {
-        // var timer = try std.time.Timer.start();
+        var timer = try std.time.Timer.start();
 
         const sm = try models_registry.loadSurfaceMeshFromFile(mesh_file);
         errdefer sm.deinit();
@@ -260,8 +260,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
         models_registry.surfaceMeshConnectivityUpdated(sm);
 
-        // const elapsed: f64 = @floatFromInt(timer.read());
-        // zgp_log.info("Time elapsed is: {d:.3}ms\n", .{elapsed / std.time.ns_per_ms});
+        const elapsed: f64 = @floatFromInt(timer.read());
+        zgp_log.info("Mesh loaded in : {d:.3}ms\n", .{elapsed / std.time.ns_per_ms});
     }
 
     // Init end

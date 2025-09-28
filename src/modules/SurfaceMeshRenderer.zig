@@ -142,10 +142,7 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo: VBO = zgp.models_registry.dataVBO(Vec3, vertex_position.data) catch |err| {
-                    std.debug.print("Failed to get VBO for vertex positions: {}\n", .{err});
-                    return;
-                };
+                const position_vbo: VBO = zgp.models_registry.dataVBO(Vec3, vertex_position.data);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -235,10 +232,7 @@ fn setSurfaceMeshDrawVerticesColorData(
                 .vertex => {
                     p.draw_vertices_color.vertex_scalar_data = data;
                     if (p.draw_vertices_color.vertex_scalar_data) |scalar| {
-                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch |err| {
-                            imgui_log.err("Failed to get VBO for vertex scalar colors: {}\n", .{err});
-                            return;
-                        };
+                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data);
                         p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
                     } else {
                         p.point_sphere_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -257,10 +251,7 @@ fn setSurfaceMeshDrawVerticesColorData(
                 .vertex => {
                     p.draw_vertices_color.vertex_vector_data = data;
                     if (p.draw_vertices_color.vertex_vector_data) |vector| {
-                        const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch |err| {
-                            imgui_log.err("Failed to get VBO for vertex vector colors: {}\n", .{err});
-                            return;
-                        };
+                        const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data);
                         p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     } else {
                         p.point_sphere_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
@@ -297,10 +288,7 @@ fn setSurfaceMeshDrawFacesColorData(
                 .vertex => {
                     p.draw_faces_color.vertex_scalar_data = data;
                     if (p.draw_faces_color.vertex_scalar_data) |scalar| {
-                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch |err| {
-                            imgui_log.err("Failed to get VBO for vertex scalar colors: {}\n", .{err});
-                            return;
-                        };
+                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data);
                         p.tri_flat_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
                     } else {
                         p.tri_flat_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -312,10 +300,7 @@ fn setSurfaceMeshDrawFacesColorData(
                     p.draw_faces_color.face_scalar_data = data;
                     // Not supported yet
                     // if (p.draw_faces_color.face_scalar_data) |scalar| {
-                    // const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data) catch |err| {
-                    //     imgui_log.err("Failed to get VBO for face scalar colors: {}\n", .{err});
-                    //     return;
-                    // };
+                    // const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data);
                     // p.tri_flat_scalar_per_face_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
                     // } else {
                     // p.tri_flat_scalar_per_face_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -334,10 +319,7 @@ fn setSurfaceMeshDrawFacesColorData(
                 .vertex => {
                     p.draw_faces_color.vertex_vector_data = data;
                     if (p.draw_faces_color.vertex_vector_data) |vector| {
-                        const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch |err| {
-                            imgui_log.err("Failed to get VBO for vertex vector colors: {}\n", .{err});
-                            return;
-                        };
+                        const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data);
                         p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     } else {
                         p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
@@ -347,10 +329,7 @@ fn setSurfaceMeshDrawFacesColorData(
                     p.draw_faces_color.face_vector_data = data;
                     // Not supported yet
                     // if (p.draw_faces_color.face_vector_data) |vector| {
-                    // const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data) catch |err| {
-                    //     imgui_log.err("Failed to get VBO for faces vector colors: {}\n", .{err});
-                    //     return;
-                    // };
+                    // const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data);
                     // p.tri_flat_color_per_face_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     // } else {
                     // p.tri_flat_color_per_face_shader_parameters.unsetVertexAttribArray(.color);

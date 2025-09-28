@@ -64,6 +64,7 @@ fn triangulateFaces(
 fn remesh(
     _: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
+    edge_length_factor: f32,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
@@ -72,10 +73,10 @@ fn remesh(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
-    edge_length_factor: f32,
 ) !void {
     try remeshing.pliantRemeshing(
         sm,
+        edge_length_factor,
         vertex_position,
         corner_angle,
         face_area,
@@ -84,7 +85,6 @@ fn remesh(
         edge_dihedral_angle,
         vertex_area,
         vertex_normal,
-        edge_length_factor,
     );
     zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
     zgp.models_registry.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);

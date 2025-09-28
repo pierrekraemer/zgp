@@ -67,13 +67,8 @@ pub fn Data(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        // TODO: evaluate if SegmentedList is the right choice here (vs a simple ArrayList)
-        const DataSegmentedList = SegmentedList(T, 512);
-
-        gen: DataGen = undefined,
-        data: DataSegmentedList = .{},
-
-        const init: Self = .{};
+        gen: DataGen,
+        data: std.ArrayList(T),
 
         /// Expose the Arena of the Data to the user.
         /// Useful when the data type T needs to allocate memory.
@@ -83,12 +78,14 @@ pub fn Data(comptime T: type) type {
             return self.gen.arena.allocator();
         }
 
+        /// Part of the DataGen interface.
         pub fn ensureLength(self: *Self, size: u32) !void {
-            while (self.data.len < size) {
+            while (self.data.items.len < size) {
                 _ = try self.data.addOne(self.arena());
             }
         }
 
+        /// Part of the DataGen interface.
         pub fn clearRetainingCapacity(self: *Self) void {
             self.data.clearRetainingCapacity();
         }
@@ -102,16 +99,15 @@ pub fn Data(comptime T: type) type {
         }
 
         pub fn valuePtr(self: anytype, index: u32) ValuePtrType(@TypeOf(self)) {
-            return self.data.at(index);
+            return &self.data.items[index];
         }
 
         pub fn value(self: *Self, index: u32) T {
-            return self.data.at(index).*;
+            return self.data.items[index];
         }
 
         pub fn fill(self: *Self, val: T) void {
-            var it = self.data.iterator(0);
-            while (it.next()) |element| {
+            for (self.data.items) |*element| {
                 element.* = val;
             }
         }
@@ -168,20 +164,49 @@ pub fn Data(comptime T: type) type {
             return .{ min, max };
         }
 
+        /// Return the number of elements in the raw data storage.
+        /// This is different from nbElements() which returns the number of elements
+        /// corresponding to active indices in the DataContainer.
         pub fn rawLength(self: *const Self) usize {
-            return self.data.len;
+            return self.data.items.len;
         }
 
+        /// Return the size in bytes of the raw data stored in this Data.
         pub fn rawSize(self: *const Self) usize {
-            return self.data.len * @sizeOf(T);
+            return self.data.items.len * @sizeOf(T);
         }
 
-        pub fn rawIterator(self: *Self) DataSegmentedList.Iterator {
-            return self.data.iterator(0);
+        pub const RawIterator = BaseRawIterator(*Self, *T);
+        pub const ConstRawIterator = BaseRawIterator(*const Self, *const T);
+        fn BaseRawIterator(comptime SelfPtr: type, comptime ElementPtr: type) type {
+            return struct {
+                data: SelfPtr,
+                index: u32,
+                pub fn next(it: *@This()) ?ElementPtr {
+                    if (it.index == it.data.data.items.len) {
+                        return null;
+                    }
+                    defer it.index = it.index + 1;
+                    return &it.data.data.items[it.index];
+                }
+                pub fn reset(it: *@This()) void {
+                    it.index = 0;
+                }
+            };
         }
 
-        pub fn rawConstIterator(self: *const Self) DataSegmentedList.ConstIterator {
-            return self.data.constIterator(0);
+        pub fn rawIterator(self: *Self) RawIterator {
+            return .{
+                .data = self,
+                .index = 0,
+            };
+        }
+
+        pub fn rawConstIterator(self: *const Self) ConstRawIterator {
+            return .{
+                .data = self,
+                .index = 0,
+            };
         }
 
         pub fn nbElements(self: *const Self) usize {
@@ -199,7 +224,7 @@ pub fn Data(comptime T: type) type {
                         return null;
                     }
                     defer it.index = it.data.gen.container.nextIndex(it.index);
-                    return it.data.data.at(it.index);
+                    return &it.data.data.items[it.index];
                 }
                 pub fn reset(it: *@This()) void {
                     it.index = it.data.gen.container.firstIndex();
@@ -289,7 +314,10 @@ pub const DataContainer = struct {
         var data_arena = std.heap.ArenaAllocator.init(dc.allocator);
         errdefer data_arena.deinit();
         const data = try data_arena.allocator().create(Data(T));
-        data.* = .init;
+        data.* = .{
+            .data = try std.ArrayList(T).initCapacity(data_arena.allocator(), 1024),
+            .gen = undefined,
+        };
         const owned_name = try data_arena.allocator().dupe(u8, name);
         data.gen = DataGen.init(T, owned_name, comptime typeId(T), data, dc, data_arena);
         try data.ensureLength(dc.capacity);
@@ -367,7 +395,10 @@ pub const DataContainer = struct {
         var marker_arena = std.heap.ArenaAllocator.init(dc.allocator);
         errdefer marker_arena.deinit();
         const marker = try marker_arena.allocator().create(Data(bool));
-        marker.* = .init;
+        marker.* = .{
+            .data = try std.ArrayList(bool).initCapacity(marker_arena.allocator(), 1024),
+            .gen = undefined,
+        };
         marker.gen = DataGen.init(bool, "", comptime typeId(bool), marker, dc, marker_arena);
         try marker.ensureLength(dc.capacity);
         marker.fill(false); // marker is filled with false before use
