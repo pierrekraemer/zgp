@@ -49,7 +49,7 @@ pub fn surfaceMeshListBox(
 ) ?*SurfaceMesh {
     if (c.ImGui_BeginListBox("##Surface Meshes", c.ImVec2{ .x = 0, .y = height })) {
         defer c.ImGui_EndListBox();
-        var sm_it = zgp.models_registry.surface_meshes.iterator();
+        var sm_it = zgp.surface_mesh_store.surface_meshes.iterator();
         while (sm_it.next()) |entry| {
             const sm = entry.value_ptr.*;
             const name = entry.key_ptr.*;
@@ -73,7 +73,7 @@ pub fn pointCloudListBox(
 ) ?*PointCloud {
     if (c.ImGui_BeginListBox("##Point Clouds", c.ImVec2{ .x = 0, .y = height })) {
         defer c.ImGui_EndListBox();
-        var pc_it = zgp.models_registry.point_clouds.iterator();
+        var pc_it = zgp.point_cloud_store.point_clouds.iterator();
         while (pc_it.next()) |entry| {
             const pc = entry.value_ptr.*;
             const name = entry.key_ptr.*;

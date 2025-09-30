@@ -10,10 +10,9 @@ const imgui_utils = @import("../utils/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 
 const Module = @import("Module.zig");
-
-const ModelsRegistry = @import("../models/ModelsRegistry.zig");
-const SurfaceMesh = ModelsRegistry.SurfaceMesh;
-const SurfaceMeshStdData = ModelsRegistry.SurfaceMeshStdData;
+const SurfaceMeshStore = @import("../models/SurfaceMeshStore.zig");
+const SurfaceMesh = SurfaceMeshStore.SurfaceMesh;
+const SurfaceMeshStdData = SurfaceMeshStore.SurfaceMeshStdData;
 const DataGen = @import("../utils/Data.zig").DataGen;
 
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
@@ -142,7 +141,7 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo: VBO = zgp.models_registry.dataVBO(Vec3, vertex_position.data);
+                const position_vbo: VBO = zgp.surface_mesh_store.dataVBO(Vec3, vertex_position.data);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -232,7 +231,7 @@ fn setSurfaceMeshDrawVerticesColorData(
                 .vertex => {
                     p.draw_vertices_color.vertex_scalar_data = data;
                     if (p.draw_vertices_color.vertex_scalar_data) |scalar| {
-                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data);
+                        const scalar_vbo = zgp.surface_mesh_store.dataVBO(f32, scalar.data);
                         p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
                     } else {
                         p.point_sphere_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -251,7 +250,7 @@ fn setSurfaceMeshDrawVerticesColorData(
                 .vertex => {
                     p.draw_vertices_color.vertex_vector_data = data;
                     if (p.draw_vertices_color.vertex_vector_data) |vector| {
-                        const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data);
+                        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3, vector.data);
                         p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     } else {
                         p.point_sphere_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
@@ -288,7 +287,7 @@ fn setSurfaceMeshDrawFacesColorData(
                 .vertex => {
                     p.draw_faces_color.vertex_scalar_data = data;
                     if (p.draw_faces_color.vertex_scalar_data) |scalar| {
-                        const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data);
+                        const scalar_vbo = zgp.surface_mesh_store.dataVBO(f32, scalar.data);
                         p.tri_flat_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
                     } else {
                         p.tri_flat_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -300,7 +299,7 @@ fn setSurfaceMeshDrawFacesColorData(
                     p.draw_faces_color.face_scalar_data = data;
                     // Not supported yet
                     // if (p.draw_faces_color.face_scalar_data) |scalar| {
-                    // const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data);
+                    // const scalar_vbo = zgp.surface_mesh_store.dataVBO(f32, scalar.data);
                     // p.tri_flat_scalar_per_face_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
                     // } else {
                     // p.tri_flat_scalar_per_face_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -319,7 +318,7 @@ fn setSurfaceMeshDrawFacesColorData(
                 .vertex => {
                     p.draw_faces_color.vertex_vector_data = data;
                     if (p.draw_faces_color.vertex_vector_data) |vector| {
-                        const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data);
+                        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3, vector.data);
                         p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     } else {
                         p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
@@ -329,7 +328,7 @@ fn setSurfaceMeshDrawFacesColorData(
                     p.draw_faces_color.face_vector_data = data;
                     // Not supported yet
                     // if (p.draw_faces_color.face_vector_data) |vector| {
-                    // const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data);
+                    // const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3, vector.data);
                     // p.tri_flat_color_per_face_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     // } else {
                     // p.tri_flat_color_per_face_shader_parameters.unsetVertexAttribArray(.color);
@@ -346,10 +345,10 @@ fn setSurfaceMeshDrawFacesColorData(
 /// Part of the Module interface.
 /// Render all SurfaceMeshes with their SurfaceMeshRendererParameters and the given view and projection matrices.
 pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
-    var sm_it = zgp.models_registry.surface_meshes.iterator();
+    var sm_it = zgp.surface_mesh_store.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const sm = entry.value_ptr.*;
-        const info = zgp.models_registry.surfaceMeshInfo(sm);
+        const info = zgp.surface_mesh_store.surfaceMeshInfo(sm);
         const p = smr.parameters.getPtr(sm) orelse continue;
         if (p.draw_faces) {
             switch (p.draw_faces_color.defined_on) {
@@ -433,7 +432,7 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (zgp.models_registry.selected_surface_mesh) |sm| {
+    if (zgp.surface_mesh_store.selected_surface_mesh) |sm| {
         const surface_mesh_renderer_parameters = smr.parameters.getPtr(sm);
         if (surface_mesh_renderer_parameters) |p| {
             c.ImGui_SeparatorText("Vertices");

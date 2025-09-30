@@ -3,16 +3,18 @@ const Module = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 
-const ModelsRegistry = @import("../models/ModelsRegistry.zig");
 const DataGen = @import("../utils/Data.zig").DataGen;
 
 const mat = @import("../geometry/mat.zig");
 const Mat4 = mat.Mat4;
 
-const PointCloud = ModelsRegistry.PointCloud;
-const PointCloudStdData = ModelsRegistry.PointCloudStdData;
-const SurfaceMesh = ModelsRegistry.SurfaceMesh;
-const SurfaceMeshStdData = ModelsRegistry.SurfaceMeshStdData;
+const PointCloudStore = @import("../models/PointCloudStore.zig");
+const PointCloud = PointCloudStore.PointCloud;
+const PointCloudStdData = PointCloudStore.PointCloudStdData;
+
+const SurfaceMeshStore = @import("../models/SurfaceMeshStore.zig");
+const SurfaceMesh = SurfaceMeshStore.SurfaceMesh;
+const SurfaceMeshStdData = SurfaceMeshStore.SurfaceMeshStdData;
 
 ptr: *anyopaque, // pointer to the concrete Module
 vtable: *const VTable,

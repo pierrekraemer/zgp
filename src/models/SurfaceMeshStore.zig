@@ -1,4 +1,4 @@
-const ModelsRegistry = @This();
+const SurfaceMeshStore = @This();
 
 const std = @import("std");
 const builtin = @import("builtin");
@@ -12,7 +12,6 @@ const zgp_log = std.log.scoped(.zgp);
 
 const types_utils = @import("../utils/types.zig");
 
-pub const PointCloud = @import("point/PointCloud.zig");
 pub const SurfaceMesh = @import("surface/SurfaceMesh.zig");
 
 const Data = @import("../utils/Data.zig").Data;
@@ -23,26 +22,6 @@ const IBO = @import("../rendering/IBO.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
-
-// TODO: separate ModelsRegistry into PointCloudsRegistry, SurfaceMeshesRegistry and VolumeMeshesRegistry?
-
-/// Standard PointCloud data name & types.
-pub const PointCloudStdDatas = struct {
-    position: ?PointCloud.CellData(Vec3) = null,
-    normal: ?PointCloud.CellData(Vec3) = null,
-    color: ?PointCloud.CellData(Vec3) = null,
-};
-/// This union is generated from the PointCloudStdDatas struct and allows to easily provide a single
-/// data entry to the setPointCloudStdData function.
-pub const PointCloudStdData = types_utils.UnionFromStruct(PointCloudStdDatas);
-pub const PointCloudStdDataTag = std.meta.Tag(PointCloudStdData);
-
-/// This struct holds all the information related to a PointCloud, including the standard datas and the IBOs for rendering.
-/// Each PointCloud in the ModelsRegistry has an associated PointCloudInfo which can be accessed via the pointCloudInfo function.
-const PointCloudInfo = struct {
-    std_data: PointCloudStdDatas = .{},
-    points_ibo: IBO,
-};
 
 /// Standard SurfaceMesh data name & types.
 pub const SurfaceMeshStdDatas = struct {
@@ -63,8 +42,8 @@ pub const SurfaceMeshStdDatas = struct {
 pub const SurfaceMeshStdData = types_utils.UnionFromStruct(SurfaceMeshStdDatas);
 pub const SurfaceMeshStdDataTag = std.meta.Tag(SurfaceMeshStdData);
 
-/// This struct holds all the information related to a SurfaceMesh, including the standard datas, cells sets and the IBOs for rendering.
-/// Each SurfaceMesh in the ModelsRegistry has an associated SurfaceMeshInfo which can be accessed via the surfaceMeshInfo function.
+/// This struct holds information related to a SurfaceMesh, including its standard datas, cells sets and the IBOs for rendering.
+/// The SurfaceMeshInfo associated with a SurfaceMesh is accessible via the surfaceMeshInfo function.
 const SurfaceMeshInfo = struct {
     std_data: SurfaceMeshStdDatas = .{},
 
@@ -80,46 +59,25 @@ const SurfaceMeshInfo = struct {
 
 allocator: std.mem.Allocator,
 
-point_clouds: std.StringHashMap(*PointCloud),
 surface_meshes: std.StringHashMap(*SurfaceMesh),
-
-point_clouds_info: std.AutoHashMap(*const PointCloud, PointCloudInfo),
 surface_meshes_info: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshInfo),
+selected_surface_mesh: ?*SurfaceMesh = null,
 
 data_vbo: std.AutoHashMap(*const DataGen, VBO),
 data_last_update: std.AutoHashMap(*const DataGen, std.time.Instant),
 
-selected_point_cloud: ?*PointCloud = null,
-selected_surface_mesh: ?*SurfaceMesh = null,
-
-pub fn init(allocator: std.mem.Allocator) ModelsRegistry {
+pub fn init(allocator: std.mem.Allocator) SurfaceMeshStore {
     return .{
         .allocator = allocator,
-        .point_clouds = std.StringHashMap(*PointCloud).init(allocator),
         .surface_meshes = std.StringHashMap(*SurfaceMesh).init(allocator),
-        .point_clouds_info = std.AutoHashMap(*const PointCloud, PointCloudInfo).init(allocator),
         .surface_meshes_info = std.AutoHashMap(*const SurfaceMesh, SurfaceMeshInfo).init(allocator),
         .data_vbo = std.AutoHashMap(*const DataGen, VBO).init(allocator),
         .data_last_update = std.AutoHashMap(*const DataGen, std.time.Instant).init(allocator),
     };
 }
 
-pub fn deinit(mr: *ModelsRegistry) void {
-    var pc_info_it = mr.point_clouds_info.iterator();
-    while (pc_info_it.next()) |entry| {
-        var info = entry.value_ptr.*;
-        info.points_ibo.deinit();
-    }
-    mr.point_clouds_info.deinit();
-    var pc_it = mr.point_clouds.iterator();
-    while (pc_it.next()) |entry| {
-        var pc = entry.value_ptr.*;
-        pc.deinit();
-        mr.allocator.destroy(pc);
-    }
-    mr.point_clouds.deinit();
-
-    var sm_info_it = mr.surface_meshes_info.iterator();
+pub fn deinit(sms: *SurfaceMeshStore) void {
+    var sm_info_it = sms.surface_meshes_info.iterator();
     while (sm_info_it.next()) |entry| {
         var info = entry.value_ptr.*;
         info.vertex_set.deinit();
@@ -130,61 +88,33 @@ pub fn deinit(mr: *ModelsRegistry) void {
         info.triangles_ibo.deinit();
         info.boundaries_ibo.deinit();
     }
-    mr.surface_meshes_info.deinit();
-    var sm_it = mr.surface_meshes.iterator();
+    sms.surface_meshes_info.deinit();
+    var sm_it = sms.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         var sm = entry.value_ptr.*;
         sm.deinit();
-        mr.allocator.destroy(sm);
+        sms.allocator.destroy(sm);
     }
-    mr.surface_meshes.deinit();
+    sms.surface_meshes.deinit();
 
-    var vbo_it = mr.data_vbo.iterator();
+    var vbo_it = sms.data_vbo.iterator();
     while (vbo_it.next()) |entry| {
         var vbo = entry.value_ptr.*;
         vbo.deinit();
     }
-    mr.data_vbo.deinit();
-
-    mr.data_last_update.deinit();
-}
-
-pub fn pointCloudDataUpdated(
-    mr: *ModelsRegistry,
-    pc: *PointCloud,
-    comptime T: type,
-    data: PointCloud.CellData(T),
-) void {
-    // if it exists, update the VBO with the data
-    const maybe_vbo = mr.data_vbo.getPtr(data.gen());
-    if (maybe_vbo) |vbo| {
-        vbo.fillFrom(T, data.data);
-    }
-
-    const now = std.time.Instant.now() catch |err| {
-        zgp_log.err("Failed to get current time: {}", .{err});
-        return;
-    };
-    mr.data_last_update.put(data.gen(), now) catch |err| {
-        zgp_log.err("Failed to update last update time for PointCloud data: {}", .{err});
-        return;
-    };
-
-    for (zgp.modules.items) |*module| {
-        module.pointCloudDataUpdated(pc, data.gen());
-    }
-    zgp.requestRedraw();
+    sms.data_vbo.deinit();
+    sms.data_last_update.deinit();
 }
 
 pub fn surfaceMeshDataUpdated(
-    mr: *ModelsRegistry,
+    sms: *SurfaceMeshStore,
     sm: *SurfaceMesh,
     comptime cell_type: SurfaceMesh.CellType,
     comptime T: type,
     data: SurfaceMesh.CellData(cell_type, T),
 ) void {
     // if it exists, update the VBO with the data
-    const maybe_vbo = mr.data_vbo.getPtr(data.gen());
+    const maybe_vbo = sms.data_vbo.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
         vbo.fillFrom(T, data.data);
     }
@@ -193,18 +123,19 @@ pub fn surfaceMeshDataUpdated(
         zgp_log.err("Failed to get current time: {}", .{err});
         return;
     };
-    mr.data_last_update.put(data.gen(), now) catch |err| {
+    sms.data_last_update.put(data.gen(), now) catch |err| {
         zgp_log.err("Failed to update last update time for SurfaceMesh data: {}", .{err});
         return;
     };
 
+    // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
     for (zgp.modules.items) |*module| {
         module.surfaceMeshDataUpdated(sm, cell_type, data.gen());
     }
     zgp.requestRedraw();
 }
 
-pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) void {
+pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
     if (builtin.mode == .Debug) {
         const ok = sm.checkIntegrity() catch |err| {
             zgp_log.err("Failed to check integrity after connectivity update: {}", .{err});
@@ -216,7 +147,7 @@ pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) voi
         }
     }
 
-    const info = mr.surface_meshes_info.getPtr(sm).?;
+    const info = sms.surface_meshes_info.getPtr(sm).?;
 
     info.vertex_set.update() catch |err| {
         zgp_log.err("Failed to update vertex set for SurfaceMesh: {}", .{err});
@@ -231,31 +162,32 @@ pub fn surfaceMeshConnectivityUpdated(mr: *ModelsRegistry, sm: *SurfaceMesh) voi
         return;
     };
 
-    info.points_ibo.fillFrom(sm, .vertex, mr.allocator) catch |err| {
+    info.points_ibo.fillFrom(sm, .vertex, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill points IBO for SurfaceMesh: {}", .{err});
         return;
     };
-    info.lines_ibo.fillFrom(sm, .edge, mr.allocator) catch |err| {
+    info.lines_ibo.fillFrom(sm, .edge, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill lines IBO for SurfaceMesh: {}", .{err});
         return;
     };
-    info.triangles_ibo.fillFrom(sm, .face, mr.allocator) catch |err| {
+    info.triangles_ibo.fillFrom(sm, .face, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill triangles IBO for SurfaceMesh: {}", .{err});
         return;
     };
-    info.boundaries_ibo.fillFrom(sm, .boundary, mr.allocator) catch |err| {
+    info.boundaries_ibo.fillFrom(sm, .boundary, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill boundaries IBO for SurfaceMesh: {}", .{err});
         return;
     };
 
+    // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
     for (zgp.modules.items) |*module| {
         module.surfaceMeshConnectivityUpdated(sm);
     }
     zgp.requestRedraw();
 }
 
-pub fn dataVBO(mr: *ModelsRegistry, comptime T: type, data: *const Data(T)) VBO {
-    const vbo = mr.data_vbo.getOrPut(&data.gen) catch |err| {
+pub fn dataVBO(sms: *SurfaceMeshStore, comptime T: type, data: *const Data(T)) VBO {
+    const vbo = sms.data_vbo.getOrPut(&data.gen) catch |err| {
         zgp_log.err("Failed to get or add VBO in the registry: {}", .{err});
         return VBO.init(); // return a dummy VBO
     };
@@ -267,30 +199,16 @@ pub fn dataVBO(mr: *ModelsRegistry, comptime T: type, data: *const Data(T)) VBO 
     return vbo.value_ptr.*;
 }
 
-pub fn dataLastUpdate(mr: *ModelsRegistry, data_gen: *const DataGen) ?std.time.Instant {
-    return mr.data_last_update.get(data_gen);
+pub fn dataLastUpdate(sms: *SurfaceMeshStore, data_gen: *const DataGen) ?std.time.Instant {
+    return sms.data_last_update.get(data_gen);
 }
 
-pub fn pointCloudInfo(mr: *ModelsRegistry, pc: *const PointCloud) *PointCloudInfo {
-    return mr.point_clouds_info.getPtr(pc).?; // should always exist
+pub fn surfaceMeshInfo(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) *SurfaceMeshInfo {
+    return sms.surface_meshes_info.getPtr(sm).?; // should always exist
 }
 
-pub fn pointCloudName(mr: *ModelsRegistry, pc: *const PointCloud) ?[]const u8 {
-    const it = mr.point_clouds.iterator();
-    while (it.next()) |entry| {
-        if (entry.value_ptr.* == pc) {
-            return entry.key_ptr.*;
-        }
-    }
-    return null;
-}
-
-pub fn surfaceMeshInfo(mr: *ModelsRegistry, sm: *const SurfaceMesh) *SurfaceMeshInfo {
-    return mr.surface_meshes_info.getPtr(sm).?; // should always exist
-}
-
-pub fn surfaceMeshName(mr: *ModelsRegistry, sm: *const SurfaceMesh) ?[]const u8 {
-    const it = mr.surface_meshes.iterator();
+pub fn surfaceMeshName(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) ?[]const u8 {
+    const it = sms.surface_meshes.iterator();
     while (it.next()) |entry| {
         if (entry.value_ptr.* == sm) {
             return entry.key_ptr.*;
@@ -299,45 +217,28 @@ pub fn surfaceMeshName(mr: *ModelsRegistry, sm: *const SurfaceMesh) ?[]const u8 
     return null;
 }
 
-pub fn setPointCloudStdData(
-    mr: *ModelsRegistry,
-    pc: *PointCloud,
-    data: PointCloudStdData,
-) void {
-    const info = mr.point_clouds_info.getPtr(pc).?;
-    switch (data) {
-        inline else => |val, tag| {
-            @field(info.std_data, @tagName(tag)) = val;
-        },
-    }
-
-    for (zgp.modules.items) |*module| {
-        module.pointCloudStdDataChanged(pc, data);
-    }
-    zgp.requestRedraw();
-}
-
 pub fn setSurfaceMeshStdData(
-    mr: *ModelsRegistry,
+    sms: *SurfaceMeshStore,
     sm: *SurfaceMesh,
     data: SurfaceMeshStdData,
 ) void {
-    const info = mr.surface_meshes_info.getPtr(sm).?;
+    const info = sms.surface_meshes_info.getPtr(sm).?;
     switch (data) {
         inline else => |val, tag| {
             @field(info.std_data, @tagName(tag)) = val;
         },
     }
 
+    // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
     for (zgp.modules.items) |*module| {
         module.surfaceMeshStdDataChanged(sm, data);
     }
     zgp.requestRedraw();
 }
 
-pub fn menuBar(_: *ModelsRegistry) void {}
+pub fn menuBar(_: *SurfaceMeshStore) void {}
 
-pub fn uiPanel(mr: *ModelsRegistry) void {
+pub fn uiPanel(sms: *SurfaceMeshStore) void {
     const CreateDataTypes = union(enum) { f32: f32, Vec3: Vec3 };
     const CreateDataTypesTag = std.meta.Tag(CreateDataTypes);
     const UiData = struct {
@@ -357,17 +258,17 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
     if (c.ImGui_CollapsingHeader("Surface Meshes", c.ImGuiTreeNodeFlags_DefaultOpen)) {
         c.ImGui_PopStyleColorEx(3);
 
-        const nb_surface_meshes_f = @as(f32, @floatFromInt(mr.surface_meshes.count() + 1));
+        const nb_surface_meshes_f = @as(f32, @floatFromInt(sms.surface_meshes.count() + 1));
         if (imgui_utils.surfaceMeshListBox(
-            mr.selected_surface_mesh,
+            sms.selected_surface_mesh,
             style.*.FontSizeBase * nb_surface_meshes_f + style.*.ItemSpacing.y * nb_surface_meshes_f,
         )) |sm| {
-            mr.selected_surface_mesh = sm;
+            sms.selected_surface_mesh = sm;
         }
 
-        if (mr.selected_surface_mesh) |sm| {
+        if (sms.selected_surface_mesh) |sm| {
             var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name + cell count
-            const info = mr.surface_meshes_info.getPtr(sm).?;
+            const info = sms.surface_meshes_info.getPtr(sm).?;
             inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
                 const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type) ++ " | {d} |", .{sm.nbCells(cell_type)}) catch "";
                 c.ImGui_SeparatorText(cells.ptr);
@@ -385,7 +286,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
                         @typeInfo(field.type).optional.child.DataType,
                         @field(info.std_data, field.name),
                     )) |data| {
-                        mr.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
+                        sms.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
                     }
                     c.ImGui_PopID();
                 }
@@ -398,7 +299,7 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
                     if (@field(info.std_data, field.name) == null) {
                         const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
                         if (maybe_data) |data| {
-                            mr.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
+                            sms.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
                         } else |err| {
                             zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
                         }
@@ -465,103 +366,20 @@ pub fn uiPanel(mr: *ModelsRegistry) void {
     } else {
         c.ImGui_PopStyleColorEx(3);
     }
-
-    c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
-    c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
-    c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
-    if (c.ImGui_CollapsingHeader("Point Clouds", c.ImGuiTreeNodeFlags_DefaultOpen)) {
-        c.ImGui_PopStyleColorEx(3);
-
-        const nb_point_clouds_f = @as(f32, @floatFromInt(mr.point_clouds.count() + 1));
-        if (imgui_utils.pointCloudListBox(
-            mr.selected_point_cloud,
-            style.*.FontSizeBase * nb_point_clouds_f + style.*.ItemSpacing.y * nb_point_clouds_f,
-        )) |pc| {
-            mr.selected_point_cloud = pc;
-        }
-
-        if (mr.selected_point_cloud) |pc| {
-            var buf: [16]u8 = undefined; // guess 16 chars is enough for cell counts
-            const info = mr.point_clouds_info.getPtr(pc).?;
-            inline for (.{.point}) |cell_type| { // a bit silly with only one cell type for now
-                c.ImGui_SeparatorText(@tagName(cell_type));
-                c.ImGui_Text("# = ");
-                c.ImGui_SameLine();
-                const nb_cells = std.fmt.bufPrintZ(&buf, "{d}", .{pc.nbPoints()}) catch "";
-                c.ImGui_Text(nb_cells.ptr);
-                inline for (@typeInfo(PointCloudStdDatas).@"struct".fields) |*field| {
-                    c.ImGui_Text(field.name);
-                    c.ImGui_SameLine();
-                    c.ImGui_PushID(field.name);
-                    const combobox_width = @min(c.ImGui_GetWindowWidth() * 0.5, c.ImGui_GetContentRegionAvail().x);
-                    c.ImGui_SetNextItemWidth(combobox_width);
-                    c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - combobox_width));
-                    if (imgui_utils.pointCloudDataComboBox(
-                        pc,
-                        @typeInfo(field.type).optional.child.DataType,
-                        @field(info.std_data, field.name),
-                    )) |data| {
-                        mr.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
-                    }
-                    c.ImGui_PopID();
-                }
-            }
-            c.ImGui_Separator();
-            if (c.ImGui_ButtonEx("Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                inline for (@typeInfo(PointCloudStdData).@"union".fields) |*field| {
-                    const maybe_data = pc.addData(@typeInfo(field.type).optional.child.DataType, field.name);
-                    if (maybe_data) |data| {
-                        if (@field(info.std_data, field.name) == null) {
-                            mr.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
-                        }
-                    } else |err| {
-                        zgp_log.err("Error adding {s} ({s}) data: {}", .{ field.name, @typeName(@typeInfo(field.type).optional.child.DataType), err });
-                    }
-                }
-            }
-        } else {
-            c.ImGui_Text("No Point Cloud selected");
-        }
-    } else {
-        c.ImGui_PopStyleColorEx(3);
-    }
 }
 
-pub fn createPointCloud(mr: *ModelsRegistry, name: []const u8) !*PointCloud {
-    const maybe_point_cloud = mr.point_clouds.get(name);
-    if (maybe_point_cloud) |_| {
-        return error.ModelNameAlreadyExists;
-    }
-    const pc = try mr.allocator.create(PointCloud);
-    errdefer mr.allocator.destroy(pc);
-    pc.* = try PointCloud.init(mr.allocator);
-    errdefer pc.deinit();
-    try mr.point_clouds.put(name, pc);
-    errdefer _ = mr.point_clouds.remove(name);
-    try mr.point_clouds_info.put(pc, .{
-        .points_ibo = IBO.init(),
-    });
-    errdefer _ = mr.point_clouds_info.remove(pc);
-
-    for (zgp.modules.items) |*module| {
-        module.pointCloudAdded(pc);
-    }
-
-    return pc;
-}
-
-pub fn createSurfaceMesh(mr: *ModelsRegistry, name: []const u8) !*SurfaceMesh {
-    const maybe_surface_mesh = mr.surface_meshes.get(name);
+pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh {
+    const maybe_surface_mesh = sms.surface_meshes.get(name);
     if (maybe_surface_mesh) |_| {
         return error.ModelNameAlreadyExists;
     }
-    var sm = try mr.allocator.create(SurfaceMesh);
-    errdefer mr.allocator.destroy(sm);
-    sm.* = try SurfaceMesh.init(mr.allocator);
+    var sm = try sms.allocator.create(SurfaceMesh);
+    errdefer sms.allocator.destroy(sm);
+    sm.* = try SurfaceMesh.init(sms.allocator);
     errdefer sm.deinit();
-    try mr.surface_meshes.put(name, sm);
-    errdefer _ = mr.surface_meshes.remove(name);
-    try mr.surface_meshes_info.put(sm, .{
+    try sms.surface_meshes.put(name, sm);
+    errdefer _ = sms.surface_meshes.remove(name);
+    try sms.surface_meshes_info.put(sm, .{
         .vertex_set = try SurfaceMesh.CellSet(.vertex).init(sm),
         .edge_set = try SurfaceMesh.CellSet(.edge).init(sm),
         .face_set = try SurfaceMesh.CellSet(.face).init(sm),
@@ -570,8 +388,9 @@ pub fn createSurfaceMesh(mr: *ModelsRegistry, name: []const u8) !*SurfaceMesh {
         .triangles_ibo = IBO.init(),
         .boundaries_ibo = IBO.init(),
     });
-    errdefer _ = mr.surface_meshes_info.remove(sm);
+    errdefer _ = sms.surface_meshes_info.remove(sm);
 
+    // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
     for (zgp.modules.items) |*module| {
         module.surfaceMeshAdded(sm);
     }
@@ -579,13 +398,7 @@ pub fn createSurfaceMesh(mr: *ModelsRegistry, name: []const u8) !*SurfaceMesh {
     return sm;
 }
 
-// TODO: put the IO code in a separate module
-
-pub fn loadPointCloudFromFile(mr: *ModelsRegistry, filename: []const u8) !*PointCloud {
-    const pc = try mr.createPointCloud(filename);
-    // read the file and fill the point cloud
-    return pc;
-}
+// TODO: put the IO code in a separate place
 
 const SurfaceMeshImportData = struct {
     vertices_position: std.ArrayList(Vec3),
@@ -611,7 +424,7 @@ const SurfaceMeshImportData = struct {
     }
 };
 
-pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*SurfaceMesh {
+pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*SurfaceMesh {
     var file = try std.fs.cwd().openFile(filename, .{});
     defer file.close();
 
@@ -635,7 +448,7 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
     };
 
     var import_data: SurfaceMeshImportData = .init;
-    defer import_data.deinit(mr.allocator);
+    defer import_data.deinit(sms.allocator);
 
     switch (filetype) {
         .off => {
@@ -676,7 +489,7 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
             }
             zgp_log.info("nb_cells: {d} vertices / {d} faces / {d} edges", .{ nb_cells[0], nb_cells[1], nb_cells[2] });
 
-            try import_data.ensureTotalCapacity(mr.allocator, nb_cells[0], nb_cells[1]);
+            try import_data.ensureTotalCapacity(sms.allocator, nb_cells[0], nb_cells[1]);
 
             var i: u32 = 0;
             while (i < nb_cells[0]) : (i += 1) {
@@ -697,7 +510,7 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
                         zgp_log.warn("vertex {d} position has less than 3 coordinates", .{i});
                         return error.InvalidFileFormat;
                     }
-                    try import_data.vertices_position.append(mr.allocator, position);
+                    try import_data.vertices_position.append(sms.allocator, position);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
@@ -724,14 +537,14 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
                             return error.InvalidFileFormat;
                         } else {
                             const index = try std.fmt.parseInt(u32, token, 10);
-                            try import_data.faces_vertex_indices.append(mr.allocator, index);
+                            try import_data.faces_vertex_indices.append(sms.allocator, index);
                         }
                     }
                     if (j != face_nb_vertices + 1) {
                         zgp_log.warn("face {d} has less than {d} vertices", .{ i, face_nb_vertices });
                         return error.InvalidFileFormat;
                     }
-                    try import_data.faces_nb_vertices.append(mr.allocator, face_nb_vertices);
+                    try import_data.faces_nb_vertices.append(sms.allocator, face_nb_vertices);
                     break;
                 } else |err| switch (err) {
                     error.EndOfStream => {
@@ -746,7 +559,7 @@ pub fn loadSurfaceMeshFromFile(mr: *ModelsRegistry, filename: []const u8) !*Surf
         else => return error.InvalidFileExtension,
     }
 
-    const sm = try mr.createSurfaceMesh(std.fs.path.basename(filename));
+    const sm = try sms.createSurfaceMesh(std.fs.path.basename(filename));
 
     const vertex_position = try sm.addData(.vertex, Vec3, "position");
     const darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");

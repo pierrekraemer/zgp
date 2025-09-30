@@ -9,8 +9,7 @@ const zgp = @import("../main.zig");
 const c = zgp.c;
 
 const Module = @import("Module.zig");
-const ModelsRegistry = @import("../models/ModelsRegistry.zig");
-const SurfaceMesh = ModelsRegistry.SurfaceMesh;
+const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
@@ -54,6 +53,7 @@ fn computeVertexGeodesicDistancesFromSource(
     vertex_distance: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
     var timer = try std.time.Timer.start();
+
     try distance.computeVertexGeodesicDistancesFromSource(
         smd.allocator,
         sm,
@@ -67,7 +67,8 @@ fn computeVertexGeodesicDistancesFromSource(
         face_normal,
         vertex_distance,
     );
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_distance);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_distance);
+
     const elapsed: f64 = @floatFromInt(timer.read());
     zgp_log.info("Geodesic distance computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
@@ -79,15 +80,15 @@ pub fn uiPanel(smd: *SurfaceMeshDistance) void {
         var vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null;
     };
 
-    const mr = &zgp.models_registry;
+    const sms = &zgp.surface_mesh_store;
 
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (mr.selected_surface_mesh) |sm| {
-        const info = mr.surfaceMeshInfo(sm);
+    if (sms.selected_surface_mesh) |sm| {
+        const info = sms.surfaceMeshInfo(sm);
 
         {
             c.ImGui_Text("Distance data (to write)");

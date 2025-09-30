@@ -38,22 +38,3 @@ pub fn computeEdgeLengths(
         );
     }
 }
-
-/// Compute and return the mean edge length of the given SurfaceMesh.
-/// TODO: take a edge_length data instead of computing on the fly?
-pub fn meanEdgeLength(
-    sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
-) !f32 {
-    const nb_edges = sm.nbCells(.edge);
-    if (nb_edges == 0) {
-        return 0.0;
-    }
-    var total_length: f32 = 0.0;
-    var it = try SurfaceMesh.CellIterator(.edge).init(sm);
-    defer it.deinit();
-    while (it.next()) |edge| {
-        total_length += edgeLength(sm, edge, vertex_position);
-    }
-    return total_length / @as(f32, @floatFromInt(nb_edges));
-}

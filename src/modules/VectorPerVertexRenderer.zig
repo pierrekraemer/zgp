@@ -9,13 +9,12 @@ const c = zgp.c;
 const imgui_utils = @import("../utils/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 
-const Module = @import("Module.zig");
-
 // TODO: this module should also work with PointClouds
 
-const ModelsRegistry = @import("../models/ModelsRegistry.zig");
-const SurfaceMesh = ModelsRegistry.SurfaceMesh;
-const SurfaceMeshStdData = ModelsRegistry.SurfaceMeshStdData;
+const Module = @import("Module.zig");
+const SurfaceMeshStore = @import("../models/SurfaceMeshStore.zig");
+const SurfaceMesh = SurfaceMeshStore.SurfaceMesh;
+const SurfaceMeshStdData = SurfaceMeshStore.SurfaceMeshStdData;
 
 const PointVector = @import("../rendering/shaders/point_vector/PointVector.zig");
 const VBO = @import("../rendering/VBO.zig");
@@ -91,7 +90,7 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo = zgp.models_registry.dataVBO(Vec3, vertex_position.data);
+                const position_vbo = zgp.surface_mesh_store.dataVBO(Vec3, vertex_position.data);
                 p.point_vector_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_vector_shader_parameters.unsetVertexAttribArray(.position);
@@ -109,7 +108,7 @@ fn setSurfaceMeshVectorData(
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     p.vertex_vector = vertex_vector;
     if (p.vertex_vector) |v| {
-        const vector_vbo = zgp.models_registry.dataVBO(Vec3, v.data);
+        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3, v.data);
         p.point_vector_shader_parameters.setVertexAttribArray(.vector, vector_vbo, 0, 0);
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);
@@ -120,10 +119,10 @@ fn setSurfaceMeshVectorData(
 /// Part of the Module interface.
 /// Render all SurfaceMeshes with their VectorPerVertexRendererParameters and the given view and projection matrices.
 pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
-    var sm_it = zgp.models_registry.surface_meshes.iterator();
+    var sm_it = zgp.surface_mesh_store.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const surface_mesh = entry.value_ptr.*;
-        const surface_mesh_info = zgp.models_registry.surfaceMeshInfo(surface_mesh);
+        const surface_mesh_info = zgp.surface_mesh_store.surfaceMeshInfo(surface_mesh);
         const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(surface_mesh) orelse continue;
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.model_view_matrix = @bitCast(view_matrix);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.projection_matrix = @bitCast(projection_matrix);
@@ -139,7 +138,7 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (zgp.models_registry.selected_surface_mesh) |sm| {
+    if (zgp.surface_mesh_store.selected_surface_mesh) |sm| {
         const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(sm);
         if (vector_per_vertex_renderer_parameters) |p| {
             c.ImGui_Text("Vector");

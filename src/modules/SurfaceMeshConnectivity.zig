@@ -8,8 +8,7 @@ const zgp = @import("../main.zig");
 const c = zgp.c;
 
 const Module = @import("Module.zig");
-const ModelsRegistry = @import("../models/ModelsRegistry.zig");
-const SurfaceMesh = ModelsRegistry.SurfaceMesh;
+const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
@@ -49,8 +48,8 @@ fn cutAllEdges(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
 ) !void {
     try subdivision.cutAllEdges(sm, vertex_position);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
-    zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+    zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 }
 
 fn triangulateFaces(
@@ -58,7 +57,7 @@ fn triangulateFaces(
     sm: *SurfaceMesh,
 ) !void {
     try subdivision.triangulateFaces(sm);
-    zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+    zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 }
 
 fn remesh(
@@ -86,15 +85,15 @@ fn remesh(
         vertex_area,
         vertex_normal,
     );
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .face, f32, face_area);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .face, Vec3, face_normal);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .edge, f32, edge_length);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_normal);
-    zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, f32, face_area);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, Vec3, face_normal);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_length);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_normal);
+    zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 }
 
 fn decimate(
@@ -109,8 +108,8 @@ fn decimate(
     defer sm.removeData(.vertex, vertex_qem.gen());
     try qem.computeVertexQEMs(sm, vertex_position, face_area, face_normal, vertex_qem);
     try decimation.decimateQEM(smc.allocator, sm, vertex_position, vertex_qem, nb_vertices_to_remove);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
-    zgp.models_registry.surfaceMeshConnectivityUpdated(sm);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+    zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 }
 
 pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
@@ -121,15 +120,15 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
         var new_data_name: [32]u8 = undefined;
     };
 
-    const mr = &zgp.models_registry;
+    const sms = &zgp.surface_mesh_store;
 
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (mr.selected_surface_mesh) |sm| {
-        const info = mr.surfaceMeshInfo(sm);
+    if (sms.selected_surface_mesh) |sm| {
+        const info = sms.surfaceMeshInfo(sm);
 
         {
             const disabled = info.std_data.vertex_position == null;

@@ -12,7 +12,8 @@ pub const c = @cImport({
     @cInclude("backends/dcimgui_impl_opengl3.h");
 });
 
-const ModelsRegistry = @import("models/ModelsRegistry.zig");
+const SurfaceMeshStore = @import("models/SurfaceMeshStore.zig");
+const PointCloudStore = @import("models/PointCloudStore.zig");
 
 const Module = @import("modules/Module.zig");
 const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
@@ -50,11 +51,12 @@ var allocator: std.mem.Allocator = undefined;
 /// Global elements publicly accessible from all modules:
 /// - random number generator
 /// - thread pool
-/// - models registry
+/// - PointCloud / SurfaceMesh / VolumeMesh stores
 /// - modules list
 pub var rng: std.Random.DefaultPrng = undefined;
 pub var thread_pool: std.Thread.Pool = undefined;
-pub var models_registry: ModelsRegistry = undefined;
+pub var surface_mesh_store: SurfaceMeshStore = undefined;
+pub var point_cloud_store: PointCloudStore = undefined;
 pub var modules: std.ArrayList(Module) = .empty;
 
 /// ZGP modules
@@ -198,11 +200,13 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     imgui_log.info("ImGui initialized", .{});
 
-    // Models registry initialization
-    // *****************************************
+    // PointCloud / SurfaceMesh / VolumeMesh stores initialization
+    // ***********************************************************
 
-    models_registry = ModelsRegistry.init(allocator);
-    errdefer models_registry.deinit();
+    point_cloud_store = PointCloudStore.init(allocator);
+    errdefer point_cloud_store.deinit();
+    surface_mesh_store = SurfaceMeshStore.init(allocator);
+    errdefer surface_mesh_store.deinit();
 
     // Modules initialization
     // **********************
@@ -220,7 +224,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     surface_mesh_distance = try SurfaceMeshDistance.init(allocator);
     errdefer surface_mesh_distance.deinit();
 
-    // TODO: find a way to tag Modules with the type of model they can handle (PointCloud, SurfaceMesh, etc.)
+    // TODO: find a way to tag Modules with the type of model they handle (PointCloud, SurfaceMesh, etc.)
     // and only show them in the UI when a compatible model is selected
     try modules.append(allocator, point_cloud_renderer.module());
     try modules.append(allocator, surface_mesh_renderer.module());
@@ -230,10 +234,13 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(allocator, surface_mesh_distance.module());
     errdefer modules.deinit(allocator);
 
+    // CLI arguments parsing
+    // *********************
+
     for (cli_args.mesh_files) |mesh_file| {
         var timer = try std.time.Timer.start();
 
-        const sm = try models_registry.loadSurfaceMeshFromFile(mesh_file);
+        const sm = try surface_mesh_store.loadSurfaceMeshFromFile(mesh_file);
         errdefer sm.deinit();
 
         const vertex_position = sm.getData(.vertex, Vec3, "position").?;
@@ -247,10 +254,10 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             geometry_utils.centerAround(vertex_position.data, vec.zero3);
         }
 
-        models_registry.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
+        surface_mesh_store.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
 
-        models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
-        models_registry.surfaceMeshConnectivityUpdated(sm);
+        surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+        surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 
         const elapsed: f64 = @floatFromInt(timer.read());
         zgp_log.info("Mesh loaded in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
@@ -325,7 +332,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                 }
             }
 
-            models_registry.menuBar();
+            surface_mesh_store.menuBar();
+            point_cloud_store.menuBar();
 
             for (modules.items) |*module| {
                 module.menuBar();
@@ -344,11 +352,12 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
         }, 0);
         c.ImGui_SetNextWindowBgAlpha(0.4);
-        if (c.ImGui_Begin("Models Registry", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
+        if (c.ImGui_Begin("Models Stores", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
             c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
         {
             defer c.ImGui_End();
-            models_registry.uiPanel();
+            surface_mesh_store.uiPanel();
+            point_cloud_store.uiPanel();
         }
 
         c.ImGui_SetNextWindowPos(c.ImVec2{
@@ -477,12 +486,16 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         point_cloud_renderer.deinit();
         surface_mesh_renderer.deinit();
         vector_per_vertex_renderer.deinit();
+        surface_mesh_std_data_computation.deinit();
+        surface_mesh_connectivity.deinit();
+        surface_mesh_distance.deinit();
         modules.deinit(allocator);
 
         camera.deinit(allocator);
         view.deinit();
 
-        models_registry.deinit();
+        point_cloud_store.deinit();
+        surface_mesh_store.deinit();
 
         gl.makeProcTableCurrent(null);
         errify(c.SDL_GL_MakeCurrent(window, null)) catch {};

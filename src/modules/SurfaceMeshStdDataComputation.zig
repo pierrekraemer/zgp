@@ -8,10 +8,10 @@ const zgp = @import("../main.zig");
 const c = zgp.c;
 
 const Module = @import("Module.zig");
-const ModelsRegistry = @import("../models/ModelsRegistry.zig");
-const SurfaceMesh = ModelsRegistry.SurfaceMesh;
-const SurfaceMeshStdDatas = ModelsRegistry.SurfaceMeshStdDatas;
-const SurfaceMeshStdDataTag = ModelsRegistry.SurfaceMeshStdDataTag;
+const SurfaceMeshStore = @import("../models/SurfaceMeshStore.zig");
+const SurfaceMesh = SurfaceMeshStore.SurfaceMesh;
+const SurfaceMeshStdDatas = SurfaceMeshStore.SurfaceMeshStdDatas;
+const SurfaceMeshStdDataTag = SurfaceMeshStore.SurfaceMeshStdDataTag;
 
 const vec = @import("../geometry/vec.zig");
 const Vec3 = vec.Vec3;
@@ -46,7 +46,7 @@ fn computeCornerAngles(
     corner_angle: SurfaceMesh.CellData(.corner, f32),
 ) !void {
     try angle.computeCornerAngles(sm, vertex_position, corner_angle);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
 }
 
 fn computeHalfedgeCotanWeights(
@@ -55,7 +55,7 @@ fn computeHalfedgeCotanWeights(
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
 ) !void {
     try laplacian.computeHalfedgeCotanWeights(sm, vertex_position, halfedge_cotan_weight);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .halfedge, f32, halfedge_cotan_weight);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .halfedge, f32, halfedge_cotan_weight);
 }
 
 fn computeEdgeLengths(
@@ -64,7 +64,7 @@ fn computeEdgeLengths(
     edge_length: SurfaceMesh.CellData(.edge, f32),
 ) !void {
     try length.computeEdgeLengths(sm, vertex_position, edge_length);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .edge, f32, edge_length);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_length);
 }
 
 fn computeEdgeDihedralAngles(
@@ -74,7 +74,7 @@ fn computeEdgeDihedralAngles(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
 ) !void {
     try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
 }
 
 fn computeFaceAreas(
@@ -83,7 +83,7 @@ fn computeFaceAreas(
     face_area: SurfaceMesh.CellData(.face, f32),
 ) !void {
     try area.computeFaceAreas(sm, vertex_position, face_area);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .face, f32, face_area);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, f32, face_area);
 }
 
 fn computeFaceNormals(
@@ -92,7 +92,7 @@ fn computeFaceNormals(
     face_normal: SurfaceMesh.CellData(.face, Vec3),
 ) !void {
     try normal.computeFaceNormals(sm, vertex_position, face_normal);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .face, Vec3, face_normal);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, Vec3, face_normal);
 }
 
 fn computeVertexAreas(
@@ -101,7 +101,7 @@ fn computeVertexAreas(
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
     try area.computeVertexAreas(sm, face_area, vertex_area);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
 }
 
 fn computeVertexNormals(
@@ -111,7 +111,7 @@ fn computeVertexNormals(
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
 ) !void {
     try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_normal);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_normal);
 }
 
 fn computeVertexGaussianCurvatures(
@@ -120,7 +120,7 @@ fn computeVertexGaussianCurvatures(
     vertex_gaussian_curvature: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
     try curvature.computeVertexGaussianCurvatures(sm, corner_angle, vertex_gaussian_curvature);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_gaussian_curvature);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_gaussian_curvature);
 }
 
 fn computeVertexMeanCurvatures(
@@ -130,7 +130,7 @@ fn computeVertexMeanCurvatures(
     vertex_mean_curvature: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
     try curvature.computeVertexMeanCurvatures(sm, edge_length, edge_dihedral_angle, vertex_mean_curvature);
-    zgp.models_registry.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_mean_curvature);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_mean_curvature);
 }
 
 const StdDataComputation = struct {
@@ -174,7 +174,7 @@ const StdDataComputation = struct {
     }
 
     fn compute(comptime self: *const StdDataComputation, sm: *SurfaceMesh) void {
-        const info = zgp.models_registry.surfaceMeshInfo(sm);
+        const info = zgp.surface_mesh_store.surfaceMeshInfo(sm);
         const func: *const self.ComputeFuncType() = @ptrCast(@alignCast(self.func));
         var args: std.meta.ArgsTuple(self.ComputeFuncType()) = undefined;
         args[0] = sm;
@@ -252,13 +252,13 @@ const std_data_computations: []const StdDataComputation = &.{
 pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
     const style = c.ImGui_GetStyle();
 
-    const mr = &zgp.models_registry;
+    const sms = &zgp.surface_mesh_store;
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (mr.selected_surface_mesh) |sm| {
-        const info = mr.surfaceMeshInfo(sm);
+    if (sms.selected_surface_mesh) |sm| {
+        const info = sms.surfaceMeshInfo(sm);
 
         inline for (std_data_computations) |dc| {
             var disabled = false;
@@ -267,7 +267,7 @@ pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
             if (computes_data == null) {
                 disabled = true;
             }
-            const computes_last_update = if (computes_data) |d| mr.dataLastUpdate(d.gen()) else null;
+            const computes_last_update = if (computes_data) |d| sms.dataLastUpdate(d.gen()) else null;
             if (computes_last_update == null) {
                 outdated = true;
             }
@@ -277,7 +277,7 @@ pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
                 if (reads_data == null) {
                     disabled = true;
                 }
-                const reads_last_update = if (reads_data) |d| mr.dataLastUpdate(d.gen()) else null;
+                const reads_last_update = if (reads_data) |d| sms.dataLastUpdate(d.gen()) else null;
                 if (computes_last_update == null or reads_last_update == null or computes_last_update.?.order(reads_last_update.?) == .lt) {
                     outdated = true;
                 }
@@ -317,7 +317,7 @@ pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
                 if (computes_data == null) {
                     disabled = true;
                 }
-                const computes_last_update = if (computes_data) |d| mr.dataLastUpdate(d.gen()) else null;
+                const computes_last_update = if (computes_data) |d| sms.dataLastUpdate(d.gen()) else null;
                 if (computes_last_update == null) {
                     outdated = true;
                 }
@@ -327,7 +327,7 @@ pub fn uiPanel(_: *SurfaceMeshStdDataComputation) void {
                     if (reads_data == null) {
                         disabled = true;
                     }
-                    const reads_last_update = if (reads_data) |d| mr.dataLastUpdate(d.gen()) else null;
+                    const reads_last_update = if (reads_data) |d| sms.dataLastUpdate(d.gen()) else null;
                     if (computes_last_update == null or reads_last_update == null or computes_last_update.?.order(reads_last_update.?) == .lt) {
                         outdated = true;
                     }

@@ -10,10 +10,9 @@ const imgui_utils = @import("../utils/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 
 const Module = @import("Module.zig");
-
-const ModelsRegistry = @import("../models/ModelsRegistry.zig");
-const PointCloud = ModelsRegistry.PointCloud;
-const PointCloudStdData = ModelsRegistry.PointCloudStdData;
+const PointCloudStore = @import("../models/PointCloudStore.zig");
+const PointCloud = PointCloudStore.PointCloud;
+const PointCloudStdData = PointCloudStore.PointCloudStdData;
 
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const PointSphereColorPerVertex = @import("../rendering/shaders/point_sphere_color_per_vertex/PointSphereColorPerVertex.zig");
@@ -111,7 +110,7 @@ pub fn pointCloudStdDataChanged(
     switch (std_data) {
         .position => |maybe_position| {
             if (maybe_position) |position| {
-                const position_vbo = zgp.models_registry.dataVBO(Vec3, position.data);
+                const position_vbo = zgp.point_cloud_store.dataVBO(Vec3, position.data);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
@@ -135,7 +134,7 @@ fn setPointCloudDrawPointsColorData(
             // Not supported yet
             // p.draw_points_color.point_scalar_data = data;
             // if (p.draw_points_color.point_scalar_data) |scalar| {
-            //     const scalar_vbo = zgp.models_registry.dataVBO(f32, scalar.data);
+            //     const scalar_vbo = zgp.point_cloud_store.dataVBO(f32, scalar.data);
             //     p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
             // } else {
             //     p.point_sphere_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -147,7 +146,7 @@ fn setPointCloudDrawPointsColorData(
             }
             p.draw_points_color.point_vector_data = data;
             if (p.draw_points_color.point_vector_data) |vector| {
-                const vector_vbo = zgp.models_registry.dataVBO(Vec3, vector.data);
+                const vector_vbo = zgp.point_cloud_store.dataVBO(Vec3, vector.data);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
             } else {
                 p.point_sphere_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
@@ -161,10 +160,10 @@ fn setPointCloudDrawPointsColorData(
 /// Part of the Module interface.
 /// Render all PointClouds with their PointCloudRendererParameters and the given view and projection matrices.
 pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
-    var pc_it = zgp.models_registry.point_clouds.iterator();
+    var pc_it = zgp.point_cloud_store.point_clouds.iterator();
     while (pc_it.next()) |entry| {
         const pc = entry.value_ptr.*;
-        const info = zgp.models_registry.pointCloudInfo(pc);
+        const info = zgp.point_cloud_store.pointCloudInfo(pc);
         const p = pcr.parameters.getPtr(pc) orelse continue;
         if (p.draw_points) {
             switch (p.draw_points_color.defined_on) {
@@ -199,7 +198,7 @@ pub fn uiPanel(pcr: *PointCloudRenderer) void {
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (zgp.models_registry.selected_point_cloud) |pc| {
+    if (zgp.point_cloud_store.selected_point_cloud) |pc| {
         const surface_mesh_renderer_parameters = pcr.parameters.getPtr(pc);
         if (surface_mesh_renderer_parameters) |p| {
             if (c.ImGui_Checkbox("draw points", &p.draw_points)) {
