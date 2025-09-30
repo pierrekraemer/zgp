@@ -102,8 +102,7 @@ pub fn surfaceMeshCellDataComboBox(
     if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "-- none --", 0)) {
         defer c.ImGui_EndCombo();
         var data_container = switch (cell_type) {
-            .halfedge => &surface_mesh.halfedge_data,
-            .corner => &surface_mesh.corner_data,
+            .halfedge, .corner => &surface_mesh.dart_data,
             .vertex => &surface_mesh.vertex_data,
             .edge => &surface_mesh.edge_data,
             .face => &surface_mesh.face_data,

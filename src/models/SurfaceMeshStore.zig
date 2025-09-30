@@ -269,7 +269,7 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
         if (sms.selected_surface_mesh) |sm| {
             var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name + cell count
             const info = sms.surface_meshes_info.getPtr(sm).?;
-            inline for (.{ .corner, .vertex, .edge, .face }) |cell_type| {
+            inline for (.{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
                 const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type) ++ " | {d} |", .{sm.nbCells(cell_type)}) catch "";
                 c.ImGui_SeparatorText(cells.ptr);
                 inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
@@ -612,8 +612,6 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
     }
 
     // vertices were already indexed above
-    try sm.indexCells(.halfedge);
-    try sm.indexCells(.corner);
     try sm.indexCells(.edge);
     try sm.indexCells(.face);
 
