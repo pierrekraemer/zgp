@@ -318,7 +318,7 @@ pub const DataContainer = struct {
             .data = try std.ArrayList(T).initCapacity(data_arena.allocator(), 1024),
             .gen = undefined,
         };
-        const owned_name = try data_arena.allocator().dupe(u8, name);
+        const owned_name = try data_arena.allocator().dupeZ(u8, name);
         data.gen = DataGen.init(T, owned_name, comptime typeId(T), data, dc, data_arena);
         try data.ensureLength(dc.capacity);
         try dc.datas.put(owned_name, &data.gen);

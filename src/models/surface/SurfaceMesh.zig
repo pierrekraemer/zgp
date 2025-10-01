@@ -4,15 +4,17 @@
 //! Each cell of the mesh is a subset of darts (formally defined as orbits),
 //! and each dart belongs to exactly one cell of each dimension (vertex, edge, face in 2D).
 //! Consequently, a cell can be represented by any of its darts
-//! and a dart can be interpreted as the representative of any of the cells it belongs to.
+//! and a dart can be used as the representative of any of the cells it belongs to.
 //!
 //! In this implementation, a dart is simply represented by an integer index.
 //! A DataContainer (index-based synchronized collection of arrays with empty space management)
 //! is used to store the data associated to each dart:
 //! - the phi1, phi_1 and phi2 relations that define the combinatorial map,
-//! - the indices of the corner, vertex, edge and face cells the dart belongs to,
+//! - the indices of the vertex, edge and face cells the dart belongs to.
 //! These cell indices refer to entries in other DataContainers that are used to store data
-//! associated to halfedges, corners, vertices, edges and faces.
+//! associated to the vertices, edges and faces of the mesh.
+//! Halfedges and corners do not have their own index & DataContainers: since they are single darts,
+//! their index is that of the dart, and their datas are stored in the dart DataContainer).
 //!
 //! TODO: talk about boundary management
 
@@ -29,6 +31,7 @@ const DataGen = data.DataGen;
 const Data = data.Data;
 
 pub const Dart = u32;
+const invalid_index = std.math.maxInt(u32);
 
 /// A cell is a tagged union containing a dart that belongs to the cell of the current tag.
 /// Convenience functions are provided to get the representing dart and the cell type.
@@ -57,8 +60,6 @@ pub const Cell = union(enum) {
 pub const CellType = std.meta.Tag(Cell);
 
 // TODO: try to have a type for the different cell types rather than having to assert the type through the Cell active tag
-
-const invalid_index = std.math.maxInt(u32);
 
 allocator: std.mem.Allocator,
 
