@@ -1,190 +1,349 @@
 const std = @import("std");
 
-pub const Scalar = f32;
+pub const Vec2f = [2]f32;
+pub const Vec3f = [3]f32;
+pub const Vec4f = [4]f32;
 
-fn Vec(comptime N: usize) type {
-    return [N]Scalar;
-}
-
-pub const Vec2 = Vec(2);
-pub const Vec3 = Vec(3);
-pub const Vec4 = Vec(4);
+pub const Vec2d = [2]f64;
+pub const Vec3d = [3]f64;
+pub const Vec4d = [4]f64;
 
 // pub fn nbComponents(comptime Vec: type) usize {
 //     return @typeInfo(Vec).array.len;
 // }
 
-pub const zero2: Vec2 = @splat(0);
-pub const zero3: Vec3 = @splat(0);
-pub const zero4: Vec4 = @splat(0);
+pub const zero2f: Vec2f = @splat(0);
+pub const zero3f: Vec3f = @splat(0);
+pub const zero4f: Vec4f = @splat(0);
 
-pub fn splat2(scalar: Scalar) Vec2 {
+pub const zero2d: Vec2d = @splat(0);
+pub const zero3d: Vec3d = @splat(0);
+pub const zero4d: Vec4d = @splat(0);
+
+pub fn splat2f(scalar: f32) Vec2f {
     return @splat(scalar);
 }
-pub fn splat3(scalar: Scalar) Vec3 {
+pub fn splat3f(scalar: f32) Vec3f {
     return @splat(scalar);
 }
-pub fn splat4(scalar: Scalar) Vec4 {
+pub fn splat4f(scalar: f32) Vec4f {
+    return @splat(scalar);
+}
+pub fn splat2d(scalar: f64) Vec2d {
+    return @splat(scalar);
+}
+pub fn splat3d(scalar: f64) Vec3d {
+    return @splat(scalar);
+}
+pub fn splat4d(scalar: f64) Vec4d {
     return @splat(scalar);
 }
 
-pub fn random2(r: std.Random) Vec2 {
-    return .{ r.float(Scalar), r.float(Scalar) };
+pub fn random2f(r: std.Random) Vec2f {
+    return .{ r.float(f32), r.float(f32) };
 }
-pub fn random3(r: std.Random) Vec3 {
-    return .{ r.float(Scalar), r.float(Scalar), r.float(Scalar) };
+pub fn random3f(r: std.Random) Vec3f {
+    return .{ r.float(f32), r.float(f32), r.float(f32) };
 }
-pub fn random4(r: std.Random) Vec4 {
-    return .{ r.float(Scalar), r.float(Scalar), r.float(Scalar), r.float(Scalar) };
+pub fn random4f(r: std.Random) Vec4f {
+    return .{ r.float(f32), r.float(f32), r.float(f32), r.float(f32) };
+}
+pub fn random2d(r: std.Random) Vec2d {
+    return .{ r.float(f64), r.float(f64) };
+}
+pub fn random3d(r: std.Random) Vec3d {
+    return .{ r.float(f64), r.float(f64), r.float(f64) };
+}
+pub fn random4d(r: std.Random) Vec4d {
+    return .{ r.float(f64), r.float(f64), r.float(f64), r.float(f64) };
 }
 
-pub fn add2(a: Vec2, b: Vec2) Vec2 {
+pub fn add2f(a: Vec2f, b: Vec2f) Vec2f {
     return .{ a[0] + b[0], a[1] + b[1] };
 }
-pub fn add3(a: Vec3, b: Vec3) Vec3 {
+pub fn add3f(a: Vec3f, b: Vec3f) Vec3f {
     return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2] };
 }
-pub fn add4(a: Vec4, b: Vec4) Vec4 {
+pub fn add4f(a: Vec4f, b: Vec4f) Vec4f {
+    return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3] };
+}
+pub fn add2d(a: Vec2d, b: Vec2d) Vec2d {
+    return .{ a[0] + b[0], a[1] + b[1] };
+}
+pub fn add3d(a: Vec3d, b: Vec3d) Vec3d {
+    return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2] };
+}
+pub fn add4d(a: Vec4d, b: Vec4d) Vec4d {
     return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3] };
 }
 
-pub fn sub2(a: Vec2, b: Vec2) Vec2 {
+pub fn sub2f(a: Vec2f, b: Vec2f) Vec2f {
     return .{ a[0] - b[0], a[1] - b[1] };
 }
-pub fn sub3(a: Vec3, b: Vec3) Vec3 {
+pub fn sub3f(a: Vec3f, b: Vec3f) Vec3f {
     return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };
 }
-pub fn sub4(a: Vec4, b: Vec4) Vec4 {
+pub fn sub4f(a: Vec4f, b: Vec4f) Vec4f {
+    return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3] };
+}
+pub fn sub2d(a: Vec2d, b: Vec2d) Vec2d {
+    return .{ a[0] - b[0], a[1] - b[1] };
+}
+pub fn sub3d(a: Vec3d, b: Vec3d) Vec3d {
+    return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };
+}
+pub fn sub4d(a: Vec4d, b: Vec4d) Vec4d {
     return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3] };
 }
 
-pub fn mulScalar2(v: Vec2, scalar: Scalar) Vec2 {
+pub fn mulScalar2f(v: Vec2f, scalar: f32) Vec2f {
     return .{ v[0] * scalar, v[1] * scalar };
 }
-pub fn mulScalar3(v: Vec3, scalar: Scalar) Vec3 {
+pub fn mulScalar3f(v: Vec3f, scalar: f32) Vec3f {
     return .{ v[0] * scalar, v[1] * scalar, v[2] * scalar };
 }
-pub fn mulScalar4(v: Vec4, scalar: Scalar) Vec4 {
+pub fn mulScalar4f(v: Vec4f, scalar: f32) Vec4f {
+    return .{ v[0] * scalar, v[1] * scalar, v[2] * scalar, v[3] * scalar };
+}
+pub fn mulScalar2d(v: Vec2d, scalar: f64) Vec2d {
+    return .{ v[0] * scalar, v[1] * scalar };
+}
+pub fn mulScalar3d(v: Vec3d, scalar: f64) Vec3d {
+    return .{ v[0] * scalar, v[1] * scalar, v[2] * scalar };
+}
+pub fn mulScalar4d(v: Vec4d, scalar: f64) Vec4d {
     return .{ v[0] * scalar, v[1] * scalar, v[2] * scalar, v[3] * scalar };
 }
 
-pub fn divScalar2(v: Vec2, scalar: Scalar) Vec2 {
+pub fn divScalar2f(v: Vec2f, scalar: f32) Vec2f {
     return .{ v[0] / scalar, v[1] / scalar };
 }
-pub fn divScalar3(v: Vec3, scalar: Scalar) Vec3 {
+pub fn divScalar3f(v: Vec3f, scalar: f32) Vec3f {
     return .{ v[0] / scalar, v[1] / scalar, v[2] / scalar };
 }
-pub fn divScalar4(v: Vec4, scalar: Scalar) Vec4 {
+pub fn divScalar4f(v: Vec4f, scalar: f32) Vec4f {
+    return .{ v[0] / scalar, v[1] / scalar, v[2] / scalar, v[3] / scalar };
+}
+pub fn divScalar2d(v: Vec2d, scalar: f64) Vec2d {
+    return .{ v[0] / scalar, v[1] / scalar };
+}
+pub fn divScalar3d(v: Vec3d, scalar: f64) Vec3d {
+    return .{ v[0] / scalar, v[1] / scalar, v[2] / scalar };
+}
+pub fn divScalar4d(v: Vec4d, scalar: f64) Vec4d {
     return .{ v[0] / scalar, v[1] / scalar, v[2] / scalar, v[3] / scalar };
 }
 
-pub fn componentwiseMul2(a: Vec2, b: Vec2) Vec2 {
+pub fn componentwiseMul2f(a: Vec2f, b: Vec2f) Vec2f {
     return .{ a[0] * b[0], a[1] * b[1] };
 }
-pub fn componentwiseMul3(a: Vec3, b: Vec3) Vec3 {
+pub fn componentwiseMul3f(a: Vec3f, b: Vec3f) Vec3f {
     return .{ a[0] * b[0], a[1] * b[1], a[2] * b[2] };
 }
-pub fn componentwiseMul4(a: Vec4, b: Vec4) Vec4 {
+pub fn componentwiseMul4f(a: Vec4f, b: Vec4f) Vec4f {
+    return .{ a[0] * b[0], a[1] * b[1], a[2] * b[2], a[3] * b[3] };
+}
+pub fn componentwiseMul2d(a: Vec2d, b: Vec2d) Vec2d {
+    return .{ a[0] * b[0], a[1] * b[1] };
+}
+pub fn componentwiseMul3d(a: Vec3d, b: Vec3d) Vec3d {
+    return .{ a[0] * b[0], a[1] * b[1], a[2] * b[2] };
+}
+pub fn componentwiseMul4d(a: Vec4d, b: Vec4d) Vec4d {
     return .{ a[0] * b[0], a[1] * b[1], a[2] * b[2], a[3] * b[3] };
 }
 
-pub fn componentwiseDiv2(a: Vec2, b: Vec2) Vec2 {
+pub fn componentwiseDiv2f(a: Vec2f, b: Vec2f) Vec2f {
     return .{ a[0] / b[0], a[1] / b[1] };
 }
-pub fn componentwiseDiv3(a: Vec3, b: Vec3) Vec3 {
+pub fn componentwiseDiv3f(a: Vec3f, b: Vec3f) Vec3f {
     return .{ a[0] / b[0], a[1] / b[1], a[2] / b[2] };
 }
-pub fn componentwiseDiv4(a: Vec4, b: Vec4) Vec4 {
+pub fn componentwiseDiv4f(a: Vec4f, b: Vec4f) Vec4f {
+    return .{ a[0] / b[0], a[1] / b[1], a[2] / b[2], a[3] / b[3] };
+}
+pub fn componentwiseDiv2d(a: Vec2d, b: Vec2d) Vec2d {
+    return .{ a[0] / b[0], a[1] / b[1] };
+}
+pub fn componentwiseDiv3d(a: Vec3d, b: Vec3d) Vec3d {
+    return .{ a[0] / b[0], a[1] / b[1], a[2] / b[2] };
+}
+pub fn componentwiseDiv4d(a: Vec4d, b: Vec4d) Vec4d {
     return .{ a[0] / b[0], a[1] / b[1], a[2] / b[2], a[3] / b[3] };
 }
 
-pub fn maxComponent2(v: Vec2) Scalar {
+pub fn maxComponent2f(v: Vec2f) f32 {
     return @max(v[0], v[1]);
 }
-pub fn maxComponent3(v: Vec3) Scalar {
+pub fn maxComponent3f(v: Vec3f) f32 {
     return @max(v[0], v[1], v[2]);
 }
-pub fn maxComponent4(v: Vec4) Scalar {
+pub fn maxComponent4f(v: Vec4f) f32 {
+    return @max(v[0], v[1], v[2], v[3]);
+}
+pub fn maxComponent2d(v: Vec2d) f64 {
+    return @max(v[0], v[1]);
+}
+pub fn maxComponent3d(v: Vec3d) f64 {
+    return @max(v[0], v[1], v[2]);
+}
+pub fn maxComponent4d(v: Vec4d) f64 {
     return @max(v[0], v[1], v[2], v[3]);
 }
 
-pub fn minComponent2(v: Vec2) Scalar {
+pub fn minComponent2f(v: Vec2f) f32 {
     return @min(v[0], v[1]);
 }
-pub fn minComponent3(v: Vec3) Scalar {
+pub fn minComponent3f(v: Vec3f) f32 {
     return @min(v[0], v[1], v[2]);
 }
-pub fn minComponent4(v: Vec4) Scalar {
+pub fn minComponent4f(v: Vec4f) f32 {
+    return @min(v[0], v[1], v[2], v[3]);
+}
+pub fn minComponent2d(v: Vec2d) f64 {
+    return @min(v[0], v[1]);
+}
+pub fn minComponent3d(v: Vec3d) f64 {
+    return @min(v[0], v[1], v[2]);
+}
+pub fn minComponent4d(v: Vec4d) f64 {
     return @min(v[0], v[1], v[2], v[3]);
 }
 
-pub fn componentwiseMax2(a: Vec2, b: Vec2) Vec2 {
+pub fn componentwiseMax2f(a: Vec2f, b: Vec2f) Vec2f {
     return .{ @max(a[0], b[0]), @max(a[1], b[1]) };
 }
-pub fn componentwiseMax3(a: Vec3, b: Vec3) Vec3 {
+pub fn componentwiseMax3f(a: Vec3f, b: Vec3f) Vec3f {
     return .{ @max(a[0], b[0]), @max(a[1], b[1]), @max(a[2], b[2]) };
 }
-pub fn componentwiseMax4(a: Vec4, b: Vec4) Vec4 {
+pub fn componentwiseMax4f(a: Vec4f, b: Vec4f) Vec4f {
+    return .{ @max(a[0], b[0]), @max(a[1], b[1]), @max(a[2], b[2]), @max(a[3], b[3]) };
+}
+pub fn componentwiseMax2d(a: Vec2d, b: Vec2d) Vec2d {
+    return .{ @max(a[0], b[0]), @max(a[1], b[1]) };
+}
+pub fn componentwiseMax3d(a: Vec3d, b: Vec3d) Vec3d {
+    return .{ @max(a[0], b[0]), @max(a[1], b[1]), @max(a[2], b[2]) };
+}
+pub fn componentwiseMax4d(a: Vec4d, b: Vec4d) Vec4d {
     return .{ @max(a[0], b[0]), @max(a[1], b[1]), @max(a[2], b[2]), @max(a[3], b[3]) };
 }
 
-pub fn componentwiseMin2(a: Vec2, b: Vec2) Vec2 {
+pub fn componentwiseMin2f(a: Vec2f, b: Vec2f) Vec2f {
     return .{ @min(a[0], b[0]), @min(a[1], b[1]) };
 }
-pub fn componentwiseMin3(a: Vec3, b: Vec3) Vec3 {
+pub fn componentwiseMin3f(a: Vec3f, b: Vec3f) Vec3f {
     return .{ @min(a[0], b[0]), @min(a[1], b[1]), @min(a[2], b[2]) };
 }
-pub fn componentwiseMin4(a: Vec4, b: Vec4) Vec4 {
+pub fn componentwiseMin4f(a: Vec4f, b: Vec4f) Vec4f {
+    return .{ @min(a[0], b[0]), @min(a[1], b[1]), @min(a[2], b[2]), @min(a[3], b[3]) };
+}
+pub fn componentwiseMin2d(a: Vec2d, b: Vec2d) Vec2d {
+    return .{ @min(a[0], b[0]), @min(a[1], b[1]) };
+}
+pub fn componentwiseMin3d(a: Vec3d, b: Vec3d) Vec3d {
+    return .{ @min(a[0], b[0]), @min(a[1], b[1]), @min(a[2], b[2]) };
+}
+pub fn componentwiseMin4d(a: Vec4d, b: Vec4d) Vec4d {
     return .{ @min(a[0], b[0]), @min(a[1], b[1]), @min(a[2], b[2]), @min(a[3], b[3]) };
 }
 
-pub fn dot2(a: Vec2, b: Vec2) Scalar {
+pub fn dot2f(a: Vec2f, b: Vec2f) f32 {
     return a[0] * b[0] + a[1] * b[1];
 }
-pub fn dot3(a: Vec3, b: Vec3) Scalar {
+pub fn dot3f(a: Vec3f, b: Vec3f) f32 {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
 }
-pub fn dot4(a: Vec4, b: Vec4) Scalar {
+pub fn dot4f(a: Vec4f, b: Vec4f) f32 {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+}
+pub fn dot2d(a: Vec2d, b: Vec2d) f64 {
+    return a[0] * b[0] + a[1] * b[1];
+}
+pub fn dot3d(a: Vec3d, b: Vec3d) f64 {
+    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+}
+pub fn dot4d(a: Vec4d, b: Vec4d) f64 {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
 }
 
-pub fn squaredNorm2(v: Vec2) Scalar {
-    return dot2(v, v);
+pub fn squaredNorm2f(v: Vec2f) f32 {
+    return dot2f(v, v);
 }
-pub fn squaredNorm3(v: Vec3) Scalar {
-    return dot3(v, v);
+pub fn squaredNorm3f(v: Vec3f) f32 {
+    return dot3f(v, v);
 }
-pub fn squaredNorm4(v: Vec4) Scalar {
-    return dot4(v, v);
+pub fn squaredNorm4f(v: Vec4f) f32 {
+    return dot4f(v, v);
 }
-
-pub fn norm2(v: Vec2) Scalar {
-    return @sqrt(squaredNorm2(v));
+pub fn squaredNorm2d(v: Vec2d) f64 {
+    return dot2d(v, v);
 }
-pub fn norm3(v: Vec3) Scalar {
-    return @sqrt(squaredNorm3(v));
+pub fn squaredNorm3d(v: Vec3d) f64 {
+    return dot3d(v, v);
 }
-pub fn norm4(v: Vec4) Scalar {
-    return @sqrt(squaredNorm4(v));
-}
-
-pub fn normalized2(v: Vec2) Vec2 {
-    const n = norm2(v);
-    if (n == 0) return zero2;
-    return mulScalar2(v, 1 / n);
-}
-pub fn normalized3(v: Vec3) Vec3 {
-    const n = norm3(v);
-    if (n == 0) return zero3;
-    return mulScalar3(v, 1 / n);
-}
-pub fn normalized4(v: Vec4) Vec4 {
-    const n = norm4(v);
-    if (n == 0) return zero4;
-    return mulScalar4(v, 1 / n);
+pub fn squaredNorm4d(v: Vec4d) f64 {
+    return dot4d(v, v);
 }
 
-pub fn cross3(a: Vec3, b: Vec3) Vec3 {
+pub fn norm2f(v: Vec2f) f32 {
+    return @sqrt(squaredNorm2f(v));
+}
+pub fn norm3f(v: Vec3f) f32 {
+    return @sqrt(squaredNorm3f(v));
+}
+pub fn norm4f(v: Vec4f) f32 {
+    return @sqrt(squaredNorm4f(v));
+}
+pub fn norm2d(v: Vec2d) f64 {
+    return @sqrt(squaredNorm2d(v));
+}
+pub fn norm3d(v: Vec3d) f64 {
+    return @sqrt(squaredNorm3d(v));
+}
+pub fn norm4d(v: Vec4d) f64 {
+    return @sqrt(squaredNorm4d(v));
+}
+
+pub fn normalized2f(v: Vec2f) Vec2f {
+    const n = norm2f(v);
+    if (n == 0) return zero2f;
+    return mulScalar2f(v, 1 / n);
+}
+pub fn normalized3f(v: Vec3f) Vec3f {
+    const n = norm3f(v);
+    if (n == 0) return zero3f;
+    return mulScalar3f(v, 1 / n);
+}
+pub fn normalized4f(v: Vec4f) Vec4f {
+    const n = norm4f(v);
+    if (n == 0) return zero4f;
+    return mulScalar4f(v, 1 / n);
+}
+pub fn normalized2d(v: Vec2d) Vec2d {
+    const n = norm2d(v);
+    if (n == 0) return zero2d;
+    return mulScalar2d(v, 1 / n);
+}
+pub fn normalized3d(v: Vec3d) Vec3d {
+    const n = norm3d(v);
+    if (n == 0) return zero3d;
+    return mulScalar3d(v, 1 / n);
+}
+pub fn normalized4d(v: Vec4d) Vec4d {
+    const n = norm4d(v);
+    if (n == 0) return zero4d;
+    return mulScalar4d(v, 1 / n);
+}
+
+pub fn cross3f(a: Vec3f, b: Vec3f) Vec3f {
+    return .{
+        a[1] * b[2] - a[2] * b[1],
+        a[2] * b[0] - a[0] * b[2],
+        a[0] * b[1] - a[1] * b[0],
+    };
+}
+pub fn cross3d(a: Vec3d, b: Vec3d) Vec3d {
     return .{
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],

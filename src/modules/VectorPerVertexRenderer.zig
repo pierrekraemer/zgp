@@ -20,15 +20,14 @@ const PointVector = @import("../rendering/shaders/point_vector/PointVector.zig")
 const VBO = @import("../rendering/VBO.zig");
 
 const vec = @import("../geometry/vec.zig");
-const Vec3 = vec.Vec3;
-
+const Vec3f = vec.Vec3f;
 const mat = @import("../geometry/mat.zig");
-const Mat4 = mat.Mat4;
+const Mat4f = mat.Mat4f;
 
 const VectorPerVertexRendererParameters = struct {
     point_vector_shader_parameters: PointVector.Parameters,
 
-    vertex_vector: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
+    vertex_vector: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
 
     pub fn init() VectorPerVertexRendererParameters {
         return .{
@@ -90,7 +89,7 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo = zgp.surface_mesh_store.dataVBO(Vec3, vertex_position.data);
+                const position_vbo = zgp.surface_mesh_store.dataVBO(Vec3f, vertex_position.data);
                 p.point_vector_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_vector_shader_parameters.unsetVertexAttribArray(.position);
@@ -103,12 +102,12 @@ pub fn surfaceMeshStdDataChanged(
 fn setSurfaceMeshVectorData(
     vpvr: *VectorPerVertexRenderer,
     surface_mesh: *SurfaceMesh,
-    vertex_vector: ?SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_vector: ?SurfaceMesh.CellData(.vertex, Vec3f),
 ) void {
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     p.vertex_vector = vertex_vector;
     if (p.vertex_vector) |v| {
-        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3, v.data);
+        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3f, v.data);
         p.point_vector_shader_parameters.setVertexAttribArray(.vector, vector_vbo, 0, 0);
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);
@@ -118,7 +117,7 @@ fn setSurfaceMeshVectorData(
 
 /// Part of the Module interface.
 /// Render all SurfaceMeshes with their VectorPerVertexRendererParameters and the given view and projection matrices.
-pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
+pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     var sm_it = zgp.surface_mesh_store.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const surface_mesh = entry.value_ptr.*;
@@ -146,7 +145,7 @@ pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
             if (imgui_utils.surfaceMeshCellDataComboBox(
                 sm,
                 .vertex,
-                Vec3,
+                Vec3f,
                 p.vertex_vector,
             )) |data| {
                 vpvr.setSurfaceMeshVectorData(sm, data);

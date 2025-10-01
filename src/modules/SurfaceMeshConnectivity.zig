@@ -11,9 +11,9 @@ const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 
 const vec = @import("../geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 const mat = @import("../geometry/mat.zig");
-const Mat4 = mat.Mat4;
+const Mat4f = mat.Mat4f;
 
 const subdivision = @import("../models/surface/subdivision.zig");
 const remeshing = @import("../models/surface/remeshing.zig");
@@ -45,10 +45,10 @@ pub fn name(_: *SurfaceMeshConnectivity) []const u8 {
 fn cutAllEdges(
     _: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
     try subdivision.cutAllEdges(sm, vertex_position);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
     zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 }
 
@@ -64,14 +64,14 @@ fn remesh(
     _: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
     edge_length_factor: f32,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
     edge_length: SurfaceMesh.CellData(.edge, f32),
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
     try remeshing.pliantRemeshing(
         sm,
@@ -85,30 +85,30 @@ fn remesh(
         vertex_area,
         vertex_normal,
     );
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, f32, face_area);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, Vec3, face_normal);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, Vec3f, face_normal);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_length);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_normal);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_normal);
     zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 }
 
 fn decimate(
     smc: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
     nb_vertices_to_remove: u32,
 ) !void {
-    var vertex_qem = try sm.addData(.vertex, Mat4, "vertex_qem");
+    var vertex_qem = try sm.addData(.vertex, Mat4f, "vertex_qem");
     defer sm.removeData(.vertex, vertex_qem.gen());
     try qem.computeVertexQEMs(sm, vertex_position, face_area, face_normal, vertex_qem);
     try decimation.decimateQEM(smc.allocator, sm, vertex_position, vertex_qem, nb_vertices_to_remove);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
     zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 }
 

@@ -25,7 +25,7 @@ const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
 
 const geometry_utils = @import("geometry/utils.zig");
 const vec = @import("geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 
 const Camera = @import("rendering/Camera.zig");
 const View = @import("rendering/View.zig");
@@ -243,20 +243,20 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const sm = try surface_mesh_store.loadSurfaceMeshFromFile(mesh_file);
         errdefer sm.deinit();
 
-        const vertex_position = sm.getData(.vertex, Vec3, "position").?;
+        const vertex_position = sm.getData(.vertex, Vec3f, "position").?;
 
         if (cli_args.normalize) {
             // scale the mesh position in the range [0, 1] and center it on the origin
             const bb_min, const bb_max = geometry_utils.boundingBox(vertex_position.data);
-            geometry_utils.scale(vertex_position.data, 1.0 / vec.maxComponent3(vec.sub3(bb_max, bb_min)));
+            geometry_utils.scale(vertex_position.data, 1.0 / vec.maxComponent3f(vec.sub3f(bb_max, bb_min)));
         }
         if (cli_args.center) {
-            geometry_utils.centerAround(vertex_position.data, vec.zero3);
+            geometry_utils.centerAround(vertex_position.data, vec.zero3f);
         }
 
         surface_mesh_store.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
 
-        surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_position);
+        surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
         surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 
         const elapsed: f64 = @floatFromInt(timer.read());
@@ -281,13 +281,6 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         };
 
         gl.ClearColor(UiData.background_color[0], UiData.background_color[1], UiData.background_color[2], UiData.background_color[3]);
-        gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-        gl.Enable(gl.CULL_FACE);
-        gl.CullFace(gl.BACK);
-        gl.Enable(gl.DEPTH_TEST);
-        gl.Enable(gl.POLYGON_OFFSET_FILL);
-        gl.PolygonOffset(1.0, 1.5);
 
         view.draw(modules.items);
 
@@ -326,8 +319,13 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                     camera.updateProjectionMatrix();
                 }
                 c.ImGui_Separator();
+                if (c.ImGui_Button("Pivot around world origin")) {
+                    camera.pivot_position = .{ 0.0, 0.0, 0.0 };
+                    camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
+                    camera.updateViewMatrix();
+                }
                 if (c.ImGui_Button("Look at pivot point")) {
-                    camera.look_dir = vec.normalized3(vec.sub3(camera.pivot_position, camera.position));
+                    camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
                     camera.updateViewMatrix();
                 }
             }
@@ -414,15 +412,14 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         return c.SDL_APP_CONTINUE;
     }
 
+    // TODO: pass mouse/keyboard events to the view & to the modules (e.g. for interaction)
+
     switch (event.type) {
         c.SDL_EVENT_QUIT => {
             return c.SDL_APP_SUCCESS;
         },
         c.SDL_EVENT_WINDOW_RESIZED => {
             try errify(c.SDL_GetWindowSizeInPixels(window, &window_width, &window_height));
-            // TODO: update Camera in View.resize
-            camera.aspect_ratio = @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height));
-            camera.updateProjectionMatrix();
             view.resize(window_width, window_height);
         },
         c.SDL_EVENT_KEY_DOWN => {
@@ -443,6 +440,15 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 c.SDL_BUTTON_LEFT => {},
                 c.SDL_BUTTON_RIGHT => {},
                 else => {},
+            }
+            if (event.button.clicks == 2 and event.button.button == c.SDL_BUTTON_LEFT) {
+                const world_pos = view.pixelWorldPosition(event.button.x, event.button.y);
+                if (world_pos) |wp| {
+                    camera.pivot_position = wp;
+                    camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
+                    camera.updateViewMatrix();
+                    requestRedraw();
+                }
             }
         },
         c.SDL_EVENT_MOUSE_MOTION => {

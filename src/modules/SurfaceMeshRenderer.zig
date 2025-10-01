@@ -25,10 +25,9 @@ const TriFlatScalarPerVertex = @import("../rendering/shaders/tri_flat_scalar_per
 const VBO = @import("../rendering/VBO.zig");
 
 const vec = @import("../geometry/vec.zig");
-const Vec3 = vec.Vec3;
-
+const Vec3f = vec.Vec3f;
 const mat = @import("../geometry/mat.zig");
-const Mat4 = mat.Mat4;
+const Mat4f = mat.Mat4f;
 
 const ColorDefinedOn = enum {
     global,
@@ -43,9 +42,9 @@ const ColorType = enum {
 const ColorParameters = struct {
     defined_on: ColorDefinedOn,
     type: ColorType = .vector,
-    vertex_vector_data: ?SurfaceMesh.CellData(.vertex, Vec3) = null, // data used if definedOn is vertex & type is vector
+    vertex_vector_data: ?SurfaceMesh.CellData(.vertex, Vec3f) = null, // data used if definedOn is vertex & type is vector
     vertex_scalar_data: ?SurfaceMesh.CellData(.vertex, f32) = null, // data used if definedOn is vertex & type is scalar
-    face_vector_data: ?SurfaceMesh.CellData(.face, Vec3) = null, // data used if definedOn is face & type is vector
+    face_vector_data: ?SurfaceMesh.CellData(.face, Vec3f) = null, // data used if definedOn is face & type is vector
     face_scalar_data: ?SurfaceMesh.CellData(.face, f32) = null, // data used if definedOn is face & type is scalar
 };
 
@@ -141,7 +140,7 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo: VBO = zgp.surface_mesh_store.dataVBO(Vec3, vertex_position.data);
+                const position_vbo: VBO = zgp.surface_mesh_store.dataVBO(Vec3f, vertex_position.data);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -250,7 +249,7 @@ fn setSurfaceMeshDrawVerticesColorData(
                 .vertex => {
                     p.draw_vertices_color.vertex_vector_data = data;
                     if (p.draw_vertices_color.vertex_vector_data) |vector| {
-                        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3, vector.data);
+                        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3f, vector.data);
                         p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     } else {
                         p.point_sphere_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
@@ -318,7 +317,7 @@ fn setSurfaceMeshDrawFacesColorData(
                 .vertex => {
                     p.draw_faces_color.vertex_vector_data = data;
                     if (p.draw_faces_color.vertex_vector_data) |vector| {
-                        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3, vector.data);
+                        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3f, vector.data);
                         p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     } else {
                         p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
@@ -328,7 +327,7 @@ fn setSurfaceMeshDrawFacesColorData(
                     p.draw_faces_color.face_vector_data = data;
                     // Not supported yet
                     // if (p.draw_faces_color.face_vector_data) |vector| {
-                    // const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3, vector.data);
+                    // const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3f, vector.data);
                     // p.tri_flat_color_per_face_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     // } else {
                     // p.tri_flat_color_per_face_shader_parameters.unsetVertexAttribArray(.color);
@@ -344,7 +343,7 @@ fn setSurfaceMeshDrawFacesColorData(
 
 /// Part of the Module interface.
 /// Render all SurfaceMeshes with their SurfaceMeshRendererParameters and the given view and projection matrices.
-pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
+pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     var sm_it = zgp.surface_mesh_store.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const sm = entry.value_ptr.*;
@@ -496,10 +495,10 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
                             .vector => if (imgui_utils.surfaceMeshCellDataComboBox(
                                 sm,
                                 .vertex,
-                                Vec3,
+                                Vec3f,
                                 p.draw_vertices_color.vertex_vector_data,
                             )) |data| {
-                                smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, Vec3, data);
+                                smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, Vec3f, data);
                             },
                         }
                         c.ImGui_PopID();
@@ -592,10 +591,10 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
                             .vector => if (imgui_utils.surfaceMeshCellDataComboBox(
                                 sm,
                                 .vertex,
-                                Vec3,
+                                Vec3f,
                                 p.draw_faces_color.vertex_vector_data,
                             )) |data| {
-                                smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec3, data);
+                                smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec3f, data);
                             },
                         }
                         c.ImGui_PopID();
@@ -627,10 +626,10 @@ pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
                             .vector => if (imgui_utils.surfaceMeshCellDataComboBox(
                                 sm,
                                 .face,
-                                Vec3,
+                                Vec3f,
                                 p.draw_faces_color.face_vector_data,
                             )) |data| {
-                                smr.setSurfaceMeshDrawFacesColorData(sm, .face, Vec3, data);
+                                smr.setSurfaceMeshDrawFacesColorData(sm, .face, Vec3f, data);
                             },
                         }
                         c.ImGui_PopID();

@@ -3,10 +3,11 @@ const assert = std.debug.assert;
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
-const Vec3 = vec.Vec3;
-const Vec4 = vec.Vec4;
+const Vec3f = vec.Vec3f;
+const Vec4f = vec.Vec4f;
 const mat = @import("../../geometry/mat.zig");
-const Mat4 = mat.Mat4;
+const Mat4f = mat.Mat4f;
+const Mat4d = mat.Mat4d;
 
 const zeigen = @import("zeigen");
 const geometry_utils = @import("../../geometry/utils.zig");
@@ -18,10 +19,10 @@ const geometry_utils = @import("../../geometry/utils.zig");
 pub fn vertexQEM(
     sm: *const SurfaceMesh,
     vertex: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
-) Mat4 {
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+) Mat4f {
     assert(vertex.cellType() == .vertex);
     var vq = mat.zero4;
     const p = vertex_position.value(vertex);
@@ -30,12 +31,12 @@ pub fn vertexQEM(
         if (!sm.isBoundaryDart(d)) {
             const face: SurfaceMesh.Cell = .{ .face = d };
             const n = face_normal.value(face);
-            const plane: Vec4 = .{ n[0], n[1], n[2], -vec.dot3(p, n) };
-            const fq = mat.mulScalar4(
-                mat.outerProduct4(plane, plane),
+            const plane: Vec4f = .{ n[0], n[1], n[2], -vec.dot3f(p, n) };
+            const fq = mat.mulScalar4f(
+                mat.outerProduct4f(plane, plane),
                 face_area.value(face),
             );
-            vq = mat.add4(vq, fq);
+            vq = mat.add4f(vq, fq);
         }
     }
     return vq;
@@ -46,26 +47,26 @@ pub fn vertexQEM(
 /// Executed here in a face-centric manner for better performance.
 pub fn computeVertexQEMs(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
-    vertex_qem: SurfaceMesh.CellData(.vertex, Mat4),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
 ) !void {
-    vertex_qem.data.fill(mat.zero4);
+    vertex_qem.data.fill(mat.zero4f);
     var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
     defer face_it.deinit();
     while (face_it.next()) |face| {
         const n = face_normal.value(face);
         const p = vertex_position.value(.{ .vertex = face.dart() });
-        const plane: Vec4 = .{ n[0], n[1], n[2], -vec.dot3(p, n) };
-        const fq = mat.mulScalar4(
-            mat.outerProduct4(plane, plane),
+        const plane: Vec4f = .{ n[0], n[1], n[2], -vec.dot3f(p, n) };
+        const fq = mat.mulScalar4f(
+            mat.outerProduct4f(plane, plane),
             face_area.value(face),
         );
         var dart_it = sm.cellDartIterator(face);
         while (dart_it.next()) |d| {
             const v: SurfaceMesh.Cell = .{ .vertex = d };
-            vertex_qem.valuePtr(v).* = mat.add4(
+            vertex_qem.valuePtr(v).* = mat.add4f(
                 vertex_qem.value(v),
                 fq,
             );
@@ -73,13 +74,14 @@ pub fn computeVertexQEMs(
     }
 }
 
-pub fn optimalPoint(q: Mat4) ?Vec3 {
-    var m = q;
+pub fn optimalPoint(q: Mat4f) ?Vec3f {
+    // warning: Eigen (via zeigen) uses double precision
+    var m = mat.fromMat4f(q);
     m[0][3] = 0.0;
     m[1][3] = 0.0;
     m[2][3] = 0.0;
     m[3][3] = 1.0;
-    var inv: Mat4 = undefined;
+    var inv: Mat4d = undefined;
     const invertible = zeigen.computeInverseWithCheck(&m, &inv);
-    return if (invertible) .{ inv[3][0], inv[3][1], inv[3][2] } else null;
+    return if (invertible) .{ @floatCast(inv[3][0]), @floatCast(inv[3][1]), @floatCast(inv[3][2]) } else null;
 }

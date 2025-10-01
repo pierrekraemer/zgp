@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 
 /// Triangulate the polygonal faces of the given SurfaceMesh.
 /// TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan.
@@ -28,7 +28,7 @@ pub fn triangulateFaces(sm: *SurfaceMesh) !void {
 /// The positions of the new vertices is the edge midpoints.
 pub fn cutAllEdges(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
     var marker = try SurfaceMesh.CellMarker(.edge).init(sm);
     defer marker.deinit();
@@ -36,8 +36,8 @@ pub fn cutAllEdges(
     defer edge_it.deinit();
     while (edge_it.next()) |e| {
         if (!marker.value(e)) {
-            const new_pos = vec.mulScalar3(
-                vec.add3(
+            const new_pos = vec.mulScalar3f(
+                vec.add3f(
                     vertex_position.value(.{ .vertex = e.dart() }),
                     vertex_position.value(.{ .vertex = sm.phi1(e.dart()) }),
                 ),

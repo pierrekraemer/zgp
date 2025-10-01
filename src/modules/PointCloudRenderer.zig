@@ -19,10 +19,9 @@ const PointSphereColorPerVertex = @import("../rendering/shaders/point_sphere_col
 const VBO = @import("../rendering/VBO.zig");
 
 const vec = @import("../geometry/vec.zig");
-const Vec3 = vec.Vec3;
-
+const Vec3f = vec.Vec3f;
 const mat = @import("../geometry/mat.zig");
-const Mat4 = mat.Mat4;
+const Mat4f = mat.Mat4f;
 
 const ColorDefinedOn = enum {
     global,
@@ -35,7 +34,7 @@ const ColorType = enum {
 const ColorParameters = struct {
     defined_on: ColorDefinedOn,
     type: ColorType = .vector,
-    point_vector_data: ?PointCloud.CellData(Vec3) = null, // data used if definedOn is point & type is vector
+    point_vector_data: ?PointCloud.CellData(Vec3f) = null, // data used if definedOn is point & type is vector
     point_scalar_data: ?PointCloud.CellData(f32) = null, // data used if definedOn is point & type is scalar
 };
 
@@ -110,7 +109,7 @@ pub fn pointCloudStdDataChanged(
     switch (std_data) {
         .position => |maybe_position| {
             if (maybe_position) |position| {
-                const position_vbo = zgp.point_cloud_store.dataVBO(Vec3, position.data);
+                const position_vbo = zgp.point_cloud_store.dataVBO(Vec3f, position.data);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
@@ -146,7 +145,7 @@ fn setPointCloudDrawPointsColorData(
             }
             p.draw_points_color.point_vector_data = data;
             if (p.draw_points_color.point_vector_data) |vector| {
-                const vector_vbo = zgp.point_cloud_store.dataVBO(Vec3, vector.data);
+                const vector_vbo = zgp.point_cloud_store.dataVBO(Vec3f, vector.data);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
             } else {
                 p.point_sphere_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
@@ -159,7 +158,7 @@ fn setPointCloudDrawPointsColorData(
 
 /// Part of the Module interface.
 /// Render all PointClouds with their PointCloudRendererParameters and the given view and projection matrices.
-pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4, projection_matrix: Mat4) void {
+pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     var pc_it = zgp.point_cloud_store.point_clouds.iterator();
     while (pc_it.next()) |entry| {
         const pc = entry.value_ptr.*;
@@ -259,10 +258,10 @@ pub fn uiPanel(pcr: *PointCloudRenderer) void {
                             },
                             .vector => if (imgui_utils.pointCloudDataComboBox(
                                 pc,
-                                Vec3,
+                                Vec3f,
                                 p.draw_points_color.point_vector_data,
                             )) |data| {
-                                pcr.setPointCloudDrawPointsColorData(pc, Vec3, data);
+                                pcr.setPointCloudDrawPointsColorData(pc, Vec3f, data);
                             },
                         }
                         c.ImGui_PopID();

@@ -1,8 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const SegmentedList = @import("SegmentedList.zig").SegmentedList;
-
 const typeId = @import("types.zig").typeId;
 
 pub const DataGen = struct {
@@ -71,7 +69,7 @@ pub fn Data(comptime T: type) type {
         data: std.ArrayList(T),
 
         /// Expose the Arena of the Data to the user.
-        /// Useful when the data type T needs to allocate memory.
+        /// Useful when the data type T needs to allocate memory (e.g. ArrayList).
         /// The user should not use the arena for anything else.
         /// The Arena is freed on DataGen deinit.
         pub fn arena(self: *Self) std.mem.Allocator {

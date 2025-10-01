@@ -12,7 +12,7 @@ const normal = @import("normal.zig");
 
 const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 
 /// Return true if flipping the given edge improves the deviation from degree-6 vertices.
 fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
@@ -41,14 +41,14 @@ fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
 pub fn pliantRemeshing(
     sm: *SurfaceMesh,
     edge_length_factor: f32,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
     edge_length: SurfaceMesh.CellData(.edge, f32),
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
     try subdivision.triangulateFaces(sm);
 
@@ -109,11 +109,11 @@ pub fn pliantRemeshing(
             }
             const d = edge.dart();
             const dd = sm.phi2(d);
-            // const length_squared = vec.squaredNorm3(vec.sub3(vertex_position.value(v2), vertex_position.value(v1)));
+            // const length_squared = vec.squaredNorm3f(vec.sub3f(vertex_position.value(v2), vertex_position.value(v1)));
             const l = edge_length.value(edge);
             if (l > length_goal * 1.8) {
-                const new_pos = vec.mulScalar3(
-                    vec.add3(
+                const new_pos = vec.mulScalar3f(
+                    vec.add3f(
                         vertex_position.value(.{ .vertex = d }),
                         vertex_position.value(.{ .vertex = dd }),
                     ),
@@ -163,8 +163,8 @@ pub fn pliantRemeshing(
             const l = edge_length.value(edge);
             if (l < length_goal * 0.6) {
                 if (sm.canCollapseEdge(edge)) {
-                    var new_pos = vec.mulScalar3(
-                        vec.add3(vertex_position.value(v1), vertex_position.value(v2)),
+                    var new_pos = vec.mulScalar3f(
+                        vec.add3f(vertex_position.value(v1), vertex_position.value(v2)),
                         0.5,
                     );
                     if (!sm.isIncidentToBoundary(edge)) {
@@ -208,29 +208,29 @@ pub fn pliantRemeshing(
             if (sm.isIncidentToBoundary(vertex) or feature_corner.value(vertex) or feature_vertex.value(vertex)) {
                 continue;
             }
-            var q = vec.zero3;
+            var q = vec.zero3f;
             var w: f32 = 0.0;
             var dart_it = sm.cellDartIterator(vertex);
             while (dart_it.next()) |d| {
                 const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
                 const a = vertex_area.value(nv);
-                q = vec.add3(
+                q = vec.add3f(
                     q,
-                    vec.mulScalar3(vertex_position.value(nv), a),
+                    vec.mulScalar3f(vertex_position.value(nv), a),
                 );
                 w += a;
             }
             if (w > 0.0) {
-                q = vec.divScalar3(q, w);
+                q = vec.divScalar3f(q, w);
                 const n = vertex_normal.value(vertex);
                 const p = vertex_position.value(vertex);
-                vertex_position.valuePtr(vertex).* = vec.add3(
+                vertex_position.valuePtr(vertex).* = vec.add3f(
                     q,
-                    vec.mulScalar3(
+                    vec.mulScalar3f(
                         n,
-                        vec.dot3(
+                        vec.dot3f(
                             n,
-                            vec.sub3(p, q),
+                            vec.sub3f(p, q),
                         ),
                     ),
                 );

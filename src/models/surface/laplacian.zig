@@ -3,13 +3,13 @@ const assert = std.debug.assert;
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 
 /// Compute and return the cotan weight of the given halfedge.
 pub fn halfedgeCotanWeight(
     sm: *const SurfaceMesh,
     halfedge: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
 ) f32 {
     assert(halfedge.cellType() == .halfedge);
 
@@ -23,16 +23,16 @@ pub fn halfedgeCotanWeight(
     const p1 = vertex_position.value(.{ .vertex = d });
     const p2 = vertex_position.value(.{ .vertex = d1 });
     const p3 = vertex_position.value(.{ .vertex = d_1 });
-    const vecR = vec.sub3(p1, p3);
-    const vecL = vec.sub3(p2, p3);
-    return 0.5 * (vec.dot3(vecR, vecL) / vec.norm3(vec.cross3(vecR, vecL)));
+    const vecR = vec.sub3f(p1, p3);
+    const vecL = vec.sub3f(p2, p3);
+    return 0.5 * (vec.dot3f(vecR, vecL) / vec.norm3f(vec.cross3f(vecR, vecL)));
 }
 
 /// Compute the cotan weights of all halfedges of the given SurfaceMesh
 /// and store them in the given halfedge_cotan_weight data.
 pub fn computeHalfedgeCotanWeights(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
 ) !void {
     var it = try SurfaceMesh.CellIterator(.halfedge).init(sm);

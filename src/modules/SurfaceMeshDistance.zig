@@ -12,7 +12,7 @@ const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 
 const vec = @import("../geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 
 const distance = @import("../models/surface/distance.zig");
 
@@ -45,11 +45,11 @@ fn computeVertexGeodesicDistancesFromSource(
     source_vertex: SurfaceMesh.Cell,
     diffusion_time: f32,
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
     edge_length: SurfaceMesh.CellData(.edge, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
     vertex_distance: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
     var timer = try std.time.Timer.start();

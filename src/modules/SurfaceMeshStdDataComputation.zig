@@ -14,7 +14,7 @@ const SurfaceMeshStdDatas = SurfaceMeshStore.SurfaceMeshStdDatas;
 const SurfaceMeshStdDataTag = SurfaceMeshStore.SurfaceMeshStdDataTag;
 
 const vec = @import("../geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 
 const angle = @import("../models/surface/angle.zig");
 const area = @import("../models/surface/area.zig");
@@ -42,7 +42,7 @@ pub fn name(_: *SurfaceMeshStdDataComputation) []const u8 {
 
 fn computeCornerAngles(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
 ) !void {
     try angle.computeCornerAngles(sm, vertex_position, corner_angle);
@@ -51,7 +51,7 @@ fn computeCornerAngles(
 
 fn computeHalfedgeCotanWeights(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
 ) !void {
     try laplacian.computeHalfedgeCotanWeights(sm, vertex_position, halfedge_cotan_weight);
@@ -60,7 +60,7 @@ fn computeHalfedgeCotanWeights(
 
 fn computeEdgeLengths(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     edge_length: SurfaceMesh.CellData(.edge, f32),
 ) !void {
     try length.computeEdgeLengths(sm, vertex_position, edge_length);
@@ -69,8 +69,8 @@ fn computeEdgeLengths(
 
 fn computeEdgeDihedralAngles(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
 ) !void {
     try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
@@ -79,7 +79,7 @@ fn computeEdgeDihedralAngles(
 
 fn computeFaceAreas(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
 ) !void {
     try area.computeFaceAreas(sm, vertex_position, face_area);
@@ -88,11 +88,11 @@ fn computeFaceAreas(
 
 fn computeFaceNormals(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
 ) !void {
     try normal.computeFaceNormals(sm, vertex_position, face_normal);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, Vec3, face_normal);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, Vec3f, face_normal);
 }
 
 fn computeVertexAreas(
@@ -107,11 +107,11 @@ fn computeVertexAreas(
 fn computeVertexNormals(
     sm: *SurfaceMesh,
     corner_angle: SurfaceMesh.CellData(.corner, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
     try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3, vertex_normal);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_normal);
 }
 
 fn computeVertexGaussianCurvatures(

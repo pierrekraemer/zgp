@@ -21,21 +21,21 @@ const VBO = @import("../rendering/VBO.zig");
 const IBO = @import("../rendering/IBO.zig");
 
 const vec = @import("../geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 
 /// Standard SurfaceMesh data name & types.
 pub const SurfaceMeshStdDatas = struct {
     corner_angle: ?SurfaceMesh.CellData(.corner, f32) = null,
     halfedge_cotan_weight: ?SurfaceMesh.CellData(.halfedge, f32) = null,
-    vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
+    vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
     vertex_area: ?SurfaceMesh.CellData(.vertex, f32) = null,
-    vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3) = null,
+    vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
     vertex_gaussian_curvature: ?SurfaceMesh.CellData(.vertex, f32) = null,
     vertex_mean_curvature: ?SurfaceMesh.CellData(.vertex, f32) = null,
     edge_length: ?SurfaceMesh.CellData(.edge, f32) = null,
     edge_dihedral_angle: ?SurfaceMesh.CellData(.edge, f32) = null,
     face_area: ?SurfaceMesh.CellData(.face, f32) = null,
-    face_normal: ?SurfaceMesh.CellData(.face, Vec3) = null,
+    face_normal: ?SurfaceMesh.CellData(.face, Vec3f) = null,
 };
 /// This union is generated from the SurfaceMeshStdDatas struct and allows to easily provide a single
 /// data entry to the setSurfaceMeshStdData function.
@@ -239,7 +239,7 @@ pub fn setSurfaceMeshStdData(
 pub fn menuBar(_: *SurfaceMeshStore) void {}
 
 pub fn uiPanel(sms: *SurfaceMeshStore) void {
-    const CreateDataTypes = union(enum) { f32: f32, Vec3: Vec3 };
+    const CreateDataTypes = union(enum) { f32: f32, Vec3f: Vec3f };
     const CreateDataTypesTag = std.meta.Tag(CreateDataTypes);
     const UiData = struct {
         var selected_surface_mesh_cell_type: SurfaceMesh.CellType = .vertex;
@@ -401,7 +401,7 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
 // TODO: put the IO code in a separate place
 
 const SurfaceMeshImportData = struct {
-    vertices_position: std.ArrayList(Vec3),
+    vertices_position: std.ArrayList(Vec3f),
     faces_nb_vertices: std.ArrayList(u32),
     faces_vertex_indices: std.ArrayList(u32),
 
@@ -496,7 +496,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
                 while (file_reader.interface.takeDelimiterExclusive('\n')) |line| {
                     if (line.len == 0) continue; // skip empty lines
                     var tokens = std.mem.tokenizeScalar(u8, line, ' ');
-                    var position: Vec3 = undefined;
+                    var position: Vec3f = undefined;
                     var j: u32 = 0;
                     while (tokens.next()) |token| : (j += 1) {
                         if (j >= 3) {
@@ -561,7 +561,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
 
     const sm = try sms.createSurfaceMesh(std.fs.path.basename(filename));
 
-    const vertex_position = try sm.addData(.vertex, Vec3, "position");
+    const vertex_position = try sm.addData(.vertex, Vec3f, "position");
     const darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
     defer sm.removeData(.vertex, darts_of_vertex.gen());
 

@@ -6,7 +6,7 @@ const assert = std.debug.assert;
 const DataGen = @import("../utils/Data.zig").DataGen;
 
 const mat = @import("../geometry/mat.zig");
-const Mat4 = mat.Mat4;
+const Mat4f = mat.Mat4f;
 
 const PointCloudStore = @import("../models/PointCloudStore.zig");
 const PointCloud = PointCloudStore.PointCloud;
@@ -33,7 +33,7 @@ const VTable = struct {
 
     uiPanel: *const fn (ptr: *anyopaque) void,
     menuBar: *const fn (ptr: *anyopaque) void,
-    draw: *const fn (ptr: *anyopaque, view_matrix: Mat4, projection_matrix: Mat4) void,
+    draw: *const fn (ptr: *anyopaque, view_matrix: Mat4f, projection_matrix: Mat4f) void,
 };
 
 pub fn init(ptr: anytype) Module {
@@ -95,7 +95,7 @@ pub fn init(ptr: anytype) Module {
             const impl: Ptr = @ptrCast(@alignCast(pointer));
             impl.menuBar();
         }
-        fn draw(pointer: *anyopaque, view_matrix: Mat4, projection_matrix: Mat4) void {
+        fn draw(pointer: *anyopaque, view_matrix: Mat4f, projection_matrix: Mat4f) void {
             if (!@hasDecl(ModuleType, "draw")) return;
             const impl: Ptr = @ptrCast(@alignCast(pointer));
             impl.draw(view_matrix, projection_matrix);
@@ -154,6 +154,6 @@ pub fn uiPanel(m: *Module) void {
 pub fn menuBar(m: *Module) void {
     m.vtable.menuBar(m.ptr);
 }
-pub fn draw(m: *Module, view_matrix: Mat4, projection_matrix: Mat4) void {
+pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     m.vtable.draw(m.ptr, view_matrix, projection_matrix);
 }

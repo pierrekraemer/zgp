@@ -21,12 +21,12 @@ const VBO = @import("../rendering/VBO.zig");
 const IBO = @import("../rendering/IBO.zig");
 
 const vec = @import("../geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 
 /// Standard PointCloud data name & types.
 pub const PointCloudStdDatas = struct {
-    position: ?PointCloud.CellData(Vec3) = null,
-    normal: ?PointCloud.CellData(Vec3) = null,
+    position: ?PointCloud.CellData(Vec3f) = null,
+    normal: ?PointCloud.CellData(Vec3f) = null,
 };
 /// This union is generated from the PointCloudStdDatas struct and allows to easily provide a single
 /// data entry to the setPointCloudStdData function.

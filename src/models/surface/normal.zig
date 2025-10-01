@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 
 const geometry_utils = @import("../../geometry/utils.zig");
 
@@ -12,11 +12,11 @@ const geometry_utils = @import("../../geometry/utils.zig");
 pub fn faceNormal(
     sm: *const SurfaceMesh,
     face: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
-) Vec3 {
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+) Vec3f {
     assert(face.cellType() == .face);
     var dart_it = sm.cellDartIterator(face);
-    var normal = vec.zero3;
+    var normal = vec.zero3f;
     while (dart_it.next()) |dF| {
         var d = dF;
         const p1 = vertex_position.value(.{ .vertex = d });
@@ -24,7 +24,7 @@ pub fn faceNormal(
         const p2 = vertex_position.value(.{ .vertex = d });
         d = sm.phi1(d);
         const p3 = vertex_position.value(.{ .vertex = d });
-        normal = vec.add3(
+        normal = vec.add3f(
             normal,
             geometry_utils.triangleNormal(p1, p2, p3),
         );
@@ -33,15 +33,15 @@ pub fn faceNormal(
             break;
         }
     }
-    return vec.normalized3(normal);
+    return vec.normalized3f(normal);
 }
 
 /// Compute the normals of all faces of the given SurfaceMesh
 /// and store them in the given face_normal data.
 pub fn computeFaceNormals(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
 ) !void {
     var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
     defer face_it.deinit();
@@ -62,23 +62,23 @@ pub fn vertexNormal(
     sm: *const SurfaceMesh,
     vertex: SurfaceMesh.Cell,
     corner_angle: SurfaceMesh.CellData(.corner, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
-) Vec3 {
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+) Vec3f {
     assert(vertex.cellType() == .vertex);
-    var normal = vec.zero3;
+    var normal = vec.zero3f;
     var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
         if (!sm.isBoundaryDart(d)) {
-            normal = vec.add3(
+            normal = vec.add3f(
                 normal,
-                vec.mulScalar3(
+                vec.mulScalar3f(
                     face_normal.value(.{ .face = d }),
                     corner_angle.value(.{ .corner = d }),
                 ),
             );
         }
     }
-    return vec.normalized3(normal);
+    return vec.normalized3f(normal);
 }
 
 /// Compute the normals of all vertices of the given SurfaceMesh
@@ -87,8 +87,8 @@ pub fn vertexNormal(
 pub fn computeVertexNormals(
     sm: *SurfaceMesh,
     corner_angle: SurfaceMesh.CellData(.corner, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
     var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
     defer vertex_it.deinit();

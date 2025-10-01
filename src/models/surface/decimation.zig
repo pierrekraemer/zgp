@@ -6,10 +6,10 @@ const zgp_log = std.log.scoped(.zgp);
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
-const Vec3 = vec.Vec3;
-const Vec4 = vec.Vec4;
+const Vec3f = vec.Vec3f;
+const Vec4f = vec.Vec4f;
 const mat = @import("../../geometry/mat.zig");
-const Mat4 = mat.Mat4;
+const Mat4f = mat.Mat4f;
 
 const subdivision = @import("subdivision.zig");
 const qem = @import("qem.zig");
@@ -26,24 +26,24 @@ const EdgeInfo = struct {
 };
 const EdgeQueueContext = struct {
     surface_mesh: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
-    vertex_qem: SurfaceMesh.CellData(.vertex, Mat4),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
     edge_in_queue: SurfaceMesh.CellData(.edge, bool),
 };
 const EdgeQueue = std.PriorityQueue(EdgeInfo, EdgeQueueContext, EdgeInfo.cmp);
 
-fn edgeCollapsePositionAndQuadric(queue: *EdgeQueue, edge: SurfaceMesh.Cell) struct { Vec3, Mat4 } {
+fn edgeCollapsePositionAndQuadric(queue: *EdgeQueue, edge: SurfaceMesh.Cell) struct { Vec3f, Mat4f } {
     assert(edge.cellType() == .edge);
     const ctx: EdgeQueueContext = queue.context;
     const d = edge.dart();
-    const dd = ctx.surface_mesh.phi2(d);
+    const d1 = ctx.surface_mesh.phi1(d);
     const v1: SurfaceMesh.Cell = .{ .vertex = d };
-    const v2: SurfaceMesh.Cell = .{ .vertex = dd };
-    const q = mat.add4(
+    const v2: SurfaceMesh.Cell = .{ .vertex = d1 };
+    const q = mat.add4f(
         ctx.vertex_qem.value(v1),
         ctx.vertex_qem.value(v2),
     );
-    var p: ?Vec3 = null;
+    var p: ?Vec3f = null;
     if (!ctx.surface_mesh.isIncidentToBoundary(edge)) {
         if (ctx.surface_mesh.isIncidentToBoundary(v1)) {
             p = ctx.vertex_position.value(v1); // put on v1 if v1 is on boundary and v2 is not
@@ -55,8 +55,8 @@ fn edgeCollapsePositionAndQuadric(queue: *EdgeQueue, edge: SurfaceMesh.Cell) str
         p = qem.optimalPoint(q); // can still be null after this call if Q is not invertible
     }
     if (p == null) {
-        const mid_point = vec.mulScalar3( // fallback to edge midpoint
-            vec.add3(
+        const mid_point = vec.mulScalar3f( // fallback to edge midpoint
+            vec.add3f(
                 ctx.vertex_position.value(v1),
                 ctx.vertex_position.value(v2),
             ),
@@ -71,12 +71,12 @@ fn addEdgeToQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
     assert(edge.cellType() == .edge);
     const ctx: EdgeQueueContext = queue.context;
     const p, const q = edgeCollapsePositionAndQuadric(queue, edge);
-    const p_hom: Vec4 = .{ p[0], p[1], p[2], 1.0 };
+    const p_hom: Vec4f = .{ p[0], p[1], p[2], 1.0 };
     // cost = p^T * Q * p
     try queue.add(.{
         .edge = edge,
         .edge_index = ctx.surface_mesh.cellIndex(edge),
-        .cost = vec.dot4(p_hom, mat.mulVec4(q, p_hom)),
+        .cost = vec.dot4f(p_hom, mat.mulVec4f(q, p_hom)),
     });
     ctx.edge_in_queue.valuePtr(edge).* = true;
 }
@@ -110,8 +110,8 @@ fn updateEdgeInQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
 pub fn decimateQEM(
     allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
-    vertex_qem: SurfaceMesh.CellData(.vertex, Mat4),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
     nb_vertices_to_remove: u32,
 ) !void {
     try subdivision.triangulateFaces(sm);

@@ -3,7 +3,7 @@ const assert = std.debug.assert;
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
-const Vec3 = vec.Vec3;
+const Vec3f = vec.Vec3f;
 
 const geometry_utils = @import("../../geometry/utils.zig");
 
@@ -12,7 +12,7 @@ const geometry_utils = @import("../../geometry/utils.zig");
 pub fn faceArea(
     sm: *const SurfaceMesh,
     face: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
 ) f32 {
     assert(face.cellType() == .face);
     var area: f32 = 0.0;
@@ -37,7 +37,7 @@ pub fn faceArea(
 /// and store them in the given face_area data.
 pub fn computeFaceAreas(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3),
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
 ) !void {
     var it = try SurfaceMesh.CellIterator(.face).init(sm);
