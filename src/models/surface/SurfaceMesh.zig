@@ -1053,8 +1053,8 @@ pub fn canCollapseEdge(sm: *const SurfaceMesh, edge: Cell) bool {
         return false;
     }
 
-    // condition 2: avoid creating vertices of degree > 14
-    if (sm.degree(.{ .vertex = d }) + sm.degree(.{ .vertex = dd }) > 14) {
+    // condition 2: avoid creating vertices of degree > 15 // TODO: seems kind of arbitrary here
+    if (sm.degree(.{ .vertex = d }) + sm.degree(.{ .vertex = dd }) > 15) {
         return false;
     }
 

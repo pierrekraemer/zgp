@@ -100,14 +100,30 @@ fn decimate(
     smc: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_area: SurfaceMesh.CellData(.vertex, f32),
+    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     nb_vertices_to_remove: u32,
 ) !void {
     var vertex_qem = try sm.addData(.vertex, Mat4f, "vertex_qem");
     defer sm.removeData(.vertex, vertex_qem.gen());
-    try qem.computeVertexQEMs(sm, vertex_position, face_area, face_normal, vertex_qem);
-    try decimation.decimateQEM(smc.allocator, sm, vertex_position, vertex_qem, nb_vertices_to_remove);
+    try qem.computeVertexQEMs(
+        sm,
+        vertex_position,
+        vertex_area,
+        vertex_tangent_basis,
+        face_area,
+        face_normal,
+        vertex_qem,
+    );
+    try decimation.decimateQEM(
+        smc.allocator,
+        sm,
+        vertex_position,
+        vertex_qem,
+        nb_vertices_to_remove,
+    );
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
     zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 }
@@ -165,6 +181,8 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
             _ = c.ImGui_SliderIntEx("", &UiData.percent_vertices_to_keep, 1, 100, "%d%%", c.ImGuiSliderFlags_AlwaysClamp);
             c.ImGui_PopID();
             const disabled = info.std_data.vertex_position == null or
+                info.std_data.vertex_area == null or
+                info.std_data.vertex_tangent_basis == null or
                 info.std_data.face_area == null or
                 info.std_data.face_normal == null;
             if (disabled) {
@@ -176,6 +194,8 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
                     smc.decimate(
                         sm,
                         info.std_data.vertex_position.?,
+                        info.std_data.vertex_area.?,
+                        info.std_data.vertex_tangent_basis.?,
                         info.std_data.face_area.?,
                         info.std_data.face_normal.?,
                         nb_vertices_to_remove,
@@ -187,6 +207,8 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
             imgui_utils.tooltip(
                 \\ Read:
                 \\ - std vertex_position
+                \\ - std vertex_area
+                \\ - std vertex_tangent_basis
                 \\ - std face_area
                 \\ - std face_normal
                 \\ Write:

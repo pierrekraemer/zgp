@@ -3,6 +3,7 @@ const SurfaceMeshStdDataComputation = @This();
 const std = @import("std");
 
 const imgui_utils = @import("../utils/imgui.zig");
+const zgp_log = std.log.scoped(.zgp);
 
 const zgp = @import("../main.zig");
 const c = zgp.c;
@@ -22,6 +23,7 @@ const curvature = @import("../models/surface/curvature.zig");
 const laplacian = @import("../models/surface/laplacian.zig");
 const length = @import("../models/surface/length.zig");
 const normal = @import("../models/surface/normal.zig");
+const tangentBasis = @import("../models/surface/tangentBasis.zig");
 
 pub fn init() !SurfaceMeshStdDataComputation {
     return .{};
@@ -45,7 +47,10 @@ fn computeCornerAngles(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
 ) !void {
+    var timer = try std.time.Timer.start();
     try angle.computeCornerAngles(sm, vertex_position, corner_angle);
+    const elapsed: f64 = @floatFromInt(timer.read());
+    zgp_log.info("Corner angles computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
 }
 
@@ -112,6 +117,16 @@ fn computeVertexNormals(
 ) !void {
     try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_normal);
+}
+
+fn computeVertexTangentBases(
+    sm: *SurfaceMesh,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
+) !void {
+    try tangentBasis.computeVertexTangentBases(sm, vertex_position, vertex_normal, vertex_tangent_basis);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, [2]Vec3f, vertex_tangent_basis);
 }
 
 fn computeVertexGaussianCurvatures(
@@ -236,6 +251,11 @@ const std_data_computations: []const StdDataComputation = &.{
         .reads = &.{ .corner_angle, .face_normal },
         .computes = .vertex_normal,
         .func = &computeVertexNormals,
+    },
+    .{
+        .reads = &.{ .vertex_position, .vertex_normal },
+        .computes = .vertex_tangent_basis,
+        .func = &computeVertexTangentBases,
     },
     .{
         .reads = &.{.corner_angle},

@@ -30,6 +30,7 @@ pub const SurfaceMeshStdDatas = struct {
     vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
     vertex_area: ?SurfaceMesh.CellData(.vertex, f32) = null,
     vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
+    vertex_tangent_basis: ?SurfaceMesh.CellData(.vertex, [2]Vec3f) = null,
     vertex_gaussian_curvature: ?SurfaceMesh.CellData(.vertex, f32) = null,
     vertex_mean_curvature: ?SurfaceMesh.CellData(.vertex, f32) = null,
     edge_length: ?SurfaceMesh.CellData(.edge, f32) = null,

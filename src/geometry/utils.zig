@@ -34,6 +34,18 @@ pub fn triangleNormal(a: Vec3f, b: Vec3f, c: Vec3f) Vec3f {
     );
 }
 
+/// Return a vector where the component of v along unitDir has been removed.
+/// As the name suggests, unitDir must be a unit vector.
+pub fn removeComponent(v: Vec3f, unitDir: Vec3f) Vec3f {
+    return vec.sub3f(
+        v,
+        vec.mulScalar3f(
+            unitDir,
+            vec.dot3f(v, unitDir),
+        ),
+    );
+}
+
 /// Compute and return the axis-aligned bounding box of the given data points
 /// as a pair of minimum and maximum corners.
 pub fn boundingBox(data: *const Data(Vec3f)) struct { Vec3f, Vec3f } {

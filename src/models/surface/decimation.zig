@@ -106,7 +106,8 @@ fn updateEdgeInQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
     }
 }
 
-/// Decimate the given SurfaceMesh using the QEM method.
+/// Decimate the given SurfaceMesh using the QEM edge collapse approach.
+/// (see qem.zig for details on the quadrics computation)
 pub fn decimateQEM(
     allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
