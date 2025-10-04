@@ -119,7 +119,7 @@ pub fn uiPanel(smd: *SurfaceMeshDistance) void {
             }
             if (c.ImGui_ButtonEx("Compute geodesic distance", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 // TODO: select source vertex from a CellSet
-                UiData.source_vertex = .{ .vertex = sm.vertex_data.firstIndex() };
+                UiData.source_vertex = .{ .vertex = sm.dart_data.firstIndex() };
                 smd.computeVertexGeodesicDistancesFromSource(
                     sm,
                     UiData.source_vertex,

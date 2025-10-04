@@ -2,8 +2,10 @@ const View = @This();
 
 const std = @import("std");
 const gl = @import("gl");
-
 const gl_log = std.log.scoped(.gl);
+
+const zgp = @import("../main.zig");
+const c = zgp.c;
 
 const Module = @import("../modules/Module.zig");
 
@@ -14,7 +16,6 @@ const Vec4d = vec.Vec4d;
 const mat = @import("../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
 const Mat4d = mat.Mat4d;
-const zeigen = @import("zeigen");
 
 const Camera = @import("Camera.zig");
 const FBO = @import("FBO.zig");
@@ -155,7 +156,7 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
         return null;
     }
     // reconstruct the world position from the depth value
-    // warning: Eigen (via zeigen) uses double precision
+    // warning: Eigen (via ceigen) uses double precision
     const p_ndc: Vec4d = .{
         2.0 * (x / @as(f32, @floatFromInt(view.width))) - 1.0,
         1.0 - (2.0 * y) / @as(f32, @floatFromInt(view.height)),
@@ -164,7 +165,8 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
     };
     const m_proj: Mat4d = mat.fromMat4f(view.camera.?.projection_matrix);
     var m_proj_inv: Mat4d = undefined;
-    const m_proj_invertible = zeigen.computeInverseWithCheck(&m_proj, &m_proj_inv);
+    var m_proj_invertible = false;
+    c.computeInverseWithCheck(@ptrCast(&m_proj), @ptrCast(&m_proj_inv), &m_proj_invertible);
     if (!m_proj_invertible) {
         gl_log.err("Cannot invert projection matrix", .{});
         return null;
@@ -177,7 +179,8 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
     p_view = vec.divScalar4d(p_view, p_view[3]);
     const m_view: Mat4d = mat.fromMat4f(view.camera.?.view_matrix);
     var m_view_inv: Mat4d = undefined;
-    const m_view_invertible = zeigen.computeInverseWithCheck(&m_view, &m_view_inv);
+    var m_view_invertible = false;
+    c.computeInverseWithCheck(@ptrCast(&m_view), @ptrCast(&m_view_inv), &m_view_invertible);
     if (!m_view_invertible) {
         gl_log.err("Cannot invert view matrix", .{});
         return null;

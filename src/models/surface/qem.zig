@@ -1,6 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const zgp = @import("../../main.zig");
+const c = zgp.c;
+
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -9,7 +12,6 @@ const mat = @import("../../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
 const Mat4d = mat.Mat4d;
 
-const zeigen = @import("zeigen");
 const geometry_utils = @import("../../geometry/utils.zig");
 
 /// Compute and return the QEM of the given vertex.
@@ -114,13 +116,14 @@ pub fn computeVertexQEMs(
 }
 
 pub fn optimalPoint(q: Mat4f) ?Vec3f {
-    // warning: Eigen (via zeigen) uses double precision
+    // warning: Eigen (via ceigen) uses double precision
     var m = mat.fromMat4f(q);
     m[0][3] = 0.0;
     m[1][3] = 0.0;
     m[2][3] = 0.0;
     m[3][3] = 1.0;
     var inv: Mat4d = undefined;
-    const invertible = zeigen.computeInverseWithCheck(&m, &inv);
+    var invertible = false;
+    c.computeInverseWithCheck(@ptrCast(&m), @ptrCast(&inv), &invertible);
     return if (invertible) .{ @floatCast(inv[3][0]), @floatCast(inv[3][1]), @floatCast(inv[3][2]) } else null;
 }

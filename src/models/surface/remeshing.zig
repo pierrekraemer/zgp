@@ -224,7 +224,7 @@ pub fn pliantRemeshing(
                 q = vec.divScalar3f(q, w);
                 const n = vertex_normal.value(vertex);
                 const p = vertex_position.value(vertex);
-                vertex_position.valuePtr(vertex).* = vec.add3f( // TODO: express using removeComponent function
+                vertex_position.valuePtr(vertex).* = vec.add3f( // TODO: rewrite using vec.removeComponent function
                     q,
                     vec.mulScalar3f(
                         n,

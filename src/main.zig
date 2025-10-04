@@ -10,6 +10,8 @@ pub const c = @cImport({
     @cInclude("dcimgui.h");
     @cInclude("backends/dcimgui_impl_sdl3.h");
     @cInclude("backends/dcimgui_impl_opengl3.h");
+    @cInclude("ceigen/mat4.h");
+    @cInclude("ceigen/sparse.h");
 });
 
 const SurfaceMeshStore = @import("models/SurfaceMeshStore.zig");

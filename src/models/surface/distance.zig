@@ -1,9 +1,11 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const zgp = @import("../../main.zig");
+const c = zgp.c;
+
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
-const zeigen = @import("zeigen");
 const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -36,7 +38,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
         vertex_index.valuePtr(v).* = nb_vertices;
     }
 
-    // warning: Eigen (via zeigen) uses double precision
+    // warning: Eigen (via ceigen) uses double precision
 
     // setup Laplacian matrix Lc
     const nb_edges = sm.nbCells(.edge);
@@ -69,14 +71,15 @@ pub fn computeVertexGeodesicDistancesFromSource(
         col_indices.appendAssumeCapacity(j);
         values.appendAssumeCapacity(@floatCast(-w_ij));
     }
-    const Lc: ?*anyopaque = zeigen.createSparseMatrixFromTriplets(
-        nb_vertices,
-        nb_vertices,
-        row_indices.items,
-        col_indices.items,
-        values.items,
+    const Lc: ?*anyopaque = c.createSparseMatrixFromTriplets(
+        @intCast(nb_vertices),
+        @intCast(nb_vertices),
+        @intCast(row_indices.items.len),
+        row_indices.items.ptr,
+        col_indices.items.ptr,
+        values.items.ptr,
     );
-    defer zeigen.destroySparseMatrix(Lc.?);
+    defer c.destroySparseMatrix(Lc.?);
 
     // setup mass-matrix A (vertex areas) and
     // initial heat vector heat_0 (1.0 at source vertex, 0.0 elsewhere)
@@ -91,23 +94,24 @@ pub fn computeVertexGeodesicDistancesFromSource(
         massCoeffs.appendAssumeCapacity(@floatCast(vertex_area.value(v)));
         heat_0.appendAssumeCapacity(if (sm.cellIndex(v) == source_vertex_index) 1.0 else 0.0);
     }
-    const A: ?*anyopaque = zeigen.createDiagonalSparseMatrixFromArray(massCoeffs.items);
-    defer zeigen.destroySparseMatrix(A.?);
+    const A: ?*anyopaque = c.createDiagonalSparseMatrixFromArray(@intCast(massCoeffs.items.len), massCoeffs.items.ptr);
+    defer c.destroySparseMatrix(A.?);
 
     // compute time step t = mean_edge_length^2
     const mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
     const t = mean_edge_length * mean_edge_length * diffusion_time;
 
     // compute M = A - t * Lc
-    const M: ?*anyopaque = zeigen.createSparseMatrix(nb_vertices, nb_vertices);
-    zeigen.mulSparseMatrixScalar(Lc.?, @floatCast(t), M.?);
-    zeigen.subSparseMatrices(A.?, M.?, M.?);
+    const M: ?*anyopaque = c.createSparseMatrix(@intCast(nb_vertices), @intCast(nb_vertices));
+    defer c.destroySparseMatrix(M.?);
+    c.mulSparseMatrixScalar(Lc.?, @floatCast(t), M.?);
+    c.subSparseMatrices(A.?, M.?, M.?);
 
     // solve M * heat_t = heat_0 (backward Euler time step of the heat equation)
     var heat_t = try std.ArrayList(f64).initCapacity(allocator, nb_vertices);
     defer heat_t.deinit(allocator);
     try heat_t.resize(allocator, nb_vertices);
-    zeigen.solveSymmetricSparseLinearSystem(M.?, heat_0.items, heat_t.items);
+    c.solveSymmetricSparseLinearSystem(M.?, heat_0.items.ptr, heat_t.items.ptr, @intCast(heat_0.items.len));
 
     // store heat_t in a vertex data
     var vertex_heat = try sm.addData(.vertex, f32, "__vertex_heat");
@@ -163,7 +167,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
     var dist = try std.ArrayList(f64).initCapacity(allocator, nb_vertices);
     defer dist.deinit(allocator);
     try dist.resize(allocator, nb_vertices);
-    zeigen.solveSymmetricSparseLinearSystem(Lc.?, div.items, dist.items);
+    c.solveSymmetricSparseLinearSystem(Lc.?, div.items.ptr, dist.items.ptr, @intCast(div.items.len));
 
     // shift distance values s.t. min distance is 0.0 and store them in vertex_distance
     const min_dist = std.mem.min(f64, dist.items);
