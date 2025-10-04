@@ -294,6 +294,17 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
         var main_menu_bar_size: c.ImVec2 = undefined;
 
+        const imgui_io = c.ImGui_GetIO();
+        if (imgui_io.*.MouseClicked[1] and !(imgui_io.*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow))) {
+            c.ImGui_OpenPopup("RightClickMenu", 0);
+        }
+        if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
+            defer c.ImGui_EndPopup();
+            if (c.ImGui_MenuItem("Quit")) {
+                return c.SDL_APP_SUCCESS;
+            }
+        }
+
         if (c.ImGui_BeginMainMenuBar()) {
             defer c.ImGui_EndMainMenuBar();
 
@@ -456,11 +467,14 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         c.SDL_EVENT_MOUSE_MOTION => {
             switch (event.motion.state) {
                 c.SDL_BUTTON_LMASK => {
-                    camera.rotateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
+                    const modState = c.SDL_GetModState();
+                    if ((modState & c.SDL_KMOD_SHIFT) != 0) {
+                        camera.translateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
+                    } else {
+                        camera.rotateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
+                    }
                 },
-                c.SDL_BUTTON_RMASK => {
-                    camera.translateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
-                },
+                c.SDL_BUTTON_RMASK => {},
                 else => {},
             }
         },
