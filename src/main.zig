@@ -10,6 +10,7 @@ pub const c = @cImport({
     @cInclude("dcimgui.h");
     @cInclude("backends/dcimgui_impl_sdl3.h");
     @cInclude("backends/dcimgui_impl_opengl3.h");
+    @cInclude("utils/IconsFontAwesome7.h");
     @cInclude("ceigen/mat4.h");
     @cInclude("ceigen/sparse.h");
 });
@@ -184,8 +185,20 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = c.ImGui_CreateContext(null);
     errdefer c.ImGui_DestroyContext(null);
 
+    const font_size: f32 = 16.0;
     const imio = c.ImGui_GetIO();
     imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard | c.ImGuiConfigFlags_DockingEnable | c.ImGuiConfigFlags_ViewportsEnable;
+    _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/utils/DroidSans.ttf", font_size, null, null);
+    // _ = c.ImFontAtlas_AddFontDefault(imio.*.Fonts, null);
+    var font_config: c.ImFontConfig = .{};
+    font_config.MergeMode = true;
+    font_config.SizePixels = font_size;
+    font_config.GlyphMinAdvanceX = font_size;
+    font_config.GlyphMaxAdvanceX = font_size;
+    font_config.RasterizerMultiply = 1.0;
+    font_config.RasterizerDensity = 1.0;
+    _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/utils/fa-regular-400.ttf", font_size, &font_config, null);
+    _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/utils/fa-solid-900.ttf", font_size, &font_config, null);
 
     c.ImGui_StyleColorsDark(null);
     const imstyle = c.ImGui_GetStyle();

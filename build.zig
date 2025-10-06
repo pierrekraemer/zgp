@@ -67,6 +67,7 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
     // exe.want_lto = optimize != .Debug;
+    exe.addIncludePath(b.path("src"));
     b.installArtifact(exe);
 
     // RUN CMD

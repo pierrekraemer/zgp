@@ -267,6 +267,8 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
             sms.selected_surface_mesh = sm;
         }
 
+        const button_width = c.ImGui_CalcTextSize("" ++ c.ICON_FA_DATABASE).x + style.*.ItemSpacing.x;
+
         if (sms.selected_surface_mesh) |sm| {
             var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name + cell count
             const info = sms.surface_meshes_info.getPtr(sm).?;
@@ -276,20 +278,30 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
                 inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
                     if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
                     c.ImGui_Text(field.name);
-                    // c.ImGui_SameLine();
+                    c.ImGui_SameLine();
+                    c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + c.ImGui_GetContentRegionAvail().x - 2 * button_width - style.*.ItemSpacing.x);
                     c.ImGui_PushID(field.name);
-                    // const combobox_width = @min(c.ImGui_GetWindowWidth() * 0.5, c.ImGui_GetContentRegionAvail().x);
-                    // c.ImGui_SetNextItemWidth(combobox_width);
-                    // c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + @max(0.0, c.ImGui_GetContentRegionAvail().x - combobox_width));
-                    if (imgui_utils.surfaceMeshCellDataComboBox(
-                        sm,
-                        @typeInfo(field.type).optional.child.CellType,
-                        @typeInfo(field.type).optional.child.DataType,
-                        @field(info.std_data, field.name),
-                    )) |data| {
-                        sms.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
+                    defer c.ImGui_PopID();
+                    if (c.ImGui_Button("" ++ c.ICON_FA_DATABASE)) {
+                        c.ImGui_OpenPopup("select_data_popup", c.ImGuiPopupFlags_NoReopen);
                     }
-                    c.ImGui_PopID();
+                    if (c.ImGui_BeginPopup("select_data_popup", 0)) {
+                        defer c.ImGui_EndPopup();
+                        c.ImGui_PushID("select_data_combobox");
+                        defer c.ImGui_PopID();
+                        if (imgui_utils.surfaceMeshCellDataComboBox(
+                            sm,
+                            @typeInfo(field.type).optional.child.CellType,
+                            @typeInfo(field.type).optional.child.DataType,
+                            @field(info.std_data, field.name),
+                        )) |data| {
+                            sms.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
+                        }
+                    }
+                    c.ImGui_SameLine();
+                    if (c.ImGui_Button("" ++ c.ICON_FA_GEARS)) {
+                        std.debug.print("Compute {s} data\n", .{field.name});
+                    }
                 }
             }
 
