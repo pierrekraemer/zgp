@@ -9,12 +9,12 @@ const mat = @import("../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
 
 const PointCloudStore = @import("../models/PointCloudStore.zig");
-const PointCloud = PointCloudStore.PointCloud;
+const PointCloud = @import("../models/point/PointCloud.zig");
 const PointCloudStdData = PointCloudStore.PointCloudStdData;
 
 const SurfaceMeshStore = @import("../models/SurfaceMeshStore.zig");
-const SurfaceMesh = SurfaceMeshStore.SurfaceMesh;
-const SurfaceMeshStdData = SurfaceMeshStore.SurfaceMeshStdData;
+const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
+const SurfaceMeshStdData = @import("../models/surface/SurfaceMeshStdDatas.zig").SurfaceMeshStdData;
 
 ptr: *anyopaque, // pointer to the concrete Module
 vtable: *const VTable,
@@ -31,8 +31,11 @@ const VTable = struct {
     surfaceMeshConnectivityUpdated: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh) void,
     surfaceMeshDataUpdated: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void,
 
+    hasUiPanel: *const fn (ptr: *anyopaque) bool,
     uiPanel: *const fn (ptr: *anyopaque) void,
     menuBar: *const fn (ptr: *anyopaque) void,
+    rightClickMenu: *const fn (ptr: *anyopaque) void,
+
     draw: *const fn (ptr: *anyopaque, view_matrix: Mat4f, projection_matrix: Mat4f) void,
 };
 
@@ -85,6 +88,9 @@ pub fn init(ptr: anytype) Module {
             const impl: Ptr = @ptrCast(@alignCast(pointer));
             impl.surfaceMeshDataUpdated(surface_mesh, cell_type, data_gen);
         }
+        fn hasUiPanel(_: *anyopaque) bool {
+            return @hasDecl(ModuleType, "uiPanel");
+        }
         fn uiPanel(pointer: *anyopaque) void {
             if (!@hasDecl(ModuleType, "uiPanel")) return;
             const impl: Ptr = @ptrCast(@alignCast(pointer));
@@ -94,6 +100,11 @@ pub fn init(ptr: anytype) Module {
             if (!@hasDecl(ModuleType, "menuBar")) return;
             const impl: Ptr = @ptrCast(@alignCast(pointer));
             impl.menuBar();
+        }
+        fn rightClickMenu(pointer: *anyopaque) void {
+            if (!@hasDecl(ModuleType, "rightClickMenu")) return;
+            const impl: Ptr = @ptrCast(@alignCast(pointer));
+            impl.rightClickMenu();
         }
         fn draw(pointer: *anyopaque, view_matrix: Mat4f, projection_matrix: Mat4f) void {
             if (!@hasDecl(ModuleType, "draw")) return;
@@ -113,8 +124,10 @@ pub fn init(ptr: anytype) Module {
             .surfaceMeshStdDataChanged = gen.surfaceMeshStdDataChanged,
             .surfaceMeshConnectivityUpdated = gen.surfaceMeshConnectivityUpdated,
             .surfaceMeshDataUpdated = gen.surfaceMeshDataUpdated,
+            .hasUiPanel = gen.hasUiPanel,
             .uiPanel = gen.uiPanel,
             .menuBar = gen.menuBar,
+            .rightClickMenu = gen.rightClickMenu,
             .draw = gen.draw,
         },
     };
@@ -148,11 +161,17 @@ pub fn surfaceMeshConnectivityUpdated(m: *Module, sm: *SurfaceMesh) void {
 pub fn surfaceMeshDataUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void {
     m.vtable.surfaceMeshDataUpdated(m.ptr, sm, cell_type, data_gen);
 }
+pub fn hasUiPanel(m: *Module) bool {
+    return m.vtable.hasUiPanel(m.ptr);
+}
 pub fn uiPanel(m: *Module) void {
     m.vtable.uiPanel(m.ptr);
 }
 pub fn menuBar(m: *Module) void {
     m.vtable.menuBar(m.ptr);
+}
+pub fn rightClickMenu(m: *Module) void {
+    m.vtable.rightClickMenu(m.ptr);
 }
 pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     m.vtable.draw(m.ptr, view_matrix, projection_matrix);

@@ -13,8 +13,8 @@ const imgui_log = std.log.scoped(.imgui);
 
 const Module = @import("Module.zig");
 const SurfaceMeshStore = @import("../models/SurfaceMeshStore.zig");
-const SurfaceMesh = SurfaceMeshStore.SurfaceMesh;
-const SurfaceMeshStdData = SurfaceMeshStore.SurfaceMeshStdData;
+const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
+const SurfaceMeshStdData = @import("../models/surface/SurfaceMeshStdDatas.zig").SurfaceMeshStdData;
 
 const PointVector = @import("../rendering/shaders/point_vector/PointVector.zig");
 const VBO = @import("../rendering/VBO.zig");

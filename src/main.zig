@@ -22,7 +22,6 @@ const Module = @import("modules/Module.zig");
 const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
-const SurfaceMeshStdDataComputation = @import("modules/SurfaceMeshStdDataComputation.zig");
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
 const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
 
@@ -67,7 +66,6 @@ pub var modules: std.ArrayList(Module) = .empty;
 var point_cloud_renderer: PointCloudRenderer = undefined;
 var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
-var surface_mesh_std_data_computation: SurfaceMeshStdDataComputation = undefined;
 var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
 var surface_mesh_distance: SurfaceMeshDistance = undefined;
 
@@ -232,8 +230,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_renderer.deinit();
     vector_per_vertex_renderer = try VectorPerVertexRenderer.init(allocator);
     errdefer vector_per_vertex_renderer.deinit();
-    surface_mesh_std_data_computation = try SurfaceMeshStdDataComputation.init();
-    errdefer surface_mesh_std_data_computation.deinit();
     surface_mesh_connectivity = try SurfaceMeshConnectivity.init(allocator);
     errdefer surface_mesh_connectivity.deinit();
     surface_mesh_distance = try SurfaceMeshDistance.init(allocator);
@@ -244,7 +240,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(allocator, point_cloud_renderer.module());
     try modules.append(allocator, surface_mesh_renderer.module());
     try modules.append(allocator, vector_per_vertex_renderer.module());
-    try modules.append(allocator, surface_mesh_std_data_computation.module());
     try modules.append(allocator, surface_mesh_connectivity.module());
     try modules.append(allocator, surface_mesh_distance.module());
     errdefer modules.deinit(allocator);
@@ -313,6 +308,10 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         }
         if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
             defer c.ImGui_EndPopup();
+            for (modules.items) |*module| {
+                module.rightClickMenu();
+            }
+            c.ImGui_Separator();
             if (c.ImGui_MenuItem("Quit")) {
                 return c.SDL_APP_SUCCESS;
             }
@@ -375,7 +374,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             .x = imgui_viewport.*.Size.x * 0.22,
             .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
         }, 0);
-        c.ImGui_SetNextWindowBgAlpha(0.4);
+        c.ImGui_SetNextWindowBgAlpha(0.5);
         if (c.ImGui_Begin("Models Stores", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
             c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
         {
@@ -392,12 +391,13 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             .x = imgui_viewport.*.Size.x * 0.22,
             .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
         }, 0);
-        c.ImGui_SetNextWindowBgAlpha(0.4);
+        c.ImGui_SetNextWindowBgAlpha(0.5);
         if (c.ImGui_Begin("Modules", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
             c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
         {
             defer c.ImGui_End();
             for (modules.items) |*module| {
+                if (!module.hasUiPanel()) continue;
                 c.ImGui_PushIDPtr(module);
                 defer c.ImGui_PopID();
                 c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
@@ -414,6 +414,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
         c.ImGui_PopStyleVarEx(2);
 
+        // c.ImGui_ShowDemoWindow(null);
         // c.ImGui_ShowStyleEditor(null);
 
         c.ImGui_Render();
@@ -471,10 +472,13 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 const world_pos = view.pixelWorldPosition(event.button.x, event.button.y);
                 if (world_pos) |wp| {
                     camera.pivot_position = wp;
-                    camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
-                    camera.updateViewMatrix();
-                    requestRedraw();
+                } else {
+                    // gl_log.info("No world position found at pixel ({d}, {d})", .{ event.button.x, event.button.y });
+                    camera.pivot_position = .{ 0.0, 0.0, 0.0 };
                 }
+                camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
+                camera.updateViewMatrix();
+                requestRedraw();
             }
         },
         c.SDL_EVENT_MOUSE_MOTION => {
@@ -521,7 +525,6 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         point_cloud_renderer.deinit();
         surface_mesh_renderer.deinit();
         vector_per_vertex_renderer.deinit();
-        surface_mesh_std_data_computation.deinit();
         surface_mesh_connectivity.deinit();
         surface_mesh_distance.deinit();
         modules.deinit(allocator);

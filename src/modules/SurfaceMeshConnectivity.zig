@@ -128,7 +128,9 @@ fn decimate(
     zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 }
 
-pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
+/// Part of the Module interface.
+/// Describe the right-click menu interface.
+pub fn rightClickMenu(smc: *SurfaceMeshConnectivity) void {
     const UiData = struct {
         var edge_length_factor: f32 = 1.0;
         var percent_vertices_to_keep: i32 = 75;
@@ -143,141 +145,149 @@ pub fn uiPanel(smc: *SurfaceMeshConnectivity) void {
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (sms.selected_surface_mesh) |sm| {
-        const info = sms.surfaceMeshInfo(sm);
+    if (c.ImGui_BeginMenu(smc.name().ptr)) {
+        defer c.ImGui_EndMenu();
 
-        {
-            const disabled = info.std_data.vertex_position == null;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (c.ImGui_ButtonEx("Cut all edges", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                smc.cutAllEdges(sm, info.std_data.vertex_position.?) catch |err| {
-                    std.debug.print("Error cutting all edges: {}\n", .{err});
-                };
-            }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - std vertex_position
-                \\ Update connectivity
-            );
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-        }
+        if (sms.selected_surface_mesh) |sm| {
+            const info = sms.surfaceMeshInfo(sm);
 
-        {
-            if (c.ImGui_ButtonEx("Triangulate faces", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                smc.triangulateFaces(sm) catch |err| {
-                    std.debug.print("Error triangulating faces: {}\n", .{err});
-                };
-            }
-            imgui_utils.tooltip("Update connectivity");
-        }
-
-        {
-            c.ImGui_Text("vertices to keep");
-            c.ImGui_PushID("vertices to keep");
-            _ = c.ImGui_SliderIntEx("", &UiData.percent_vertices_to_keep, 1, 100, "%d%%", c.ImGuiSliderFlags_AlwaysClamp);
-            c.ImGui_PopID();
-            const disabled = info.std_data.vertex_position == null or
-                info.std_data.vertex_area == null or
-                info.std_data.vertex_tangent_basis == null or
-                info.std_data.face_area == null or
-                info.std_data.face_normal == null;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (c.ImGui_ButtonEx("Decimate (QEM)", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                const nb_vertices_to_remove: u32 = @intFromFloat(@as(f32, @floatFromInt(sm.nbCells(.vertex))) * (1.0 - (@as(f32, @floatFromInt(UiData.percent_vertices_to_keep)) / 100.0)));
-                if (nb_vertices_to_remove > 0) {
-                    smc.decimate(
-                        sm,
-                        info.std_data.vertex_position.?,
-                        info.std_data.vertex_area.?,
-                        info.std_data.vertex_tangent_basis.?,
-                        info.std_data.face_area.?,
-                        info.std_data.face_normal.?,
-                        nb_vertices_to_remove,
-                    ) catch |err| {
-                        std.debug.print("Error decimating: {}\n", .{err});
+            if (c.ImGui_BeginMenu("Cut edges")) {
+                defer c.ImGui_EndMenu();
+                const disabled = info.std_data.vertex_position == null;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_ButtonEx("Cut all edges", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                    smc.cutAllEdges(sm, info.std_data.vertex_position.?) catch |err| {
+                        std.debug.print("Error cutting all edges: {}\n", .{err});
                     };
                 }
+                // imgui_utils.tooltip(
+                //     \\ Read:
+                //     \\ - std vertex_position
+                //     \\ Update connectivity
+                // );
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
             }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - std vertex_position
-                \\ - std vertex_area
-                \\ - std vertex_tangent_basis
-                \\ - std face_area
-                \\ - std face_normal
-                \\ Write:
-                \\ - std vertex_position
-                \\ Update connectivity
-            );
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-        }
 
-        {
-            c.ImGui_Text("Edge length factor");
-            c.ImGui_PushID("Edge length factor");
-            _ = c.ImGui_SliderFloatEx("", &UiData.edge_length_factor, 0.1, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
-            c.ImGui_PopID();
-            const disabled = info.std_data.vertex_position == null or
-                info.std_data.corner_angle == null or
-                info.std_data.face_area == null or
-                info.std_data.face_normal == null or
-                info.std_data.edge_length == null or
-                info.std_data.edge_dihedral_angle == null or
-                info.std_data.vertex_area == null or
-                info.std_data.vertex_normal == null;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
+            if (c.ImGui_BeginMenu("Triangulate faces")) {
+                defer c.ImGui_EndMenu();
+                if (c.ImGui_ButtonEx("Triangulate faces", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                    smc.triangulateFaces(sm) catch |err| {
+                        std.debug.print("Error triangulating faces: {}\n", .{err});
+                    };
+                }
+                imgui_utils.tooltip("Update connectivity");
             }
-            if (c.ImGui_ButtonEx("Remesh", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                smc.remesh(
-                    sm,
-                    UiData.edge_length_factor,
-                    info.std_data.vertex_position.?,
-                    info.std_data.corner_angle.?,
-                    info.std_data.face_area.?,
-                    info.std_data.face_normal.?,
-                    info.std_data.edge_length.?,
-                    info.std_data.edge_dihedral_angle.?,
-                    info.std_data.vertex_area.?,
-                    info.std_data.vertex_normal.?,
-                ) catch |err| {
-                    std.debug.print("Error remeshing: {}\n", .{err});
-                };
+
+            if (c.ImGui_BeginMenu("Decimate (QEM)")) {
+                defer c.ImGui_EndMenu();
+                c.ImGui_Text("vertices to keep");
+                c.ImGui_PushID("vertices to keep");
+                _ = c.ImGui_SliderIntEx("", &UiData.percent_vertices_to_keep, 1, 100, "%d%%", c.ImGuiSliderFlags_AlwaysClamp);
+                c.ImGui_PopID();
+                const disabled = info.std_data.vertex_position == null or
+                    info.std_data.vertex_area == null or
+                    info.std_data.vertex_tangent_basis == null or
+                    info.std_data.face_area == null or
+                    info.std_data.face_normal == null;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_ButtonEx("Decimate (QEM)", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                    const nb_vertices_to_remove: u32 = @intFromFloat(@as(f32, @floatFromInt(sm.nbCells(.vertex))) * (1.0 - (@as(f32, @floatFromInt(UiData.percent_vertices_to_keep)) / 100.0)));
+                    if (nb_vertices_to_remove > 0) {
+                        smc.decimate(
+                            sm,
+                            info.std_data.vertex_position.?,
+                            info.std_data.vertex_area.?,
+                            info.std_data.vertex_tangent_basis.?,
+                            info.std_data.face_area.?,
+                            info.std_data.face_normal.?,
+                            nb_vertices_to_remove,
+                        ) catch |err| {
+                            std.debug.print("Error decimating: {}\n", .{err});
+                        };
+                    }
+                }
+                // imgui_utils.tooltip(
+                //     \\ Read:
+                //     \\ - std vertex_position
+                //     \\ - std vertex_area
+                //     \\ - std vertex_tangent_basis
+                //     \\ - std face_area
+                //     \\ - std face_normal
+                //     \\ Write:
+                //     \\ - std vertex_position
+                //     \\ Update connectivity
+                // );
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
             }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - std vertex_position
-                \\ - std corner_angle
-                \\ - std face_area
-                \\ - std face_normal
-                \\ - std edge_length
-                \\ - std edge_dihedral_angle
-                \\ - std vertex_area
-                \\ - std vertex_normal
-                \\ Write:
-                \\ - std vertex_position
-                \\ - std corner_angle
-                \\ - std face_area
-                \\ - std face_normal
-                \\ - std edge_length
-                \\ - std edge_dihedral_angle
-                \\ - std vertex_area
-                \\ - std vertex_normal
-                \\ Update connectivity
-            );
-            if (disabled) {
-                c.ImGui_EndDisabled();
+
+            if (c.ImGui_BeginMenu("Remesh")) {
+                defer c.ImGui_EndMenu();
+                c.ImGui_Text("Edge length factor");
+                c.ImGui_PushID("Edge length factor");
+                _ = c.ImGui_SliderFloatEx("", &UiData.edge_length_factor, 0.1, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
+                c.ImGui_PopID();
+                const disabled = info.std_data.vertex_position == null or
+                    info.std_data.corner_angle == null or
+                    info.std_data.face_area == null or
+                    info.std_data.face_normal == null or
+                    info.std_data.edge_length == null or
+                    info.std_data.edge_dihedral_angle == null or
+                    info.std_data.vertex_area == null or
+                    info.std_data.vertex_normal == null;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_ButtonEx("Remesh", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                    smc.remesh(
+                        sm,
+                        UiData.edge_length_factor,
+                        info.std_data.vertex_position.?,
+                        info.std_data.corner_angle.?,
+                        info.std_data.face_area.?,
+                        info.std_data.face_normal.?,
+                        info.std_data.edge_length.?,
+                        info.std_data.edge_dihedral_angle.?,
+                        info.std_data.vertex_area.?,
+                        info.std_data.vertex_normal.?,
+                    ) catch |err| {
+                        std.debug.print("Error remeshing: {}\n", .{err});
+                    };
+                }
+                // imgui_utils.tooltip(
+                //     \\ Read:
+                //     \\ - std vertex_position
+                //     \\ - std corner_angle
+                //     \\ - std face_area
+                //     \\ - std face_normal
+                //     \\ - std edge_length
+                //     \\ - std edge_dihedral_angle
+                //     \\ - std vertex_area
+                //     \\ - std vertex_normal
+                //     \\ Write:
+                //     \\ - std vertex_position
+                //     \\ - std corner_angle
+                //     \\ - std face_area
+                //     \\ - std face_normal
+                //     \\ - std edge_length
+                //     \\ - std edge_dihedral_angle
+                //     \\ - std vertex_area
+                //     \\ - std vertex_normal
+                //     \\ Update connectivity
+                // );
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
             }
+        } else {
+            c.ImGui_Text("No Surface Mesh selected");
         }
-    } else {
-        c.ImGui_Text("No Surface Mesh selected");
     }
 }

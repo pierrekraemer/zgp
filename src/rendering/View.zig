@@ -152,7 +152,6 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
     );
     if (z == 1.0) {
         // no geometry was drawn at this pixel
-        gl_log.err("No geometry drawn at pixel", .{});
         return null;
     }
     // reconstruct the world position from the depth value
