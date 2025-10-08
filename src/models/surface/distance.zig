@@ -1,9 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const zgp = @import("../../main.zig");
-const c = zgp.c;
-
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const eigen = @import("../../geometry/eigen.zig");

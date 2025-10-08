@@ -1,8 +1,5 @@
 const Module = @This();
 
-const std = @import("std");
-const assert = std.debug.assert;
-
 const DataGen = @import("../utils/Data.zig").DataGen;
 
 const mat = @import("../geometry/mat.zig");

@@ -4,11 +4,9 @@ const std = @import("std");
 const gl = @import("gl");
 const gl_log = std.log.scoped(.gl);
 
-const zgp = @import("../main.zig");
-const c = zgp.c;
-
 const Module = @import("../modules/Module.zig");
 
+const eigen = @import("../geometry/eigen.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec4f = vec.Vec4f;
@@ -163,13 +161,10 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
         1.0,
     };
     const m_proj: Mat4d = mat.fromMat4f(view.camera.?.projection_matrix);
-    var m_proj_inv: Mat4d = undefined;
-    var m_proj_invertible = false;
-    c.computeInverseWithCheck(@ptrCast(&m_proj), @ptrCast(&m_proj_inv), &m_proj_invertible);
-    if (!m_proj_invertible) {
+    const m_proj_inv: Mat4d = eigen.computeInverse(m_proj) orelse {
         gl_log.err("Cannot invert projection matrix", .{});
         return null;
-    }
+    };
     var p_view = mat.mulVec4d(m_proj_inv, p_ndc);
     if (p_view[3] == 0.0) {
         gl_log.err("Cannot divide by zero w component", .{});
@@ -177,13 +172,10 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
     }
     p_view = vec.divScalar4d(p_view, p_view[3]);
     const m_view: Mat4d = mat.fromMat4f(view.camera.?.view_matrix);
-    var m_view_inv: Mat4d = undefined;
-    var m_view_invertible = false;
-    c.computeInverseWithCheck(@ptrCast(&m_view), @ptrCast(&m_view_inv), &m_view_invertible);
-    if (!m_view_invertible) {
+    const m_view_inv: Mat4d = eigen.computeInverse(m_view) orelse {
         gl_log.err("Cannot invert view matrix", .{});
         return null;
-    }
+    };
     const p_world = mat.mulVec4d(m_view_inv, p_view);
     return .{ @floatCast(p_world[0]), @floatCast(p_world[1]), @floatCast(p_world[2]) };
 }

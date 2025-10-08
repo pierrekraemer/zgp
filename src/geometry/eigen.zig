@@ -1,6 +1,9 @@
 const zgp = @import("../main.zig");
 const c = zgp.c;
 
+const mat = @import("mat.zig");
+const Mat4d = mat.Mat4d;
+
 pub const Index = i32;
 pub const Scalar = f64;
 
@@ -9,6 +12,13 @@ pub const Triplet = packed struct {
     col: Index,
     value: Scalar,
 };
+
+pub fn computeInverse(m: Mat4d) ?Mat4d {
+    var inv: Mat4d = undefined;
+    var invertible = false;
+    c.computeInverseWithCheck(@ptrCast(&m), @ptrCast(&inv), &invertible);
+    return if (invertible) inv else null;
+}
 
 pub const SparseMatrix = struct {
     matrix: ?*anyopaque,
