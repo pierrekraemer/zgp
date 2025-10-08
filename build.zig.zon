@@ -17,8 +17,8 @@
             .hash = "cimgui_zig-1.0.0-2Xubkvp8XwBlaeHTR58KF9iYfZNf2Kt9UCN8WGH38FDO",
         },
         .ceigen = .{
-            .url = "git+https://github.com/pierrekraemer/ceigen.git#024a3ca6b4b60923da1763ef85ed0acf6484b396",
-            .hash = "ceigen-0.0.0-nikIKa-IBgEHvV6h93nzH9bT9WAFmOmQTqLgBjkBM_Hf",
+            .url = "git+https://github.com/pierrekraemer/ceigen.git#323cfa618aea40e2a5f928f4747f1a824bc7102a",
+            .hash = "ceigen-0.0.0-nikIKfSHBgHN8aSJOY6Q7Mk8eKUq7s-iC8MczDYWAnYn",
         },
     },
     .paths = .{

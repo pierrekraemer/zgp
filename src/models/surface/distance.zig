@@ -6,6 +6,7 @@ const c = zgp.c;
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
+const eigen = @import("../../geometry/eigen.zig");
 const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -38,16 +39,12 @@ pub fn computeVertexGeodesicDistancesFromSource(
         vertex_index.valuePtr(v).* = nb_vertices;
     }
 
-    // warning: Eigen (via ceigen) uses double precision
+    // warning: use eigen.Scalar for matrix coefficients
 
     // setup Laplacian matrix Lc
     const nb_edges = sm.nbCells(.edge);
-    var row_indices = try std.ArrayList(u32).initCapacity(allocator, 4 * nb_edges);
-    defer row_indices.deinit(allocator);
-    var col_indices = try std.ArrayList(u32).initCapacity(allocator, 4 * nb_edges);
-    defer col_indices.deinit(allocator);
-    var values = try std.ArrayList(f64).initCapacity(allocator, 4 * nb_edges);
-    defer values.deinit(allocator);
+    var triplets = try std.ArrayList(eigen.Triplet).initCapacity(allocator, 4 * nb_edges);
+    defer triplets.deinit(allocator);
     var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer edge_it.deinit();
     while (edge_it.next()) |edge| {
@@ -57,35 +54,20 @@ pub fn computeVertexGeodesicDistancesFromSource(
         const j = vertex_index.value(.{ .vertex = dd });
         const w_ij = laplacian.edgeCotanWeight(sm, edge, halfedge_cotan_weight);
         // off-diagonal
-        row_indices.appendAssumeCapacity(i);
-        col_indices.appendAssumeCapacity(j);
-        values.appendAssumeCapacity(@floatCast(w_ij));
-        row_indices.appendAssumeCapacity(j);
-        col_indices.appendAssumeCapacity(i);
-        values.appendAssumeCapacity(@floatCast(w_ij));
+        triplets.appendAssumeCapacity(.{ .row = @intCast(i), .col = @intCast(j), .value = @floatCast(w_ij) });
+        triplets.appendAssumeCapacity(.{ .row = @intCast(j), .col = @intCast(i), .value = @floatCast(w_ij) });
         // diagonal
-        row_indices.appendAssumeCapacity(i);
-        col_indices.appendAssumeCapacity(i);
-        values.appendAssumeCapacity(@floatCast(-w_ij));
-        row_indices.appendAssumeCapacity(j);
-        col_indices.appendAssumeCapacity(j);
-        values.appendAssumeCapacity(@floatCast(-w_ij));
+        triplets.appendAssumeCapacity(.{ .row = @intCast(i), .col = @intCast(i), .value = @floatCast(-w_ij) });
+        triplets.appendAssumeCapacity(.{ .row = @intCast(j), .col = @intCast(j), .value = @floatCast(-w_ij) });
     }
-    const Lc: ?*anyopaque = c.createSparseMatrixFromTriplets(
-        @intCast(nb_vertices),
-        @intCast(nb_vertices),
-        @intCast(row_indices.items.len),
-        row_indices.items.ptr,
-        col_indices.items.ptr,
-        values.items.ptr,
-    );
-    defer c.destroySparseMatrix(Lc.?);
+    var Lc: eigen.SparseMatrix = .initFromTriplets(@intCast(nb_vertices), @intCast(nb_vertices), triplets.items);
+    defer Lc.deinit();
 
     // setup mass-matrix A (vertex areas) and
     // initial heat vector heat_0 (1.0 at source vertex, 0.0 elsewhere)
-    var massCoeffs = try std.ArrayList(f64).initCapacity(allocator, nb_vertices);
+    var massCoeffs = try std.ArrayList(eigen.Scalar).initCapacity(allocator, nb_vertices);
     defer massCoeffs.deinit(allocator);
-    var heat_0 = try std.ArrayList(f64).initCapacity(allocator, nb_vertices);
+    var heat_0 = try std.ArrayList(eigen.Scalar).initCapacity(allocator, nb_vertices);
     defer heat_0.deinit(allocator);
     const source_vertex_index = sm.cellIndex(source_vertex);
     vertex_it.reset();
@@ -94,24 +76,24 @@ pub fn computeVertexGeodesicDistancesFromSource(
         massCoeffs.appendAssumeCapacity(@floatCast(vertex_area.value(v)));
         heat_0.appendAssumeCapacity(if (sm.cellIndex(v) == source_vertex_index) 1.0 else 0.0);
     }
-    const A: ?*anyopaque = c.createDiagonalSparseMatrixFromArray(@intCast(massCoeffs.items.len), massCoeffs.items.ptr);
-    defer c.destroySparseMatrix(A.?);
+    var A: eigen.SparseMatrix = .initDiagonalFromArray(massCoeffs.items);
+    defer A.deinit();
 
     // compute time step t = mean_edge_length^2
     const mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
     const t = mean_edge_length * mean_edge_length * diffusion_time;
 
     // compute M = A - t * Lc
-    const M: ?*anyopaque = c.createSparseMatrix(@intCast(nb_vertices), @intCast(nb_vertices));
-    defer c.destroySparseMatrix(M.?);
-    c.mulSparseMatrixScalar(Lc.?, @floatCast(t), M.?);
-    c.subSparseMatrices(A.?, M.?, M.?);
+    var M: eigen.SparseMatrix = .init(@intCast(nb_vertices), @intCast(nb_vertices));
+    defer M.deinit();
+    eigen.mulScalar(Lc, @floatCast(-t), M);
+    eigen.addSparseMatrices(A, M, M);
 
     // solve M * heat_t = heat_0 (backward Euler time step of the heat equation)
-    var heat_t = try std.ArrayList(f64).initCapacity(allocator, nb_vertices);
+    var heat_t = try std.ArrayList(eigen.Scalar).initCapacity(allocator, nb_vertices);
     defer heat_t.deinit(allocator);
     try heat_t.resize(allocator, nb_vertices);
-    c.solveSymmetricSparseLinearSystem(M.?, heat_0.items.ptr, heat_t.items.ptr, @intCast(heat_0.items.len));
+    eigen.solveSymmetricSparseLinearSystem(M, heat_0.items, heat_t.items);
 
     // store heat_t in a vertex data
     var vertex_heat = try sm.addData(.vertex, f32, "__vertex_heat");
@@ -155,7 +137,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
     );
 
     // setup div vector
-    var div = try std.ArrayList(f64).initCapacity(allocator, nb_vertices);
+    var div = try std.ArrayList(eigen.Scalar).initCapacity(allocator, nb_vertices);
     defer div.deinit(allocator);
     vertex_it.reset();
     while (vertex_it.next()) |v| {
@@ -164,13 +146,13 @@ pub fn computeVertexGeodesicDistancesFromSource(
     }
 
     // solve Lc * dist = div (Poisson equation)
-    var dist = try std.ArrayList(f64).initCapacity(allocator, nb_vertices);
+    var dist = try std.ArrayList(eigen.Scalar).initCapacity(allocator, nb_vertices);
     defer dist.deinit(allocator);
     try dist.resize(allocator, nb_vertices);
-    c.solveSymmetricSparseLinearSystem(Lc.?, div.items.ptr, dist.items.ptr, @intCast(div.items.len));
+    eigen.solveSymmetricSparseLinearSystem(Lc, div.items, dist.items);
 
     // shift distance values s.t. min distance is 0.0 and store them in vertex_distance
-    const min_dist = std.mem.min(f64, dist.items);
+    const min_dist = std.mem.min(eigen.Scalar, dist.items);
     vertex_it.reset();
     while (vertex_it.next()) |v| {
         const idx = vertex_index.value(v);
