@@ -40,6 +40,15 @@ const VectorPerVertexRendererParameters = struct {
     }
 };
 
+module: Module = .{
+    .name = "Vector Per Vertex Renderer",
+    .vtable = &.{
+        .surfaceMeshAdded = surfaceMeshAdded,
+        .surfaceMeshStdDataChanged = surfaceMeshStdDataChanged,
+        .draw = draw,
+        .uiPanel = uiPanel,
+    },
+},
 parameters: std.AutoHashMap(*const SurfaceMesh, VectorPerVertexRendererParameters),
 
 pub fn init(allocator: std.mem.Allocator) !VectorPerVertexRenderer {
@@ -57,22 +66,10 @@ pub fn deinit(vpvr: *VectorPerVertexRenderer) void {
     vpvr.parameters.deinit();
 }
 
-/// Return a Module interface for the VectorPerVertexRenderer.
-pub fn module(vpvr: *VectorPerVertexRenderer) Module {
-    return Module.init(vpvr);
-}
-
-/// Part of the Module interface.
-/// Return the name of the module.
-pub fn name(_: *VectorPerVertexRenderer) []const u8 {
-    return "Vector Per Vertex Renderer";
-}
-
-// TODO: add functions to manage PointClouds
-
 /// Part of the Module interface.
 /// Create and store a VectorPerVertexRendererParameters for the new SurfaceMesh.
-pub fn surfaceMeshAdded(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMesh) void {
+pub fn surfaceMeshAdded(m: *Module, surface_mesh: *SurfaceMesh) void {
+    const vpvr: *VectorPerVertexRenderer = @alignCast(@fieldParentPtr("module", m));
     vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init()) catch |err| {
         std.debug.print("Failed to create VectorPerVertexRendererParameters for new SurfaceMesh: {}\n", .{err});
     };
@@ -81,10 +78,11 @@ pub fn surfaceMeshAdded(vpvr: *VectorPerVertexRenderer, surface_mesh: *SurfaceMe
 /// Part of the Module interface.
 /// Update the VectorPerVertexRendererParameters when a standard data of the SurfaceMesh changes.
 pub fn surfaceMeshStdDataChanged(
-    vpvr: *VectorPerVertexRenderer,
+    m: *Module,
     surface_mesh: *SurfaceMesh,
     std_data: SurfaceMeshStdData,
 ) void {
+    const vpvr: *VectorPerVertexRenderer = @alignCast(@fieldParentPtr("module", m));
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
@@ -117,7 +115,8 @@ fn setSurfaceMeshVectorData(
 
 /// Part of the Module interface.
 /// Render all SurfaceMeshes with their VectorPerVertexRendererParameters and the given view and projection matrices.
-pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4f, projection_matrix: Mat4f) void {
+pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
+    const vpvr: *VectorPerVertexRenderer = @alignCast(@fieldParentPtr("module", m));
     var sm_it = zgp.surface_mesh_store.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const surface_mesh = entry.value_ptr.*;
@@ -131,7 +130,9 @@ pub fn draw(vpvr: *VectorPerVertexRenderer, view_matrix: Mat4f, projection_matri
 
 /// Part of the Module interface.
 /// Show a UI panel to control the VectorPerVertexRendererParameters of the selected SurfaceMesh.
-pub fn uiPanel(vpvr: *VectorPerVertexRenderer) void {
+pub fn uiPanel(m: *Module) void {
+    const vpvr: *VectorPerVertexRenderer = @alignCast(@fieldParentPtr("module", m));
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);

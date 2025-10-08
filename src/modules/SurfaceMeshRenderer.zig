@@ -10,7 +10,6 @@ const imgui_utils = @import("../utils/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 
 const Module = @import("Module.zig");
-const SurfaceMeshStore = @import("../models/SurfaceMeshStore.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfaceMeshStdData = @import("../models/surface/SurfaceMeshStdDatas.zig").SurfaceMeshStdData;
 const DataGen = @import("../utils/Data.zig").DataGen;
@@ -92,6 +91,16 @@ const SurfaceMeshRendererParameters = struct {
     }
 };
 
+module: Module = .{
+    .name = "Surface Mesh Renderer",
+    .vtable = &.{
+        .surfaceMeshAdded = surfaceMeshAdded,
+        .surfaceMeshStdDataChanged = surfaceMeshStdDataChanged,
+        .surfaceMeshDataUpdated = surfaceMeshDataUpdated,
+        .uiPanel = uiPanel,
+        .draw = draw,
+    },
+},
 parameters: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRendererParameters),
 
 pub fn init(allocator: std.mem.Allocator) !SurfaceMeshRenderer {
@@ -109,20 +118,10 @@ pub fn deinit(smr: *SurfaceMeshRenderer) void {
     smr.parameters.deinit();
 }
 
-/// Return a Module interface for the SurfaceMeshRenderer.
-pub fn module(smr: *SurfaceMeshRenderer) Module {
-    return Module.init(smr);
-}
-
-/// Part of the Module interface.
-/// Return the name of the module.
-pub fn name(_: *SurfaceMeshRenderer) []const u8 {
-    return "Surface Mesh Renderer";
-}
-
 /// Part of the Module interface.
 /// Create and store a SurfaceMeshRendererParameters for the new SurfaceMesh.
-pub fn surfaceMeshAdded(smr: *SurfaceMeshRenderer, surface_mesh: *SurfaceMesh) void {
+pub fn surfaceMeshAdded(m: *Module, surface_mesh: *SurfaceMesh) void {
+    const smr: *SurfaceMeshRenderer = @alignCast(@fieldParentPtr("module", m));
     smr.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init()) catch |err| {
         std.debug.print("Failed to create SurfaceMeshRendererParameters for new SurfaceMesh: {}\n", .{err});
         return;
@@ -132,10 +131,11 @@ pub fn surfaceMeshAdded(smr: *SurfaceMeshRenderer, surface_mesh: *SurfaceMesh) v
 /// Part of the Module interface.
 /// Update the SurfaceMeshRendererParameters when a standard data of the SurfaceMesh changes.
 pub fn surfaceMeshStdDataChanged(
-    smr: *SurfaceMeshRenderer,
+    m: *Module,
     surface_mesh: *SurfaceMesh,
     std_data: SurfaceMeshStdData,
 ) void {
+    const smr: *SurfaceMeshRenderer = @alignCast(@fieldParentPtr("module", m));
     const p = smr.parameters.getPtr(surface_mesh) orelse return;
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
@@ -170,11 +170,12 @@ fn compareScalar(_: CompareScalarContext, a: f32, b: f32) std.math.Order {
 /// Part of the Module interface.
 /// Check if the updated data is used here for coloring and update the associated min/max values.
 pub fn surfaceMeshDataUpdated(
-    smr: *SurfaceMeshRenderer,
+    m: *Module,
     surface_mesh: *SurfaceMesh,
     cell_type: SurfaceMesh.CellType,
     data_gen: *const DataGen,
 ) void {
+    const smr: *SurfaceMeshRenderer = @alignCast(@fieldParentPtr("module", m));
     const p = smr.parameters.getPtr(surface_mesh) orelse return;
     switch (cell_type) {
         .vertex => {
@@ -343,7 +344,8 @@ fn setSurfaceMeshDrawFacesColorData(
 
 /// Part of the Module interface.
 /// Render all SurfaceMeshes with their SurfaceMeshRendererParameters and the given view and projection matrices.
-pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4f, projection_matrix: Mat4f) void {
+pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
+    const smr: *SurfaceMeshRenderer = @alignCast(@fieldParentPtr("module", m));
     var sm_it = zgp.surface_mesh_store.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         const sm = entry.value_ptr.*;
@@ -425,7 +427,9 @@ pub fn draw(smr: *SurfaceMeshRenderer, view_matrix: Mat4f, projection_matrix: Ma
 
 /// Part of the Module interface.
 /// Show a UI panel to control the SurfaceMeshRendererParameters of the selected SurfaceMesh.
-pub fn uiPanel(smr: *SurfaceMeshRenderer) void {
+pub fn uiPanel(m: *Module) void {
+    const smr: *SurfaceMeshRenderer = @alignCast(@fieldParentPtr("module", m));
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);

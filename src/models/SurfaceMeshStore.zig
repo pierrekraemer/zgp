@@ -112,7 +112,7 @@ pub fn surfaceMeshDataUpdated(
     };
 
     // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
-    for (zgp.modules.items) |*module| {
+    for (zgp.modules.items) |module| {
         module.surfaceMeshDataUpdated(sm, cell_type, data.gen());
     }
     zgp.requestRedraw();
@@ -163,7 +163,7 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
     };
 
     // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
-    for (zgp.modules.items) |*module| {
+    for (zgp.modules.items) |module| {
         module.surfaceMeshConnectivityUpdated(sm);
     }
     zgp.requestRedraw();
@@ -213,7 +213,7 @@ pub fn setSurfaceMeshStdData(
     }
 
     // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
-    for (zgp.modules.items) |*module| {
+    for (zgp.modules.items) |module| {
         module.surfaceMeshStdDataChanged(sm, data);
     }
     zgp.requestRedraw();
@@ -332,7 +332,7 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
 
             c.ImGui_Separator();
 
-            if (c.ImGui_ButtonEx(c.ICON_FA_FOLDER_PLUS ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
                     if (@field(info.std_data, field.name) == null) {
                         const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
@@ -355,9 +355,9 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
             }
 
             if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                c.ImGui_OpenPopup("Create SurfaceMesh Cell Data", c.ImGuiPopupFlags_NoReopen);
+                c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
             }
-            if (c.ImGui_BeginPopupModal("Create SurfaceMesh Cell Data", 0, c.ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (c.ImGui_BeginPopupModal("Create Cell Data", 0, c.ImGuiWindowFlags_AlwaysAutoResize)) {
                 defer c.ImGui_EndPopup();
                 c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
                 defer c.ImGui_PopItemWidth();
@@ -438,7 +438,7 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     errdefer _ = sms.surface_meshes_info.remove(sm);
 
     // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
-    for (zgp.modules.items) |*module| {
+    for (zgp.modules.items) |module| {
         module.surfaceMeshAdded(sm);
     }
 

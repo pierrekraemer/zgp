@@ -102,7 +102,7 @@ pub fn resize(view: *View, width: c_int, height: c_int) void {
     }
 }
 
-pub fn draw(view: *View, modules: []Module) void {
+pub fn draw(view: *View, modules: []*Module) void {
     if (view.camera == null) {
         gl_log.err("No camera set for view", .{});
         return;
@@ -118,7 +118,7 @@ pub fn draw(view: *View, modules: []Module) void {
         gl.Enable(gl.POLYGON_OFFSET_FILL);
         gl.PolygonOffset(1.0, 1.5);
         // gl.DrawBuffer(gl.COLOR_ATTACHMENT0); // not needed as it is already the default
-        for (modules) |*module| {
+        for (modules) |module| {
             module.draw(view.camera.?.view_matrix, view.camera.?.projection_matrix);
         }
         view.need_redraw = false;

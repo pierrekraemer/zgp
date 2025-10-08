@@ -59,7 +59,7 @@ pub var rng: std.Random.DefaultPrng = undefined;
 pub var thread_pool: std.Thread.Pool = undefined;
 pub var surface_mesh_store: SurfaceMeshStore = undefined;
 pub var point_cloud_store: PointCloudStore = undefined;
-pub var modules: std.ArrayList(Module) = .empty;
+pub var modules: std.ArrayList(*Module) = .empty;
 
 /// ZGP modules
 /// TODO: could be declared in a config file and loaded at runtime
@@ -237,11 +237,11 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     // TODO: find a way to tag Modules with the type of model they handle (PointCloud, SurfaceMesh, etc.)
     // and only show them in the UI when a compatible model is selected
-    try modules.append(allocator, point_cloud_renderer.module());
-    try modules.append(allocator, surface_mesh_renderer.module());
-    try modules.append(allocator, vector_per_vertex_renderer.module());
-    try modules.append(allocator, surface_mesh_connectivity.module());
-    try modules.append(allocator, surface_mesh_distance.module());
+    try modules.append(allocator, &point_cloud_renderer.module);
+    try modules.append(allocator, &surface_mesh_renderer.module);
+    try modules.append(allocator, &vector_per_vertex_renderer.module);
+    try modules.append(allocator, &surface_mesh_connectivity.module);
+    try modules.append(allocator, &surface_mesh_distance.module);
     errdefer modules.deinit(allocator);
 
     // CLI arguments parsing
@@ -308,7 +308,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         }
         if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
             defer c.ImGui_EndPopup();
-            for (modules.items) |*module| {
+            for (modules.items) |module| {
                 module.rightClickMenu();
             }
             c.ImGui_Separator();
@@ -358,7 +358,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             surface_mesh_store.menuBar();
             point_cloud_store.menuBar();
 
-            for (modules.items) |*module| {
+            for (modules.items) |module| {
                 module.menuBar();
             }
         }
@@ -396,14 +396,14 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
         {
             defer c.ImGui_End();
-            for (modules.items) |*module| {
-                if (!module.hasUiPanel()) continue;
+            for (modules.items) |module| {
+                if (module.vtable.uiPanel == null) continue; // check if the module has a uiPanel function
                 c.ImGui_PushIDPtr(module);
                 defer c.ImGui_PopID();
                 c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
                 c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
                 c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
-                if (c.ImGui_CollapsingHeader(module.name().ptr, 0)) {
+                if (c.ImGui_CollapsingHeader(module.name.ptr, 0)) {
                     c.ImGui_PopStyleColorEx(3);
                     module.uiPanel();
                 } else {

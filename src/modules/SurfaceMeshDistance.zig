@@ -16,8 +16,13 @@ const Vec3f = vec.Vec3f;
 
 const distance = @import("../models/surface/distance.zig");
 
-// TODO: useful to keep an allocator here rather than exposing & using zgp.allocator?
-allocator: std.mem.Allocator,
+module: Module = .{
+    .name = "Surface Mesh Distance",
+    .vtable = &.{
+        .rightClickMenu = rightClickMenu,
+    },
+},
+allocator: std.mem.Allocator, // TODO: useful to keep an allocator here rather than exposing & using zgp.allocator?
 
 pub fn init(allocator: std.mem.Allocator) !SurfaceMeshDistance {
     return .{
@@ -26,17 +31,6 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMeshDistance {
 }
 
 pub fn deinit(_: *SurfaceMeshDistance) void {}
-
-/// Return a Module interface for the SurfaceMeshDistance.
-pub fn module(smc: *SurfaceMeshDistance) Module {
-    return Module.init(smc);
-}
-
-/// Part of the Module interface.
-/// Return the name of the module.
-pub fn name(_: *SurfaceMeshDistance) []const u8 {
-    return "Surface Mesh Distance";
-}
 
 // TODO: allow selecting multiple source vertices
 fn computeVertexGeodesicDistancesFromSource(
@@ -75,7 +69,9 @@ fn computeVertexGeodesicDistancesFromSource(
 
 /// Part of the Module interface.
 /// Describe the right-click menu interface.
-pub fn rightClickMenu(smd: *SurfaceMeshDistance) void {
+pub fn rightClickMenu(m: *Module) void {
+    const smd: *SurfaceMeshDistance = @alignCast(@fieldParentPtr("module", m));
+
     const UiData = struct {
         var source_vertex: SurfaceMesh.Cell = .{ .vertex = 0 };
         var diffusion_time: f32 = 1.0;
@@ -89,7 +85,7 @@ pub fn rightClickMenu(smd: *SurfaceMeshDistance) void {
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (c.ImGui_BeginMenu(smd.name().ptr)) {
+    if (c.ImGui_BeginMenu(m.name.ptr)) {
         defer c.ImGui_EndMenu();
 
         if (sms.selected_surface_mesh) |sm| {

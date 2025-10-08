@@ -10,9 +10,8 @@ const imgui_utils = @import("../utils/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 
 const Module = @import("Module.zig");
-const PointCloudStore = @import("../models/PointCloudStore.zig");
-const PointCloud = PointCloudStore.PointCloud;
-const PointCloudStdData = PointCloudStore.PointCloudStdData;
+const PointCloud = @import("../models/point/PointCloud.zig");
+const PointCloudStdData = @import("../models/point/PointCloudStdDatas.zig").PointCloudStdData;
 
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const PointSphereColorPerVertex = @import("../rendering/shaders/point_sphere_color_per_vertex/PointSphereColorPerVertex.zig");
@@ -61,6 +60,15 @@ const PointCloudRendererParameters = struct {
     }
 };
 
+module: Module = .{
+    .name = "Point Cloud Renderer",
+    .vtable = &.{
+        .pointCloudAdded = &pointCloudAdded,
+        .pointCloudStdDataChanged = &pointCloudStdDataChanged,
+        .uiPanel = &uiPanel,
+        .draw = &draw,
+    },
+},
 parameters: std.AutoHashMap(*const PointCloud, PointCloudRendererParameters),
 
 pub fn init(allocator: std.mem.Allocator) !PointCloudRenderer {
@@ -78,20 +86,10 @@ pub fn deinit(pcr: *PointCloudRenderer) void {
     pcr.parameters.deinit();
 }
 
-/// Return a Module interface for the PointCloudRenderer.
-pub fn module(pcr: *PointCloudRenderer) Module {
-    return Module.init(pcr);
-}
-
-/// Part of the Module interface.
-/// Return the name of the module.
-pub fn name(_: *PointCloudRenderer) []const u8 {
-    return "Point Cloud Renderer";
-}
-
 /// Part of the Module interface.
 /// Create and store a PointCloudRendererParameters for the new PointCloud.
-pub fn pointCloudAdded(pcr: *PointCloudRenderer, point_cloud: *PointCloud) void {
+pub fn pointCloudAdded(m: *Module, point_cloud: *PointCloud) void {
+    const pcr: *PointCloudRenderer = @alignCast(@fieldParentPtr("module", m));
     pcr.parameters.put(point_cloud, PointCloudRendererParameters.init()) catch |err| {
         std.debug.print("Failed to create PointCloudRendererParameters for new PointCloud: {}\n", .{err});
         return;
@@ -101,10 +99,11 @@ pub fn pointCloudAdded(pcr: *PointCloudRenderer, point_cloud: *PointCloud) void 
 /// Part of the Module interface.
 /// Update the PointCloudRendererParameters when a standard data of the PointCloud changes.
 pub fn pointCloudStdDataChanged(
-    pcr: *PointCloudRenderer,
+    m: *Module,
     point_cloud: *PointCloud,
     std_data: PointCloudStdData,
 ) void {
+    const pcr: *PointCloudRenderer = @alignCast(@fieldParentPtr("module", m));
     const p = pcr.parameters.getPtr(point_cloud) orelse return;
     switch (std_data) {
         .position => |maybe_position| {
@@ -158,7 +157,12 @@ fn setPointCloudDrawPointsColorData(
 
 /// Part of the Module interface.
 /// Render all PointClouds with their PointCloudRendererParameters and the given view and projection matrices.
-pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4f, projection_matrix: Mat4f) void {
+pub fn draw(
+    m: *Module,
+    view_matrix: Mat4f,
+    projection_matrix: Mat4f,
+) void {
+    const pcr: *PointCloudRenderer = @alignCast(@fieldParentPtr("module", m));
     var pc_it = zgp.point_cloud_store.point_clouds.iterator();
     while (pc_it.next()) |entry| {
         const pc = entry.value_ptr.*;
@@ -191,7 +195,9 @@ pub fn draw(pcr: *PointCloudRenderer, view_matrix: Mat4f, projection_matrix: Mat
 
 /// Part of the Module interface.
 /// Show a UI panel to control the PointCloudRendererParameters of the selected PointCloud.
-pub fn uiPanel(pcr: *PointCloudRenderer) void {
+pub fn uiPanel(m: *Module) void {
+    const pcr: *PointCloudRenderer = @alignCast(@fieldParentPtr("module", m));
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);

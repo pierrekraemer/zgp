@@ -8,171 +8,84 @@ const DataGen = @import("../utils/Data.zig").DataGen;
 const mat = @import("../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
 
-const PointCloudStore = @import("../models/PointCloudStore.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
-const PointCloudStdData = PointCloudStore.PointCloudStdData;
+const PointCloudStdData = @import("../models/point/PointCloudStdDatas.zig").PointCloudStdData;
 
-const SurfaceMeshStore = @import("../models/SurfaceMeshStore.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfaceMeshStdData = @import("../models/surface/SurfaceMeshStdDatas.zig").SurfaceMeshStdData;
 
-ptr: *anyopaque, // pointer to the concrete Module
+name: []const u8,
 vtable: *const VTable,
 
 const VTable = struct {
-    name: *const fn (ptr: *anyopaque) []const u8,
+    pointCloudAdded: ?*const fn (m: *Module, point_cloud: *PointCloud) void = null,
+    pointCloudStdDataChanged: ?*const fn (m: *Module, point_cloud: *PointCloud, std_data: PointCloudStdData) void = null,
+    pointCloudDataUpdated: ?*const fn (m: *Module, point_cloud: *PointCloud, data_gen: *const DataGen) void = null,
 
-    pointCloudAdded: *const fn (ptr: *anyopaque, point_cloud: *PointCloud) void,
-    pointCloudStdDataChanged: *const fn (ptr: *anyopaque, point_cloud: *PointCloud, std_data: PointCloudStdData) void,
-    pointCloudDataUpdated: *const fn (ptr: *anyopaque, point_cloud: *PointCloud, data_gen: *const DataGen) void,
+    surfaceMeshAdded: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
+    surfaceMeshStdDataChanged: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) void = null,
+    surfaceMeshConnectivityUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
+    surfaceMeshDataUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void = null,
 
-    surfaceMeshAdded: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh) void,
-    surfaceMeshStdDataChanged: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) void,
-    surfaceMeshConnectivityUpdated: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh) void,
-    surfaceMeshDataUpdated: *const fn (ptr: *anyopaque, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void,
+    uiPanel: ?*const fn (m: *Module) void = null,
+    menuBar: ?*const fn (m: *Module) void = null,
+    rightClickMenu: ?*const fn (m: *Module) void = null,
 
-    hasUiPanel: *const fn (ptr: *anyopaque) bool,
-    uiPanel: *const fn (ptr: *anyopaque) void,
-    menuBar: *const fn (ptr: *anyopaque) void,
-    rightClickMenu: *const fn (ptr: *anyopaque) void,
-
-    draw: *const fn (ptr: *anyopaque, view_matrix: Mat4f, projection_matrix: Mat4f) void,
+    draw: ?*const fn (m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void = null,
 };
 
-pub fn init(ptr: anytype) Module {
-    const Ptr = @TypeOf(ptr);
-    const ptr_info = @typeInfo(Ptr);
-    assert(ptr_info == .pointer); // Must be a pointer
-    assert(ptr_info.pointer.size == .one); // Must be a single-item pointer
-    assert(@typeInfo(ptr_info.pointer.child) == .@"struct"); // Must point to a struct
-    const ModuleType = ptr_info.pointer.child;
-
-    const gen = struct {
-        fn name(pointer: *anyopaque) []const u8 {
-            if (!@hasDecl(ModuleType, "name")) return "NoName Module";
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            return impl.name();
-        }
-        fn pointCloudAdded(pointer: *anyopaque, point_cloud: *PointCloud) void {
-            if (!@hasDecl(ModuleType, "pointCloudAdded")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.pointCloudAdded(point_cloud);
-        }
-        fn pointCloudStdDataChanged(pointer: *anyopaque, point_cloud: *PointCloud, std_data: PointCloudStdData) void {
-            if (!@hasDecl(ModuleType, "pointCloudStdDataChanged")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.pointCloudStdDataChanged(point_cloud, std_data);
-        }
-        fn pointCloudDataUpdated(pointer: *anyopaque, point_cloud: *PointCloud, data_gen: *const DataGen) void {
-            if (!@hasDecl(ModuleType, "pointCloudDataUpdated")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.pointCloudDataUpdated(point_cloud, data_gen);
-        }
-        fn surfaceMeshAdded(pointer: *anyopaque, surface_mesh: *SurfaceMesh) void {
-            if (!@hasDecl(ModuleType, "surfaceMeshAdded")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.surfaceMeshAdded(surface_mesh);
-        }
-        fn surfaceMeshStdDataChanged(pointer: *anyopaque, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) void {
-            if (!@hasDecl(ModuleType, "surfaceMeshStdDataChanged")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.surfaceMeshStdDataChanged(surface_mesh, std_data);
-        }
-        fn surfaceMeshConnectivityUpdated(pointer: *anyopaque, surface_mesh: *SurfaceMesh) void {
-            if (!@hasDecl(ModuleType, "surfaceMeshConnectivityUpdated")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.surfaceMeshConnectivityUpdated(surface_mesh);
-        }
-        fn surfaceMeshDataUpdated(pointer: *anyopaque, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void {
-            if (!@hasDecl(ModuleType, "surfaceMeshDataUpdated")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.surfaceMeshDataUpdated(surface_mesh, cell_type, data_gen);
-        }
-        fn hasUiPanel(_: *anyopaque) bool {
-            return @hasDecl(ModuleType, "uiPanel");
-        }
-        fn uiPanel(pointer: *anyopaque) void {
-            if (!@hasDecl(ModuleType, "uiPanel")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.uiPanel();
-        }
-        fn menuBar(pointer: *anyopaque) void {
-            if (!@hasDecl(ModuleType, "menuBar")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.menuBar();
-        }
-        fn rightClickMenu(pointer: *anyopaque) void {
-            if (!@hasDecl(ModuleType, "rightClickMenu")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.rightClickMenu();
-        }
-        fn draw(pointer: *anyopaque, view_matrix: Mat4f, projection_matrix: Mat4f) void {
-            if (!@hasDecl(ModuleType, "draw")) return;
-            const impl: Ptr = @ptrCast(@alignCast(pointer));
-            impl.draw(view_matrix, projection_matrix);
-        }
-    };
-
-    return .{
-        .ptr = ptr,
-        .vtable = comptime &.{
-            .name = gen.name,
-            .pointCloudAdded = gen.pointCloudAdded,
-            .pointCloudStdDataChanged = gen.pointCloudStdDataChanged,
-            .pointCloudDataUpdated = gen.pointCloudDataUpdated,
-            .surfaceMeshAdded = gen.surfaceMeshAdded,
-            .surfaceMeshStdDataChanged = gen.surfaceMeshStdDataChanged,
-            .surfaceMeshConnectivityUpdated = gen.surfaceMeshConnectivityUpdated,
-            .surfaceMeshDataUpdated = gen.surfaceMeshDataUpdated,
-            .hasUiPanel = gen.hasUiPanel,
-            .uiPanel = gen.uiPanel,
-            .menuBar = gen.menuBar,
-            .rightClickMenu = gen.rightClickMenu,
-            .draw = gen.draw,
-        },
-    };
-}
-
-pub fn deinit(m: *Module) void {
-    m.arena.deinit();
-}
-
-pub fn name(m: *Module) []const u8 {
-    return m.vtable.name(m.ptr);
-}
 pub fn pointCloudAdded(m: *Module, pc: *PointCloud) void {
-    m.vtable.pointCloudAdded(m.ptr, pc);
+    if (m.vtable.pointCloudAdded) |func| {
+        func(m, pc);
+    }
 }
 pub fn pointCloudStdDataChanged(m: *Module, pc: *PointCloud, data: PointCloudStdData) void {
-    m.vtable.pointCloudStdDataChanged(m.ptr, pc, data);
+    if (m.vtable.pointCloudStdDataChanged) |func| {
+        func(m, pc, data);
+    }
 }
 pub fn pointCloudDataUpdated(m: *Module, pc: *PointCloud, data_gen: *const DataGen) void {
-    m.vtable.pointCloudDataUpdated(m.ptr, pc, data_gen);
+    if (m.vtable.pointCloudDataUpdated) |func| {
+        func(m, pc, data_gen);
+    }
 }
 pub fn surfaceMeshAdded(m: *Module, sm: *SurfaceMesh) void {
-    m.vtable.surfaceMeshAdded(m.ptr, sm);
+    if (m.vtable.surfaceMeshAdded) |func| {
+        func(m, sm);
+    }
 }
 pub fn surfaceMeshStdDataChanged(m: *Module, sm: *SurfaceMesh, data: SurfaceMeshStdData) void {
-    m.vtable.surfaceMeshStdDataChanged(m.ptr, sm, data);
+    if (m.vtable.surfaceMeshStdDataChanged) |func| {
+        func(m, sm, data);
+    }
 }
 pub fn surfaceMeshConnectivityUpdated(m: *Module, sm: *SurfaceMesh) void {
-    m.vtable.surfaceMeshConnectivityUpdated(m.ptr, sm);
+    if (m.vtable.surfaceMeshConnectivityUpdated) |func| {
+        func(m, sm);
+    }
 }
 pub fn surfaceMeshDataUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void {
-    m.vtable.surfaceMeshDataUpdated(m.ptr, sm, cell_type, data_gen);
-}
-pub fn hasUiPanel(m: *Module) bool {
-    return m.vtable.hasUiPanel(m.ptr);
+    if (m.vtable.surfaceMeshDataUpdated) |func| {
+        func(m, sm, cell_type, data_gen);
+    }
 }
 pub fn uiPanel(m: *Module) void {
-    m.vtable.uiPanel(m.ptr);
+    if (m.vtable.uiPanel) |func| {
+        func(m);
+    }
 }
 pub fn menuBar(m: *Module) void {
-    m.vtable.menuBar(m.ptr);
+    if (m.vtable.menuBar) |func| {
+        func(m);
+    }
 }
 pub fn rightClickMenu(m: *Module) void {
-    m.vtable.rightClickMenu(m.ptr);
+    if (m.vtable.rightClickMenu) |func| {
+        func(m);
+    }
 }
 pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
-    m.vtable.draw(m.ptr, view_matrix, projection_matrix);
+    if (m.vtable.draw) |func| {
+        func(m, view_matrix, projection_matrix);
+    }
 }

@@ -42,6 +42,14 @@ pub const SurfaceMeshStdDataTag = std.meta.Tag(SurfaceMeshStdData);
 /// - which standard datas are read,
 /// - which standard data is computed,
 /// - the function that performs the computation.
+/// The function must have the following signature:
+/// fn(
+///     sm: *SurfaceMesh,
+///     read_data_1: SurfaceMesh.CellData(...),
+///     read_data_2: SurfaceMesh.CellData(...),
+///     ...
+///     computed_data: SurfaceMesh.CellData(...),
+/// ) !void
 const StdDataComputation = struct {
     reads: []const SurfaceMeshStdDataTag,
     computes: SurfaceMeshStdDataTag,
@@ -104,8 +112,8 @@ const StdDataComputation = struct {
 
 /// Declaration of standard data computations.
 /// The order of declaration matters: some computations depend on the result of previous ones
-/// (e.g. vertex normal depends on face normal) and the "Update outdated std datas" button computes them
-/// in the order of declaration.
+/// (e.g. vertex normal depends on face normal) and the "Update outdated std datas" button of the SurfaceMeshStore
+/// computes them in the order of declaration.
 pub const std_data_computations: []const StdDataComputation = &.{
     .{
         .reads = &.{.vertex_position},

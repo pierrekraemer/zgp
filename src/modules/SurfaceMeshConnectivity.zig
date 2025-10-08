@@ -20,8 +20,13 @@ const remeshing = @import("../models/surface/remeshing.zig");
 const qem = @import("../models/surface/qem.zig");
 const decimation = @import("../models/surface/decimation.zig");
 
-// TODO: useful to keep an allocator here rather than exposing & using zgp.allocator?
-allocator: std.mem.Allocator,
+module: Module = .{
+    .name = "Surface Mesh Connectivity",
+    .vtable = &.{
+        .rightClickMenu = rightClickMenu,
+    },
+},
+allocator: std.mem.Allocator, // TODO: useful to keep an allocator here rather than exposing & using zgp.allocator?
 
 pub fn init(allocator: std.mem.Allocator) !SurfaceMeshConnectivity {
     return .{
@@ -30,17 +35,6 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMeshConnectivity {
 }
 
 pub fn deinit(_: *SurfaceMeshConnectivity) void {}
-
-/// Return a Module interface for the SurfaceMeshConnectivity.
-pub fn module(smc: *SurfaceMeshConnectivity) Module {
-    return Module.init(smc);
-}
-
-/// Part of the Module interface.
-/// Return the name of the module.
-pub fn name(_: *SurfaceMeshConnectivity) []const u8 {
-    return "Surface Mesh Connectivity";
-}
 
 fn cutAllEdges(
     _: *SurfaceMeshConnectivity,
@@ -130,7 +124,9 @@ fn decimate(
 
 /// Part of the Module interface.
 /// Describe the right-click menu interface.
-pub fn rightClickMenu(smc: *SurfaceMeshConnectivity) void {
+pub fn rightClickMenu(m: *Module) void {
+    const smc: *SurfaceMeshConnectivity = @alignCast(@fieldParentPtr("module", m));
+
     const UiData = struct {
         var edge_length_factor: f32 = 1.0;
         var percent_vertices_to_keep: i32 = 75;
@@ -145,7 +141,7 @@ pub fn rightClickMenu(smc: *SurfaceMeshConnectivity) void {
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (c.ImGui_BeginMenu(smc.name().ptr)) {
+    if (c.ImGui_BeginMenu(m.name.ptr)) {
         defer c.ImGui_EndMenu();
 
         if (sms.selected_surface_mesh) |sm| {

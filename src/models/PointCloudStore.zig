@@ -12,7 +12,9 @@ const zgp_log = std.log.scoped(.zgp);
 
 const types_utils = @import("../utils/types.zig");
 
-pub const PointCloud = @import("point/PointCloud.zig");
+const PointCloud = @import("point/PointCloud.zig");
+const PointCloudStdDatas = @import("point/PointCloudStdDatas.zig");
+const PointCloudStdData = PointCloudStdDatas.PointCloudStdData;
 
 const Data = @import("../utils/Data.zig").Data;
 const DataGen = @import("../utils/Data.zig").DataGen;
@@ -22,16 +24,6 @@ const IBO = @import("../rendering/IBO.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
-
-/// Standard PointCloud data name & types.
-pub const PointCloudStdDatas = struct {
-    position: ?PointCloud.CellData(Vec3f) = null,
-    normal: ?PointCloud.CellData(Vec3f) = null,
-};
-/// This union is generated from the PointCloudStdDatas struct and allows to easily provide a single
-/// data entry to the setPointCloudStdData function.
-pub const PointCloudStdData = types_utils.UnionFromStruct(PointCloudStdDatas);
-pub const PointCloudStdDataTag = std.meta.Tag(PointCloudStdData);
 
 /// This struct holds information related to a PointCloud, including its standard datas, cells sets and the IBOs for rendering.
 /// The PointCloudInfo associated with a PointCloud is accessible via the pointCloudInfo function.
@@ -105,7 +97,7 @@ pub fn pointCloudDataUpdated(
     };
 
     // TODO: find a way to only notify modules that have registered interest in PointCloud
-    for (zgp.modules.items) |*module| {
+    for (zgp.modules.items) |module| {
         module.pointCloudDataUpdated(pc, data.gen());
     }
     zgp.requestRedraw();
@@ -155,7 +147,7 @@ pub fn setPointCloudStdData(
     }
 
     // TODO: find a way to only notify modules that have registered interest in PointCloud
-    for (zgp.modules.items) |*module| {
+    for (zgp.modules.items) |module| {
         module.pointCloudStdDataChanged(pc, data);
     }
     zgp.requestRedraw();
@@ -247,7 +239,7 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     errdefer _ = pcs.point_clouds_info.remove(pc);
 
     // TODO: find a way to only notify modules that have registered interest in PointCloud
-    for (zgp.modules.items) |*module| {
+    for (zgp.modules.items) |module| {
         module.pointCloudAdded(pc);
     }
 
