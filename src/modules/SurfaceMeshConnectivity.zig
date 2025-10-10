@@ -14,6 +14,7 @@ const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const mat = @import("../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
+const bvh = @import("../geometry/bvh.zig");
 
 const subdivision = @import("../models/surface/subdivision.zig");
 const remeshing = @import("../models/surface/remeshing.zig");
@@ -26,12 +27,9 @@ module: Module = .{
         .rightClickMenu = rightClickMenu,
     },
 },
-allocator: std.mem.Allocator, // TODO: useful to keep an allocator here rather than exposing & using zgp.allocator?
 
-pub fn init(allocator: std.mem.Allocator) !SurfaceMeshConnectivity {
-    return .{
-        .allocator = allocator,
-    };
+pub fn init() SurfaceMeshConnectivity {
+    return .{};
 }
 
 pub fn deinit(_: *SurfaceMeshConnectivity) void {}
@@ -57,6 +55,7 @@ fn triangulateFaces(
 fn remesh(
     _: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
+    sm_bvh: bvh.TrianglesBVH,
     edge_length_factor: f32,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
@@ -69,6 +68,7 @@ fn remesh(
 ) !void {
     try remeshing.pliantRemeshing(
         sm,
+        sm_bvh,
         edge_length_factor,
         vertex_position,
         corner_angle,
@@ -91,7 +91,7 @@ fn remesh(
 }
 
 fn decimate(
-    smc: *SurfaceMeshConnectivity,
+    _: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
@@ -112,7 +112,6 @@ fn decimate(
         vertex_qem,
     );
     try decimation.decimateQEM(
-        smc.allocator,
         sm,
         vertex_position,
         vertex_qem,
@@ -237,13 +236,15 @@ pub fn rightClickMenu(m: *Module) void {
                     info.std_data.edge_length == null or
                     info.std_data.edge_dihedral_angle == null or
                     info.std_data.vertex_area == null or
-                    info.std_data.vertex_normal == null;
+                    info.std_data.vertex_normal == null or
+                    info.bvh.bvh_ptr == null;
                 if (disabled) {
                     c.ImGui_BeginDisabled(true);
                 }
                 if (c.ImGui_ButtonEx("Remesh", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                     smc.remesh(
                         sm,
+                        info.bvh,
                         UiData.edge_length_factor,
                         info.std_data.vertex_position.?,
                         info.std_data.corner_angle.?,

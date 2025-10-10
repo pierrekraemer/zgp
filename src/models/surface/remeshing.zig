@@ -14,6 +14,8 @@ const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
+const bvh = @import("../../geometry/bvh.zig");
+
 /// Return true if flipping the given edge improves the deviation from degree-6 vertices.
 fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
     assert(edge.cellType() == .edge);
@@ -40,6 +42,7 @@ fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
 /// TODO: adaptive sampling guided by a curvature dependent sizing field.
 pub fn pliantRemeshing(
     sm: *SurfaceMesh,
+    sm_bvh: bvh.TrianglesBVH,
     edge_length_factor: f32,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
@@ -121,8 +124,8 @@ pub fn pliantRemeshing(
                 );
                 const v = try sm.cutEdge(edge);
                 vertex_position.valuePtr(v).* = new_pos;
-                edge_length.valuePtr(.{ .edge = d }).* = l * 0.5;
-                edge_length.valuePtr(.{ .edge = dd }).* = l * 0.5;
+                edge_length.valuePtr(.{ .edge = d }).* = length.edgeLength(sm, .{ .edge = d }, vertex_position);
+                edge_length.valuePtr(.{ .edge = dd }).* = length.edgeLength(sm, .{ .edge = dd }, vertex_position);
                 if (feature_edge.value(edge)) {
                     feature_edge.valuePtr(.{ .edge = dd }).* = true;
                     feature_vertex.valuePtr(v).* = true;
@@ -193,11 +196,13 @@ pub fn pliantRemeshing(
             }
             if (sm.canFlipEdge(edge) and edgeShouldFlip(sm, edge)) {
                 sm.flipEdge(edge);
-                edge_length.valuePtr(edge).* = length.edgeLength(sm, edge, vertex_position);
+                // not useful here as we recompute all lengths right after
+                // edge_length.valuePtr(edge).* = length.edgeLength(sm, edge, vertex_position);
             }
         }
 
         // tangential relaxation
+        try length.computeEdgeLengths(sm, vertex_position, edge_length);
         try angle.computeCornerAngles(sm, vertex_position, corner_angle);
         try area.computeFaceAreas(sm, vertex_position, face_area);
         try normal.computeFaceNormals(sm, vertex_position, face_normal);
@@ -224,7 +229,7 @@ pub fn pliantRemeshing(
                 q = vec.divScalar3f(q, w);
                 const n = vertex_normal.value(vertex);
                 const p = vertex_position.value(vertex);
-                vertex_position.valuePtr(vertex).* = vec.add3f(
+                vertex_position.valuePtr(vertex).* = sm_bvh.closestPoint(vec.add3f(
                     q,
                     vec.mulScalar3f(
                         n,
@@ -233,7 +238,7 @@ pub fn pliantRemeshing(
                             vec.sub3f(p, q),
                         ),
                     ),
-                );
+                ));
             }
         }
     }

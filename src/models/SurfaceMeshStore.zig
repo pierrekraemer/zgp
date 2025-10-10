@@ -24,11 +24,19 @@ const IBO = @import("../rendering/IBO.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
+const bvh = @import("../geometry/bvh.zig");
 
-/// This struct holds information related to a SurfaceMesh, including its standard datas, cells sets and the IBOs for rendering.
+/// This struct holds information related to a SurfaceMesh, including:
+/// - its standard datas,
+/// - its BVH,
+/// - the cell sets,
+/// - the IBOs (for rendering).
 /// The SurfaceMeshInfo associated with a SurfaceMesh is accessible via the surfaceMeshInfo function.
 const SurfaceMeshInfo = struct {
     std_data: SurfaceMeshStdDatas = .{},
+
+    bvh: bvh.TrianglesBVH = .{},
+    bvh_last_update: ?std.time.Instant = null,
 
     vertex_set: SurfaceMesh.CellSet(.vertex),
     edge_set: SurfaceMesh.CellSet(.edge),
@@ -63,6 +71,7 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
     var sm_info_it = sms.surface_meshes_info.iterator();
     while (sm_info_it.next()) |entry| {
         var info = entry.value_ptr.*;
+        info.bvh.deinit();
         info.vertex_set.deinit();
         info.edge_set.deinit();
         info.face_set.deinit();
@@ -102,14 +111,14 @@ pub fn surfaceMeshDataUpdated(
         vbo.fillFrom(T, data.data);
     }
 
-    const now = std.time.Instant.now() catch |err| {
+    const now = std.time.Instant.now();
+    if (now) |t| {
+        sms.data_last_update.put(data.gen(), t) catch |err| {
+            zgp_log.err("Failed to update last update time for SurfaceMesh data: {}", .{err});
+        };
+    } else |err| {
         zgp_log.err("Failed to get current time: {}", .{err});
-        return;
-    };
-    sms.data_last_update.put(data.gen(), now) catch |err| {
-        zgp_log.err("Failed to update last update time for SurfaceMesh data: {}", .{err});
-        return;
-    };
+    }
 
     // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
     for (zgp.modules.items) |module| {
@@ -405,6 +414,48 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
                         },
                     }
                     c.ImGui_CloseCurrentPopup();
+                }
+            }
+
+            {
+                var bvh_computable = true;
+                if (info.std_data.vertex_position == null) {
+                    bvh_computable = false;
+                }
+                var bvh_upToDate = true;
+                if (!bvh_computable or info.bvh_last_update == null or info.bvh_last_update.?.order(sms.dataLastUpdate(info.std_data.vertex_position.?.gen()).?) == .lt) {
+                    bvh_upToDate = false;
+                }
+                if (!bvh_computable) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (!bvh_upToDate) {
+                    c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
+                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
+                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
+                } else {
+                    c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 200, 128, 200));
+                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 200, 128, 255));
+                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 200, 128, 128));
+                }
+                if (c.ImGui_ButtonEx(c.ICON_FA_SITEMAP ++ " Update BVH", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                    info.bvh.deinit();
+                    info.bvh = bvh.TrianglesBVH.init(sm, info.std_data.vertex_position.?) catch |err| blk: {
+                        zgp_log.err("Failed to build BVH: {}", .{err});
+                        break :blk .{};
+                    };
+                    if (info.bvh.bvh_ptr) |_| {
+                        const now = std.time.Instant.now();
+                        if (now) |t| {
+                            info.bvh_last_update = t;
+                        } else |err| {
+                            zgp_log.err("Failed to get current time: {}", .{err});
+                        }
+                    }
+                }
+                c.ImGui_PopStyleColorEx(3);
+                if (!bvh_computable) {
+                    c.ImGui_EndDisabled();
                 }
             }
         } else {

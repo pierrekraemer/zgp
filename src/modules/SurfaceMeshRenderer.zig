@@ -103,7 +103,7 @@ module: Module = .{
 },
 parameters: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRendererParameters),
 
-pub fn init(allocator: std.mem.Allocator) !SurfaceMeshRenderer {
+pub fn init(allocator: std.mem.Allocator) SurfaceMeshRenderer {
     return .{
         .parameters = std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRendererParameters).init(allocator),
     };

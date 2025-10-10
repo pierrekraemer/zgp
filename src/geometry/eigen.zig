@@ -21,7 +21,7 @@ pub fn computeInverse(m: Mat4d) ?Mat4d {
 }
 
 pub const SparseMatrix = struct {
-    matrix: ?*anyopaque,
+    matrix: ?*anyopaque = null,
 
     pub fn init(rows: Index, cols: Index) SparseMatrix {
         return .{
@@ -50,22 +50,22 @@ pub const SparseMatrix = struct {
         };
     }
 
-    pub fn deinit(self: *SparseMatrix) void {
-        if (self.matrix) |m| {
+    pub fn deinit(sm: *SparseMatrix) void {
+        if (sm.matrix) |m| {
             c.destroySparseMatrix(m);
-            self.matrix = null;
+            sm.matrix = null;
         }
     }
+
+    pub fn mulScalar(sm: SparseMatrix, s: Scalar, result: SparseMatrix) void {
+        c.mulSparseMatrixScalar(sm.matrix.?, s, result.matrix.?);
+    }
+
+    pub fn addSparseMatrix(sm: SparseMatrix, other: SparseMatrix, result: SparseMatrix) void {
+        c.addSparseMatrices(sm.matrix.?, other.matrix.?, result.matrix.?);
+    }
+
+    pub fn solveSymmetricSparseLinearSystem(sm: SparseMatrix, b: []const Scalar, x: []Scalar) void {
+        c.solveSymmetricSparseLinearSystem(sm.matrix.?, b.ptr, x.ptr, @intCast(b.len));
+    }
 };
-
-pub fn mulScalar(M: SparseMatrix, s: Scalar, result: SparseMatrix) void {
-    c.mulSparseMatrixScalar(M.matrix.?, s, result.matrix.?);
-}
-
-pub fn addSparseMatrices(A: SparseMatrix, B: SparseMatrix, result: SparseMatrix) void {
-    c.addSparseMatrices(A.matrix.?, B.matrix.?, result.matrix.?);
-}
-
-pub fn solveSymmetricSparseLinearSystem(M: SparseMatrix, b: []const Scalar, x: []Scalar) void {
-    c.solveSymmetricSparseLinearSystem(M.matrix.?, b.ptr, x.ptr, @intCast(b.len));
-}

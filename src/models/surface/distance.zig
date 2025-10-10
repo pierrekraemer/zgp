@@ -13,7 +13,6 @@ const laplacian = @import("laplacian.zig");
 const gradient = @import("gradient.zig");
 
 pub fn computeVertexGeodesicDistancesFromSource(
-    allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
     source_vertex: SurfaceMesh.Cell,
     diffusion_time: f32,
@@ -40,8 +39,8 @@ pub fn computeVertexGeodesicDistancesFromSource(
 
     // setup Laplacian matrix Lc
     const nb_edges = sm.nbCells(.edge);
-    var triplets = try std.ArrayList(eigen.Triplet).initCapacity(allocator, 4 * nb_edges);
-    defer triplets.deinit(allocator);
+    var triplets = try std.ArrayList(eigen.Triplet).initCapacity(sm.allocator, 4 * nb_edges);
+    defer triplets.deinit(sm.allocator);
     var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer edge_it.deinit();
     while (edge_it.next()) |edge| {
@@ -62,10 +61,10 @@ pub fn computeVertexGeodesicDistancesFromSource(
 
     // setup mass-matrix A (vertex areas) and
     // initial heat vector heat_0 (1.0 at source vertex, 0.0 elsewhere)
-    var massCoeffs = try std.ArrayList(eigen.Scalar).initCapacity(allocator, nb_vertices);
-    defer massCoeffs.deinit(allocator);
-    var heat_0 = try std.ArrayList(eigen.Scalar).initCapacity(allocator, nb_vertices);
-    defer heat_0.deinit(allocator);
+    var massCoeffs = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
+    defer massCoeffs.deinit(sm.allocator);
+    var heat_0 = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
+    defer heat_0.deinit(sm.allocator);
     const source_vertex_index = sm.cellIndex(source_vertex);
     vertex_it.reset();
     while (vertex_it.next()) |v| {
@@ -83,14 +82,14 @@ pub fn computeVertexGeodesicDistancesFromSource(
     // compute M = A - t * Lc
     var M: eigen.SparseMatrix = .init(@intCast(nb_vertices), @intCast(nb_vertices));
     defer M.deinit();
-    eigen.mulScalar(Lc, @floatCast(-t), M);
-    eigen.addSparseMatrices(A, M, M);
+    Lc.mulScalar(@floatCast(-t), M);
+    A.addSparseMatrix(M, M);
 
     // solve M * heat_t = heat_0 (backward Euler time step of the heat equation)
-    var heat_t = try std.ArrayList(eigen.Scalar).initCapacity(allocator, nb_vertices);
-    defer heat_t.deinit(allocator);
-    try heat_t.resize(allocator, nb_vertices);
-    eigen.solveSymmetricSparseLinearSystem(M, heat_0.items, heat_t.items);
+    var heat_t = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
+    defer heat_t.deinit(sm.allocator);
+    try heat_t.resize(sm.allocator, nb_vertices);
+    M.solveSymmetricSparseLinearSystem(heat_0.items, heat_t.items);
 
     // store heat_t in a vertex data
     var vertex_heat = try sm.addData(.vertex, f32, "__vertex_heat");
@@ -134,8 +133,8 @@ pub fn computeVertexGeodesicDistancesFromSource(
     );
 
     // setup div vector
-    var div = try std.ArrayList(eigen.Scalar).initCapacity(allocator, nb_vertices);
-    defer div.deinit(allocator);
+    var div = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
+    defer div.deinit(sm.allocator);
     vertex_it.reset();
     while (vertex_it.next()) |v| {
         // relies on the fact that vertex iterator visits vertices in the same order as before (when indexing them)
@@ -143,10 +142,10 @@ pub fn computeVertexGeodesicDistancesFromSource(
     }
 
     // solve Lc * dist = div (Poisson equation)
-    var dist = try std.ArrayList(eigen.Scalar).initCapacity(allocator, nb_vertices);
-    defer dist.deinit(allocator);
-    try dist.resize(allocator, nb_vertices);
-    eigen.solveSymmetricSparseLinearSystem(Lc, div.items, dist.items);
+    var dist = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
+    defer dist.deinit(sm.allocator);
+    try dist.resize(sm.allocator, nb_vertices);
+    Lc.solveSymmetricSparseLinearSystem(div.items, dist.items);
 
     // shift distance values s.t. min distance is 0.0 and store them in vertex_distance
     const min_dist = std.mem.min(eigen.Scalar, dist.items);

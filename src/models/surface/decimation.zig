@@ -109,7 +109,6 @@ fn updateEdgeInQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
 /// Decimate the given SurfaceMesh using the QEM edge collapse approach.
 /// (see qem.zig for details on the quadrics computation)
 pub fn decimateQEM(
-    allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
@@ -121,7 +120,7 @@ pub fn decimateQEM(
     defer sm.removeData(.edge, edge_in_queue.gen());
     edge_in_queue.data.fill(false);
 
-    var queue: EdgeQueue = EdgeQueue.init(allocator, .{
+    var queue: EdgeQueue = EdgeQueue.init(sm.allocator, .{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_qem = vertex_qem,

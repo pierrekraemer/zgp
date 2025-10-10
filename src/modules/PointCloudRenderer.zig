@@ -71,7 +71,7 @@ module: Module = .{
 },
 parameters: std.AutoHashMap(*const PointCloud, PointCloudRendererParameters),
 
-pub fn init(allocator: std.mem.Allocator) !PointCloudRenderer {
+pub fn init(allocator: std.mem.Allocator) PointCloudRenderer {
     return .{
         .parameters = std.AutoHashMap(*const PointCloud, PointCloudRendererParameters).init(allocator),
     };

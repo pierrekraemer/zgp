@@ -13,6 +13,7 @@ pub const c = @cImport({
     @cInclude("utils/IconsFontAwesome7.h");
     @cInclude("ceigen/mat4.h");
     @cInclude("ceigen/sparse.h");
+    @cInclude("clibacc/bvh.h");
 });
 
 const SurfaceMeshStore = @import("models/SurfaceMeshStore.zig");
@@ -224,15 +225,15 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // Modules initialization
     // **********************
 
-    point_cloud_renderer = try PointCloudRenderer.init(allocator);
+    point_cloud_renderer = PointCloudRenderer.init(allocator);
     errdefer point_cloud_renderer.deinit();
-    surface_mesh_renderer = try SurfaceMeshRenderer.init(allocator);
+    surface_mesh_renderer = SurfaceMeshRenderer.init(allocator);
     errdefer surface_mesh_renderer.deinit();
-    vector_per_vertex_renderer = try VectorPerVertexRenderer.init(allocator);
+    vector_per_vertex_renderer = VectorPerVertexRenderer.init(allocator);
     errdefer vector_per_vertex_renderer.deinit();
-    surface_mesh_connectivity = try SurfaceMeshConnectivity.init(allocator);
+    surface_mesh_connectivity = SurfaceMeshConnectivity.init();
     errdefer surface_mesh_connectivity.deinit();
-    surface_mesh_distance = try SurfaceMeshDistance.init(allocator);
+    surface_mesh_distance = SurfaceMeshDistance.init();
     errdefer surface_mesh_distance.deinit();
 
     // TODO: find a way to tag Modules with the type of model they handle (PointCloud, SurfaceMesh, etc.)

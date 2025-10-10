@@ -22,19 +22,16 @@ module: Module = .{
         .rightClickMenu = rightClickMenu,
     },
 },
-allocator: std.mem.Allocator, // TODO: useful to keep an allocator here rather than exposing & using zgp.allocator?
 
-pub fn init(allocator: std.mem.Allocator) !SurfaceMeshDistance {
-    return .{
-        .allocator = allocator,
-    };
+pub fn init() SurfaceMeshDistance {
+    return .{};
 }
 
 pub fn deinit(_: *SurfaceMeshDistance) void {}
 
 // TODO: allow selecting multiple source vertices
 fn computeVertexGeodesicDistancesFromSource(
-    smd: *SurfaceMeshDistance,
+    _: *SurfaceMeshDistance,
     sm: *SurfaceMesh,
     source_vertex: SurfaceMesh.Cell,
     diffusion_time: f32,
@@ -49,7 +46,6 @@ fn computeVertexGeodesicDistancesFromSource(
     var timer = try std.time.Timer.start();
 
     try distance.computeVertexGeodesicDistancesFromSource(
-        smd.allocator,
         sm,
         source_vertex,
         diffusion_time,

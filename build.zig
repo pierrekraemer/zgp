@@ -21,7 +21,17 @@ pub fn build(b: *std.Build) void {
     });
     const ceigen_lib = ceigen_dep.artifact("ceigen");
     exe_mod.linkLibrary(ceigen_lib);
-    // exe_mod.addImport("zeigen", zeigen_dep.module("zeigen"));
+    // exe_mod.addImport("ceigen", ceigen_dep.module("ceigen"));
+
+    // CLIBACC
+
+    const clibacc_dep = b.dependency("clibacc", .{
+        .target = target,
+        .optimize = optimize,
+    });
+    const clibacc_lib = clibacc_dep.artifact("clibacc");
+    exe_mod.linkLibrary(clibacc_lib);
+    // exe_mod.addImport("clibacc", clibacc_dep.module("clibacc"));
 
     // SDL
 

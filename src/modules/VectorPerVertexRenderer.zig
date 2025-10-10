@@ -51,7 +51,7 @@ module: Module = .{
 },
 parameters: std.AutoHashMap(*const SurfaceMesh, VectorPerVertexRendererParameters),
 
-pub fn init(allocator: std.mem.Allocator) !VectorPerVertexRenderer {
+pub fn init(allocator: std.mem.Allocator) VectorPerVertexRenderer {
     return .{
         .parameters = std.AutoHashMap(*const SurfaceMesh, VectorPerVertexRendererParameters).init(allocator),
     };

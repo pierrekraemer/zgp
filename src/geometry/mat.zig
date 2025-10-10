@@ -44,7 +44,7 @@ pub const zero4f: Mat4f = .{ vec.zero4f, vec.zero4f, vec.zero4f, vec.zero4f };
 pub const zero3d: Mat3d = .{ vec.zero3d, vec.zero3d, vec.zero3d };
 pub const zero4d: Mat4d = .{ vec.zero4d, vec.zero4d, vec.zero4d, vec.zero4d };
 
-pub fn fromMat4f(m: Mat4f) Mat4d {
+pub fn mat4dFromMat4f(m: Mat4f) Mat4d {
     return .{
         .{ @floatCast(m[0][0]), @floatCast(m[0][1]), @floatCast(m[0][2]), @floatCast(m[0][3]) },
         .{ @floatCast(m[1][0]), @floatCast(m[1][1]), @floatCast(m[1][2]), @floatCast(m[1][3]) },

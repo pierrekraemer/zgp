@@ -160,8 +160,8 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
         z * 2.0 - 1.0,
         1.0,
     };
-    const m_proj: Mat4d = mat.fromMat4f(view.camera.?.projection_matrix);
-    const m_proj_inv: Mat4d = eigen.computeInverse(m_proj) orelse {
+    const m_proj = mat.mat4dFromMat4f(view.camera.?.projection_matrix);
+    const m_proj_inv = eigen.computeInverse(m_proj) orelse {
         gl_log.err("Cannot invert projection matrix", .{});
         return null;
     };
@@ -171,8 +171,8 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
         return null;
     }
     p_view = vec.divScalar4d(p_view, p_view[3]);
-    const m_view: Mat4d = mat.fromMat4f(view.camera.?.view_matrix);
-    const m_view_inv: Mat4d = eigen.computeInverse(m_view) orelse {
+    const m_view = mat.mat4dFromMat4f(view.camera.?.view_matrix);
+    const m_view_inv = eigen.computeInverse(m_view) orelse {
         gl_log.err("Cannot invert view matrix", .{});
         return null;
     };

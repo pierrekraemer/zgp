@@ -115,7 +115,7 @@ pub fn computeVertexQEMs(
 
 pub fn optimalPoint(q: Mat4f) ?Vec3f {
     // warning: Eigen (via ceigen) uses double precision
-    var m: Mat4d = mat.fromMat4f(q);
+    var m = mat.mat4dFromMat4f(q);
     m[0][3] = 0.0;
     m[1][3] = 0.0;
     m[2][3] = 0.0;
