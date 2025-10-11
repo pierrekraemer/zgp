@@ -8,8 +8,20 @@ const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const vec = @import("vec.zig");
 const Vec3f = vec.Vec3f;
 
+pub const Ray = extern struct {
+    origin: Vec3f,
+    direction: Vec3f,
+    tmin: f32 = 0.0,
+    tmax: f32 = std.math.inf(f32),
+};
+
+pub const Hit = extern struct {
+    t: f32,
+    triIndex: Index,
+    bcoords: Vec3f,
+};
+
 pub const Index = u32;
-pub const Scalar = f32;
 
 pub const TrianglesBVH = struct {
     bvh_ptr: ?*anyopaque = null,
@@ -58,6 +70,14 @@ pub const TrianglesBVH = struct {
             c.destroyTrianglesBVH(b);
             tbvh.bvh_ptr = null;
         }
+    }
+
+    pub fn intersect(tbvh: TrianglesBVH, ray: Ray) ?Hit {
+        var hit: Hit = undefined;
+        if (c.intersect(tbvh.bvh_ptr, &ray, &hit)) {
+            return hit;
+        }
+        return null;
     }
 
     pub fn closestPoint(tbvh: TrianglesBVH, point: Vec3f) Vec3f {

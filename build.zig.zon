@@ -21,8 +21,9 @@
             .hash = "ceigen-0.0.0-nikIKT6IBgF5U0O3C9okh03EQ_xeXt_eNegluA3WcKrR",
         },
         .clibacc = .{
-            .url = "git+https://github.com/pierrekraemer/clibacc.git#9d8fe2ea612292d45c1dd0499dbe91b70af2c5aa",
-            .hash = "clibacc-0.0.0-HMOW8e6tAADTFWJUN1JdRNeQulpMZQKGB2FKBp5u0sr0",
+            .path = "../clibacc",
+            // .url = "git+https://github.com/pierrekraemer/clibacc.git#9d8fe2ea612292d45c1dd0499dbe91b70af2c5aa",
+            // .hash = "clibacc-0.0.0-HMOW8e6tAADTFWJUN1JdRNeQulpMZQKGB2FKBp5u0sr0",
         },
     },
     .paths = .{

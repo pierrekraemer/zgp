@@ -14,6 +14,8 @@ const Vec4d = vec.Vec4d;
 const mat = @import("../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
 const Mat4d = mat.Mat4d;
+const bvh = @import("../geometry/bvh.zig");
+const Ray = bvh.Ray;
 
 const Camera = @import("Camera.zig");
 const FBO = @import("FBO.zig");
@@ -176,6 +178,68 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
         gl_log.err("Cannot invert view matrix", .{});
         return null;
     };
-    const p_world = mat.mulVec4d(m_view_inv, p_view);
-    return .{ @floatCast(p_world[0]), @floatCast(p_world[1]), @floatCast(p_world[2]) };
+    const p_world_f = vec.vec4fFromVec4d(mat.mulVec4d(m_view_inv, p_view));
+    return .{ p_world_f[0], p_world_f[1], p_world_f[2] };
+}
+
+// pub fn pixelWorldRay(view: *const View, x: f32, y: f32) ?Ray {
+//     if (view.camera == null) {
+//         gl_log.err("No camera set for view", .{});
+//         return null;
+//     }
+//     const near_ndc: Vec4d = .{
+//         2.0 * (x / @as(f32, @floatFromInt(view.width))) - 1.0,
+//         1.0 - (2.0 * y) / @as(f32, @floatFromInt(view.height)),
+//         0.0,
+//         1.0,
+//     };
+//     const far_ndc: Vec4d = .{
+//         2.0 * (x / @as(f32, @floatFromInt(view.width))) - 1.0,
+//         1.0 - (2.0 * y) / @as(f32, @floatFromInt(view.height)),
+//         1.0,
+//         1.0,
+//     };
+//     const m_proj = mat.mat4dFromMat4f(view.camera.?.projection_matrix);
+//     const m_proj_inv = eigen.computeInverse(m_proj) orelse {
+//         gl_log.err("Cannot invert projection matrix", .{});
+//         return null;
+//     };
+//     var near_view = mat.mulVec4d(m_proj_inv, near_ndc);
+//     if (near_view[3] == 0.0) {
+//         gl_log.err("Cannot divide by zero w component", .{});
+//         return null;
+//     }
+//     near_view = vec.divScalar4d(near_view, near_view[3]);
+//     var far_view = mat.mulVec4d(m_proj_inv, far_ndc);
+//     if (far_view[3] == 0.0) {
+//         gl_log.err("Cannot divide by zero w component", .{});
+//         return null;
+//     }
+//     far_view = vec.divScalar4d(far_view, far_view[3]);
+//     const m_view = mat.mat4dFromMat4f(view.camera.?.view_matrix);
+//     const m_view_inv = eigen.computeInverse(m_view) orelse {
+//         gl_log.err("Cannot invert view matrix", .{});
+//         return null;
+//     };
+//     const near_world_f = vec.vec4fFromVec4d(mat.mulVec4d(m_view_inv, near_view));
+//     const far_world_f = vec.vec4fFromVec4d(mat.mulVec4d(m_view_inv, far_view));
+//     return .{
+//         .origin = .{ near_world_f[0], near_world_f[1], near_world_f[2] },
+//         .direction = vec.normalized3f(vec.sub3f(
+//             .{ far_world_f[0], far_world_f[1], far_world_f[2] },
+//             .{ near_world_f[0], near_world_f[1], near_world_f[2] },
+//         )),
+//     };
+// }
+
+pub fn pixelWorldRayIfGeometry(view: *const View, x: f32, y: f32) ?Ray {
+    if (view.camera == null) {
+        gl_log.err("No camera set for view", .{});
+        return null;
+    }
+    const pwp = pixelWorldPosition(view, x, y);
+    return if (pwp == null) null else .{
+        .origin = view.camera.?.position,
+        .direction = vec.normalized3f(vec.sub3f(pwp.?, view.camera.?.position)),
+    };
 }

@@ -185,8 +185,7 @@ pub fn dataVBO(sms: *SurfaceMeshStore, comptime T: type, data: *const Data(T)) V
     };
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
-        // if the VBO was just created, fill it with the data
-        vbo.value_ptr.*.fillFrom(T, data);
+        vbo.value_ptr.*.fillFrom(T, data); // on VBO creation, fill it with the data
     }
     return vbo.value_ptr.*;
 }

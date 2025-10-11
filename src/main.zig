@@ -286,146 +286,144 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     _ = appstate;
 
-    {
-        const UiData = struct {
-            var background_color: [4]f32 = .{ 0.48, 0.48, 0.48, 1 };
-        };
+    const UiData = struct {
+        var background_color: [4]f32 = .{ 0.48, 0.48, 0.48, 1 };
+    };
 
-        gl.ClearColor(UiData.background_color[0], UiData.background_color[1], UiData.background_color[2], UiData.background_color[3]);
+    gl.ClearColor(UiData.background_color[0], UiData.background_color[1], UiData.background_color[2], UiData.background_color[3]);
 
-        view.draw(modules.items);
+    view.draw(modules.items);
 
-        c.cImGui_ImplOpenGL3_NewFrame();
-        c.cImGui_ImplSDL3_NewFrame();
-        c.ImGui_NewFrame();
+    c.cImGui_ImplOpenGL3_NewFrame();
+    c.cImGui_ImplSDL3_NewFrame();
+    c.ImGui_NewFrame();
 
-        const imgui_viewport = c.ImGui_GetMainViewport();
+    const imgui_viewport = c.ImGui_GetMainViewport();
 
-        var main_menu_bar_size: c.ImVec2 = undefined;
+    var main_menu_bar_size: c.ImVec2 = undefined;
 
-        const imgui_io = c.ImGui_GetIO();
-        if (imgui_io.*.MouseClicked[1] and !(imgui_io.*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow))) {
-            c.ImGui_OpenPopup("RightClickMenu", 0);
+    const imgui_io = c.ImGui_GetIO();
+    if (imgui_io.*.MouseClicked[1] and !(imgui_io.*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow))) {
+        c.ImGui_OpenPopup("RightClickMenu", 0);
+    }
+    if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
+        defer c.ImGui_EndPopup();
+        for (modules.items) |module| {
+            module.rightClickMenu();
         }
-        if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
-            defer c.ImGui_EndPopup();
-            for (modules.items) |module| {
-                module.rightClickMenu();
-            }
-            c.ImGui_Separator();
+        c.ImGui_Separator();
+        if (c.ImGui_MenuItem("Quit")) {
+            return c.SDL_APP_SUCCESS;
+        }
+    }
+
+    if (c.ImGui_BeginMainMenuBar()) {
+        defer c.ImGui_EndMainMenuBar();
+
+        main_menu_bar_size = c.ImGui_GetWindowSize();
+
+        if (c.ImGui_BeginMenu("ZGP")) {
+            defer c.ImGui_EndMenu();
             if (c.ImGui_MenuItem("Quit")) {
                 return c.SDL_APP_SUCCESS;
             }
         }
 
-        if (c.ImGui_BeginMainMenuBar()) {
-            defer c.ImGui_EndMainMenuBar();
-
-            main_menu_bar_size = c.ImGui_GetWindowSize();
-
-            if (c.ImGui_BeginMenu("ZGP")) {
-                defer c.ImGui_EndMenu();
-                if (c.ImGui_MenuItem("Quit")) {
-                    return c.SDL_APP_SUCCESS;
-                }
+        if (c.ImGui_BeginMenu("Camera")) {
+            defer c.ImGui_EndMenu();
+            if (c.ImGui_ColorEdit3("Background color", &UiData.background_color, c.ImGuiColorEditFlags_NoInputs)) {
+                requestRedraw();
             }
-
-            if (c.ImGui_BeginMenu("Camera")) {
-                defer c.ImGui_EndMenu();
-                if (c.ImGui_ColorEdit3("Background color", &UiData.background_color, c.ImGuiColorEditFlags_NoInputs)) {
-                    requestRedraw();
-                }
-                c.ImGui_Separator();
-                if (c.ImGui_MenuItemEx("Perspective", null, camera.projection_type == .perspective, true)) {
-                    camera.projection_type = .perspective;
-                    camera.updateProjectionMatrix();
-                }
-                if (c.ImGui_MenuItemEx("Orthographic", null, camera.projection_type == .orthographic, true)) {
-                    camera.projection_type = .orthographic;
-                    camera.updateProjectionMatrix();
-                }
-                c.ImGui_Separator();
-                if (c.ImGui_Button("Pivot around world origin")) {
-                    camera.pivot_position = .{ 0.0, 0.0, 0.0 };
-                    camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
-                    camera.updateViewMatrix();
-                }
-                if (c.ImGui_Button("Look at pivot point")) {
-                    camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
-                    camera.updateViewMatrix();
-                }
+            c.ImGui_Separator();
+            if (c.ImGui_MenuItemEx("Perspective", null, camera.projection_type == .perspective, true)) {
+                camera.projection_type = .perspective;
+                camera.updateProjectionMatrix();
             }
-
-            surface_mesh_store.menuBar();
-            point_cloud_store.menuBar();
-
-            for (modules.items) |module| {
-                module.menuBar();
+            if (c.ImGui_MenuItemEx("Orthographic", null, camera.projection_type == .orthographic, true)) {
+                camera.projection_type = .orthographic;
+                camera.updateProjectionMatrix();
+            }
+            c.ImGui_Separator();
+            if (c.ImGui_Button("Pivot around world origin")) {
+                camera.pivot_position = .{ 0.0, 0.0, 0.0 };
+                camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
+                camera.updateViewMatrix();
+            }
+            if (c.ImGui_Button("Look at pivot point")) {
+                camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
+                camera.updateViewMatrix();
             }
         }
 
-        c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowRounding, 0.0);
-        c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowBorderSize, 0.0);
+        surface_mesh_store.menuBar();
+        point_cloud_store.menuBar();
 
-        c.ImGui_SetNextWindowPos(c.ImVec2{
-            .x = imgui_viewport.*.Pos.x,
-            .y = imgui_viewport.*.Pos.y + main_menu_bar_size.y,
-        }, 0);
-        c.ImGui_SetNextWindowSize(c.ImVec2{
-            .x = imgui_viewport.*.Size.x * 0.22,
-            .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
-        }, 0);
-        c.ImGui_SetNextWindowBgAlpha(0.5);
-        if (c.ImGui_Begin("Models Stores", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
-            c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
-        {
-            defer c.ImGui_End();
-            surface_mesh_store.uiPanel();
-            point_cloud_store.uiPanel();
+        for (modules.items) |module| {
+            module.menuBar();
         }
-
-        c.ImGui_SetNextWindowPos(c.ImVec2{
-            .x = imgui_viewport.*.Pos.x + imgui_viewport.*.Size.x * 0.78,
-            .y = imgui_viewport.*.Pos.y + main_menu_bar_size.y,
-        }, 0);
-        c.ImGui_SetNextWindowSize(c.ImVec2{
-            .x = imgui_viewport.*.Size.x * 0.22,
-            .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
-        }, 0);
-        c.ImGui_SetNextWindowBgAlpha(0.5);
-        if (c.ImGui_Begin("Modules", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
-            c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
-        {
-            defer c.ImGui_End();
-            for (modules.items) |module| {
-                if (module.vtable.uiPanel == null) continue; // check if the module has a uiPanel function
-                c.ImGui_PushIDPtr(module);
-                defer c.ImGui_PopID();
-                c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
-                c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
-                c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
-                if (c.ImGui_CollapsingHeader(module.name.ptr, 0)) {
-                    c.ImGui_PopStyleColorEx(3);
-                    module.uiPanel();
-                } else {
-                    c.ImGui_PopStyleColorEx(3);
-                }
-            }
-        }
-
-        c.ImGui_PopStyleVarEx(2);
-
-        // c.ImGui_ShowDemoWindow(null);
-        // c.ImGui_ShowStyleEditor(null);
-
-        c.ImGui_Render();
-        c.cImGui_ImplOpenGL3_RenderDrawData(c.ImGui_GetDrawData());
-
-        c.ImGui_UpdatePlatformWindows();
-        c.ImGui_RenderPlatformWindowsDefault();
-
-        try errify(c.SDL_GL_MakeCurrent(window, gl_context));
     }
+
+    c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowRounding, 0.0);
+    c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowBorderSize, 0.0);
+
+    c.ImGui_SetNextWindowPos(c.ImVec2{
+        .x = imgui_viewport.*.Pos.x,
+        .y = imgui_viewport.*.Pos.y + main_menu_bar_size.y,
+    }, 0);
+    c.ImGui_SetNextWindowSize(c.ImVec2{
+        .x = imgui_viewport.*.Size.x * 0.22,
+        .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
+    }, 0);
+    c.ImGui_SetNextWindowBgAlpha(0.5);
+    if (c.ImGui_Begin("Models Stores", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
+        c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
+    {
+        defer c.ImGui_End();
+        surface_mesh_store.uiPanel();
+        point_cloud_store.uiPanel();
+    }
+
+    c.ImGui_SetNextWindowPos(c.ImVec2{
+        .x = imgui_viewport.*.Pos.x + imgui_viewport.*.Size.x * 0.78,
+        .y = imgui_viewport.*.Pos.y + main_menu_bar_size.y,
+    }, 0);
+    c.ImGui_SetNextWindowSize(c.ImVec2{
+        .x = imgui_viewport.*.Size.x * 0.22,
+        .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
+    }, 0);
+    c.ImGui_SetNextWindowBgAlpha(0.5);
+    if (c.ImGui_Begin("Modules", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
+        c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
+    {
+        defer c.ImGui_End();
+        for (modules.items) |module| {
+            if (module.vtable.uiPanel == null) continue; // check if the module has a uiPanel function
+            c.ImGui_PushIDPtr(module);
+            defer c.ImGui_PopID();
+            c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
+            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
+            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
+            if (c.ImGui_CollapsingHeader(module.name.ptr, 0)) {
+                c.ImGui_PopStyleColorEx(3);
+                module.uiPanel();
+            } else {
+                c.ImGui_PopStyleColorEx(3);
+            }
+        }
+    }
+
+    c.ImGui_PopStyleVarEx(2);
+
+    // c.ImGui_ShowDemoWindow(null);
+    // c.ImGui_ShowStyleEditor(null);
+
+    c.ImGui_Render();
+    c.cImGui_ImplOpenGL3_RenderDrawData(c.ImGui_GetDrawData());
+
+    c.ImGui_UpdatePlatformWindows();
+    c.ImGui_RenderPlatformWindowsDefault();
+
+    try errify(c.SDL_GL_MakeCurrent(window, gl_context));
 
     try errify(c.SDL_GL_SwapWindow(window));
 
@@ -434,6 +432,10 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
 fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
     _ = appstate;
+
+    const UiData = struct {
+        var selecting = false;
+    };
 
     _ = c.cImGui_ImplSDL3_ProcessEvent(event);
     if (c.ImGui_GetIO().*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow)) {
@@ -453,12 +455,37 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         c.SDL_EVENT_KEY_DOWN => {
             switch (event.key.key) {
                 c.SDLK_ESCAPE => return c.SDL_APP_SUCCESS,
+                c.SDLK_S => UiData.selecting = true,
+                else => {},
+            }
+        },
+        c.SDL_EVENT_KEY_UP => {
+            switch (event.key.key) {
+                c.SDLK_S => UiData.selecting = false,
                 else => {},
             }
         },
         c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
             switch (event.button.button) {
-                c.SDL_BUTTON_LEFT => {},
+                c.SDL_BUTTON_LEFT => {
+                    if (UiData.selecting and surface_mesh_store.selected_surface_mesh != null) {
+                        const sm = surface_mesh_store.selected_surface_mesh.?;
+                        const info = surface_mesh_store.surfaceMeshInfo(sm);
+                        if (info.bvh.bvh_ptr) |_| {
+                            if (view.pixelWorldRayIfGeometry(event.button.x, event.button.y)) |ray| {
+                                if (info.bvh.intersect(ray)) |hit| {
+                                    zgp_log.info("Hit triangle {d} at t={d}, bcoords=({d}, {d}, {d})", .{
+                                        hit.triIndex,
+                                        hit.t,
+                                        hit.bcoords[0],
+                                        hit.bcoords[1],
+                                        hit.bcoords[2],
+                                    });
+                                }
+                            }
+                        }
+                    }
+                },
                 c.SDL_BUTTON_RIGHT => {},
                 else => {},
             }
@@ -474,7 +501,6 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 if (world_pos) |wp| {
                     camera.pivot_position = wp;
                 } else {
-                    // gl_log.info("No world position found at pixel ({d}, {d})", .{ event.button.x, event.button.y });
                     camera.pivot_position = .{ 0.0, 0.0, 0.0 };
                 }
                 camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));

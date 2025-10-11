@@ -7,7 +7,7 @@ const Mat4d = mat.Mat4d;
 pub const Index = i32;
 pub const Scalar = f64;
 
-pub const Triplet = packed struct {
+pub const Triplet = extern struct {
     row: Index,
     col: Index,
     value: Scalar,
