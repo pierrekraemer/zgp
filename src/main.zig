@@ -25,6 +25,7 @@ const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
 const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
+const SurfaceMeshMedialAxis = @import("modules/SurfaceMeshMedialAxis.zig");
 
 const geometry_utils = @import("geometry/utils.zig");
 const vec = @import("geometry/vec.zig");
@@ -69,6 +70,7 @@ var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
 var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
 var surface_mesh_distance: SurfaceMeshDistance = undefined;
+var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
 
 /// Application SDL Window & OpenGL context
 var window: *c.SDL_Window = undefined;
@@ -235,6 +237,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_connectivity.deinit();
     surface_mesh_distance = SurfaceMeshDistance.init();
     errdefer surface_mesh_distance.deinit();
+    surface_mesh_medial_axis = SurfaceMeshMedialAxis.init(allocator);
+    errdefer surface_mesh_medial_axis.deinit();
 
     // TODO: find a way to tag Modules with the type of model they handle (PointCloud, SurfaceMesh, etc.)
     // and only show them in the UI when a compatible model is selected
@@ -243,6 +247,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(allocator, &vector_per_vertex_renderer.module);
     try modules.append(allocator, &surface_mesh_connectivity.module);
     try modules.append(allocator, &surface_mesh_distance.module);
+    try modules.append(allocator, &surface_mesh_medial_axis.module);
     errdefer modules.deinit(allocator);
 
     // CLI arguments parsing
@@ -488,20 +493,22 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         },
         c.SDL_EVENT_MOUSE_BUTTON_UP => {
             switch (event.button.button) {
-                c.SDL_BUTTON_LEFT => {},
+                c.SDL_BUTTON_LEFT => {
+                    const modState = c.SDL_GetModState();
+                    if ((modState & c.SDL_KMOD_SHIFT) != 0 and event.button.clicks == 2) {
+                        const world_pos = view.pixelWorldPosition(event.button.x, event.button.y);
+                        if (world_pos) |wp| {
+                            camera.pivot_position = wp;
+                        } else {
+                            camera.pivot_position = .{ 0.0, 0.0, 0.0 };
+                        }
+                        camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
+                        camera.updateViewMatrix();
+                        requestRedraw();
+                    }
+                },
                 c.SDL_BUTTON_RIGHT => {},
                 else => {},
-            }
-            if (event.button.clicks == 2 and event.button.button == c.SDL_BUTTON_LEFT) {
-                const world_pos = view.pixelWorldPosition(event.button.x, event.button.y);
-                if (world_pos) |wp| {
-                    camera.pivot_position = wp;
-                } else {
-                    camera.pivot_position = .{ 0.0, 0.0, 0.0 };
-                }
-                camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
-                camera.updateViewMatrix();
-                requestRedraw();
             }
         },
         c.SDL_EVENT_MOUSE_MOTION => {
@@ -550,6 +557,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         vector_per_vertex_renderer.deinit();
         surface_mesh_connectivity.deinit();
         surface_mesh_distance.deinit();
+        surface_mesh_medial_axis.deinit();
         modules.deinit(allocator);
 
         camera.deinit(allocator);

@@ -29,7 +29,6 @@ pub fn init() SurfaceMeshDistance {
 
 pub fn deinit(_: *SurfaceMeshDistance) void {}
 
-// TODO: allow selecting multiple source vertices
 fn computeVertexGeodesicDistancesFromSource(
     _: *SurfaceMeshDistance,
     sm: *SurfaceMesh,
@@ -67,13 +66,12 @@ fn computeVertexGeodesicDistancesFromSource(
 /// Describe the right-click menu interface.
 pub fn rightClickMenu(m: *Module) void {
     const smd: *SurfaceMeshDistance = @alignCast(@fieldParentPtr("module", m));
+    const sms = &zgp.surface_mesh_store;
 
     const UiData = struct {
         var diffusion_time: f32 = 1.0;
         var vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null;
     };
-
-    const sms = &zgp.surface_mesh_store;
 
     const style = c.ImGui_GetStyle();
 

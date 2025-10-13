@@ -30,6 +30,16 @@ const Vec3f = vec.Vec3f;
 const PointCloudInfo = struct {
     std_data: PointCloudStdDatas = .{},
     points_ibo: IBO, // TODO: really needed?
+
+    pub fn init() PointCloudInfo {
+        return .{
+            .std_data = .{},
+            .points_ibo = IBO.init(),
+        };
+    }
+    pub fn deinit(self: *PointCloudInfo) void {
+        self.points_ibo.deinit();
+    }
 };
 
 allocator: std.mem.Allocator,
@@ -55,7 +65,7 @@ pub fn deinit(pcs: *PointCloudStore) void {
     var pc_info_it = pcs.point_clouds_info.iterator();
     while (pc_info_it.next()) |entry| {
         var info = entry.value_ptr.*;
-        info.points_ibo.deinit();
+        info.deinit();
     }
     pcs.point_clouds_info.deinit();
     var pc_it = pcs.point_clouds.iterator();
@@ -73,6 +83,52 @@ pub fn deinit(pcs: *PointCloudStore) void {
     }
     pcs.data_vbo.deinit();
     pcs.data_last_update.deinit();
+}
+
+pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
+    const maybe_point_cloud = pcs.point_clouds.get(name);
+    if (maybe_point_cloud) |_| {
+        return error.ModelNameAlreadyExists;
+    }
+    const pc = try pcs.allocator.create(PointCloud);
+    errdefer pcs.allocator.destroy(pc);
+    pc.* = try PointCloud.init(pcs.allocator);
+    errdefer pc.deinit();
+    try pcs.point_clouds.put(name, pc);
+    errdefer _ = pcs.point_clouds.remove(name);
+    var info = PointCloudInfo.init();
+    errdefer info.deinit();
+    try pcs.point_clouds_info.put(pc, info);
+    errdefer _ = pcs.point_clouds_info.remove(pc);
+
+    // TODO: find a way to only notify modules that have registered interest in PointCloud
+    for (zgp.modules.items) |module| {
+        module.pointCloudCreated(pc);
+    }
+
+    return pc;
+}
+
+pub fn destroyPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
+    const name = pcs.pointCloudName(pc) orelse {
+        zgp_log.err("Could not find name for PointCloud to destroy it", .{});
+        return;
+    };
+
+    // TODO: find a way to only notify modules that have registered interest in PointCloud
+    for (zgp.modules.items) |module| {
+        module.pointCloudDestroyed(pc);
+    }
+
+    if (pcs.selected_point_cloud == pc) {
+        pcs.selected_point_cloud = null;
+    }
+    _ = pcs.point_clouds.remove(name);
+    const info = pcs.point_clouds_info.getPtr(pc).?;
+    info.deinit();
+    _ = pcs.point_clouds_info.remove(pc);
+    pc.deinit();
+    pcs.allocator.destroy(pc);
 }
 
 pub fn pointCloudDataUpdated(
@@ -125,7 +181,7 @@ pub fn pointCloudInfo(pcs: *PointCloudStore, pc: *const PointCloud) *PointCloudI
 }
 
 pub fn pointCloudName(pcs: *PointCloudStore, pc: *const PointCloud) ?[]const u8 {
-    const it = pcs.point_clouds.iterator();
+    var it = pcs.point_clouds.iterator();
     while (it.next()) |entry| {
         if (entry.value_ptr.* == pc) {
             return entry.key_ptr.*;
@@ -220,30 +276,6 @@ pub fn uiPanel(pcs: *PointCloudStore) void {
     } else {
         c.ImGui_PopStyleColorEx(3);
     }
-}
-
-pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
-    const maybe_point_cloud = pcs.point_clouds.get(name);
-    if (maybe_point_cloud) |_| {
-        return error.ModelNameAlreadyExists;
-    }
-    const pc = try pcs.allocator.create(PointCloud);
-    errdefer pcs.allocator.destroy(pc);
-    pc.* = try PointCloud.init(pcs.allocator);
-    errdefer pc.deinit();
-    try pcs.point_clouds.put(name, pc);
-    errdefer _ = pcs.point_clouds.remove(name);
-    try pcs.point_clouds_info.put(pc, .{
-        .points_ibo = IBO.init(),
-    });
-    errdefer _ = pcs.point_clouds_info.remove(pc);
-
-    // TODO: find a way to only notify modules that have registered interest in PointCloud
-    for (zgp.modules.items) |module| {
-        module.pointCloudAdded(pc);
-    }
-
-    return pc;
 }
 
 // TODO: put the IO code in a separate module

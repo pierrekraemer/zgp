@@ -84,20 +84,28 @@ pub fn vertexNormal(
 /// Compute the normals of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_normal data.
 /// Face normals are assumed to be normalized.
+/// Face contributions to vertices normals are computed here in a face-centric manner for better performance.
 pub fn computeVertexNormals(
     sm: *SurfaceMesh,
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
-    var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
-    defer vertex_it.deinit();
-    while (vertex_it.next()) |vertex| {
-        vertex_normal.valuePtr(vertex).* = vertexNormal(
-            sm,
-            vertex,
-            corner_angle,
-            face_normal,
-        );
+    vertex_normal.data.fill(vec.zero3f);
+    var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
+    defer face_it.deinit();
+    while (face_it.next()) |face| {
+        const n = face_normal.value(face);
+        var dart_it = sm.cellDartIterator(face);
+        while (dart_it.next()) |d| {
+            const v: SurfaceMesh.Cell = .{ .vertex = d };
+            vertex_normal.valuePtr(v).* = vec.add3f(
+                vertex_normal.value(v),
+                vec.mulScalar3f(
+                    n,
+                    corner_angle.value(.{ .corner = d }),
+                ),
+            );
+        }
     }
 }

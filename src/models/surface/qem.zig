@@ -61,7 +61,13 @@ pub fn vertexQEM(
 
 /// Compute the QEMs of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_qem data.
-/// Face contributions to vertices quadrics is executed here in a face-centric manner for better performance.
+/// The QEM of a vertex is defined as the sum of the outer products of the planes of its incident faces.
+/// The plane of a face is defined by its normal n and a point p on the face as the 4D vector (n, -p.n).
+/// Face normals are assumed to be normalized.
+/// A regularization term is added to ensure QEM is well-conditioned by adding a small contribution of the vertices tangent basis planes.
+/// SGP2025: Controlling Quadric Error Simplification with Line Quadrics
+/// https://www.dgp.toronto.edu/~hsuehtil/pdf/lineQuadric.pdf
+/// Face contributions to vertices quadrics are computed here in a face-centric manner for better performance.
 pub fn computeVertexQEMs(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -113,6 +119,8 @@ pub fn computeVertexQEMs(
     }
 }
 
+/// Given a QEM matrix, compute the optimal point minimizing the quadric error.
+/// Return null if the QEM is not invertible.
 pub fn optimalPoint(q: Mat4f) ?Vec3f {
     // warning: Eigen (via ceigen) uses double precision
     var m = mat.mat4dFromMat4f(q);

@@ -98,7 +98,7 @@ const SurfaceMeshRendererParameters = struct {
 module: Module = .{
     .name = "Surface Mesh Renderer",
     .vtable = &.{
-        .surfaceMeshAdded = surfaceMeshAdded,
+        .surfaceMeshCreated = surfaceMeshCreated,
         .surfaceMeshStdDataChanged = surfaceMeshStdDataChanged,
         .surfaceMeshDataUpdated = surfaceMeshDataUpdated,
         .uiPanel = uiPanel,
@@ -124,7 +124,7 @@ pub fn deinit(smr: *SurfaceMeshRenderer) void {
 
 /// Part of the Module interface.
 /// Create and store a SurfaceMeshRendererParameters for the new SurfaceMesh.
-pub fn surfaceMeshAdded(m: *Module, surface_mesh: *SurfaceMesh) void {
+pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smr: *SurfaceMeshRenderer = @alignCast(@fieldParentPtr("module", m));
     smr.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init()) catch |err| {
         std.debug.print("Failed to create SurfaceMeshRendererParameters for new SurfaceMesh: {}\n", .{err});

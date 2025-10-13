@@ -15,11 +15,13 @@ name: []const u8,
 vtable: *const VTable,
 
 const VTable = struct {
-    pointCloudAdded: ?*const fn (m: *Module, point_cloud: *PointCloud) void = null,
+    pointCloudCreated: ?*const fn (m: *Module, point_cloud: *PointCloud) void = null,
+    pointCloudDestroyed: ?*const fn (m: *Module, point_cloud: *PointCloud) void = null,
     pointCloudStdDataChanged: ?*const fn (m: *Module, point_cloud: *PointCloud, std_data: PointCloudStdData) void = null,
     pointCloudDataUpdated: ?*const fn (m: *Module, point_cloud: *PointCloud, data_gen: *const DataGen) void = null,
 
-    surfaceMeshAdded: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
+    surfaceMeshCreated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
+    surfaceMeshDestroyed: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
     surfaceMeshStdDataChanged: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) void = null,
     surfaceMeshConnectivityUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
     surfaceMeshDataUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void = null,
@@ -32,8 +34,13 @@ const VTable = struct {
     draw: ?*const fn (m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void = null,
 };
 
-pub fn pointCloudAdded(m: *Module, pc: *PointCloud) void {
-    if (m.vtable.pointCloudAdded) |func| {
+pub fn pointCloudCreated(m: *Module, pc: *PointCloud) void {
+    if (m.vtable.pointCloudCreated) |func| {
+        func(m, pc);
+    }
+}
+pub fn pointCloudDestroyed(m: *Module, pc: *PointCloud) void {
+    if (m.vtable.pointCloudDestroyed) |func| {
         func(m, pc);
     }
 }
@@ -47,8 +54,13 @@ pub fn pointCloudDataUpdated(m: *Module, pc: *PointCloud, data_gen: *const DataG
         func(m, pc, data_gen);
     }
 }
-pub fn surfaceMeshAdded(m: *Module, sm: *SurfaceMesh) void {
-    if (m.vtable.surfaceMeshAdded) |func| {
+pub fn surfaceMeshCreated(m: *Module, sm: *SurfaceMesh) void {
+    if (m.vtable.surfaceMeshCreated) |func| {
+        func(m, sm);
+    }
+}
+pub fn surfaceMeshDestroyed(m: *Module, sm: *SurfaceMesh) void {
+    if (m.vtable.surfaceMeshDestroyed) |func| {
         func(m, sm);
     }
 }

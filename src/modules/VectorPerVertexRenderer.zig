@@ -43,7 +43,7 @@ const VectorPerVertexRendererParameters = struct {
 module: Module = .{
     .name = "Vector Per Vertex Renderer",
     .vtable = &.{
-        .surfaceMeshAdded = surfaceMeshAdded,
+        .surfaceMeshCreated = surfaceMeshCreated,
         .surfaceMeshStdDataChanged = surfaceMeshStdDataChanged,
         .draw = draw,
         .uiPanel = uiPanel,
@@ -68,7 +68,7 @@ pub fn deinit(vpvr: *VectorPerVertexRenderer) void {
 
 /// Part of the Module interface.
 /// Create and store a VectorPerVertexRendererParameters for the new SurfaceMesh.
-pub fn surfaceMeshAdded(m: *Module, surface_mesh: *SurfaceMesh) void {
+pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const vpvr: *VectorPerVertexRenderer = @alignCast(@fieldParentPtr("module", m));
     vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init()) catch |err| {
         std.debug.print("Failed to create VectorPerVertexRendererParameters for new SurfaceMesh: {}\n", .{err});

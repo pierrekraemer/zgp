@@ -100,7 +100,7 @@ fn decimate(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     nb_vertices_to_remove: u32,
 ) !void {
-    var vertex_qem = try sm.addData(.vertex, Mat4f, "vertex_qem");
+    var vertex_qem = try sm.addData(.vertex, Mat4f, "__vertex_qem");
     defer sm.removeData(.vertex, vertex_qem.gen());
     try qem.computeVertexQEMs(
         sm,
@@ -125,6 +125,7 @@ fn decimate(
 /// Describe the right-click menu interface.
 pub fn rightClickMenu(m: *Module) void {
     const smc: *SurfaceMeshConnectivity = @alignCast(@fieldParentPtr("module", m));
+    const sms = &zgp.surface_mesh_store;
 
     const UiData = struct {
         var edge_length_factor: f32 = 1.0;
@@ -132,8 +133,6 @@ pub fn rightClickMenu(m: *Module) void {
         var button_text_buf: [64]u8 = undefined;
         var new_data_name: [32]u8 = undefined;
     };
-
-    const sms = &zgp.surface_mesh_store;
 
     const style = c.ImGui_GetStyle();
 

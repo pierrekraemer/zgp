@@ -51,6 +51,34 @@ const SurfaceMeshInfo = struct {
     vertex_set_ibo: IBO,
     edge_set_ibo: IBO,
     face_set_ibo: IBO,
+
+    pub fn init(surface_mesh: *SurfaceMesh) !SurfaceMeshInfo {
+        return .{
+            .points_ibo = IBO.init(),
+            .lines_ibo = IBO.init(),
+            .triangles_ibo = IBO.init(),
+            .boundaries_ibo = IBO.init(),
+            .vertex_set = try SurfaceMesh.CellSet(.vertex).init(surface_mesh),
+            .edge_set = try SurfaceMesh.CellSet(.edge).init(surface_mesh),
+            .face_set = try SurfaceMesh.CellSet(.face).init(surface_mesh),
+            .vertex_set_ibo = IBO.init(),
+            .edge_set_ibo = IBO.init(),
+            .face_set_ibo = IBO.init(),
+        };
+    }
+    pub fn deinit(self: *SurfaceMeshInfo) void {
+        self.bvh.deinit();
+        self.points_ibo.deinit();
+        self.lines_ibo.deinit();
+        self.triangles_ibo.deinit();
+        self.boundaries_ibo.deinit();
+        self.vertex_set.deinit();
+        self.edge_set.deinit();
+        self.face_set.deinit();
+        self.vertex_set_ibo.deinit();
+        self.edge_set_ibo.deinit();
+        self.face_set_ibo.deinit();
+    }
 };
 
 allocator: std.mem.Allocator,
@@ -76,17 +104,7 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
     var sm_info_it = sms.surface_meshes_info.iterator();
     while (sm_info_it.next()) |entry| {
         var info = entry.value_ptr.*;
-        info.bvh.deinit();
-        info.vertex_set.deinit();
-        info.edge_set.deinit();
-        info.face_set.deinit();
-        info.points_ibo.deinit();
-        info.lines_ibo.deinit();
-        info.triangles_ibo.deinit();
-        info.boundaries_ibo.deinit();
-        info.vertex_set_ibo.deinit();
-        info.edge_set_ibo.deinit();
-        info.face_set_ibo.deinit();
+        info.deinit();
     }
     sms.surface_meshes_info.deinit();
     var sm_it = sms.surface_meshes.iterator();
@@ -104,6 +122,52 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
     }
     sms.data_vbo.deinit();
     sms.data_last_update.deinit();
+}
+
+pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh {
+    const maybe_surface_mesh = sms.surface_meshes.get(name);
+    if (maybe_surface_mesh) |_| {
+        return error.ModelNameAlreadyExists;
+    }
+    var sm = try sms.allocator.create(SurfaceMesh);
+    errdefer sms.allocator.destroy(sm);
+    sm.* = try SurfaceMesh.init(sms.allocator);
+    errdefer sm.deinit();
+    try sms.surface_meshes.put(name, sm);
+    errdefer _ = sms.surface_meshes.remove(name);
+    var info = try SurfaceMeshInfo.init(sm);
+    errdefer info.deinit();
+    try sms.surface_meshes_info.put(sm, info);
+    errdefer _ = sms.surface_meshes_info.remove(sm);
+
+    // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
+    for (zgp.modules.items) |module| {
+        module.surfaceMeshCreated(sm);
+    }
+
+    return sm;
+}
+
+pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
+    const name = sms.surfaceMeshName(sm) orelse {
+        zgp_log.err("Could not find name for SurfaceMesh to destroy it", .{});
+        return;
+    };
+
+    // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
+    for (zgp.modules.items) |module| {
+        module.surfaceMeshDestroyed(sm);
+    }
+
+    if (sms.selected_surface_mesh == sm) {
+        sms.selected_surface_mesh = null;
+    }
+    _ = sms.surface_meshes.remove(name);
+    const info = sms.surface_meshes_info.getPtr(sm).?;
+    info.deinit();
+    _ = sms.surface_meshes_info.remove(sm);
+    sm.deinit();
+    sms.allocator.destroy(sm);
 }
 
 pub fn surfaceMeshDataUpdated(
@@ -239,7 +303,7 @@ pub fn surfaceMeshInfo(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) *SurfaceM
 }
 
 pub fn surfaceMeshName(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) ?[]const u8 {
-    const it = sms.surface_meshes.iterator();
+    var it = sms.surface_meshes.iterator();
     while (it.next()) |entry| {
         if (entry.value_ptr.* == sm) {
             return entry.key_ptr.*;
@@ -519,39 +583,6 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
     } else {
         c.ImGui_PopStyleColorEx(3);
     }
-}
-
-pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh {
-    const maybe_surface_mesh = sms.surface_meshes.get(name);
-    if (maybe_surface_mesh) |_| {
-        return error.ModelNameAlreadyExists;
-    }
-    var sm = try sms.allocator.create(SurfaceMesh);
-    errdefer sms.allocator.destroy(sm);
-    sm.* = try SurfaceMesh.init(sms.allocator);
-    errdefer sm.deinit();
-    try sms.surface_meshes.put(name, sm);
-    errdefer _ = sms.surface_meshes.remove(name);
-    try sms.surface_meshes_info.put(sm, .{
-        .points_ibo = IBO.init(),
-        .lines_ibo = IBO.init(),
-        .triangles_ibo = IBO.init(),
-        .boundaries_ibo = IBO.init(),
-        .vertex_set = try SurfaceMesh.CellSet(.vertex).init(sm),
-        .edge_set = try SurfaceMesh.CellSet(.edge).init(sm),
-        .face_set = try SurfaceMesh.CellSet(.face).init(sm),
-        .vertex_set_ibo = IBO.init(),
-        .edge_set_ibo = IBO.init(),
-        .face_set_ibo = IBO.init(),
-    });
-    errdefer _ = sms.surface_meshes_info.remove(sm);
-
-    // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
-    for (zgp.modules.items) |module| {
-        module.surfaceMeshAdded(sm);
-    }
-
-    return sm;
 }
 
 // TODO: put the IO code in a separate place

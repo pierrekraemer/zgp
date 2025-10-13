@@ -63,10 +63,10 @@ const PointCloudRendererParameters = struct {
 module: Module = .{
     .name = "Point Cloud Renderer",
     .vtable = &.{
-        .pointCloudAdded = &pointCloudAdded,
-        .pointCloudStdDataChanged = &pointCloudStdDataChanged,
-        .uiPanel = &uiPanel,
-        .draw = &draw,
+        .pointCloudCreated = pointCloudCreated,
+        .pointCloudStdDataChanged = pointCloudStdDataChanged,
+        .uiPanel = uiPanel,
+        .draw = draw,
     },
 },
 parameters: std.AutoHashMap(*const PointCloud, PointCloudRendererParameters),
@@ -88,7 +88,7 @@ pub fn deinit(pcr: *PointCloudRenderer) void {
 
 /// Part of the Module interface.
 /// Create and store a PointCloudRendererParameters for the new PointCloud.
-pub fn pointCloudAdded(m: *Module, point_cloud: *PointCloud) void {
+pub fn pointCloudCreated(m: *Module, point_cloud: *PointCloud) void {
     const pcr: *PointCloudRenderer = @alignCast(@fieldParentPtr("module", m));
     pcr.parameters.put(point_cloud, PointCloudRendererParameters.init()) catch |err| {
         std.debug.print("Failed to create PointCloudRendererParameters for new PointCloud: {}\n", .{err});
