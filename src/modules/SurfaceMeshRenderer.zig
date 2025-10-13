@@ -61,6 +61,10 @@ const SurfaceMeshRendererParameters = struct {
     draw_faces: bool = true,
     draw_boundaries: bool = false,
 
+    draw_vertex_set: bool = true,
+    draw_edge_set: bool = true,
+    draw_face_set: bool = true,
+
     draw_vertices_color: ColorParameters = .{
         .defined_on = .global, // authorized values: global, vertex
     },
@@ -416,6 +420,18 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
                 else => unreachable,
             }
         }
+        if (p.draw_vertex_set) {
+            p.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+            p.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+            const size = p.point_sphere_shader_parameters.point_size;
+            const color = p.point_sphere_shader_parameters.point_color;
+            p.point_sphere_shader_parameters.point_size = size * 1.5; // Make vertex set points larger
+            p.point_sphere_shader_parameters.point_color = .{ 0.0, 1.0, 0.0, 1.0 }; // Green for vertex set
+            p.point_sphere_shader_parameters.draw(info.vertex_set_ibo);
+            p.point_sphere_shader_parameters.point_size = size; // Restore original size
+            p.point_sphere_shader_parameters.point_color = color; // Restore original color
+        }
+        // TODO: implement edge & face sets rendering
         if (p.draw_boundaries) {
             p.line_bold_shader_parameters.model_view_matrix = @bitCast(view_matrix);
             p.line_bold_shader_parameters.projection_matrix = @bitCast(projection_matrix);
@@ -442,7 +458,11 @@ pub fn uiPanel(m: *Module) void {
             if (c.ImGui_Checkbox("draw vertices", &p.draw_vertices)) {
                 zgp.requestRedraw();
             }
-            if (p.draw_vertices) {
+            c.ImGui_SameLine();
+            if (c.ImGui_Checkbox("draw vertex set", &p.draw_vertex_set)) {
+                zgp.requestRedraw();
+            }
+            if (p.draw_vertices or p.draw_vertex_set) {
                 c.ImGui_Text("Size");
                 c.ImGui_PushID("DrawVerticesSize");
                 if (c.ImGui_SliderFloatEx("", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
@@ -452,6 +472,8 @@ pub fn uiPanel(m: *Module) void {
                     zgp.requestRedraw();
                 }
                 c.ImGui_PopID();
+            }
+            if (p.draw_vertices) {
                 c.ImGui_Text("Color");
                 {
                     c.ImGui_BeginGroup();
@@ -587,7 +609,7 @@ pub fn uiPanel(m: *Module) void {
                                 }
                                 c.ImGui_Text("Nb isolines");
                                 c.ImGui_PushID("NbIsolines");
-                                if (c.ImGui_SliderInt("", &p.tri_flat_scalar_per_vertex_shader_parameters.nb_isolines, 1, 50)) {
+                                if (c.ImGui_SliderInt("", &p.tri_flat_scalar_per_vertex_shader_parameters.nb_isolines, 1, 100)) {
                                     zgp.requestRedraw();
                                 }
                                 c.ImGui_PopID();

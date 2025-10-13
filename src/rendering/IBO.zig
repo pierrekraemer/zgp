@@ -22,7 +22,19 @@ pub fn deinit(i: *IBO) void {
     }
 }
 
-pub fn fillFrom(i: *IBO, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, allocator: std.mem.Allocator) !void {
+pub fn fillFromSlice(i: *IBO, indices: []const u32) !void {
+    i.nb_indices = indices.len;
+    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, i.index);
+    defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
+    gl.BufferData(
+        gl.ELEMENT_ARRAY_BUFFER,
+        @intCast(i.nb_indices * @sizeOf(u32)),
+        indices.ptr,
+        gl.STATIC_DRAW,
+    );
+}
+
+pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, allocator: std.mem.Allocator) !void {
     var indices = try std.ArrayList(u32).initCapacity(allocator, 1024);
     defer indices.deinit(allocator);
     switch (cell_type) {

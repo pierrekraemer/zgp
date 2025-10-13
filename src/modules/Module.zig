@@ -23,6 +23,7 @@ const VTable = struct {
     surfaceMeshStdDataChanged: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) void = null,
     surfaceMeshConnectivityUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
     surfaceMeshDataUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void = null,
+    surfaceMeshCellSetUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType) void = null,
 
     uiPanel: ?*const fn (m: *Module) void = null,
     menuBar: ?*const fn (m: *Module) void = null,
@@ -64,6 +65,11 @@ pub fn surfaceMeshConnectivityUpdated(m: *Module, sm: *SurfaceMesh) void {
 pub fn surfaceMeshDataUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void {
     if (m.vtable.surfaceMeshDataUpdated) |func| {
         func(m, sm, cell_type, data_gen);
+    }
+}
+pub fn surfaceMeshCellSetUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType) void {
+    if (m.vtable.surfaceMeshCellSetUpdated) |func| {
+        func(m, sm, cell_type);
     }
 }
 pub fn uiPanel(m: *Module) void {

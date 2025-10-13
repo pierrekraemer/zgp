@@ -33,7 +33,7 @@ pub fn deinit(_: *SurfaceMeshDistance) void {}
 fn computeVertexGeodesicDistancesFromSource(
     _: *SurfaceMeshDistance,
     sm: *SurfaceMesh,
-    source_vertex: SurfaceMesh.Cell,
+    source_vertices: []SurfaceMesh.Cell,
     diffusion_time: f32,
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -47,7 +47,7 @@ fn computeVertexGeodesicDistancesFromSource(
 
     try distance.computeVertexGeodesicDistancesFromSource(
         sm,
-        source_vertex,
+        source_vertices,
         diffusion_time,
         halfedge_cotan_weight,
         vertex_position,
@@ -69,7 +69,6 @@ pub fn rightClickMenu(m: *Module) void {
     const smd: *SurfaceMeshDistance = @alignCast(@fieldParentPtr("module", m));
 
     const UiData = struct {
-        var source_vertex: SurfaceMesh.Cell = .{ .vertex = 0 };
         var diffusion_time: f32 = 1.0;
         var vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null;
     };
@@ -116,11 +115,9 @@ pub fn rightClickMenu(m: *Module) void {
                     c.ImGui_BeginDisabled(true);
                 }
                 if (c.ImGui_ButtonEx("Compute geodesic distance", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                    // TODO: select source vertex from a CellSet
-                    UiData.source_vertex = .{ .vertex = sm.dart_data.firstIndex() };
                     smd.computeVertexGeodesicDistancesFromSource(
                         sm,
-                        UiData.source_vertex,
+                        info.vertex_set.cells.items,
                         UiData.diffusion_time,
                         info.std_data.halfedge_cotan_weight.?,
                         info.std_data.vertex_position.?,

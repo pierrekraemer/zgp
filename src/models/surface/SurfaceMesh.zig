@@ -340,11 +340,12 @@ const DartMarker = struct {
 pub fn CellSet(comptime cell_type: CellType) type {
     return struct {
         const Self = @This();
+        pub const CellType = cell_type;
 
         surface_mesh: *SurfaceMesh,
         marker: CellMarker(cell_type),
         cells: std.ArrayList(Cell),
-        indices: std.ArrayList(u32), // useful?
+        indices: std.ArrayList(u32),
 
         pub fn init(sm: *SurfaceMesh) !Self {
             return .{
@@ -366,14 +367,16 @@ pub fn CellSet(comptime cell_type: CellType) type {
         }
         pub fn add(self: *Self, c: Cell) !void {
             assert(c.cellType() == cell_type);
-            self.marker.valuePtr(c).* = true;
-            try self.cells.append(self.surface_mesh.allocator, c);
-            try self.indices.append(self.surface_mesh.allocator, self.surface_mesh.cellIndex(c));
+            if (!self.contains(c)) {
+                self.marker.valuePtr(c).* = true;
+                try self.cells.append(self.surface_mesh.allocator, c);
+                try self.indices.append(self.surface_mesh.allocator, self.surface_mesh.cellIndex(c));
+            }
         }
         pub fn remove(self: *Self, c: Cell) void {
             assert(c.cellType() == cell_type);
-            self.marker.valuePtr(self.surface_mesh.cellIndex(c)).* = false;
             const c_index = self.surface_mesh.cellIndex(c);
+            self.marker.valuePtr(c_index).* = false;
             for (self.cells.indices, 0..) |index, i| {
                 if (index == c_index) {
                     self.cells.swapRemove(i);

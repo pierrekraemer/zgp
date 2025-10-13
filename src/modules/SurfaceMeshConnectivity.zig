@@ -229,15 +229,16 @@ pub fn rightClickMenu(m: *Module) void {
                 c.ImGui_PushID("Edge length factor");
                 _ = c.ImGui_SliderFloatEx("", &UiData.edge_length_factor, 0.1, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
                 c.ImGui_PopID();
-                const disabled = info.std_data.vertex_position == null or
+                const disabled =
+                    info.bvh.bvh_ptr == null or
+                    info.std_data.vertex_position == null or
                     info.std_data.corner_angle == null or
                     info.std_data.face_area == null or
                     info.std_data.face_normal == null or
                     info.std_data.edge_length == null or
                     info.std_data.edge_dihedral_angle == null or
                     info.std_data.vertex_area == null or
-                    info.std_data.vertex_normal == null or
-                    info.bvh.bvh_ptr == null;
+                    info.std_data.vertex_normal == null;
                 if (disabled) {
                     c.ImGui_BeginDisabled(true);
                 }

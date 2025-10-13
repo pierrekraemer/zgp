@@ -443,6 +443,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
     }
 
     // TODO: pass mouse/keyboard events to the view & to the modules (e.g. for interaction)
+    // instead of having all the logic here
 
     switch (event.type) {
         c.SDL_EVENT_QUIT => {
@@ -473,14 +474,9 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                         const info = surface_mesh_store.surfaceMeshInfo(sm);
                         if (info.bvh.bvh_ptr) |_| {
                             if (view.pixelWorldRayIfGeometry(event.button.x, event.button.y)) |ray| {
-                                if (info.bvh.intersect(ray)) |hit| {
-                                    zgp_log.info("Hit triangle {d} at t={d}, bcoords=({d}, {d}, {d})", .{
-                                        hit.triIndex,
-                                        hit.t,
-                                        hit.bcoords[0],
-                                        hit.bcoords[1],
-                                        hit.bcoords[2],
-                                    });
+                                if (info.bvh.intersectedVertex(ray)) |v| {
+                                    try info.vertex_set.add(v);
+                                    surface_mesh_store.surfaceMeshCellSetUpdated(sm, .vertex);
                                 }
                             }
                         }

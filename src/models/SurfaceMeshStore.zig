@@ -38,14 +38,19 @@ const SurfaceMeshInfo = struct {
     bvh: bvh.TrianglesBVH = .{},
     bvh_last_update: ?std.time.Instant = null,
 
-    vertex_set: SurfaceMesh.CellSet(.vertex),
-    edge_set: SurfaceMesh.CellSet(.edge),
-    face_set: SurfaceMesh.CellSet(.face),
-
     points_ibo: IBO,
     lines_ibo: IBO,
     triangles_ibo: IBO,
     boundaries_ibo: IBO,
+
+    // TODO: manage multiple sets per cell type
+    vertex_set: SurfaceMesh.CellSet(.vertex),
+    edge_set: SurfaceMesh.CellSet(.edge),
+    face_set: SurfaceMesh.CellSet(.face),
+
+    vertex_set_ibo: IBO,
+    edge_set_ibo: IBO,
+    face_set_ibo: IBO,
 };
 
 allocator: std.mem.Allocator,
@@ -79,6 +84,9 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
         info.lines_ibo.deinit();
         info.triangles_ibo.deinit();
         info.boundaries_ibo.deinit();
+        info.vertex_set_ibo.deinit();
+        info.edge_set_ibo.deinit();
+        info.face_set_ibo.deinit();
     }
     sms.surface_meshes_info.deinit();
     var sm_it = sms.surface_meshes.iterator();
@@ -141,6 +149,23 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
 
     const info = sms.surface_meshes_info.getPtr(sm).?;
 
+    info.points_ibo.fillFromSurfaceMesh(sm, .vertex, sms.allocator) catch |err| {
+        zgp_log.err("Failed to fill points IBO for SurfaceMesh: {}", .{err});
+        return;
+    };
+    info.lines_ibo.fillFromSurfaceMesh(sm, .edge, sms.allocator) catch |err| {
+        zgp_log.err("Failed to fill lines IBO for SurfaceMesh: {}", .{err});
+        return;
+    };
+    info.triangles_ibo.fillFromSurfaceMesh(sm, .face, sms.allocator) catch |err| {
+        zgp_log.err("Failed to fill triangles IBO for SurfaceMesh: {}", .{err});
+        return;
+    };
+    info.boundaries_ibo.fillFromSurfaceMesh(sm, .boundary, sms.allocator) catch |err| {
+        zgp_log.err("Failed to fill boundaries IBO for SurfaceMesh: {}", .{err});
+        return;
+    };
+
     info.vertex_set.update() catch |err| {
         zgp_log.err("Failed to update vertex set for SurfaceMesh: {}", .{err});
         return;
@@ -154,26 +179,41 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
         return;
     };
 
-    info.points_ibo.fillFrom(sm, .vertex, sms.allocator) catch |err| {
-        zgp_log.err("Failed to fill points IBO for SurfaceMesh: {}", .{err});
+    info.vertex_set_ibo.fillFromSlice(info.vertex_set.indices.items) catch |err| {
+        zgp_log.err("Failed to fill vertex set IBO for SurfaceMesh: {}", .{err});
         return;
     };
-    info.lines_ibo.fillFrom(sm, .edge, sms.allocator) catch |err| {
-        zgp_log.err("Failed to fill lines IBO for SurfaceMesh: {}", .{err});
-        return;
-    };
-    info.triangles_ibo.fillFrom(sm, .face, sms.allocator) catch |err| {
-        zgp_log.err("Failed to fill triangles IBO for SurfaceMesh: {}", .{err});
-        return;
-    };
-    info.boundaries_ibo.fillFrom(sm, .boundary, sms.allocator) catch |err| {
-        zgp_log.err("Failed to fill boundaries IBO for SurfaceMesh: {}", .{err});
-        return;
-    };
+    // TODO: manage edge & face set IBOs
 
     // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
     for (zgp.modules.items) |module| {
         module.surfaceMeshConnectivityUpdated(sm);
+    }
+    zgp.requestRedraw();
+}
+
+pub fn surfaceMeshCellSetUpdated(
+    sms: *SurfaceMeshStore,
+    sm: *SurfaceMesh,
+    cell_type: SurfaceMesh.CellType,
+) void {
+    const info = sms.surface_meshes_info.getPtr(sm).?;
+    switch (cell_type) {
+        .vertex => {
+            info.vertex_set_ibo.fillFromSlice(info.vertex_set.indices.items) catch |err| {
+                zgp_log.err("Failed to fill vertex set IBO for SurfaceMesh: {}", .{err});
+                return;
+            };
+        },
+        // TODO: manage edge & face set IBOs
+        .edge => {},
+        .face => {},
+        else => {},
+    }
+
+    // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
+    for (zgp.modules.items) |module| {
+        module.surfaceMeshCellSetUpdated(sm, cell_type);
     }
     zgp.requestRedraw();
 }
@@ -265,6 +305,22 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
             inline for (.{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
                 const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type) ++ " | {d} |", .{sm.nbCells(cell_type)}) catch "";
                 c.ImGui_SeparatorText(cells.ptr);
+                // TODO: improve UI for cell sets (clear, invert, etc.)
+                switch (cell_type) {
+                    .vertex => {
+                        c.ImGui_Text("#vertices in set: %d", info.vertex_set.cells.items.len);
+                        c.ImGui_Separator();
+                    },
+                    .edge => {
+                        c.ImGui_Text("#edges in set: %d", info.edge_set.cells.items.len);
+                        c.ImGui_Separator();
+                    },
+                    .face => {
+                        c.ImGui_Text("#faces in set: %d", info.face_set.cells.items.len);
+                        c.ImGui_Separator();
+                    },
+                    else => {},
+                }
                 inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
                     if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
                     c.ImGui_Text(field.name);
@@ -477,13 +533,16 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     try sms.surface_meshes.put(name, sm);
     errdefer _ = sms.surface_meshes.remove(name);
     try sms.surface_meshes_info.put(sm, .{
-        .vertex_set = try SurfaceMesh.CellSet(.vertex).init(sm),
-        .edge_set = try SurfaceMesh.CellSet(.edge).init(sm),
-        .face_set = try SurfaceMesh.CellSet(.face).init(sm),
         .points_ibo = IBO.init(),
         .lines_ibo = IBO.init(),
         .triangles_ibo = IBO.init(),
         .boundaries_ibo = IBO.init(),
+        .vertex_set = try SurfaceMesh.CellSet(.vertex).init(sm),
+        .edge_set = try SurfaceMesh.CellSet(.edge).init(sm),
+        .face_set = try SurfaceMesh.CellSet(.face).init(sm),
+        .vertex_set_ibo = IBO.init(),
+        .edge_set_ibo = IBO.init(),
+        .face_set_ibo = IBO.init(),
     });
     errdefer _ = sms.surface_meshes_info.remove(sm);
 
@@ -551,19 +610,17 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
         .off => {
             zgp_log.info("reading OFF file", .{});
 
-            while (file_reader.interface.takeDelimiterExclusive('\n')) |line| {
+            while (try file_reader.interface.takeDelimiter('\n')) |line| {
                 if (line.len == 0) continue; // skip empty lines
                 if (std.mem.startsWith(u8, line, "OFF")) break;
-            } else |err| switch (err) {
-                error.EndOfStream => {
-                    zgp_log.warn("reached end of file before finding the header", .{});
-                    return error.InvalidFileFormat;
-                },
-                else => return err,
+            } else {
+                zgp_log.warn("reached end of file before finding the header", .{});
+                return error.InvalidFileFormat;
             }
+            zgp_log.info("found OFF header", .{});
 
             var nb_cells: [3]u32 = undefined; // [vertices, faces, edges]
-            while (file_reader.interface.takeDelimiterExclusive('\n')) |line| {
+            while (try file_reader.interface.takeDelimiter('\n')) |line| {
                 if (line.len == 0) continue; // skip empty lines
                 var tokens = std.mem.tokenizeScalar(u8, line, ' ');
                 var i: u32 = 0;
@@ -577,12 +634,9 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
                     return error.InvalidFileFormat;
                 }
                 break;
-            } else |err| switch (err) {
-                error.EndOfStream => {
-                    zgp_log.warn("reached end of file before reading the number of cells", .{});
-                    return error.InvalidFileFormat;
-                },
-                else => return err,
+            } else {
+                zgp_log.warn("reached end of file before reading the number of cells", .{});
+                return error.InvalidFileFormat;
             }
             zgp_log.info("nb_cells: {d} vertices / {d} faces / {d} edges", .{ nb_cells[0], nb_cells[1], nb_cells[2] });
 
@@ -590,7 +644,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
 
             var i: u32 = 0;
             while (i < nb_cells[0]) : (i += 1) {
-                while (file_reader.interface.takeDelimiterExclusive('\n')) |line| {
+                while (try file_reader.interface.takeDelimiter('\n')) |line| {
                     if (line.len == 0) continue; // skip empty lines
                     var tokens = std.mem.tokenizeScalar(u8, line, ' ');
                     var position: Vec3f = undefined;
@@ -609,19 +663,16 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
                     }
                     try import_data.vertices_position.append(sms.allocator, position);
                     break;
-                } else |err| switch (err) {
-                    error.EndOfStream => {
-                        zgp_log.warn("reached end of file before reading all vertices", .{});
-                        return error.InvalidFileFormat;
-                    },
-                    else => return err,
+                } else {
+                    zgp_log.warn("reached end of file before reading all vertices", .{});
+                    return error.InvalidFileFormat;
                 }
             }
             zgp_log.info("read {d} vertices", .{import_data.vertices_position.items.len});
 
             i = 0;
             while (i < nb_cells[1]) : (i += 1) {
-                while (file_reader.interface.takeDelimiterExclusive('\n')) |line| {
+                while (try file_reader.interface.takeDelimiter('\n')) |line| {
                     if (line.len == 0) continue; // skip empty lines
                     var tokens = std.mem.tokenizeScalar(u8, line, ' ');
                     var face_nb_vertices: u32 = undefined;
@@ -643,12 +694,9 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
                     }
                     try import_data.faces_nb_vertices.append(sms.allocator, face_nb_vertices);
                     break;
-                } else |err| switch (err) {
-                    error.EndOfStream => {
-                        zgp_log.warn("reached end of file before reading all faces", .{});
-                        return error.InvalidFileFormat;
-                    },
-                    else => return err,
+                } else {
+                    zgp_log.warn("reached end of file before reading all faces", .{});
+                    return error.InvalidFileFormat;
                 }
             }
             zgp_log.info("read {d} faces", .{import_data.faces_nb_vertices.items.len});

@@ -14,7 +14,7 @@ const gradient = @import("gradient.zig");
 
 pub fn computeVertexGeodesicDistancesFromSource(
     sm: *SurfaceMesh,
-    source_vertex: SurfaceMesh.Cell,
+    source_vertices: []SurfaceMesh.Cell,
     diffusion_time: f32,
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -65,12 +65,15 @@ pub fn computeVertexGeodesicDistancesFromSource(
     defer massCoeffs.deinit(sm.allocator);
     var heat_0 = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
     defer heat_0.deinit(sm.allocator);
-    const source_vertex_index = sm.cellIndex(source_vertex);
     vertex_it.reset();
     while (vertex_it.next()) |v| {
         // relies on the fact that vertex iterator visits vertices in the same order as before (when indexing them)
         massCoeffs.appendAssumeCapacity(@floatCast(vertex_area.value(v)));
-        heat_0.appendAssumeCapacity(if (sm.cellIndex(v) == source_vertex_index) 1.0 else 0.0);
+        heat_0.appendAssumeCapacity(0.0);
+    }
+    for (source_vertices) |sv| {
+        const idx = vertex_index.value(sv);
+        heat_0.items[idx] = 1.0; // set source vertices heat to 1.0
     }
     var A: eigen.SparseMatrix = .initDiagonalFromArray(massCoeffs.items);
     defer A.deinit();
