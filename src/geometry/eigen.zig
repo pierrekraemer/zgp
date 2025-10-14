@@ -20,6 +20,34 @@ pub fn computeInverse(m: Mat4d) ?Mat4d {
     return if (invertible) inv else null;
 }
 
+pub const DenseMatrix = struct {
+    matrix: ?*anyopaque = null,
+
+    pub fn init(rows: Index, cols: Index) DenseMatrix {
+        return .{
+            .matrix = c.createDenseMatrix(
+                rows,
+                cols,
+            ),
+        };
+    }
+
+    pub fn deinit(dm: *DenseMatrix) void {
+        if (dm.matrix) |m| {
+            c.destroyDenseMatrix(m);
+            dm.matrix = null;
+        }
+    }
+
+    pub fn setRow(dm: *DenseMatrix, row: Index, values: []const Scalar) void {
+        c.setDenseMatrixRow(dm.matrix.?, row, values.ptr, @intCast(values.len));
+    }
+
+    pub fn solveLeastSquares(dm: *DenseMatrix, b: []const Scalar, x: []Scalar) void {
+        c.solveDenseLeastSquares(dm.matrix.?, b.ptr, x.ptr, @intCast(b.len), @intCast(x.len));
+    }
+};
+
 pub const SparseMatrix = struct {
     matrix: ?*anyopaque = null,
 

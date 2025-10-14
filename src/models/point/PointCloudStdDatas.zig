@@ -15,7 +15,7 @@ const Vec3f = vec.Vec3f;
 position: ?PointCloud.CellData(Vec3f) = null,
 normal: ?PointCloud.CellData(Vec3f) = null,
 radius: ?PointCloud.CellData(f32) = null,
-color: ?PointCloud.CellData(Vec3f) = null,
+// color: ?PointCloud.CellData(Vec3f) = null,
 
 /// This tagged union is generated from the PointCloudStdDatas struct and allows to easily provide a single
 /// data entry to the setPointCloudStdData function (in PointCloudStore)

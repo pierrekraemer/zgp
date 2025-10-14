@@ -13,6 +13,7 @@ pub const c = @cImport({
     @cInclude("utils/IconsFontAwesome7.h");
     @cInclude("ceigen/mat4.h");
     @cInclude("ceigen/sparse.h");
+    @cInclude("ceigen/dense.h");
     @cInclude("clibacc/bvh.h");
 });
 

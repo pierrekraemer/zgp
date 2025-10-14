@@ -13,18 +13,22 @@ const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
 
+const eigen = @import("../geometry/eigen.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
+const Vec4d = vec.Vec4d;
 const SQEM = @import("../geometry/sqem.zig").SQEM;
 
 const sqem = @import("../models/surface/sqem.zig");
 
 const MedialAxisData = struct {
-    surface_mesh: *const SurfaceMesh,
+    surface_mesh: *SurfaceMesh,
     vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
     vertex_area: ?SurfaceMesh.CellData(.vertex, f32) = null,
     vertex_sqem: ?SurfaceMesh.CellData(.vertex, SQEM) = null,
     vertex_sphere: ?SurfaceMesh.CellData(.vertex, ?PointCloud.Point) = null,
+    face_area: ?SurfaceMesh.CellData(.face, f32) = null,
+    face_normal: ?SurfaceMesh.CellData(.face, Vec3f) = null,
     spheres: ?*PointCloud = null,
     sphere_position: ?PointCloud.CellData(Vec3f) = null,
     sphere_radius: ?PointCloud.CellData(f32) = null,
@@ -35,111 +39,167 @@ const MedialAxisData = struct {
     const lambda: f32 = 0.2; // weight for the euclidean distance in the metric
 
     pub fn initFromSurfaceMesh(
-        self: *MedialAxisData,
+        mad: *MedialAxisData,
         surface_mesh: *SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_area: SurfaceMesh.CellData(.vertex, f32),
         face_area: SurfaceMesh.CellData(.face, f32),
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
     ) !void {
-        self.vertex_position = vertex_position;
-        self.vertex_area = vertex_area;
-        if (self.vertex_sqem == null) {
-            self.vertex_sqem = try surface_mesh.addData(.vertex, SQEM, "__vertex_sqem");
-            self.vertex_sphere = try surface_mesh.addData(.vertex, ?PointCloud.Point, "__vertex_sphere");
+        mad.vertex_position = vertex_position;
+        mad.vertex_area = vertex_area;
+        if (mad.vertex_sqem == null) {
+            mad.vertex_sqem = try surface_mesh.addData(.vertex, SQEM, "__vertex_sqem");
+            mad.vertex_sphere = try surface_mesh.addData(.vertex, ?PointCloud.Point, "__vertex_sphere");
         }
+        mad.face_area = face_area;
+        mad.face_normal = face_normal;
         try sqem.computeVertexSQEMs(
             surface_mesh,
             vertex_position,
             face_area,
             face_normal,
-            self.vertex_sqem.?,
+            mad.vertex_sqem.?,
         );
-        if (self.spheres == null) {
+        if (mad.spheres == null) {
             var buf: [64]u8 = undefined;
             const pc_name = std.fmt.bufPrintZ(&buf, "{s}_ma_spheres", .{zgp.surface_mesh_store.surfaceMeshName(surface_mesh).?}) catch "__ma_spheres";
-            self.spheres = try zgp.point_cloud_store.createPointCloud(pc_name);
-            self.sphere_position = try self.spheres.?.addData(Vec3f, "position");
-            self.sphere_radius = try self.spheres.?.addData(f32, "radius");
-            self.sphere_color = try self.spheres.?.addData(Vec3f, "color");
-            self.sphere_cluster = try self.spheres.?.addData(std.ArrayList(SurfaceMesh.Cell), "cluster");
-            zgp.point_cloud_store.setPointCloudStdData(self.spheres.?, .{ .position = self.sphere_position.? });
-            zgp.point_cloud_store.setPointCloudStdData(self.spheres.?, .{ .radius = self.sphere_radius.? });
-            zgp.point_cloud_store.setPointCloudStdData(self.spheres.?, .{ .color = self.sphere_color.? });
+            mad.spheres = try zgp.point_cloud_store.createPointCloud(pc_name);
+            mad.sphere_position = try mad.spheres.?.addData(Vec3f, "position");
+            mad.sphere_radius = try mad.spheres.?.addData(f32, "radius");
+            mad.sphere_color = try mad.spheres.?.addData(Vec3f, "color");
+            mad.sphere_cluster = try mad.spheres.?.addData(std.ArrayList(SurfaceMesh.Cell), "cluster");
+            zgp.point_cloud_store.setPointCloudStdData(mad.spheres.?, .{ .position = mad.sphere_position.? });
+            zgp.point_cloud_store.setPointCloudStdData(mad.spheres.?, .{ .radius = mad.sphere_radius.? });
+            // zgp.point_cloud_store.setPointCloudStdData(mad.spheres.?, .{ .color = mad.sphere_color.? });
         } else {
-            self.spheres.?.clearRetainingCapacity();
+            mad.spheres.?.clearRetainingCapacity();
         }
-        const s1 = try self.spheres.?.addPoint(); // create the first sphere
-        self.sphere_position.?.valuePtr(s1).* = .{ 0.0, 0.0, 0.0 };
-        self.sphere_radius.?.valuePtr(s1).* = 1.0;
+        const s1 = try mad.spheres.?.addPoint(); // create the first sphere
+        mad.sphere_position.?.valuePtr(s1).* = .{ 0.0, 0.0, 0.0 };
+        mad.sphere_radius.?.valuePtr(s1).* = 0.01;
         var r = zgp.rng.random();
-        self.sphere_color.?.valuePtr(s1).* = .{ 0.5 + 0.5 * r.float(f32), 0.5 + 0.5 * r.float(f32), 0.5 + 0.5 * r.float(f32) };
-        self.sphere_cluster.?.valuePtr(s1).* = .empty;
-        self.initialized = true;
+        mad.sphere_color.?.valuePtr(s1).* = .{ 0.5 + 0.5 * r.float(f32), 0.5 + 0.5 * r.float(f32), 0.5 + 0.5 * r.float(f32) };
+        mad.sphere_cluster.?.valuePtr(s1).* = .empty;
+        mad.initialized = true;
 
-        zgp.point_cloud_store.pointCloudConnectivityUpdated(self.spheres.?);
-        zgp.point_cloud_store.pointCloudDataUpdated(self.spheres.?, Vec3f, self.sphere_position.?);
-        zgp.point_cloud_store.pointCloudDataUpdated(self.spheres.?, f32, self.sphere_radius.?);
-        zgp.point_cloud_store.pointCloudDataUpdated(self.spheres.?, Vec3f, self.sphere_color.?);
+        zgp.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres.?);
+        zgp.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, Vec3f, mad.sphere_position.?);
+        zgp.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, f32, mad.sphere_radius.?);
+        zgp.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, Vec3f, mad.sphere_color.?);
     }
 
-    pub fn deinit(self: *MedialAxisData, surface_mesh: *SurfaceMesh) void {
-        if (self.vertex_sqem) |v_sqem| {
+    pub fn deinit(mad: *MedialAxisData, surface_mesh: *SurfaceMesh) void {
+        if (mad.vertex_sqem) |v_sqem| {
             surface_mesh.removeData(.vertex, v_sqem.gen());
         }
-        if (self.vertex_sphere) |v_sphere| {
+        if (mad.vertex_sphere) |v_sphere| {
             surface_mesh.removeData(.vertex, v_sphere.gen());
         }
-        if (self.spheres) |pc| {
+        if (mad.spheres) |pc| {
             zgp.point_cloud_store.destroyPointCloud(pc); // PointCloud deinit handles its CellData automatically
         }
     }
 
-    pub fn computeClusters(self: *MedialAxisData) !void {
-        assert(self.initialized);
-        if (self.spheres.?.nbPoints() == 0) {
+    fn computeClusters(mad: *MedialAxisData) !void {
+        assert(mad.initialized);
+        if (mad.spheres.?.nbPoints() == 0) {
             return;
         }
         // clean up previous clusters
-        self.vertex_sphere.?.data.fill(null);
-        var it = self.sphere_cluster.?.data.iterator();
+        mad.vertex_sphere.?.data.fill(null);
+        var it = mad.sphere_cluster.?.data.iterator();
         while (it.next()) |*cluster| {
             cluster.*.clearRetainingCapacity();
         }
         // compute new clusters
-        var v_it = SurfaceMesh.CellIterator(.vertex).init(self.surface_mesh);
+        var v_it = try SurfaceMesh.CellIterator(.vertex).init(mad.surface_mesh);
         defer v_it.deinit();
         while (v_it.next()) |v| {
-            const vp = self.vertex_position.?.value(v);
-            const va = self.vertex_area.?.value(v);
+            const vp = mad.vertex_position.?.value(v);
+            const va = mad.vertex_area.?.value(v);
             var min_distance = std.math.floatMax(f32);
             var min_sphere: PointCloud.Point = undefined;
-            var s_it = self.spheres.?.pointIterator();
+            var s_it = mad.spheres.?.pointIterator();
             while (s_it.next()) |s| {
-                const sp = self.sphere_position.?.value(s);
-                const sr = self.sphere_radius.?.value(s);
+                const sp = mad.sphere_position.?.value(s);
+                const sr = mad.sphere_radius.?.value(s);
                 const dist_euclidean = vec.norm3f(vec.sub3f(vp, sp)) - sr;
                 const squared_dist_euclidean = dist_euclidean * dist_euclidean * va; // weighted by vertex area
-                const dist_sqem = self.vertex_sqem.?.value(v).eval(.{ sp[0], sp[1], sp[2], sr });
+                const dist_sqem = mad.vertex_sqem.?.value(v).eval(.{ sp[0], sp[1], sp[2], sr });
                 const dist = dist_sqem + lambda * squared_dist_euclidean;
                 if (dist < min_distance) {
                     min_distance = dist;
                     min_sphere = s;
                 }
             }
-            self.vertex_sphere.?.valuePtr(v).* = min_sphere;
-            try self.sphere_cluster.?.valuePtr(min_sphere).append(self.sphere_cluster.?.data.arena(), v);
+            mad.vertex_sphere.?.valuePtr(v).* = min_sphere;
+            try mad.sphere_cluster.?.valuePtr(min_sphere).append(mad.sphere_cluster.?.data.arena(), v);
         }
         // check clusters sizes
-        var s_it = self.spheres.?.pointIterator();
+        var s_it = mad.spheres.?.pointIterator();
         while (s_it.next()) |s| {
-            if (self.sphere_cluster.?.valuePtr(s).items.len < 4) {
-                for (self.sphere_cluster.?.value(s)) |v| {
-                    self.vertex_sphere.?.valuePtr(v).* = null;
+            if (mad.sphere_cluster.?.valuePtr(s).items.len < 4) {
+                for (mad.sphere_cluster.?.valuePtr(s).items) |v| {
+                    mad.vertex_sphere.?.valuePtr(v).* = null;
                 }
-                self.spheres.?.removePoint(s); // it is safe to remove the point while iterating
+                mad.spheres.?.removePoint(s); // it is safe to remove the point while iterating
             }
         }
+    }
+
+    pub fn updateSpheres(mad: *MedialAxisData, allocator: std.mem.Allocator) !void {
+        assert(mad.initialized);
+        try mad.computeClusters();
+        var s_it = mad.spheres.?.pointIterator();
+        while (s_it.next()) |s| {
+            const cluster = mad.sphere_cluster.?.valuePtr(s);
+            const sc = mad.sphere_position.?.value(s);
+            const sr = mad.sphere_radius.?.value(s);
+            var optimized_center: Vec3f = .{ sc[0], sc[1], sc[2] };
+            var optimized_radius: f32 = sr;
+            var J: eigen.DenseMatrix = .init(@intCast(2 * cluster.items.len), 4);
+            defer J.deinit();
+            var b = try allocator.alloc(f64, 2 * cluster.items.len);
+            defer allocator.free(b);
+            var x: [4]f64 = undefined;
+            for (0..10) |_| {
+                for (cluster.items, 0..) |v, idx| {
+                    const vp = mad.vertex_position.?.value(v);
+                    var lhs: Vec4d = undefined;
+                    var rhs: f64 = undefined;
+                    var dart_it = mad.surface_mesh.cellDartIterator(v);
+                    while (dart_it.next()) |d| {
+                        if (!mad.surface_mesh.isBoundaryDart(d)) {
+                            const face: SurfaceMesh.Cell = .{ .face = d };
+                            const n = mad.face_normal.?.value(face);
+                            const a = mad.face_area.?.value(face) / 3.0;
+                            lhs = vec.add4d(lhs, vec.mulScalar4d(Vec4d{ -n[0], -n[1], -n[2], -1.0 }, a));
+                            rhs += @floatCast(-1.0 * (vec.dot3f(vec.sub3f(vp, optimized_center), n) - optimized_radius) * a);
+                        }
+                    }
+                    J.setRow(@intCast(idx * 2), &lhs);
+                    b[idx * 2] = rhs;
+                    const d = vec.sub3f(vp, optimized_center);
+                    const l = vec.norm3f(d);
+                    const a = std.math.sqrt(mad.vertex_area.?.value(v));
+                    lhs = vec.mulScalar4d(Vec4d{ -(d[0] / l), -(d[1] / l), -(d[2] / l), -1.0 }, a * lambda);
+                    rhs = @floatCast(-(l - optimized_radius) * a * lambda);
+                    J.setRow(@intCast(idx * 2 + 1), &lhs);
+                    b[idx * 2 + 1] = rhs;
+                }
+                J.solveLeastSquares(b, &x);
+                optimized_center = vec.add3f(optimized_center, .{ @floatCast(x[0]), @floatCast(x[1]), @floatCast(x[2]) });
+                optimized_radius += @floatCast(x[3]);
+                if (vec.norm4d(x) < 1e-6) {
+                    break;
+                }
+            }
+            mad.sphere_position.?.valuePtr(s).* = optimized_center;
+            mad.sphere_radius.?.valuePtr(s).* = optimized_radius;
+        }
+        zgp.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, Vec3f, mad.sphere_position.?);
+        zgp.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, f32, mad.sphere_radius.?);
     }
 };
 
@@ -152,10 +212,12 @@ module: Module = .{
     },
 },
 
+allocator: std.mem.Allocator,
 surface_meshes_data: std.AutoHashMap(*SurfaceMesh, MedialAxisData),
 
 pub fn init(allocator: std.mem.Allocator) SurfaceMeshMedialAxis {
     return .{
+        .allocator = allocator,
         .surface_meshes_data = std.AutoHashMap(*SurfaceMesh, MedialAxisData).init(allocator),
     };
 }
@@ -224,6 +286,13 @@ pub fn uiPanel(m: *Module) void {
         }
         if (disabled) {
             c.ImGui_EndDisabled();
+        }
+        if (ma_data.initialized) {
+            if (c.ImGui_ButtonEx("Update spheres", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                ma_data.updateSpheres(smma.allocator) catch |err| {
+                    std.debug.print("Failed to update Medial Axis spheres for SurfaceMesh: {}\n", .{err});
+                };
+            }
         }
     } else {
         c.ImGui_Text("No SurfaceMesh selected");

@@ -8,6 +8,15 @@ pub const SQEM = struct {
     b: Vec4f,
     c: f32,
 
+    pub fn init(p: Vec4f, n: Vec4f) SQEM {
+        const np = vec.dot4f(n, p);
+        return .{
+            .A = mat.mulScalar4f(mat.outerProduct4f(n, n), 2.0),
+            .b = vec.mulScalar4f(n, np),
+            .c = np * np,
+        };
+    }
+
     pub fn add(a: *SQEM, b: *const SQEM) void {
         a.A = mat.add4f(a.A, b.A);
         a.b = vec.add4f(a.b, b.b);
@@ -20,11 +29,11 @@ pub const SQEM = struct {
         sq.c *= s;
     }
 
-    pub fn gradient(sq: *SQEM, p: Vec4f) Vec4f {
-        return mat.mulVec4f(sq.A, p) - sq.b;
-    }
+    // pub fn gradient(sq: *SQEM, s: Vec4f) Vec4f {
+    //     return mat.mulVec4f(sq.A, s) - sq.b;
+    // }
 
-    pub fn eval(sq: *SQEM, p: Vec4f) f32 {
+    pub fn eval(sq: *const SQEM, p: Vec4f) f32 {
         return 0.5 * vec.dot4f(p, mat.mulVec4f(sq.A, p)) - vec.dot4f(sq.b, p) + sq.c;
     }
 };

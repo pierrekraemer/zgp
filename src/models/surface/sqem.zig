@@ -32,12 +32,7 @@ pub fn vertexSQEM(
             const face: SurfaceMesh.Cell = .{ .face = d };
             const n = face_normal.value(face);
             const n4 = Vec4f{ n[0], n[1], n[2], 1.0 };
-            const n4p4 = vec.dot4f(n4, p4);
-            var fsq: SQEM = .{
-                .A = mat.mulScalar4f(mat.outerProduct4f(n4, n4), 2.0),
-                .b = vec.mulScalar4f(n4, n4p4),
-                .c = n4p4 * n4p4,
-            };
+            var fsq: SQEM = .init(p4, n4);
             fsq.mulScalar(face_area.value(face) / 3.0); // TODO: should divide by sm.codegree(face) to avoid triangular hypothesis
             vsq.add(&fsq);
         }
