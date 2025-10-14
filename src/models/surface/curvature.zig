@@ -13,15 +13,18 @@ pub fn vertexGaussianCurvature(
     corner_angle: SurfaceMesh.CellData(.corner, f32),
 ) f32 {
     assert(vertex.cellType() == .vertex);
+    var base: f32 = 2.0 * std.math.pi;
     if (sm.isIncidentToBoundary(vertex)) {
-        return 0.0;
+        base = std.math.pi;
     }
     var angle_sum: f32 = 0.0;
     var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
-        angle_sum += corner_angle.value(.{ .corner = d });
+        if (!sm.isBoundaryDart(d)) {
+            angle_sum += corner_angle.value(.{ .corner = d });
+        }
     }
-    return 2.0 * std.math.pi - angle_sum;
+    return base - angle_sum;
 }
 
 /// Compute the Gaussian curvatures of all vertices of the given SurfaceMesh

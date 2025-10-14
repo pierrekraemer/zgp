@@ -107,11 +107,14 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
         info.deinit();
     }
     sms.surface_meshes_info.deinit();
+
     var sm_it = sms.surface_meshes.iterator();
     while (sm_it.next()) |entry| {
         var sm = entry.value_ptr.*;
+        const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in createSurfaceMesh)
+        sms.allocator.free(name); // free the name
         sm.deinit();
-        sms.allocator.destroy(sm);
+        sms.allocator.destroy(sm); // destroy the SurfaceMesh
     }
     sms.surface_meshes.deinit();
 
@@ -133,8 +136,10 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     errdefer sms.allocator.destroy(sm);
     sm.* = try SurfaceMesh.init(sms.allocator);
     errdefer sm.deinit();
-    try sms.surface_meshes.put(name, sm);
-    errdefer _ = sms.surface_meshes.remove(name);
+    const owned_name = try sms.allocator.dupeZ(u8, name);
+    errdefer sms.allocator.free(owned_name);
+    try sms.surface_meshes.put(owned_name, sm);
+    errdefer _ = sms.surface_meshes.remove(owned_name);
     var info = try SurfaceMeshInfo.init(sm);
     errdefer info.deinit();
     try sms.surface_meshes_info.put(sm, info);
@@ -163,11 +168,12 @@ pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
         sms.selected_surface_mesh = null;
     }
     _ = sms.surface_meshes.remove(name);
+    sms.allocator.free(name); // free the name
     const info = sms.surface_meshes_info.getPtr(sm).?;
     info.deinit();
     _ = sms.surface_meshes_info.remove(sm);
     sm.deinit();
-    sms.allocator.destroy(sm);
+    sms.allocator.destroy(sm); // destroy the SurfaceMesh
 }
 
 pub fn surfaceMeshDataUpdated(
@@ -302,11 +308,11 @@ pub fn surfaceMeshInfo(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) *SurfaceM
     return sms.surface_meshes_info.getPtr(sm).?; // should always exist
 }
 
-pub fn surfaceMeshName(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) ?[]const u8 {
+pub fn surfaceMeshName(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) ?[:0]const u8 {
     var it = sms.surface_meshes.iterator();
     while (it.next()) |entry| {
         if (entry.value_ptr.* == sm) {
-            return entry.key_ptr.*;
+            return @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in createSurfaceMesh)
         }
     }
     return null;
@@ -341,6 +347,9 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
         var selected_data_type: CreateDataTypesTag = .f32;
         var data_name_buf: [32]u8 = undefined;
     };
+
+    c.ImGui_PushIDPtr(sms); // push a unique ID for this panel
+    defer c.ImGui_PopID();
 
     const style = c.ImGui_GetStyle();
 

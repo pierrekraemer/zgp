@@ -6,7 +6,7 @@ const typeId = @import("types.zig").typeId;
 pub const DataGen = struct {
     name: []const u8,
     type_id: *const anyopaque, // typeId of T in the Data(T)
-    arena: std.heap.ArenaAllocator, // used for data allocation by the Data(T)
+    arena: std.heap.ArenaAllocator, // used for data allocation by the Data(T) => TODO: not sure if this is a good idea
     ptr: *anyopaque, // pointer to the Data(T)
     container: *DataContainer, // pointer to the DataContainer that owns this Data(T)
     vtable: *const VTable,

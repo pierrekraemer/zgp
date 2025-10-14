@@ -14,6 +14,8 @@ const Vec3f = vec.Vec3f;
 /// Standard PointCloud data name & types.
 position: ?PointCloud.CellData(Vec3f) = null,
 normal: ?PointCloud.CellData(Vec3f) = null,
+radius: ?PointCloud.CellData(f32) = null,
+color: ?PointCloud.CellData(Vec3f) = null,
 
 /// This tagged union is generated from the PointCloudStdDatas struct and allows to easily provide a single
 /// data entry to the setPointCloudStdData function (in PointCloudStore)
@@ -91,7 +93,7 @@ const StdDataComputation = struct {
 
 /// Declaration of standard data computations.
 /// The order of declaration matters: some computations depend on the result of previous ones
-/// (e.g. vertex normal depends on face normal) and the "Update outdated std datas" button of the PointCloudStore
+/// and the "Update outdated std datas" button of the PointCloudStore
 /// computes them in the order of declaration.
 pub const std_data_computations: []const StdDataComputation = &.{};
 

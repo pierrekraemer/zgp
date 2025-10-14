@@ -10,6 +10,8 @@ const Data = data.Data;
 
 pub const Point = u32;
 
+allocator: std.mem.Allocator,
+
 point_data: DataContainer,
 
 const PointIterator = struct {
@@ -38,6 +40,7 @@ pub fn pointIterator(pc: *const PointCloud) PointIterator {
 
 pub fn init(allocator: std.mem.Allocator) !PointCloud {
     return .{
+        .allocator = allocator,
         .point_data = try DataContainer.init(allocator),
     };
 }

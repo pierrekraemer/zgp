@@ -88,13 +88,15 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, cell_type: SurfaceMesh.Cel
         },
         else => unreachable,
     }
-    i.nb_indices = indices.items.len;
-    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, i.index);
-    defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
-    gl.BufferData(
-        gl.ELEMENT_ARRAY_BUFFER,
-        @intCast(i.nb_indices * @sizeOf(u32)),
-        indices.items.ptr,
-        gl.STATIC_DRAW,
-    );
+    try i.fillFromSlice(indices.items);
+}
+
+pub fn fillFromPointCloud(i: *IBO, pc: *PointCloud, allocator: std.mem.Allocator) !void {
+    var indices = try std.ArrayList(u32).initCapacity(allocator, 1024);
+    defer indices.deinit(allocator);
+    var p_it = pc.pointIterator();
+    while (p_it.next()) |p| {
+        try indices.append(allocator, p);
+    }
+    try i.fillFromSlice(indices.items);
 }

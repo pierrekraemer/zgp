@@ -17,13 +17,14 @@ vtable: *const VTable,
 const VTable = struct {
     pointCloudCreated: ?*const fn (m: *Module, point_cloud: *PointCloud) void = null,
     pointCloudDestroyed: ?*const fn (m: *Module, point_cloud: *PointCloud) void = null,
+    pointCloudConnectivityUpdated: ?*const fn (m: *Module, point_cloud: *PointCloud) void = null,
     pointCloudStdDataChanged: ?*const fn (m: *Module, point_cloud: *PointCloud, std_data: PointCloudStdData) void = null,
     pointCloudDataUpdated: ?*const fn (m: *Module, point_cloud: *PointCloud, data_gen: *const DataGen) void = null,
 
     surfaceMeshCreated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
     surfaceMeshDestroyed: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
-    surfaceMeshStdDataChanged: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) void = null,
     surfaceMeshConnectivityUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
+    surfaceMeshStdDataChanged: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) void = null,
     surfaceMeshDataUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void = null,
     surfaceMeshCellSetUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType) void = null,
 
@@ -41,6 +42,11 @@ pub fn pointCloudCreated(m: *Module, pc: *PointCloud) void {
 }
 pub fn pointCloudDestroyed(m: *Module, pc: *PointCloud) void {
     if (m.vtable.pointCloudDestroyed) |func| {
+        func(m, pc);
+    }
+}
+pub fn pointCloudConnectivityUpdated(m: *Module, pc: *PointCloud) void {
+    if (m.vtable.pointCloudConnectivityUpdated) |func| {
         func(m, pc);
     }
 }
@@ -64,14 +70,14 @@ pub fn surfaceMeshDestroyed(m: *Module, sm: *SurfaceMesh) void {
         func(m, sm);
     }
 }
-pub fn surfaceMeshStdDataChanged(m: *Module, sm: *SurfaceMesh, data: SurfaceMeshStdData) void {
-    if (m.vtable.surfaceMeshStdDataChanged) |func| {
-        func(m, sm, data);
-    }
-}
 pub fn surfaceMeshConnectivityUpdated(m: *Module, sm: *SurfaceMesh) void {
     if (m.vtable.surfaceMeshConnectivityUpdated) |func| {
         func(m, sm);
+    }
+}
+pub fn surfaceMeshStdDataChanged(m: *Module, sm: *SurfaceMesh, data: SurfaceMeshStdData) void {
+    if (m.vtable.surfaceMeshStdDataChanged) |func| {
+        func(m, sm, data);
     }
 }
 pub fn surfaceMeshDataUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void {
