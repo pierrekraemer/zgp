@@ -1,6 +1,8 @@
 const zgp = @import("../main.zig");
 const c = zgp.c;
 
+const vec = @import("vec.zig");
+const Vec4d = vec.Vec4d;
 const mat = @import("mat.zig");
 const Mat4d = mat.Mat4d;
 
@@ -13,11 +15,17 @@ pub const Triplet = extern struct {
     value: Scalar,
 };
 
-pub fn computeInverse(m: Mat4d) ?Mat4d {
+pub fn computeInverse4d(m: Mat4d) ?Mat4d {
     var inv: Mat4d = undefined;
     var invertible = false;
     c.computeInverseWithCheck(@ptrCast(&m), @ptrCast(&inv), &invertible);
     return if (invertible) inv else null;
+}
+
+pub fn solveSymmetricLinearSystem4d(A: Mat4d, b: Vec4d) Vec4d {
+    var x: Vec4d = undefined;
+    c.solveSymmetricLinearSystem(@ptrCast(&A), @ptrCast(&b), @ptrCast(&x));
+    return x;
 }
 
 pub const DenseMatrix = struct {

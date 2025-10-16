@@ -128,7 +128,7 @@ pub fn optimalPoint(q: Mat4f) ?Vec3f {
     m[1][3] = 0.0;
     m[2][3] = 0.0;
     m[3][3] = 1.0;
-    const inv = eigen.computeInverse(m);
+    const inv = eigen.computeInverse4d(m);
     if (inv) |i| {
         return .{ @floatCast(i[3][0]), @floatCast(i[3][1]), @floatCast(i[3][2]) };
     } else {
