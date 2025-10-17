@@ -40,7 +40,9 @@ pub fn init(allocator: std.mem.Allocator) SurfaceMeshCurvature {
     };
 }
 
-pub fn deinit(_: *SurfaceMeshCurvature) void {}
+pub fn deinit(smc: *SurfaceMeshCurvature) void {
+    smc.surface_meshes_curvature_datas.deinit();
+}
 
 fn computeVertexCurvatures(
     _: *SurfaceMeshCurvature,

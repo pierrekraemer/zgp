@@ -5,26 +5,26 @@
     .minimum_zig_version = "0.15.1",
     .dependencies = .{
         .zigglgen = .{
-            .url = "git+https://github.com/castholm/zigglgen.git#a1e969b3e35818785fab0373124f50463793b28a",
-            .hash = "zigglgen-0.4.0-bmyqLQGMLwA0EPVmSm-Nc6Olb84zBzvwMjguxwKYLf1S",
+            .url = "git+https://github.com/castholm/zigglgen.git#b624cc7d2e984f61c63a83a3d0ad6c686782f961",
+            .hash = "zigglgen-0.4.0-bmyqLV6PLwAt0VCiGVgz6kZ448zaiTix2Z8MXEEuN4Vi",
         },
         .sdl = .{
-            .url = "git+https://github.com/castholm/SDL.git#b1913e7c31ad72ecfd3ab04aeac387027754cfaf",
-            .hash = "sdl-0.3.0+3.2.22-7uIn9Pg3fwGG2IyIOPxxOSVe-75nUng9clt7tXGFLzMr",
+            .url = "git+https://github.com/castholm/SDL.git#1d4b8dcc03bd216712b55318b4ad2402b5511490",
+            .hash = "sdl-0.3.1+3.2.24-7uIn9L9AfwFQf90JcTh3Slw__ZA8SEomk6fQI9F8ItY0",
         },
         .cimgui_zig = .{
-            .url = "https://github.com/tiawl/cimgui.zig/archive/refs/tags/zig-0.15.1-docking.tar.gz",
-            .hash = "cimgui_zig-1.0.0-2Xubkvp8XwBlaeHTR58KF9iYfZNf2Kt9UCN8WGH38FDO",
+            .url = "https://github.com/tiawl/cimgui.zig/archive/refs/heads/docking.zip",
+            .hash = "cimgui_zig-1.0.0-2Xubkk0WYABcVOW6lz1XJfDrYzo6vkoTT58rtrBSf6jy",
         },
         .ceigen = .{
-            .path = "../ceigen",
-            // .url = "git+https://github.com/pierrekraemer/ceigen.git#32c4e6522cbcbfff10ab0872213ea70201a67fbf",
-            // .hash = "ceigen-0.0.0-nikIKT6IBgF5U0O3C9okh03EQ_xeXt_eNegluA3WcKrR",
+            // .path = "../ceigen",
+            .url = "git+https://github.com/pierrekraemer/ceigen.git#f25e81efdd05f55bf81e4920597ea9569753f19b",
+            .hash = "ceigen-0.0.0-nikIKfGSBgF7VrKUuElq53a1pkK_i2hPtFBjrEn5d16g",
         },
         .clibacc = .{
-            .path = "../clibacc",
-            // .url = "git+https://github.com/pierrekraemer/clibacc.git#9d8fe2ea612292d45c1dd0499dbe91b70af2c5aa",
-            // .hash = "clibacc-0.0.0-HMOW8e6tAADTFWJUN1JdRNeQulpMZQKGB2FKBp5u0sr0",
+            // .path = "../clibacc",
+            .url = "git+https://github.com/pierrekraemer/clibacc.git#838a4b9f96eadf8b189787bf602c781b568fdfe6",
+            .hash = "clibacc-0.0.0-HMOW8UqvAAD5t87IQrYYQ8yGToeXmtVGkssg91XozQZj",
         },
     },
     .paths = .{
