@@ -55,10 +55,10 @@ data_last_update: std.AutoHashMap(*const DataGen, std.time.Instant),
 pub fn init(allocator: std.mem.Allocator) PointCloudStore {
     return .{
         .allocator = allocator,
-        .point_clouds = std.StringHashMap(*PointCloud).init(allocator),
-        .point_clouds_info = std.AutoHashMap(*const PointCloud, PointCloudInfo).init(allocator),
-        .data_vbo = std.AutoHashMap(*const DataGen, VBO).init(allocator),
-        .data_last_update = std.AutoHashMap(*const DataGen, std.time.Instant).init(allocator),
+        .point_clouds = .init(allocator),
+        .point_clouds_info = .init(allocator),
+        .data_vbo = .init(allocator),
+        .data_last_update = .init(allocator),
     };
 }
 

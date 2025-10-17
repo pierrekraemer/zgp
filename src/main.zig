@@ -237,27 +237,27 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // PointCloud / SurfaceMesh / VolumeMesh stores initialization
     // ***********************************************************
 
-    point_cloud_store = PointCloudStore.init(allocator);
+    point_cloud_store = .init(allocator);
     errdefer point_cloud_store.deinit();
-    surface_mesh_store = SurfaceMeshStore.init(allocator);
+    surface_mesh_store = .init(allocator);
     errdefer surface_mesh_store.deinit();
 
     // Modules initialization
     // **********************
 
-    point_cloud_renderer = PointCloudRenderer.init(allocator);
+    point_cloud_renderer = .init(allocator);
     errdefer point_cloud_renderer.deinit();
-    surface_mesh_renderer = SurfaceMeshRenderer.init(allocator);
+    surface_mesh_renderer = .init(allocator);
     errdefer surface_mesh_renderer.deinit();
-    vector_per_vertex_renderer = VectorPerVertexRenderer.init(allocator);
+    vector_per_vertex_renderer = .init(allocator);
     errdefer vector_per_vertex_renderer.deinit();
-    surface_mesh_connectivity = SurfaceMeshConnectivity.init();
+    surface_mesh_connectivity = .init();
     errdefer surface_mesh_connectivity.deinit();
-    surface_mesh_distance = SurfaceMeshDistance.init();
+    surface_mesh_distance = .init();
     errdefer surface_mesh_distance.deinit();
-    surface_mesh_curvature = SurfaceMeshCurvature.init();
+    surface_mesh_curvature = .init(allocator);
     errdefer surface_mesh_curvature.deinit();
-    surface_mesh_medial_axis = SurfaceMeshMedialAxis.init(allocator);
+    surface_mesh_medial_axis = .init(allocator);
     errdefer surface_mesh_medial_axis.deinit();
 
     // TODO: find a way to tag Modules with the type of model they handle (PointCloud, SurfaceMesh, etc.)

@@ -275,7 +275,7 @@ surface_meshes_data: std.AutoHashMap(*SurfaceMesh, MedialAxisData),
 pub fn init(allocator: std.mem.Allocator) SurfaceMeshMedialAxis {
     return .{
         .allocator = allocator,
-        .surface_meshes_data = std.AutoHashMap(*SurfaceMesh, MedialAxisData).init(allocator),
+        .surface_meshes_data = .init(allocator),
     };
 }
 

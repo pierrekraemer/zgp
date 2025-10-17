@@ -93,10 +93,10 @@ data_last_update: std.AutoHashMap(*const DataGen, std.time.Instant),
 pub fn init(allocator: std.mem.Allocator) SurfaceMeshStore {
     return .{
         .allocator = allocator,
-        .surface_meshes = std.StringHashMap(*SurfaceMesh).init(allocator),
-        .surface_meshes_info = std.AutoHashMap(*const SurfaceMesh, SurfaceMeshInfo).init(allocator),
-        .data_vbo = std.AutoHashMap(*const DataGen, VBO).init(allocator),
-        .data_last_update = std.AutoHashMap(*const DataGen, std.time.Instant).init(allocator),
+        .surface_meshes = .init(allocator),
+        .surface_meshes_info = .init(allocator),
+        .data_vbo = .init(allocator),
+        .data_last_update = .init(allocator),
     };
 }
 
@@ -541,7 +541,7 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
                             }
                         },
                     }
-                    c.ImGui_CloseCurrentPopup();
+                    // c.ImGui_CloseCurrentPopup();
                 }
             }
 
