@@ -61,10 +61,10 @@ pub fn edgeDihedralAngle(
     const n2 = face_normal.value(.{ .face = d2 });
     return std.math.atan2(
         vec.dot3f(
-            vec.sub3f(
+            vec.normalized3f(vec.sub3f(
                 vertex_position.value(.{ .vertex = d2 }),
                 vertex_position.value(.{ .vertex = d }),
-            ),
+            )),
             vec.cross3f(n1, n2),
         ),
         vec.dot3f(n1, n2),

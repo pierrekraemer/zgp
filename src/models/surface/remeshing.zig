@@ -244,6 +244,7 @@ pub fn pliantRemeshing(
     }
 
     // update dependent datas one last time after remeshing
+    try length.computeEdgeLengths(sm, vertex_position, edge_length);
     try angle.computeCornerAngles(sm, vertex_position, corner_angle);
     try area.computeFaceAreas(sm, vertex_position, face_area);
     try normal.computeFaceNormals(sm, vertex_position, face_normal);

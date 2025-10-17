@@ -26,8 +26,6 @@ vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
 vertex_area: ?SurfaceMesh.CellData(.vertex, f32) = null,
 vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
 vertex_tangent_basis: ?SurfaceMesh.CellData(.vertex, [2]Vec3f) = null,
-vertex_gaussian_curvature: ?SurfaceMesh.CellData(.vertex, f32) = null,
-vertex_mean_curvature: ?SurfaceMesh.CellData(.vertex, f32) = null,
 edge_length: ?SurfaceMesh.CellData(.edge, f32) = null,
 edge_dihedral_angle: ?SurfaceMesh.CellData(.edge, f32) = null,
 face_area: ?SurfaceMesh.CellData(.face, f32) = null,
@@ -160,16 +158,6 @@ pub const std_data_computations: []const StdDataComputation = &.{
         .computes = .vertex_tangent_basis,
         .func = &computeVertexTangentBases,
     },
-    .{
-        .reads = &.{.corner_angle},
-        .computes = .vertex_gaussian_curvature,
-        .func = &computeVertexGaussianCurvatures,
-    },
-    .{
-        .reads = &.{ .edge_length, .edge_dihedral_angle },
-        .computes = .vertex_mean_curvature,
-        .func = &computeVertexMeanCurvatures,
-    },
 };
 
 pub fn dataComputableAndUpToDate(
@@ -293,23 +281,4 @@ fn computeVertexTangentBases(
 ) !void {
     try tangentBasis.computeVertexTangentBases(sm, vertex_position, vertex_normal, vertex_tangent_basis);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, [2]Vec3f, vertex_tangent_basis);
-}
-
-fn computeVertexGaussianCurvatures(
-    sm: *SurfaceMesh,
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
-    vertex_gaussian_curvature: SurfaceMesh.CellData(.vertex, f32),
-) !void {
-    try curvature.computeVertexGaussianCurvatures(sm, corner_angle, vertex_gaussian_curvature);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_gaussian_curvature);
-}
-
-fn computeVertexMeanCurvatures(
-    sm: *SurfaceMesh,
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-    vertex_mean_curvature: SurfaceMesh.CellData(.vertex, f32),
-) !void {
-    try curvature.computeVertexMeanCurvatures(sm, edge_length, edge_dihedral_angle, vertex_mean_curvature);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_mean_curvature);
 }

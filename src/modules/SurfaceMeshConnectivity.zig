@@ -130,8 +130,6 @@ pub fn rightClickMenu(m: *Module) void {
     const UiData = struct {
         var edge_length_factor: f32 = 1.0;
         var percent_vertices_to_keep: i32 = 75;
-        var button_text_buf: [64]u8 = undefined;
-        var new_data_name: [32]u8 = undefined;
     };
 
     const style = c.ImGui_GetStyle();

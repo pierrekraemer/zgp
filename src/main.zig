@@ -11,7 +11,7 @@ pub const c = @cImport({
     @cInclude("backends/dcimgui_impl_sdl3.h");
     @cInclude("backends/dcimgui_impl_opengl3.h");
     @cInclude("utils/IconsFontAwesome7.h");
-    @cInclude("ceigen/mat4.h");
+    @cInclude("ceigen/small.h");
     @cInclude("ceigen/sparse.h");
     @cInclude("ceigen/dense.h");
     @cInclude("clibacc/bvh.h");
@@ -26,6 +26,7 @@ const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
 const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
+const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
 const SurfaceMeshMedialAxis = @import("modules/SurfaceMeshMedialAxis.zig");
 
 const geometry_utils = @import("geometry/utils.zig");
@@ -71,6 +72,7 @@ var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
 var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
 var surface_mesh_distance: SurfaceMeshDistance = undefined;
+var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
 var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
 
 /// Application SDL Window & OpenGL context
@@ -133,6 +135,21 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         c.SDL_GL_CONTEXT_FLAGS,
         if (gl.info.api == .gl and gl.info.version_major >= 3) c.SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG else 0,
     ));
+
+    var nb_displays: c_int = 0;
+    const displays = try errify(c.SDL_GetDisplays(&nb_displays));
+    if (nb_displays > 0) {
+        for (0..@intCast(nb_displays)) |i| {
+            const display_name = c.SDL_GetDisplayName(displays[i]);
+            sdl_log.info("Display {d}: {s}", .{ i, display_name });
+        }
+        const display_mode = try errify(c.SDL_GetDesktopDisplayMode(displays[0]));
+        window_width = display_mode.*.w - 200;
+        window_height = display_mode.*.h;
+    } else {
+        sdl_log.warn("No display found", .{});
+    }
+    c.SDL_free(displays);
 
     window = try errify(c.SDL_CreateWindow("zgp", window_width, window_height, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_RESIZABLE));
     errdefer c.SDL_DestroyWindow(window);
@@ -238,6 +255,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_connectivity.deinit();
     surface_mesh_distance = SurfaceMeshDistance.init();
     errdefer surface_mesh_distance.deinit();
+    surface_mesh_curvature = SurfaceMeshCurvature.init();
+    errdefer surface_mesh_curvature.deinit();
     surface_mesh_medial_axis = SurfaceMeshMedialAxis.init(allocator);
     errdefer surface_mesh_medial_axis.deinit();
 
@@ -248,6 +267,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(allocator, &vector_per_vertex_renderer.module);
     try modules.append(allocator, &surface_mesh_connectivity.module);
     try modules.append(allocator, &surface_mesh_distance.module);
+    try modules.append(allocator, &surface_mesh_curvature.module);
     try modules.append(allocator, &surface_mesh_medial_axis.module);
     errdefer modules.deinit(allocator);
 
@@ -558,6 +578,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         vector_per_vertex_renderer.deinit();
         surface_mesh_connectivity.deinit();
         surface_mesh_distance.deinit();
+        surface_mesh_curvature.deinit();
         surface_mesh_medial_axis.deinit();
         modules.deinit(allocator);
 

@@ -44,12 +44,19 @@ pub const zero4f: Mat4f = .{ vec.zero4f, vec.zero4f, vec.zero4f, vec.zero4f };
 pub const zero3d: Mat3d = .{ vec.zero3d, vec.zero3d, vec.zero3d };
 pub const zero4d: Mat4d = .{ vec.zero4d, vec.zero4d, vec.zero4d, vec.zero4d };
 
+pub fn mat3dFromMat3f(m: Mat3f) Mat3d {
+    return .{
+        vec.vec3dFromVec3f(m[0]),
+        vec.vec3dFromVec3f(m[1]),
+        vec.vec3dFromVec3f(m[2]),
+    };
+}
 pub fn mat4dFromMat4f(m: Mat4f) Mat4d {
     return .{
-        .{ @floatCast(m[0][0]), @floatCast(m[0][1]), @floatCast(m[0][2]), @floatCast(m[0][3]) },
-        .{ @floatCast(m[1][0]), @floatCast(m[1][1]), @floatCast(m[1][2]), @floatCast(m[1][3]) },
-        .{ @floatCast(m[2][0]), @floatCast(m[2][1]), @floatCast(m[2][2]), @floatCast(m[2][3]) },
-        .{ @floatCast(m[3][0]), @floatCast(m[3][1]), @floatCast(m[3][2]), @floatCast(m[3][3]) },
+        vec.vec4dFromVec4f(m[0]),
+        vec.vec4dFromVec4f(m[1]),
+        vec.vec4dFromVec4f(m[2]),
+        vec.vec4dFromVec4f(m[3]),
     };
 }
 
@@ -248,6 +255,38 @@ pub fn add4d(a: Mat4d, b: Mat4d) Mat4d {
         .{ a[1][0] + b[1][0], a[1][1] + b[1][1], a[1][2] + b[1][2], a[1][3] + b[1][3] },
         .{ a[2][0] + b[2][0], a[2][1] + b[2][1], a[2][2] + b[2][2], a[2][3] + b[2][3] },
         .{ a[3][0] + b[3][0], a[3][1] + b[3][1], a[3][2] + b[3][2], a[3][3] + b[3][3] },
+    };
+}
+
+pub fn sub3f(a: Mat3f, b: Mat3f) Mat3f {
+    return .{
+        .{ a[0][0] - b[0][0], a[0][1] - b[0][1], a[0][2] - b[0][2] },
+        .{ a[1][0] - b[1][0], a[1][1] - b[1][1], a[1][2] - b[1][2] },
+        .{ a[2][0] - b[2][0], a[2][1] - b[2][1], a[2][2] - b[2][2] },
+    };
+}
+pub fn sub3d(a: Mat3d, b: Mat3d) Mat3d {
+    return .{
+        .{ a[0][0] - b[0][0], a[0][1] - b[0][1], a[0][2] - b[0][2] },
+        .{ a[1][0] - b[1][0], a[1][1] - b[1][1], a[1][2] - b[1][2] },
+        .{ a[2][0] - b[2][0], a[2][1] - b[2][1], a[2][2] - b[2][2] },
+    };
+}
+
+pub fn sub4f(a: Mat4f, b: Mat4f) Mat4f {
+    return .{
+        .{ a[0][0] - b[0][0], a[0][1] - b[0][1], a[0][2] - b[0][2], a[0][3] - b[0][3] },
+        .{ a[1][0] - b[1][0], a[1][1] - b[1][1], a[1][2] - b[1][2], a[1][3] - b[1][3] },
+        .{ a[2][0] - b[2][0], a[2][1] - b[2][1], a[2][2] - b[2][2], a[2][3] - b[2][3] },
+        .{ a[3][0] - b[3][0], a[3][1] - b[3][1], a[3][2] - b[3][2], a[3][3] - b[3][3] },
+    };
+}
+pub fn sub4d(a: Mat4d, b: Mat4d) Mat4d {
+    return .{
+        .{ a[0][0] - b[0][0], a[0][1] - b[0][1], a[0][2] - b[0][2], a[0][3] - b[0][3] },
+        .{ a[1][0] - b[1][0], a[1][1] - b[1][1], a[1][2] - b[1][2], a[1][3] - b[1][3] },
+        .{ a[2][0] - b[2][0], a[2][1] - b[2][1], a[2][2] - b[2][2], a[2][3] - b[2][3] },
+        .{ a[3][0] - b[3][0], a[3][1] - b[3][1], a[3][2] - b[3][2], a[3][3] - b[3][3] },
     };
 }
 

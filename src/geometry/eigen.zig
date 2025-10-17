@@ -2,30 +2,33 @@ const zgp = @import("../main.zig");
 const c = zgp.c;
 
 const vec = @import("vec.zig");
+const Vec3d = vec.Vec3d;
 const Vec4d = vec.Vec4d;
 const mat = @import("mat.zig");
+const Mat3d = mat.Mat3d;
 const Mat4d = mat.Mat4d;
 
 pub const Index = i32;
 pub const Scalar = f64;
 
-pub const Triplet = extern struct {
-    row: Index,
-    col: Index,
-    value: Scalar,
-};
-
 pub fn computeInverse4d(m: Mat4d) ?Mat4d {
     var inv: Mat4d = undefined;
     var invertible = false;
-    c.computeInverseWithCheck(@ptrCast(&m), @ptrCast(&inv), &invertible);
+    c.computeInverseWithCheck4d(@ptrCast(&m), @ptrCast(&inv), &invertible);
     return if (invertible) inv else null;
 }
 
 pub fn solveSymmetricLinearSystem4d(A: Mat4d, b: Vec4d) Vec4d {
     var x: Vec4d = undefined;
-    c.solveSymmetricLinearSystem(@ptrCast(&A), @ptrCast(&b), @ptrCast(&x));
+    c.solveSymmetricLinearSystem4d(@ptrCast(&A), @ptrCast(&b), @ptrCast(&x));
     return x;
+}
+
+pub fn eigenSolver(m: Mat3d) struct { Vec3d, Mat3d } {
+    var evals: Vec3d = undefined;
+    var evecs: Mat3d = undefined;
+    c.eigenSolver3d(@ptrCast(&m), @ptrCast(&evals), @ptrCast(&evecs));
+    return .{ evals, evecs };
 }
 
 pub const DenseMatrix = struct {
@@ -58,6 +61,12 @@ pub const DenseMatrix = struct {
 
 pub const SparseMatrix = struct {
     matrix: ?*anyopaque = null,
+
+    pub const Triplet = extern struct {
+        row: Index,
+        col: Index,
+        value: Scalar,
+    };
 
     pub fn init(rows: Index, cols: Index) SparseMatrix {
         return .{

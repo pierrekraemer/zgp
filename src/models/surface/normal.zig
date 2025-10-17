@@ -108,4 +108,8 @@ pub fn computeVertexNormals(
             );
         }
     }
+    var it = vertex_normal.data.iterator();
+    while (it.next()) |n| {
+        n.* = vec.normalized3f(n.*);
+    }
 }

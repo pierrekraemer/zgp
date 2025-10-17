@@ -312,7 +312,7 @@ pub fn CellMarker(comptime cell_type: CellType) type {
     };
 }
 
-const DartMarker = struct {
+pub const DartMarker = struct {
     surface_mesh: *SurfaceMesh,
     marker: *Data(bool),
 

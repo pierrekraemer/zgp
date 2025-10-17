@@ -3,11 +3,12 @@ const assert = std.debug.assert;
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
-const eigen = @import("../../geometry/eigen.zig");
 const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec3d = vec.Vec3d;
+const eigen = @import("../../geometry/eigen.zig");
+const SparseMatrix = eigen.SparseMatrix;
 
 const laplacian = @import("laplacian.zig");
 const gradient = @import("gradient.zig");
@@ -39,7 +40,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
 
     // setup Laplacian matrix Lc
     const nb_edges = sm.nbCells(.edge);
-    var triplets = try std.ArrayList(eigen.Triplet).initCapacity(sm.allocator, 4 * nb_edges);
+    var triplets = try std.ArrayList(SparseMatrix.Triplet).initCapacity(sm.allocator, 4 * nb_edges);
     defer triplets.deinit(sm.allocator);
     var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
     defer edge_it.deinit();
@@ -56,7 +57,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
         triplets.appendAssumeCapacity(.{ .row = @intCast(i), .col = @intCast(i), .value = @floatCast(-w_ij) });
         triplets.appendAssumeCapacity(.{ .row = @intCast(j), .col = @intCast(j), .value = @floatCast(-w_ij) });
     }
-    var Lc: eigen.SparseMatrix = .initFromTriplets(@intCast(nb_vertices), @intCast(nb_vertices), triplets.items);
+    var Lc: SparseMatrix = .initFromTriplets(@intCast(nb_vertices), @intCast(nb_vertices), triplets.items);
     defer Lc.deinit();
 
     // setup mass-matrix A (vertex areas) and
@@ -75,7 +76,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
         const idx = vertex_index.value(sv);
         heat_0.items[idx] = 1.0; // set source vertices heat to 1.0
     }
-    var A: eigen.SparseMatrix = .initDiagonalFromArray(massCoeffs.items);
+    var A: SparseMatrix = .initDiagonalFromArray(massCoeffs.items);
     defer A.deinit();
 
     // compute time step t = mean_edge_length^2
@@ -83,7 +84,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
     const t = mean_edge_length * mean_edge_length * diffusion_time;
 
     // compute M = A - t * Lc
-    var M: eigen.SparseMatrix = .init(@intCast(nb_vertices), @intCast(nb_vertices));
+    var M: SparseMatrix = .init(@intCast(nb_vertices), @intCast(nb_vertices));
     defer M.deinit();
     Lc.mulScalar(@floatCast(-t), M);
     A.addSparseMatrix(M, M);

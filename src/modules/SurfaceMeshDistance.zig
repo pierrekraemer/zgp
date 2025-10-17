@@ -70,6 +70,7 @@ pub fn rightClickMenu(m: *Module) void {
 
     const UiData = struct {
         var diffusion_time: f32 = 1.0;
+        // TODO: this data should be associated to the selected mesh
         var vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null;
     };
 
