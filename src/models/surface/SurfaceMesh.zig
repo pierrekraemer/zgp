@@ -64,10 +64,10 @@ pub const CellType = std.meta.Tag(Cell);
 allocator: std.mem.Allocator,
 
 /// Data containers for darts & the different cell types.
-dart_data: DataContainer, // also used to store corner & halfedge data
-vertex_data: DataContainer,
-edge_data: DataContainer,
-face_data: DataContainer,
+dart_data: *DataContainer, // also used to store corner & halfedge data
+vertex_data: *DataContainer,
+edge_data: *DataContainer,
+face_data: *DataContainer,
 
 /// Dart data: connectivity, cell indices, boundary marker.
 dart_phi1: *Data(Dart) = undefined,
@@ -423,46 +423,42 @@ pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
             return self.data.valuePtr(self.surface_mesh.cellIndex(c));
         }
         pub fn name(self: Self) []const u8 {
-            return self.data.gen.name;
+            return self.data.data_gen.name;
         }
         pub fn gen(self: Self) *DataGen {
-            return &self.data.gen;
+            return &self.data.data_gen;
         }
+    };
+}
+
+pub fn dataContainer(sm: *const SurfaceMesh, comptime cell_type: CellType) *DataContainer {
+    return switch (cell_type) {
+        .halfedge, .corner => sm.dart_data,
+        .vertex => sm.vertex_data,
+        .edge => sm.edge_data,
+        .face => sm.face_data,
+        else => unreachable,
     };
 }
 
 pub fn addData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
-    const d = switch (cell_type) {
-        .halfedge, .corner => try sm.dart_data.addData(T, name),
-        .vertex => try sm.vertex_data.addData(T, name),
-        .edge => try sm.edge_data.addData(T, name),
-        .face => try sm.face_data.addData(T, name),
-        else => unreachable,
+    const dc = dataContainer(sm, cell_type);
+    return .{
+        .surface_mesh = sm,
+        .data = try dc.addData(T, name),
     };
-    return .{ .surface_mesh = sm, .data = d };
 }
 
 pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) ?CellData(cell_type, T) {
-    if (switch (cell_type) {
-        .halfedge, .corner => sm.dart_data.getData(T, name),
-        .vertex => sm.vertex_data.getData(T, name),
-        .edge => sm.edge_data.getData(T, name),
-        .face => sm.face_data.getData(T, name),
-        else => unreachable,
-    }) |d| {
+    const dc = dataContainer(sm, cell_type);
+    if (dc.getData(T, name)) |d| {
         return .{ .surface_mesh = sm, .data = d };
-    }
-    return null;
+    } else return null;
 }
 
 pub fn removeData(sm: *SurfaceMesh, comptime cell_type: CellType, attribute_gen: *DataGen) void {
-    switch (cell_type) {
-        .halfedge, .corner => sm.dart_data.removeData(attribute_gen),
-        .vertex => sm.vertex_data.removeData(attribute_gen),
-        .edge => sm.edge_data.removeData(attribute_gen),
-        .face => sm.face_data.removeData(attribute_gen),
-        else => unreachable,
-    }
+    const dc = dataContainer(sm, cell_type);
+    dc.removeData(attribute_gen);
 }
 
 /// Creates a new index for the given cell type.
@@ -571,19 +567,14 @@ pub fn isIncidentToBoundary(sm: *const SurfaceMesh, cell: Cell) bool {
 /// Sets the index of the cell of type cell_type the dart d belongs to.
 /// Reference counts of old and new indices are updated accordingly (see DataContainer.refIndex & unrefIndex).
 /// Should only be called for vertex, edge and face cell types (halfedges & corners are indexed by their unique dart index).
-pub fn setDartCellIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u32) void {
+pub fn setDartCellIndex(sm: *SurfaceMesh, d: Dart, comptime cell_type: CellType, index: u32) void {
     var index_data = switch (cell_type) {
         .vertex => sm.dart_vertex_index,
         .edge => sm.dart_edge_index,
         .face => sm.dart_face_index,
         else => unreachable,
     };
-    var data_container = switch (cell_type) {
-        .vertex => &sm.vertex_data,
-        .edge => &sm.edge_data,
-        .face => &sm.face_data,
-        else => unreachable,
-    };
+    var data_container = dataContainer(sm, cell_type);
     const old_index: u32 = index_data.value(d);
     if (index != invalid_index) {
         data_container.refIndex(index);
@@ -613,10 +604,16 @@ fn setCellIndex(sm: *SurfaceMesh, c: Cell, index: u32) void {
             sm.setDartCellIndex(d, .edge, index);
             sm.setDartCellIndex(sm.phi2(d), .edge, index);
         },
-        .vertex, .face => {
+        .vertex => {
             var dart_it = sm.cellDartIterator(c);
             while (dart_it.next()) |d| {
-                sm.setDartCellIndex(d, c.cellType(), index);
+                sm.setDartCellIndex(d, .vertex, index);
+            }
+        },
+        .face => {
+            var dart_it = sm.cellDartIterator(c);
+            while (dart_it.next()) |d| {
+                sm.setDartCellIndex(d, .face, index);
             }
         },
         else => unreachable,
@@ -637,6 +634,46 @@ pub fn indexCells(sm: *SurfaceMesh, comptime cell_type: CellType) !void {
             sm.setCellIndex(cell, index);
         }
     }
+}
+
+/// Returns the number of cells of the given CellType in the given SurfaceMesh.
+pub fn nbCells(sm: *const SurfaceMesh, comptime cell_type: CellType) u32 {
+    // TODO: count boundary faces
+    // TODO: should exclude boundary darts from the count of halfedges & corners
+    const dc = dataContainer(sm, cell_type);
+    return dc.nbElements();
+}
+
+/// Returns the degree of the given cell (number of d+1 incident cells).
+/// Only vertices and edges have a degree (faces are top-cells and do not have a degree).
+pub fn degree(sm: *const SurfaceMesh, cell: Cell) u32 {
+    return switch (cell.cellType()) {
+        // nb refs is equal to the number of darts of the vertex which is equal to its degree
+        // (more efficient than iterating through the darts of the vertex)
+        .vertex => sm.vertex_data.nb_refs.value(sm.cellIndex(cell)),
+        .edge => if (sm.isBoundaryDart(cell.dart()) or sm.isBoundaryDart(sm.phi2(cell.dart()))) 1 else 2,
+        else => unreachable,
+    };
+}
+
+/// Returns the codegree of the given cell (number of d-1 incident cells).
+/// Only edges and faces have a codegree (vertices are 0-cells and do not have a codegree).
+pub fn codegree(sm: *const SurfaceMesh, cell: Cell) u32 {
+    return switch (cell.cellType()) {
+        .edge => 2,
+        // nb refs is equal to the number of darts of the face which is equal to its codegree
+        // (more efficient than iterating through the darts of the face)
+        .face => blk: {
+            // boundary faces are not indexed and thus do not have an associated index with a ref count
+            if (sm.isBoundaryDart(cell.dart())) {
+                var res: u32 = 0;
+                var dart_it = sm.cellDartIterator(cell);
+                while (dart_it.next()) |_| : (res += 1) {}
+                break :blk res;
+            } else break :blk sm.face_data.nb_refs.value(sm.cellIndex(cell));
+        },
+        else => unreachable,
+    };
 }
 
 pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
@@ -736,9 +773,9 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
             }
         }
         var data_container = switch (cell_type) {
-            .vertex => &sm.vertex_data,
-            .edge => &sm.edge_data,
-            .face => &sm.face_data,
+            .vertex => sm.vertex_data,
+            .edge => sm.edge_data,
+            .face => sm.face_data,
             else => unreachable,
         };
         var idx = data_container.firstIndex();
@@ -761,50 +798,6 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
     }
 
     return ok;
-}
-
-/// Returns the number of cells of the given CellType in the given SurfaceMesh.
-pub fn nbCells(sm: *const SurfaceMesh, cell_type: CellType) u32 {
-    return switch (cell_type) {
-        .halfedge, .corner => sm.dart_data.nbElements(), // TODO: should exclude boundary darts from the count
-        .vertex => sm.vertex_data.nbElements(),
-        .edge => sm.edge_data.nbElements(),
-        .face => sm.face_data.nbElements(),
-        // TODO: count boundary faces
-        else => unreachable,
-    };
-}
-
-/// Returns the degree of the given cell (number of d+1 incident cells).
-/// Only vertices and edges have a degree (faces are top-cells and do not have a degree).
-pub fn degree(sm: *const SurfaceMesh, cell: Cell) u32 {
-    return switch (cell.cellType()) {
-        // nb refs is equal to the number of darts of the vertex which is equal to its degree
-        // (more efficient than iterating through the darts of the vertex)
-        .vertex => sm.vertex_data.nb_refs.value(sm.cellIndex(cell)),
-        .edge => if (sm.isBoundaryDart(cell.dart()) or sm.isBoundaryDart(sm.phi2(cell.dart()))) 1 else 2,
-        else => unreachable,
-    };
-}
-
-/// Returns the codegree of the given cell (number of d-1 incident cells).
-/// Only edges and faces have a codegree (vertices are 0-cells and do not have a codegree).
-pub fn codegree(sm: *const SurfaceMesh, cell: Cell) u32 {
-    return switch (cell.cellType()) {
-        .edge => 2,
-        // nb refs is equal to the number of darts of the face which is equal to its codegree
-        // (more efficient than iterating through the darts of the face)
-        .face => blk: {
-            // boundary faces are not indexed and thus do not have an associated index with a ref count
-            if (sm.isBoundaryDart(cell.dart())) {
-                var res: u32 = 0;
-                var dart_it = sm.cellDartIterator(cell);
-                while (dart_it.next()) |_| : (res += 1) {}
-                break :blk res;
-            } else break :blk sm.face_data.nb_refs.value(sm.cellIndex(cell));
-        },
-        else => unreachable,
-    };
 }
 
 /// Creates a new face with the given number of vertices.

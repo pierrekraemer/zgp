@@ -288,14 +288,19 @@ pub fn surfaceMeshCellSetUpdated(
     zgp.requestRedraw();
 }
 
-pub fn dataVBO(sms: *SurfaceMeshStore, comptime T: type, data: *const Data(T)) VBO {
-    const vbo = sms.data_vbo.getOrPut(&data.gen) catch |err| {
+pub fn dataVBO(
+    sms: *SurfaceMeshStore,
+    comptime cell_type: SurfaceMesh.CellType,
+    comptime T: type,
+    data: SurfaceMesh.CellData(cell_type, T),
+) VBO {
+    const vbo = sms.data_vbo.getOrPut(data.gen()) catch |err| {
         zgp_log.err("Failed to get or add VBO in the registry: {}", .{err});
         return VBO.init(); // return a dummy VBO
     };
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
-        vbo.value_ptr.*.fillFrom(T, data); // on VBO creation, fill it with the data
+        vbo.value_ptr.*.fillFrom(T, data.data); // on VBO creation, fill it with the data
     }
     return vbo.value_ptr.*;
 }
@@ -376,7 +381,7 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
             var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name + cell count
             const info = sms.surface_meshes_info.getPtr(sm).?;
             inline for (.{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
-                const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type) ++ " | {d} |", .{sm.nbCells(cell_type)}) catch "";
+                const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type) ++ " | {d} | ({d:.1}%)", .{ sm.nbCells(cell_type), sm.dataContainer(cell_type).density() * 100 }) catch "";
                 c.ImGui_SeparatorText(cells.ptr);
                 // TODO: improve UI for cell sets (clear, invert, etc.)
                 switch (cell_type) {
@@ -749,6 +754,8 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
     const vertex_position = try sm.addData(.vertex, Vec3f, "position");
     const darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
     defer sm.removeData(.vertex, darts_of_vertex.gen());
+    var darts_array_lists_arena = std.heap.ArenaAllocator.init(sms.allocator);
+    defer darts_array_lists_arena.deinit();
 
     for (import_data.vertices_position.items) |pos| {
         const vertex_index = try sm.newDataIndex(.vertex);
@@ -763,7 +770,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
         for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
             // sm.dart_vertex_index.valuePtr(d).* = index;
             sm.setDartCellIndex(d, .vertex, index);
-            try darts_of_vertex.data.valuePtr(index).append(darts_of_vertex.data.arena(), d);
+            try darts_of_vertex.data.valuePtr(index).append(darts_array_lists_arena.allocator(), d);
             d = sm.phi1(d);
         }
         i += face_nb_vertices;

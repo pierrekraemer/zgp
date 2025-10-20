@@ -35,77 +35,77 @@ const VTable = struct {
     draw: ?*const fn (m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void = null,
 };
 
-pub fn pointCloudCreated(m: *Module, pc: *PointCloud) void {
+pub inline fn pointCloudCreated(m: *Module, pc: *PointCloud) void {
     if (m.vtable.pointCloudCreated) |func| {
         func(m, pc);
     }
 }
-pub fn pointCloudDestroyed(m: *Module, pc: *PointCloud) void {
+pub inline fn pointCloudDestroyed(m: *Module, pc: *PointCloud) void {
     if (m.vtable.pointCloudDestroyed) |func| {
         func(m, pc);
     }
 }
-pub fn pointCloudConnectivityUpdated(m: *Module, pc: *PointCloud) void {
+pub inline fn pointCloudConnectivityUpdated(m: *Module, pc: *PointCloud) void {
     if (m.vtable.pointCloudConnectivityUpdated) |func| {
         func(m, pc);
     }
 }
-pub fn pointCloudStdDataChanged(m: *Module, pc: *PointCloud, data: PointCloudStdData) void {
+pub inline fn pointCloudStdDataChanged(m: *Module, pc: *PointCloud, data: PointCloudStdData) void {
     if (m.vtable.pointCloudStdDataChanged) |func| {
         func(m, pc, data);
     }
 }
-pub fn pointCloudDataUpdated(m: *Module, pc: *PointCloud, data_gen: *const DataGen) void {
+pub inline fn pointCloudDataUpdated(m: *Module, pc: *PointCloud, data_gen: *const DataGen) void {
     if (m.vtable.pointCloudDataUpdated) |func| {
         func(m, pc, data_gen);
     }
 }
-pub fn surfaceMeshCreated(m: *Module, sm: *SurfaceMesh) void {
+pub inline fn surfaceMeshCreated(m: *Module, sm: *SurfaceMesh) void {
     if (m.vtable.surfaceMeshCreated) |func| {
         func(m, sm);
     }
 }
-pub fn surfaceMeshDestroyed(m: *Module, sm: *SurfaceMesh) void {
+pub inline fn surfaceMeshDestroyed(m: *Module, sm: *SurfaceMesh) void {
     if (m.vtable.surfaceMeshDestroyed) |func| {
         func(m, sm);
     }
 }
-pub fn surfaceMeshConnectivityUpdated(m: *Module, sm: *SurfaceMesh) void {
+pub inline fn surfaceMeshConnectivityUpdated(m: *Module, sm: *SurfaceMesh) void {
     if (m.vtable.surfaceMeshConnectivityUpdated) |func| {
         func(m, sm);
     }
 }
-pub fn surfaceMeshStdDataChanged(m: *Module, sm: *SurfaceMesh, data: SurfaceMeshStdData) void {
+pub inline fn surfaceMeshStdDataChanged(m: *Module, sm: *SurfaceMesh, data: SurfaceMeshStdData) void {
     if (m.vtable.surfaceMeshStdDataChanged) |func| {
         func(m, sm, data);
     }
 }
-pub fn surfaceMeshDataUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void {
+pub inline fn surfaceMeshDataUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void {
     if (m.vtable.surfaceMeshDataUpdated) |func| {
         func(m, sm, cell_type, data_gen);
     }
 }
-pub fn surfaceMeshCellSetUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType) void {
+pub inline fn surfaceMeshCellSetUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType) void {
     if (m.vtable.surfaceMeshCellSetUpdated) |func| {
         func(m, sm, cell_type);
     }
 }
-pub fn uiPanel(m: *Module) void {
+pub inline fn uiPanel(m: *Module) void {
     if (m.vtable.uiPanel) |func| {
         func(m);
     }
 }
-pub fn menuBar(m: *Module) void {
+pub inline fn menuBar(m: *Module) void {
     if (m.vtable.menuBar) |func| {
         func(m);
     }
 }
-pub fn rightClickMenu(m: *Module) void {
+pub inline fn rightClickMenu(m: *Module) void {
     if (m.vtable.rightClickMenu) |func| {
         func(m);
     }
 }
-pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
+pub inline fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     if (m.vtable.draw) |func| {
         func(m, view_matrix, projection_matrix);
     }

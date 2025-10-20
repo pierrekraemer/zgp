@@ -3,6 +3,7 @@ const SurfaceMeshConnectivity = @This();
 const std = @import("std");
 
 const imgui_utils = @import("../utils/imgui.zig");
+const zgp_log = std.log.scoped(.zgp);
 
 const zgp = @import("../main.zig");
 const c = zgp.c;
@@ -66,6 +67,8 @@ fn remesh(
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
+    var timer = try std.time.Timer.start();
+
     try remeshing.pliantRemeshing(
         sm,
         sm_bvh,
@@ -88,6 +91,9 @@ fn remesh(
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_normal);
     zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
+
+    const elapsed: f64 = @floatFromInt(timer.read());
+    zgp_log.info("Remeshing computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
 
 fn decimate(

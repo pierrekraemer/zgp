@@ -10,17 +10,17 @@ fn includeVertex(
     sm: *const SurfaceMesh,
     dm: SurfaceMesh.DartMarker,
     v: SurfaceMesh.Cell,
-    vertices: *std.ArrayList(SurfaceMesh.Cell),
-    edges: *std.ArrayList(SurfaceMesh.Cell),
-    faces: *std.ArrayList(SurfaceMesh.Cell),
+    vertex_buffer: *std.ArrayList(SurfaceMesh.Cell),
+    edge_buffer: *std.ArrayList(SurfaceMesh.Cell),
+    face_buffer: *std.ArrayList(SurfaceMesh.Cell),
 ) !void {
-    try vertices.append(sm.allocator, v);
+    try vertex_buffer.append(sm.allocator, v);
     var dart_it = sm.cellDartIterator(v);
     while (dart_it.next()) |d| {
         dm.valuePtr(d).* = true;
         // if all darts of the edge are now marked, include edge in result
         if (dm.value(d) and dm.value(sm.phi2(d))) {
-            try edges.append(sm.allocator, .{ .edge = d });
+            try edge_buffer.append(sm.allocator, .{ .edge = d });
         }
         // if all darts of the face are now marked, include face in result
         var face_in = true;
@@ -33,36 +33,37 @@ fn includeVertex(
             }
         }
         if (face_in) {
-            try faces.append(sm.allocator, face);
+            try face_buffer.append(sm.allocator, face);
         }
     }
 }
 
+/// Collect all cells within a sphere of given radius around the given vertex
+/// and store them in the given buffers.
 pub fn cellsWithinSphereAroundVertex(
     sm: *SurfaceMesh,
     vertex: SurfaceMesh.Cell,
     radius: f32,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-) !struct {
-    std.ArrayList(SurfaceMesh.Cell),
-    std.ArrayList(SurfaceMesh.Cell),
-    std.ArrayList(SurfaceMesh.Cell),
-} {
+    vertex_buffer: *std.ArrayList(SurfaceMesh.Cell),
+    edge_buffer: *std.ArrayList(SurfaceMesh.Cell),
+    face_buffer: *std.ArrayList(SurfaceMesh.Cell),
+) !void {
     assert(vertex.cellType() == .vertex);
-    const vp = vertex_position.value(vertex);
+    vertex_buffer.clearRetainingCapacity();
+    edge_buffer.clearRetainingCapacity();
+    face_buffer.clearRetainingCapacity();
 
-    var vertices = try std.ArrayList(SurfaceMesh.Cell).initCapacity(sm.allocator, 32);
-    var edges = try std.ArrayList(SurfaceMesh.Cell).initCapacity(sm.allocator, 32);
-    var faces = try std.ArrayList(SurfaceMesh.Cell).initCapacity(sm.allocator, 32);
+    const vp = vertex_position.value(vertex);
 
     var dm = try SurfaceMesh.DartMarker.init(sm);
     defer dm.deinit();
 
-    try includeVertex(sm, dm, vertex, &vertices, &edges, &faces);
+    try includeVertex(sm, dm, vertex, vertex_buffer, edge_buffer, face_buffer);
 
     var i: u32 = 0;
-    while (i < vertices.items.len) : (i += 1) {
-        const v = vertices.items[i];
+    while (i < vertex_buffer.items.len) : (i += 1) {
+        const v = vertex_buffer.items[i];
         var dart_it = sm.cellDartIterator(v);
         while (dart_it.next()) |d| {
             const d2 = sm.phi2(d);
@@ -72,10 +73,8 @@ pub fn cellsWithinSphereAroundVertex(
             const nv: SurfaceMesh.Cell = .{ .vertex = d2 };
             const nvp = vertex_position.value(nv);
             if (vec.squaredNorm3f(vec.sub3f(nvp, vp)) < radius * radius) {
-                try includeVertex(sm, dm, nv, &vertices, &edges, &faces);
+                try includeVertex(sm, dm, nv, vertex_buffer, edge_buffer, face_buffer);
             }
         }
     }
-
-    return .{ vertices, edges, faces };
 }

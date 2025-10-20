@@ -102,16 +102,16 @@ pub fn surfaceMeshCellDataComboBox(
     if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "-- none --", 0)) {
         defer c.ImGui_EndCombo();
         var data_container = switch (cell_type) {
-            .halfedge, .corner => &surface_mesh.dart_data,
-            .vertex => &surface_mesh.vertex_data,
-            .edge => &surface_mesh.edge_data,
-            .face => &surface_mesh.face_data,
+            .halfedge, .corner => surface_mesh.dart_data,
+            .vertex => surface_mesh.vertex_data,
+            .edge => surface_mesh.edge_data,
+            .face => surface_mesh.face_data,
             else => unreachable,
         };
         var data_it = data_container.typedIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
-            if (c.ImGui_SelectableEx(data.gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+            if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) { // only return if it was not previously selected
                     return .{ .surface_mesh = surface_mesh, .data = data };
                 }
@@ -134,7 +134,7 @@ pub fn pointCloudDataComboBox(
         var data_it = point_cloud.point_data.typedIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
-            if (c.ImGui_SelectableEx(data.gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+            if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) { // only call on_selected if it was not previously selected
                     return .{ .point_cloud = point_cloud, .data = data };
                 }

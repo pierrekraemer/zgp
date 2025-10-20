@@ -144,7 +144,7 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo: VBO = zgp.surface_mesh_store.dataVBO(Vec3f, vertex_position.data);
+                const position_vbo: VBO = zgp.surface_mesh_store.dataVBO(.vertex, Vec3f, vertex_position);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -235,7 +235,7 @@ fn setSurfaceMeshDrawVerticesColorData(
                 .vertex => {
                     p.draw_vertices_color.vertex_scalar_data = data;
                     if (p.draw_vertices_color.vertex_scalar_data) |scalar| {
-                        const scalar_vbo = zgp.surface_mesh_store.dataVBO(f32, scalar.data);
+                        const scalar_vbo = zgp.surface_mesh_store.dataVBO(.vertex, f32, scalar);
                         p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
                     } else {
                         p.point_sphere_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -254,7 +254,7 @@ fn setSurfaceMeshDrawVerticesColorData(
                 .vertex => {
                     p.draw_vertices_color.vertex_vector_data = data;
                     if (p.draw_vertices_color.vertex_vector_data) |vector| {
-                        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3f, vector.data);
+                        const vector_vbo = zgp.surface_mesh_store.dataVBO(.vertex, Vec3f, vector);
                         p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     } else {
                         p.point_sphere_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
@@ -291,7 +291,7 @@ fn setSurfaceMeshDrawFacesColorData(
                 .vertex => {
                     p.draw_faces_color.vertex_scalar_data = data;
                     if (p.draw_faces_color.vertex_scalar_data) |scalar| {
-                        const scalar_vbo = zgp.surface_mesh_store.dataVBO(f32, scalar.data);
+                        const scalar_vbo = zgp.surface_mesh_store.dataVBO(.vertex, f32, scalar);
                         p.tri_flat_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
                     } else {
                         p.tri_flat_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -303,7 +303,7 @@ fn setSurfaceMeshDrawFacesColorData(
                     p.draw_faces_color.face_scalar_data = data;
                     // Not supported yet
                     // if (p.draw_faces_color.face_scalar_data) |scalar| {
-                    // const scalar_vbo = zgp.surface_mesh_store.dataVBO(f32, scalar.data);
+                    // const scalar_vbo = zgp.surface_mesh_store.dataVBO(.face, f32, scalar);
                     // p.tri_flat_scalar_per_face_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
                     // } else {
                     // p.tri_flat_scalar_per_face_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -322,7 +322,7 @@ fn setSurfaceMeshDrawFacesColorData(
                 .vertex => {
                     p.draw_faces_color.vertex_vector_data = data;
                     if (p.draw_faces_color.vertex_vector_data) |vector| {
-                        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3f, vector.data);
+                        const vector_vbo = zgp.surface_mesh_store.dataVBO(.vertex, Vec3f, vector);
                         p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     } else {
                         p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.color);
@@ -332,7 +332,7 @@ fn setSurfaceMeshDrawFacesColorData(
                     p.draw_faces_color.face_vector_data = data;
                     // Not supported yet
                     // if (p.draw_faces_color.face_vector_data) |vector| {
-                    // const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3f, vector.data);
+                    // const vector_vbo = zgp.surface_mesh_store.dataVBO(.face, Vec3f, vector);
                     // p.tri_flat_color_per_face_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                     // } else {
                     // p.tri_flat_color_per_face_shader_parameters.unsetVertexAttribArray(.color);

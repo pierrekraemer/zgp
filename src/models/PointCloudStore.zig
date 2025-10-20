@@ -31,7 +31,7 @@ const Vec3f = vec.Vec3f;
 /// The PointCloudInfo associated with a PointCloud is accessible via the pointCloudInfo function.
 const PointCloudInfo = struct {
     std_data: PointCloudStdDatas = .{},
-    points_ibo: IBO, // TODO: really needed?
+    points_ibo: IBO,
 
     pub fn init() PointCloudInfo {
         return .{
@@ -181,15 +181,14 @@ pub fn pointCloudConnectivityUpdated(pcs: *PointCloudStore, pc: *PointCloud) voi
     zgp.requestRedraw();
 }
 
-pub fn dataVBO(pcs: *PointCloudStore, comptime T: type, data: *const Data(T)) VBO {
-    const vbo = pcs.data_vbo.getOrPut(&data.gen) catch |err| {
+pub fn dataVBO(pcs: *PointCloudStore, comptime T: type, data: PointCloud.CellData(T)) VBO {
+    const vbo = pcs.data_vbo.getOrPut(data.gen()) catch |err| {
         zgp_log.err("Failed to get or add VBO in the registry: {}", .{err});
         return VBO.init(); // return a dummy VBO
     };
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
-        // if the VBO was just created, fill it with the data
-        vbo.value_ptr.*.fillFrom(T, data);
+        vbo.value_ptr.*.fillFrom(T, data.data); // on VBO creation, fill it with the data
     }
     return vbo.value_ptr.*;
 }

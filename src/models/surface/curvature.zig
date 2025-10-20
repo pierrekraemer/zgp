@@ -10,12 +10,36 @@ const mat = @import("../../geometry/mat.zig");
 const Mat3f = mat.Mat3f;
 const eigen = @import("../../geometry/eigen.zig");
 
-const selection = @import("selection.zig");
+fn addEdgeContributionToTensor(
+    sm: *const SurfaceMesh,
+    d: SurfaceMesh.Dart,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
+    edge_length: SurfaceMesh.CellData(.edge, f32),
+    n: Vec3f,
+    tensor: *Mat3f,
+) void {
+    const d2 = sm.phi2(d);
+    const e: SurfaceMesh.Cell = .{ .edge = d };
+    const ev = vec.sub3f(
+        vertex_position.value(.{ .vertex = d2 }),
+        vertex_position.value(.{ .vertex = d }),
+    );
+    const proj_ev = geometry_utils.removeComponent(ev, n);
+    tensor.* = mat.add3f(
+        tensor.*,
+        mat.mulScalar3f(
+            mat.outerProduct3f(proj_ev, proj_ev),
+            edge_dihedral_angle.value(e) / edge_length.value(e),
+        ),
+    );
+}
 
+/// Compute and return the principal curvatures magnitudes and directions of the given vertex.
+/// Results are returned as (kmin, Kmin, kmax, Kmax).
 pub fn vertexCurvature(
     sm: *SurfaceMesh,
     vertex: SurfaceMesh.Cell,
-    radius: f32,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
@@ -24,40 +48,33 @@ pub fn vertexCurvature(
 ) !struct { f32, Vec3f, f32, Vec3f } {
     assert(vertex.cellType() == .vertex);
 
-    var vertices, var edges, var faces = try selection.cellsWithinSphereAroundVertex(
-        sm,
-        vertex,
-        radius,
-        vertex_position,
-    );
-    defer {
-        vertices.deinit(sm.allocator);
-        edges.deinit(sm.allocator);
-        faces.deinit(sm.allocator);
-    }
-
     const n = vertex_normal.value(vertex);
 
     var tensor = mat.zero3f;
-    for (edges.items) |e| {
-        const d = e.dart();
-        const ev = vec.sub3f(
-            vertex_position.value(.{ .vertex = sm.phi2(d) }),
-            vertex_position.value(.{ .vertex = d }),
-        );
-        const proj_ev = geometry_utils.removeComponent(ev, n);
-        tensor = mat.add3f(
-            tensor,
-            mat.mulScalar3f(
-                mat.outerProduct3f(proj_ev, proj_ev),
-                edge_dihedral_angle.value(e) / edge_length.value(e),
-            ),
-        );
-    }
     var area: f32 = 0.0;
-    for (faces.items) |f| {
-        area += face_area.value(f);
+
+    // accumulate edge contributions to the curvature tensor & face area
+    // in the 2-ring around the vertex
+    var dart_it = sm.cellDartIterator(vertex);
+    while (dart_it.next()) |d| {
+        var d_it = sm.phi2(d);
+        const d_end = sm.phi2(sm.phi_1(d_it));
+        var i: u32 = 0;
+        while (d_it != d_end) : ({
+            d_it = sm.phi1(sm.phi2(d_it));
+            i += 1;
+        }) {
+            addEdgeContributionToTensor(sm, d_it, vertex_position, edge_dihedral_angle, edge_length, n, &tensor);
+            const d_it2 = sm.phi2(d_it);
+            if (d_it2 != d and !sm.isBoundaryDart(d_it)) {
+                area += face_area.value(.{ .face = d_it });
+            }
+            if (i >= 3) { // gather exterior 2-ring edges
+                addEdgeContributionToTensor(sm, sm.phi1(d_it), vertex_position, edge_dihedral_angle, edge_length, n, &tensor);
+            }
+        }
     }
+
     tensor = mat.mulScalar3f(tensor, 1.0 / area);
 
     const evals, const evecs = eigen.eigenSolver(mat.mat3dFromMat3f(tensor));
@@ -89,6 +106,8 @@ pub fn vertexCurvature(
     };
 }
 
+/// Compute the principal curvatures magnitudes and directions of all vertices of the given SurfaceMesh
+/// and store the results in the given datas.
 pub fn computeVertexCurvatures(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -101,14 +120,12 @@ pub fn computeVertexCurvatures(
     vertex_kmax: SurfaceMesh.CellData(.vertex, f32),
     vertex_Kmax: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
-    const mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
     var it = try SurfaceMesh.CellIterator(.vertex).init(sm);
     defer it.deinit();
     while (it.next()) |vertex| {
         const kmin, const Kmin, const kmax, const Kmax = try vertexCurvature(
             sm,
             vertex,
-            mean_edge_length * 2.5,
             vertex_position,
             vertex_normal,
             edge_dihedral_angle,
@@ -158,44 +175,6 @@ pub fn computeVertexGaussianCurvatures(
             sm,
             vertex,
             corner_angle,
-        );
-    }
-}
-
-/// Compute and return the mean curvature of the given vertex
-/// using the edge-based discrete mean curvature formula.
-pub fn vertexMeanCurvature(
-    sm: *const SurfaceMesh,
-    vertex: SurfaceMesh.Cell,
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-) f32 {
-    assert(vertex.cellType() == .vertex);
-    var mc: f32 = 0.0;
-    var dart_it = sm.cellDartIterator(vertex);
-    while (dart_it.next()) |d| {
-        const e: SurfaceMesh.Cell = .{ .edge = d };
-        mc += edge_dihedral_angle.value(e) * edge_length.value(e) * 0.5;
-    }
-    return mc * 0.5;
-}
-
-/// Compute the mean curvatures of all vertices of the given SurfaceMesh
-/// and store the results in the given vertex_mean_curvature data.
-pub fn computeVertexMeanCurvatures(
-    sm: *SurfaceMesh,
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-    vertex_mean_curvature: SurfaceMesh.CellData(.vertex, f32),
-) !void {
-    var it = try SurfaceMesh.CellIterator(.vertex).init(sm);
-    defer it.deinit();
-    while (it.next()) |vertex| {
-        vertex_mean_curvature.valuePtr(vertex).* = vertexMeanCurvature(
-            sm,
-            vertex,
-            edge_length,
-            edge_dihedral_angle,
         );
     }
 }

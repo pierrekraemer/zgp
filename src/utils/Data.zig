@@ -5,59 +5,24 @@ const typeId = @import("types.zig").typeId;
 
 pub const DataGen = struct {
     name: []const u8,
-    type_id: *const anyopaque, // typeId of T in the Data(T)
-    arena: std.heap.ArenaAllocator, // used for data allocation by the Data(T) => TODO: not sure if this is a good idea
-    ptr: *anyopaque, // pointer to the Data(T)
     container: *DataContainer, // pointer to the DataContainer that owns this Data(T)
+    type_id: *const anyopaque, // typeId of T in the Data(T)
     vtable: *const VTable,
 
     const VTable = struct {
-        ensureLength: *const fn (ptr: *anyopaque, size: u32) anyerror!void,
-        clearRetainingCapacity: *const fn (ptr: *anyopaque) void,
+        deinit: *const fn (data_gen: *DataGen) void,
+        ensureSize: *const fn (data_gen: *DataGen, size: usize) anyerror!void,
+        clearRetainingCapacity: *const fn (data_gen: *DataGen) void,
     };
 
-    pub fn init(
-        comptime T: type,
-        name: []const u8,
-        type_id: *const anyopaque,
-        pointer: *Data(T),
-        container: *DataContainer,
-        arena: std.heap.ArenaAllocator,
-    ) DataGen {
-        const gen = struct {
-            fn ensureLength(ptr: *anyopaque, size: u32) !void {
-                const impl: *Data(T) = @ptrCast(@alignCast(ptr));
-                try impl.ensureLength(size);
-            }
-            fn clearRetainingCapacity(ptr: *anyopaque) void {
-                const impl: *Data(T) = @ptrCast(@alignCast(ptr));
-                impl.clearRetainingCapacity();
-            }
-        };
-
-        return .{
-            .name = name,
-            .type_id = type_id,
-            .arena = arena,
-            .ptr = pointer,
-            .container = container,
-            .vtable = comptime &.{
-                .ensureLength = gen.ensureLength,
-                .clearRetainingCapacity = gen.clearRetainingCapacity,
-            },
-        };
+    pub inline fn ensureSize(data_gen: *DataGen, size: usize) !void {
+        try data_gen.vtable.ensureSize(data_gen, size);
     }
-
-    pub fn deinit(self: *DataGen) void {
-        self.arena.deinit();
+    pub inline fn clearRetainingCapacity(data_gen: *DataGen) void {
+        data_gen.vtable.clearRetainingCapacity(data_gen);
     }
-
-    pub inline fn ensureLength(self: *DataGen, size: u32) !void {
-        try self.vtable.ensureLength(self.ptr, size);
-    }
-
-    pub inline fn clearRetainingCapacity(self: *DataGen) void {
-        self.vtable.clearRetainingCapacity(self.ptr);
+    pub inline fn deinit(data_gen: *DataGen) void {
+        data_gen.vtable.deinit(data_gen);
     }
 };
 
@@ -65,26 +30,45 @@ pub fn Data(comptime T: type) type {
     return struct {
         const Self = @This();
 
-        gen: DataGen,
+        data_gen: DataGen,
         data: std.ArrayList(T),
 
-        /// Expose the Arena of the Data to the user.
-        /// Useful when the data type T needs to allocate memory (e.g. ArrayList).
-        /// The user should not use the arena for anything else.
-        /// The Arena is freed on DataGen deinit.
-        pub fn arena(self: *Self) std.mem.Allocator {
-            return self.gen.arena.allocator();
+        pub fn init(name: []const u8, container: *DataContainer) Data(T) {
+            return .{
+                .data_gen = .{
+                    .name = name,
+                    .container = container,
+                    .type_id = typeId(T),
+                    .vtable = &.{
+                        .deinit = deinit,
+                        .ensureSize = ensureSize,
+                        .clearRetainingCapacity = clearRetainingCapacity,
+                    },
+                },
+                .data = .empty,
+            };
         }
 
         /// Part of the DataGen interface.
-        pub fn ensureLength(self: *Self, size: u32) !void {
-            while (self.data.items.len < size) {
-                _ = try self.data.addOne(self.arena());
+        pub fn deinit(data_gen: *DataGen) void {
+            const self: *Data(T) = @alignCast(@fieldParentPtr("data_gen", data_gen));
+            self.data.deinit(self.data_gen.container.allocator);
+            self.data_gen.container.allocator.destroy(self); // created in DataContainer.addData
+        }
+
+        /// Part of the DataGen interface.
+        pub fn ensureSize(data_gen: *DataGen, size: usize) !void {
+            const self: *Data(T) = @alignCast(@fieldParentPtr("data_gen", data_gen));
+            if (self.data.items.len >= size) {
+                return;
             }
+            try self.data.ensureTotalCapacity(self.data_gen.container.allocator, size);
+            _ = self.data.addManyAsSliceAssumeCapacity(size -| self.data.items.len);
         }
 
         /// Part of the DataGen interface.
-        pub fn clearRetainingCapacity(self: *Self) void {
+        pub fn clearRetainingCapacity(data_gen: *DataGen) void {
+            const self: *Data(T) = @alignCast(@fieldParentPtr("data_gen", data_gen));
             self.data.clearRetainingCapacity();
         }
 
@@ -116,7 +100,7 @@ pub fn Data(comptime T: type) type {
             comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
         ) T {
             assert(self.nbElements() > 0);
-            var best = self.value(self.gen.container.firstIndex());
+            var best = self.value(self.data_gen.container.firstIndex());
             var it = self.constIterator();
             while (it.next()) |element| {
                 if (compareFn(context, element.*, best) == .lt) {
@@ -132,7 +116,7 @@ pub fn Data(comptime T: type) type {
             comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
         ) T {
             assert(self.nbElements() > 0);
-            var best = self.value(self.gen.container.firstIndex());
+            var best = self.value(self.data_gen.container.firstIndex());
             var it = self.constIterator();
             while (it.next()) |element| {
                 if (compareFn(context, element.*, best) == .gt) {
@@ -148,7 +132,7 @@ pub fn Data(comptime T: type) type {
             comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
         ) struct { T, T } {
             assert(self.nbElements() > 0);
-            var min = self.value(self.gen.container.firstIndex());
+            var min = self.value(self.data_gen.container.firstIndex());
             var max = min;
             var it = self.constIterator();
             while (it.next()) |element| {
@@ -208,7 +192,7 @@ pub fn Data(comptime T: type) type {
         }
 
         pub fn nbElements(self: *const Self) usize {
-            return self.gen.container.nbElements();
+            return self.data_gen.container.nbElements();
         }
 
         pub const Iterator = BaseIterator(*Self, *T);
@@ -218,14 +202,14 @@ pub fn Data(comptime T: type) type {
                 data: SelfPtr,
                 index: u32,
                 pub fn next(it: *@This()) ?ElementPtr {
-                    if (it.index == it.data.gen.container.lastIndex()) {
+                    if (it.index == it.data.data_gen.container.lastIndex()) {
                         return null;
                     }
-                    defer it.index = it.data.gen.container.nextIndex(it.index);
+                    defer it.index = it.data.data_gen.container.nextIndex(it.index);
                     return &it.data.data.items[it.index];
                 }
                 pub fn reset(it: *@This()) void {
-                    it.index = it.data.gen.container.firstIndex();
+                    it.index = it.data.data_gen.container.firstIndex();
                 }
             };
         }
@@ -233,14 +217,14 @@ pub fn Data(comptime T: type) type {
         pub fn iterator(self: *Self) Iterator {
             return .{
                 .data = self,
-                .index = self.gen.container.firstIndex(),
+                .index = self.data_gen.container.firstIndex(),
             };
         }
 
         pub fn constIterator(self: *const Self) ConstIterator {
             return .{
                 .data = self,
-                .index = self.gen.container.firstIndex(),
+                .index = self.data_gen.container.firstIndex(),
             };
         }
     };
@@ -252,12 +236,13 @@ pub const DataContainer = struct {
     markers: std.ArrayList(*Data(bool)),
     available_markers_indices: std.ArrayList(u32),
     free_indices: std.ArrayList(u32),
-    capacity: u32 = 0,
+    size: u32 = 0,
     is_active: *Data(bool) = undefined,
     nb_refs: *Data(u32) = undefined,
 
-    pub fn init(allocator: std.mem.Allocator) !DataContainer {
-        var dc: DataContainer = .{
+    pub fn init(allocator: std.mem.Allocator) !*DataContainer {
+        const dc = try allocator.create(DataContainer);
+        dc.* = .{
             .allocator = allocator,
             .datas = std.StringHashMap(*DataGen).init(allocator),
             .markers = .empty,
@@ -272,16 +257,19 @@ pub const DataContainer = struct {
     pub fn deinit(dc: *DataContainer) void {
         var it = dc.datas.iterator();
         while (it.next()) |entry| {
+            const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addData)
+            dc.allocator.free(name); // free the name
             const data_gen = entry.value_ptr.*;
-            data_gen.deinit();
+            data_gen.deinit(); // Data(T) destroy is called in Data(T) deinit
         }
         for (dc.markers.items) |marker| {
-            marker.gen.deinit();
+            marker.data_gen.deinit();
         }
         dc.datas.deinit();
         dc.markers.deinit(dc.allocator);
         dc.available_markers_indices.deinit(dc.allocator);
         dc.free_indices.deinit(dc.allocator);
+        dc.allocator.destroy(dc);
     }
 
     pub fn clearRetainingCapacity(dc: *DataContainer) void {
@@ -291,10 +279,10 @@ pub const DataContainer = struct {
             data_gen.clearRetainingCapacity();
         }
         for (dc.markers.items) |marker| {
-            marker.clearRetainingCapacity();
+            marker.data_gen.clearRetainingCapacity();
         }
         dc.free_indices.clearRetainingCapacity();
-        dc.capacity = 0;
+        dc.size = 0;
     }
 
     pub fn addData(dc: *DataContainer, comptime T: type, name: []const u8) !*Data(T) {
@@ -302,33 +290,20 @@ pub const DataContainer = struct {
         if (maybe_data_gen) |_| {
             return error.DataNameAlreadyExists;
         }
-        // The arena created for the Data is used to allocate:
-        // - the Data(T) struct itself,
-        // - an owned copy of the name of the Data,
-        // It is then passed to the DataGen of the Data.
-        // The Data(T) then:
-        // - use it to allocate its SegmentedList(T, 32) data,
-        // - exposes it to allow the user to use it if T needs to allocate memory.
-        var data_arena = std.heap.ArenaAllocator.init(dc.allocator);
-        errdefer data_arena.deinit();
-        const data = try data_arena.allocator().create(Data(T));
-        data.* = .{
-            .data = try std.ArrayList(T).initCapacity(data_arena.allocator(), 1024),
-            .gen = undefined,
-        };
-        const owned_name = try data_arena.allocator().dupeZ(u8, name);
-        data.gen = DataGen.init(T, owned_name, comptime typeId(T), data, dc, data_arena);
-        try data.ensureLength(dc.capacity);
-        try dc.datas.put(owned_name, &data.gen);
+        const owned_name = try dc.allocator.dupeZ(u8, name); // duplicate name to own the hashmap key
+        errdefer dc.allocator.free(owned_name);
+        const data = try dc.allocator.create(Data(T));
+        errdefer dc.allocator.destroy(data);
+        data.* = .init(owned_name, dc);
+        try data.data_gen.ensureSize(dc.size);
+        try dc.datas.put(owned_name, &data.data_gen);
         return data;
     }
 
     pub fn getData(dc: *const DataContainer, comptime T: type, name: []const u8) ?*Data(T) {
         if (dc.datas.get(name)) |data_gen| {
             if (data_gen.type_id == comptime typeId(T)) {
-                // const data: *Data(T) = @alignCast(@fieldParentPtr("gen", data_gen));
-                const data: *Data(T) = @ptrCast(@alignCast(data_gen.ptr));
-                return data;
+                return @alignCast(@fieldParentPtr("data_gen", data_gen));
             }
             return null;
         } else {
@@ -339,7 +314,9 @@ pub const DataContainer = struct {
     pub fn removeData(dc: *DataContainer, data_gen: *DataGen) void {
         assert(data_gen.container == dc);
         if (dc.datas.remove(data_gen.name)) {
-            data_gen.deinit();
+            const name: [:0]const u8 = @ptrCast(data_gen.name); // the name is a null-terminated string (dupeZ in addData)
+            dc.allocator.free(name); // free the name
+            data_gen.deinit(); // Data(T) destroy is called in Data(T) deinit
         }
     }
 
@@ -366,9 +343,7 @@ pub const DataContainer = struct {
                 while (it.iterator.next()) |entry| {
                     const data_gen = entry.value_ptr.*;
                     if (data_gen.type_id == comptime typeId(T)) {
-                        // const data: *Data(T) = @alignCast(@fieldParentPtr("gen", data_gen));
-                        const data: *Data(T) = @ptrCast(@alignCast(data_gen.ptr));
-                        return data;
+                        return @alignCast(@fieldParentPtr("data_gen", data_gen));
                     }
                 }
                 return null;
@@ -386,26 +361,21 @@ pub const DataContainer = struct {
         const index = dc.available_markers_indices.pop();
         if (index) |i| {
             var marker = dc.markers.items[i];
-            marker.fill(false); // reset the marker to false
+            marker.fill(false); // reset the marker to false before reuse
             return marker;
         }
         // same as for addData, but the name is not used (the marker is not stored in the hashmap)
-        var marker_arena = std.heap.ArenaAllocator.init(dc.allocator);
-        errdefer marker_arena.deinit();
-        const marker = try marker_arena.allocator().create(Data(bool));
-        marker.* = .{
-            .data = try std.ArrayList(bool).initCapacity(marker_arena.allocator(), 1024),
-            .gen = undefined,
-        };
-        marker.gen = DataGen.init(bool, "", comptime typeId(bool), marker, dc, marker_arena);
-        try marker.ensureLength(dc.capacity);
+        const marker = try dc.allocator.create(Data(bool));
+        errdefer dc.allocator.destroy(marker);
+        marker.* = .init("", dc);
+        try marker.data_gen.ensureSize(dc.size);
         marker.fill(false); // marker is filled with false before use
         try dc.markers.append(dc.allocator, marker);
         return marker;
     }
 
     pub fn releaseMarker(dc: *DataContainer, marker: *Data(bool)) void {
-        assert(marker.gen.container == dc);
+        assert(marker.data_gen.container == dc);
         const marker_index = std.mem.indexOfScalar(*Data(bool), dc.markers.items, marker);
         if (marker_index) |i| {
             dc.available_markers_indices.append(dc.allocator, @intCast(i)) catch |err| {
@@ -421,18 +391,16 @@ pub const DataContainer = struct {
             }
             break :blk index;
         } else blk: {
-            const index = dc.capacity;
-            dc.capacity += 1;
+            const index = dc.size;
+            dc.size += 1;
             for (dc.markers.items) |marker| {
-                try marker.ensureLength(dc.capacity);
+                try marker.data_gen.ensureSize(dc.size);
                 marker.valuePtr(index).* = false; // reset the markers at this index
             }
             var datas_it = dc.datas.iterator();
             while (datas_it.next()) |entry| {
-                try entry.value_ptr.*.ensureLength(dc.capacity);
+                try entry.value_ptr.*.ensureSize(dc.size);
             }
-            try dc.is_active.ensureLength(dc.capacity);
-            try dc.nb_refs.ensureLength(dc.capacity);
             break :blk index;
         };
         dc.is_active.valuePtr(index).* = true; // index returned by newIndex is active
@@ -441,7 +409,7 @@ pub const DataContainer = struct {
     }
 
     pub fn freeIndex(dc: *DataContainer, index: u32) void {
-        assert(index < dc.capacity);
+        assert(index < dc.size);
         assert(dc.is_active.value(index));
         dc.is_active.valuePtr(index).* = false;
         dc.nb_refs.valuePtr(index).* = 0;
@@ -451,13 +419,13 @@ pub const DataContainer = struct {
     }
 
     pub fn refIndex(dc: *DataContainer, index: u32) void {
-        assert(index < dc.capacity);
+        assert(index < dc.size);
         assert(dc.is_active.value(index));
         dc.nb_refs.valuePtr(index).* += 1;
     }
 
     pub fn unrefIndex(dc: *DataContainer, index: u32) void {
-        assert(index < dc.capacity);
+        assert(index < dc.size);
         assert(dc.is_active.value(index));
         dc.nb_refs.valuePtr(index).* -= 1;
         if (dc.nb_refs.value(index) == 0) {
@@ -466,33 +434,40 @@ pub const DataContainer = struct {
     }
 
     pub fn nbElements(dc: *const DataContainer) u32 {
-        return @intCast(dc.capacity - dc.free_indices.items.len);
+        return @intCast(dc.size - dc.free_indices.items.len);
+    }
+
+    pub fn density(dc: *const DataContainer) f32 {
+        if (dc.size == 0) {
+            return 0.0;
+        }
+        return 1.0 - (@as(f32, @floatFromInt(dc.free_indices.items.len)) / @as(f32, @floatFromInt(dc.size)));
     }
 
     pub fn firstIndex(dc: *const DataContainer) u32 {
         var index: u32 = 0;
-        return while (index < dc.capacity) : (index += 1) {
+        return while (index < dc.size) : (index += 1) {
             if (dc.isActiveIndex(index)) {
                 break index;
             }
-        } else dc.capacity;
+        } else dc.size;
     }
 
     pub fn nextIndex(dc: *const DataContainer, index: u32) u32 {
         var next: u32 = index + 1;
-        return while (next < dc.capacity) : (next += 1) {
+        return while (next < dc.size) : (next += 1) {
             if (dc.isActiveIndex(next)) {
                 break next;
             }
-        } else dc.capacity;
+        } else dc.size;
     }
 
     /// lastIndex actually returns one past the last valid index.
     pub fn lastIndex(dc: *const DataContainer) u32 {
-        return dc.capacity;
+        return dc.size;
     }
 
     pub fn isActiveIndex(dc: *const DataContainer, index: u32) bool {
-        return index < dc.capacity and dc.is_active.valuePtr(index).*;
+        return index < dc.size and dc.is_active.valuePtr(index).*;
     }
 };

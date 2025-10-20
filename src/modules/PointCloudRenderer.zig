@@ -120,7 +120,7 @@ pub fn pointCloudStdDataChanged(
     switch (std_data) {
         .position => |maybe_position| {
             if (maybe_position) |position| {
-                const position_vbo = zgp.point_cloud_store.dataVBO(Vec3f, position.data);
+                const position_vbo = zgp.point_cloud_store.dataVBO(Vec3f, position);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -134,7 +134,7 @@ pub fn pointCloudStdDataChanged(
         },
         .radius => |maybe_radius| {
             if (maybe_radius) |radius| {
-                const radius_vbo = zgp.point_cloud_store.dataVBO(f32, radius.data);
+                const radius_vbo = zgp.point_cloud_store.dataVBO(f32, radius);
                 p.point_sphere_color_radius_per_vertex_shader_parameters.setVertexAttribArray(.radius, radius_vbo, 0, 0);
             } else {
                 p.point_sphere_color_radius_per_vertex_shader_parameters.unsetVertexAttribArray(.radius);
@@ -155,7 +155,7 @@ fn setPointCloudDrawPointsColorData(
         .float => {
             p.draw_points_color.point_scalar_data = data;
             if (p.draw_points_color.point_scalar_data) |scalar| {
-                const scalar_vbo = zgp.point_cloud_store.dataVBO(f32, scalar.data);
+                const scalar_vbo = zgp.point_cloud_store.dataVBO(f32, scalar);
                 p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
             } else {
                 p.point_sphere_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.scalar);
@@ -167,7 +167,7 @@ fn setPointCloudDrawPointsColorData(
             }
             p.draw_points_color.point_vector_data = data;
             if (p.draw_points_color.point_vector_data) |vector| {
-                const vector_vbo = zgp.point_cloud_store.dataVBO(Vec3f, vector.data);
+                const vector_vbo = zgp.point_cloud_store.dataVBO(Vec3f, vector);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                 p.point_sphere_color_radius_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
             } else {

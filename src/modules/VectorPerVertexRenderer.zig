@@ -87,7 +87,7 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo = zgp.surface_mesh_store.dataVBO(Vec3f, vertex_position.data);
+                const position_vbo = zgp.surface_mesh_store.dataVBO(.vertex, Vec3f, vertex_position);
                 p.point_vector_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_vector_shader_parameters.unsetVertexAttribArray(.position);
@@ -105,7 +105,7 @@ fn setSurfaceMeshVectorData(
     const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
     p.vertex_vector = vertex_vector;
     if (p.vertex_vector) |v| {
-        const vector_vbo = zgp.surface_mesh_store.dataVBO(Vec3f, v.data);
+        const vector_vbo = zgp.surface_mesh_store.dataVBO(.vertex, Vec3f, v);
         p.point_vector_shader_parameters.setVertexAttribArray(.vector, vector_vbo, 0, 0);
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);

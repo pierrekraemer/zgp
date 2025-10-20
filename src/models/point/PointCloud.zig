@@ -12,7 +12,7 @@ pub const Point = u32;
 
 allocator: std.mem.Allocator,
 
-point_data: DataContainer,
+point_data: *DataContainer,
 
 const PointIterator = struct {
     point_cloud: *const PointCloud,
@@ -68,10 +68,10 @@ pub fn CellData(comptime T: type) type {
             return self.data.valuePtr(self.point_cloud.pointIndex(p));
         }
         pub fn name(self: Self) []const u8 {
-            return self.gen().name;
+            return self.data.data_gen.name;
         }
         pub fn gen(self: Self) *DataGen {
-            return &self.data.gen;
+            return &self.data.data_gen;
         }
     };
 }

@@ -24,6 +24,8 @@ const sqem = @import("../models/surface/sqem.zig");
 const SQEM = sqem.SQEM;
 
 const MedialAxisData = struct {
+    allocator: std.mem.Allocator,
+
     surface_mesh: *SurfaceMesh,
     vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
     vertex_area: ?SurfaceMesh.CellData(.vertex, f32) = null,
@@ -107,10 +109,12 @@ const MedialAxisData = struct {
             mad.surface_mesh.removeData(.vertex, mad.vertex_sphere.?.gen());
             mad.surface_mesh.removeData(.vertex, mad.vertex_sphere_error.?.gen());
             mad.surface_mesh.removeData(.vertex, mad.vertex_sphere_color.?.gen());
+            var it = mad.sphere_cluster.?.data.iterator();
+            while (it.next()) |*cluster| {
+                cluster.*.deinit(mad.allocator); // do not forget to deinit ArrayLists in sphere_cluster data
+            }
+            zgp.point_cloud_store.destroyPointCloud(mad.spheres.?); // PointCloud deinit manages its own CellData deinit
             mad.initialized = false;
-        }
-        if (mad.spheres) |pc| {
-            zgp.point_cloud_store.destroyPointCloud(pc); // PointCloud deinit handles its CellData automatically
         }
     }
 
@@ -143,7 +147,7 @@ const MedialAxisData = struct {
                     min_sphere = s;
                 }
             }
-            try mad.sphere_cluster.?.valuePtr(min_sphere).append(mad.sphere_cluster.?.data.arena(), v);
+            try mad.sphere_cluster.?.valuePtr(min_sphere).append(mad.allocator, v);
             mad.vertex_sphere.?.valuePtr(v).* = min_sphere;
             mad.vertex_sphere_color.?.valuePtr(v).* = mad.sphere_color.?.value(min_sphere);
             mad.vertex_sphere_error.?.valuePtr(v).* = min_distance;
@@ -155,6 +159,7 @@ const MedialAxisData = struct {
                 for (mad.sphere_cluster.?.valuePtr(s).items) |v| {
                     mad.vertex_sphere.?.valuePtr(v).* = null;
                 }
+                mad.sphere_cluster.?.valuePtr(s).deinit(mad.allocator);
                 mad.spheres.?.removePoint(s); // it is safe to remove the point while iterating
             }
         }
@@ -164,7 +169,7 @@ const MedialAxisData = struct {
         zgp.surface_mesh_store.surfaceMeshDataUpdated(mad.surface_mesh, .vertex, f32, mad.vertex_sphere_error.?);
     }
 
-    pub fn updateSpheres(mad: *MedialAxisData, _: std.mem.Allocator) !void {
+    pub fn updateSpheres(mad: *MedialAxisData) !void {
         assert(mad.initialized);
         var s_it = mad.spheres.?.pointIterator();
         while (s_it.next()) |s| {
@@ -292,6 +297,7 @@ pub fn deinit(smma: *SurfaceMeshMedialAxis) void {
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smma: *SurfaceMeshMedialAxis = @alignCast(@fieldParentPtr("module", m));
     smma.surface_meshes_data.put(surface_mesh, .{
+        .allocator = smma.allocator,
         .surface_mesh = surface_mesh,
     }) catch |err| {
         std.debug.print("Failed to store MedialAxisData for new SurfaceMesh: {}\n", .{err});
@@ -346,7 +352,7 @@ pub fn uiPanel(m: *Module) void {
         if (ma_data.initialized) {
             _ = c.ImGui_SliderFloatEx("", &ma_data.lambda, 0.0001, 1.0, "%.4f", c.ImGuiSliderFlags_Logarithmic);
             if (c.ImGui_ButtonEx("Update spheres", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                ma_data.updateSpheres(smma.allocator) catch |err| {
+                ma_data.updateSpheres() catch |err| {
                     std.debug.print("Failed to update Medial Axis spheres for SurfaceMesh: {}\n", .{err});
                 };
             }
