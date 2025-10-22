@@ -4,49 +4,53 @@ const assert = std.debug.assert;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
+const Vec3d = vec.Vec3d;
 
 /// Compute the gradient of a scalar field defined on the vertices of the given face.
 /// The gradient is returned as a vector in the plane of the face,
 /// pointing in the direction of maximum increase of the scalar field,
 /// and with a magnitude equal to the rate of increase per unit length.
+/// The given scalar field and its computed gradient are of type f64 for improved precision.
 /// The face is assumed to be triangular.
 pub fn scalarFieldFaceGradient(
     sm: *const SurfaceMesh,
     face: SurfaceMesh.Cell,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_scalar_field: SurfaceMesh.CellData(.vertex, f32),
+    vertex_scalar_field: SurfaceMesh.CellData(.vertex, f64),
     face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
-) Vec3f {
+) Vec3d {
     assert(face.cellType() == .face);
-    var g = vec.zero3f;
+    var g = vec.zero3d;
     var dart_it = sm.cellDartIterator(face);
     while (dart_it.next()) |d| {
         const v0 = vertex_position.value(.{ .vertex = sm.phi1(d) });
         const v1 = vertex_position.value(.{ .vertex = sm.phi_1(d) });
         const e = vec.sub3f(v1, v0);
         const ortho = vec.cross3f(face_normal.value(face), e);
-        g = vec.add3f(
+        g = vec.add3d(
             g,
-            vec.mulScalar3f(
-                ortho,
+            vec.mulScalar3d(
+                vec.vec3dFromVec3f(ortho),
                 vertex_scalar_field.value(.{ .vertex = d }),
             ),
         );
     }
-    g = vec.divScalar3f(g, face_area.value(face));
+    g = vec.divScalar3d(g, @floatCast(face_area.value(face)));
     return g;
 }
 
 /// Compute the gradient of a scalar field defined on the vertices of the given SurfaceMesh,
 /// and store them in the given face_gradient data.
+/// The given scalar field and its computed gradients are of type f64 for improved precision.
+/// The faces of the SurfaceMesh are assumed to be triangular.
 pub fn computeScalarFieldFaceGradients(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_scalar_field: SurfaceMesh.CellData(.vertex, f32),
+    vertex_scalar_field: SurfaceMesh.CellData(.vertex, f64),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
-    face_gradient: SurfaceMesh.CellData(.face, Vec3f),
+    face_gradient: SurfaceMesh.CellData(.face, Vec3d),
 ) !void {
     var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
     defer face_it.deinit();
@@ -62,18 +66,18 @@ pub fn computeScalarFieldFaceGradients(
     }
 }
 
-/// Compute the divergence of a vector field defined on the faces of the given vertex.
-/// The divergence is returned as a scalar value.
+/// Compute the divergence of a vector field defined on the incident faces of the given vertex.
+/// The given vector field and its computed divergence are of type f64 for improved precision.
 /// Incident faces are assumed to be triangular.
 pub fn vectorFieldVertexDivergence(
     sm: *const SurfaceMesh,
     vertex: SurfaceMesh.Cell,
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_vector_field: SurfaceMesh.CellData(.face, Vec3f),
-) f32 {
+    face_vector_field: SurfaceMesh.CellData(.face, Vec3d),
+) f64 {
     assert(vertex.cellType() == .vertex);
-    var div: f32 = 0.0;
+    var div: f64 = 0.0;
     var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
         if (sm.isBoundaryDart(d)) continue;
@@ -83,12 +87,12 @@ pub fn vectorFieldVertexDivergence(
         const p2 = vertex_position.value(.{ .vertex = d1 });
         const p3 = vertex_position.value(.{ .vertex = d_1 });
         const X = face_vector_field.value(.{ .face = d });
-        div += halfedge_cotan_weight.value(.{ .halfedge = d }) * vec.dot3f(
-            vec.sub3f(p2, p1),
+        div += halfedge_cotan_weight.value(.{ .halfedge = d }) * vec.dot3d(
+            vec.vec3dFromVec3f(vec.sub3f(p2, p1)),
             X,
         );
-        div += halfedge_cotan_weight.value(.{ .halfedge = d_1 }) * vec.dot3f(
-            vec.sub3f(p3, p1),
+        div += halfedge_cotan_weight.value(.{ .halfedge = d_1 }) * vec.dot3d(
+            vec.vec3dFromVec3f(vec.sub3f(p3, p1)),
             X,
         );
     }
@@ -97,12 +101,14 @@ pub fn vectorFieldVertexDivergence(
 
 /// Compute the divergence of a vector field defined on the faces of the given SurfaceMesh,
 /// and store them in the given vertex_divergence data.
+/// The given vector field and its computed divergence are of type f64 for improved precision.
+/// The faces of the SurfaceMesh are assumed to be triangular.
 pub fn computeVectorFieldVertexDivergences(
     sm: *SurfaceMesh,
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_vector_field: SurfaceMesh.CellData(.face, Vec3f),
-    vertex_divergence: SurfaceMesh.CellData(.vertex, f32),
+    face_vector_field: SurfaceMesh.CellData(.face, Vec3d),
+    vertex_divergence: SurfaceMesh.CellData(.vertex, f64),
 ) !void {
     var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
     defer vertex_it.deinit();

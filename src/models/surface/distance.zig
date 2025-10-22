@@ -36,7 +36,8 @@ pub fn computeVertexGeodesicDistancesFromSource(
         vertex_index.valuePtr(v).* = nb_vertices;
     }
 
-    // warning: use eigen.Scalar for matrix coefficients
+    // warning: use eigen.Scalar (f64) for matrix coefficients
+    // and for heat values (diffusion, gradient) to improve numerical precision
 
     // setup Laplacian matrix Lc
     const nb_edges = sm.nbCells(.edge);
@@ -62,15 +63,17 @@ pub fn computeVertexGeodesicDistancesFromSource(
 
     // setup mass-matrix A (vertex areas) and
     // initial heat vector heat_0 (1.0 at source vertex, 0.0 elsewhere)
-    var massCoeffs = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
+    var massCoeffs: std.ArrayList(eigen.Scalar) = .empty;
     defer massCoeffs.deinit(sm.allocator);
-    var heat_0 = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
+    try massCoeffs.resize(sm.allocator, nb_vertices);
+    var heat_0: std.ArrayList(eigen.Scalar) = .empty;
     defer heat_0.deinit(sm.allocator);
+    try heat_0.resize(sm.allocator, nb_vertices);
     vertex_it.reset();
     while (vertex_it.next()) |v| {
-        // relies on the fact that vertex iterator visits vertices in the same order as before (when indexing them)
-        massCoeffs.appendAssumeCapacity(@floatCast(vertex_area.value(v)));
-        heat_0.appendAssumeCapacity(0.0);
+        const idx = vertex_index.value(v);
+        massCoeffs.items[idx] = @floatCast(vertex_area.value(v));
+        heat_0.items[idx] = 0.0;
     }
     for (source_vertices) |sv| {
         const idx = vertex_index.value(sv);
@@ -90,22 +93,22 @@ pub fn computeVertexGeodesicDistancesFromSource(
     A.addSparseMatrix(M, M);
 
     // solve M * heat_t = heat_0 (backward Euler time step of the heat equation)
-    var heat_t = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
+    var heat_t: std.ArrayList(eigen.Scalar) = .empty;
     defer heat_t.deinit(sm.allocator);
     try heat_t.resize(sm.allocator, nb_vertices);
     M.solveSymmetricSparseLinearSystem(heat_0.items, heat_t.items);
 
-    // store heat_t in a vertex data
-    var vertex_heat = try sm.addData(.vertex, f32, "__vertex_heat");
+    // store heat_t in a vertex data (f64)
+    var vertex_heat = try sm.addData(.vertex, f64, "__vertex_heat");
     defer sm.removeData(.vertex, vertex_heat.gen());
     vertex_it.reset();
     while (vertex_it.next()) |v| {
         const idx = vertex_index.value(v);
-        vertex_heat.valuePtr(v).* = @floatCast(heat_t.items[idx]);
+        vertex_heat.valuePtr(v).* = heat_t.items[idx];
     }
 
     // compute the gradient of heat_t on each face
-    var face_heat_grad = try sm.addData(.face, Vec3f, "__face_heat_grad");
+    var face_heat_grad = try sm.addData(.face, Vec3d, "__face_heat_grad");
     defer sm.removeData(.face, face_heat_grad.gen());
     try gradient.computeScalarFieldFaceGradients(
         sm,
@@ -119,14 +122,14 @@ pub fn computeVertexGeodesicDistancesFromSource(
     // negate and normalize the face gradients
     var grad_it = face_heat_grad.data.iterator();
     while (grad_it.next()) |grad| {
-        grad.* = vec.mulScalar3f(
-            vec.normalized3f(grad.*),
+        grad.* = vec.mulScalar3d(
+            vec.normalized3d(grad.*),
             -1.0,
         );
     }
 
     // compute the divergence of the face gradients at each vertex
-    var vertex_heat_grad_div = try sm.addData(.vertex, f32, "__vertex_heat_grad_div");
+    var vertex_heat_grad_div = try sm.addData(.vertex, f64, "__vertex_heat_grad_div");
     defer sm.removeData(.vertex, vertex_heat_grad_div.gen());
     try gradient.computeVectorFieldVertexDivergences(
         sm,
@@ -137,16 +140,17 @@ pub fn computeVertexGeodesicDistancesFromSource(
     );
 
     // setup div vector
-    var div = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
+    var div: std.ArrayList(eigen.Scalar) = .empty;
     defer div.deinit(sm.allocator);
+    try div.resize(sm.allocator, nb_vertices);
     vertex_it.reset();
     while (vertex_it.next()) |v| {
-        // relies on the fact that vertex iterator visits vertices in the same order as before (when indexing them)
-        div.appendAssumeCapacity(@floatCast(vertex_heat_grad_div.value(v)));
+        const idx = vertex_index.value(v);
+        div.items[idx] = @floatCast(vertex_heat_grad_div.value(v));
     }
 
     // solve Lc * dist = div (Poisson equation)
-    var dist = try std.ArrayList(eigen.Scalar).initCapacity(sm.allocator, nb_vertices);
+    var dist: std.ArrayList(eigen.Scalar) = .empty;
     defer dist.deinit(sm.allocator);
     try dist.resize(sm.allocator, nb_vertices);
     Lc.solveSymmetricSparseLinearSystem(div.items, dist.items);

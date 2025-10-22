@@ -122,9 +122,10 @@ const MedialAxisData = struct {
         assert(mad.initialized);
         // clean up previous clusters
         mad.vertex_sphere.?.data.fill(null);
-        var it = mad.sphere_cluster.?.data.iterator();
-        while (it.next()) |*cluster| {
-            cluster.*.clearRetainingCapacity();
+        var p_it = mad.spheres.?.pointIterator();
+        while (p_it.next()) |s| {
+            mad.sphere_cluster.?.valuePtr(s).*.clearRetainingCapacity();
+            mad.sphere_error.?.valuePtr(s).* = 0.0;
         }
         // compute new clusters
         var v_it = try SurfaceMesh.CellIterator(.vertex).init(mad.surface_mesh);
@@ -151,6 +152,7 @@ const MedialAxisData = struct {
             mad.vertex_sphere.?.valuePtr(v).* = min_sphere;
             mad.vertex_sphere_color.?.valuePtr(v).* = mad.sphere_color.?.value(min_sphere);
             mad.vertex_sphere_error.?.valuePtr(v).* = min_distance;
+            mad.sphere_error.?.valuePtr(min_sphere).* += min_distance;
         }
         // check clusters sizes
         var s_it = mad.spheres.?.pointIterator();
@@ -165,6 +167,7 @@ const MedialAxisData = struct {
         }
 
         zgp.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres.?);
+        zgp.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, f32, mad.sphere_error.?);
         zgp.surface_mesh_store.surfaceMeshDataUpdated(mad.surface_mesh, .vertex, Vec3f, mad.vertex_sphere_color.?);
         zgp.surface_mesh_store.surfaceMeshDataUpdated(mad.surface_mesh, .vertex, f32, mad.vertex_sphere_error.?);
     }
