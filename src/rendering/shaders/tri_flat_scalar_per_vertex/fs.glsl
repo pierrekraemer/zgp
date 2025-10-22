@@ -19,6 +19,9 @@ void main() {
   vec4 result = vec4(v_color.rgb * lambert_term, 1.0);
   result += vec4(u_ambiant_color.rgb, 0.0);
   f_color = result;
+  if (!gl_FrontFacing) {
+    f_color *= 0.5;
+  }
   if (u_show_isolines)
   {
     float s = v_value * float(u_nb_isolines);

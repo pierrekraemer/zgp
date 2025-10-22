@@ -573,6 +573,10 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         c.cImGui_ImplSDL3_Shutdown();
         c.ImGui_DestroyContext(null);
 
+        // clear the list of modules before deinitializing them
+        // to avoid potential inter-dependencies issues
+        modules.clearRetainingCapacity();
+
         point_cloud_renderer.deinit();
         surface_mesh_renderer.deinit();
         vector_per_vertex_renderer.deinit();

@@ -99,17 +99,18 @@ module: Module = .{
     .name = "Surface Mesh Renderer",
     .vtable = &.{
         .surfaceMeshCreated = surfaceMeshCreated,
+        .surfaceMeshDestroyed = surfaceMeshDestroyed,
         .surfaceMeshStdDataChanged = surfaceMeshStdDataChanged,
         .surfaceMeshDataUpdated = surfaceMeshDataUpdated,
         .uiPanel = uiPanel,
         .draw = draw,
     },
 },
-parameters: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRendererParameters),
+parameters: std.AutoHashMap(*SurfaceMesh, SurfaceMeshRendererParameters),
 
 pub fn init(allocator: std.mem.Allocator) SurfaceMeshRenderer {
     return .{
-        .parameters = std.AutoHashMap(*const SurfaceMesh, SurfaceMeshRendererParameters).init(allocator),
+        .parameters = .init(allocator),
     };
 }
 
@@ -130,6 +131,15 @@ pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
         std.debug.print("Failed to create SurfaceMeshRendererParameters for new SurfaceMesh: {}\n", .{err});
         return;
     };
+}
+
+/// Part of the Module interface.
+/// Destroy the SurfaceMeshRendererParameters associated to the destroyed SurfaceMesh.
+pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
+    const smr: *SurfaceMeshRenderer = @alignCast(@fieldParentPtr("module", m));
+    const p = smr.parameters.getPtr(surface_mesh) orelse return;
+    p.deinit();
+    _ = smr.parameters.remove(surface_mesh);
 }
 
 /// Part of the Module interface.

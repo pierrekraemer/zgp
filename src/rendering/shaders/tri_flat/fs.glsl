@@ -16,4 +16,7 @@ void main() {
   vec4 result = vec4(u_vertex_color.rgb * lambert_term, 1.0);
   result += vec4(u_ambiant_color.rgb, 0.0);
   f_color = result;
+  if (!gl_FrontFacing) {
+    f_color *= 0.5;
+  }
 }

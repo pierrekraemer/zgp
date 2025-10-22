@@ -44,16 +44,17 @@ module: Module = .{
     .name = "Vector Per Vertex Renderer",
     .vtable = &.{
         .surfaceMeshCreated = surfaceMeshCreated,
+        .surfaceMeshDestroyed = surfaceMeshDestroyed,
         .surfaceMeshStdDataChanged = surfaceMeshStdDataChanged,
         .draw = draw,
         .uiPanel = uiPanel,
     },
 },
-parameters: std.AutoHashMap(*const SurfaceMesh, VectorPerVertexRendererParameters),
+parameters: std.AutoHashMap(*SurfaceMesh, VectorPerVertexRendererParameters),
 
 pub fn init(allocator: std.mem.Allocator) VectorPerVertexRenderer {
     return .{
-        .parameters = std.AutoHashMap(*const SurfaceMesh, VectorPerVertexRendererParameters).init(allocator),
+        .parameters = .init(allocator),
     };
 }
 
@@ -73,6 +74,15 @@ pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     vpvr.parameters.put(surface_mesh, VectorPerVertexRendererParameters.init()) catch |err| {
         std.debug.print("Failed to create VectorPerVertexRendererParameters for new SurfaceMesh: {}\n", .{err});
     };
+}
+
+/// Part of the Module interface.
+/// Destroy the VectorPerVertexRendererParameters associated to the destroyed SurfaceMesh.
+pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
+    const vpvr: *VectorPerVertexRenderer = @alignCast(@fieldParentPtr("module", m));
+    const p = vpvr.parameters.getPtr(surface_mesh) orelse return;
+    p.deinit();
+    _ = vpvr.parameters.remove(surface_mesh);
 }
 
 /// Part of the Module interface.

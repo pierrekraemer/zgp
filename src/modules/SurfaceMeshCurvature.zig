@@ -27,6 +27,7 @@ module: Module = .{
     .name = "Surface Mesh Curvature",
     .vtable = &.{
         .surfaceMeshCreated = surfaceMeshCreated,
+        .surfaceMeshDestroyed = surfaceMeshDestroyed,
         .rightClickMenu = rightClickMenu,
     },
 },
@@ -81,12 +82,19 @@ fn computeVertexCurvatures(
 }
 
 /// Part of the Module interface.
-/// Create and store a CurvatureDatas for the new SurfaceMesh.
+/// Create and store a CurvatureDatas for the created SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smc: *SurfaceMeshCurvature = @alignCast(@fieldParentPtr("module", m));
     _ = smc.surface_meshes_curvature_datas.put(surface_mesh, .{}) catch {
         zgp_log.err("Error creating CurvatureDatas for new SurfaceMesh", .{});
     };
+}
+
+/// Part of the Module interface.
+/// Remove the CurvatureDatas associated to the destroyed SurfaceMesh.
+pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
+    const smc: *SurfaceMeshCurvature = @alignCast(@fieldParentPtr("module", m));
+    _ = smc.surface_meshes_curvature_datas.remove(surface_mesh);
 }
 
 /// Part of the Module interface.

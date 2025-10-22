@@ -293,7 +293,7 @@ pub fn deinit(smma: *SurfaceMeshMedialAxis) void {
 }
 
 /// Part of the Module interface.
-/// Create and store a MedialAxisData for the new SurfaceMesh.
+/// Create and store a MedialAxisData for the created SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smma: *SurfaceMeshMedialAxis = @alignCast(@fieldParentPtr("module", m));
     smma.surface_meshes_data.put(surface_mesh, .{
@@ -306,7 +306,7 @@ pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
 }
 
 /// Part of the Module interface.
-/// Remove and deinitialize the MedialAxisData for the destroyed SurfaceMesh.
+/// Remove the MedialAxisData associated to the destroyed SurfaceMesh.
 pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smma: *SurfaceMeshMedialAxis = @alignCast(@fieldParentPtr("module", m));
     const ma_data = smma.surface_meshes_data.getPtr(surface_mesh) orelse return;
