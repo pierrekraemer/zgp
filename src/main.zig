@@ -67,13 +67,13 @@ pub var modules: std.ArrayList(*Module) = .empty;
 
 /// ZGP modules
 /// TODO: could be declared in a config file and loaded at runtime
-var point_cloud_renderer: PointCloudRenderer = undefined;
-var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
-var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
-var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
-var surface_mesh_distance: SurfaceMeshDistance = undefined;
-var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
-var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
+pub var point_cloud_renderer: PointCloudRenderer = undefined;
+pub var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
+pub var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
+pub var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
+pub var surface_mesh_distance: SurfaceMeshDistance = undefined;
+pub var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
+pub var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
 
 /// Application SDL Window & OpenGL context
 var window: *c.SDL_Window = undefined;

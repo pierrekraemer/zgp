@@ -21,6 +21,7 @@ const subdivision = @import("../models/surface/subdivision.zig");
 const remeshing = @import("../models/surface/remeshing.zig");
 const qem = @import("../models/surface/qem.zig");
 const decimation = @import("../models/surface/decimation.zig");
+const curvature = @import("../models/surface/curvature.zig");
 
 module: Module = .{
     .name = "Surface Mesh Connectivity",
@@ -58,6 +59,7 @@ fn remesh(
     sm: *SurfaceMesh,
     sm_bvh: bvh.TrianglesBVH,
     edge_length_factor: f32,
+    adaptive: bool,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
@@ -66,6 +68,7 @@ fn remesh(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     var timer = try std.time.Timer.start();
 
@@ -73,6 +76,7 @@ fn remesh(
         sm,
         sm_bvh,
         edge_length_factor,
+        adaptive,
         vertex_position,
         corner_angle,
         face_area,
@@ -81,6 +85,7 @@ fn remesh(
         edge_dihedral_angle,
         vertex_area,
         vertex_normal,
+        vertex_curvature,
     );
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
@@ -90,6 +95,18 @@ fn remesh(
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_normal);
+    if (vertex_curvature.vertex_kmin) |kmin| {
+        zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, kmin);
+    }
+    if (vertex_curvature.vertex_Kmin) |Kmin| {
+        zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, Kmin);
+    }
+    if (vertex_curvature.vertex_kmax) |kmax| {
+        zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, kmax);
+    }
+    if (vertex_curvature.vertex_Kmax) |Kmax| {
+        zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, Kmax);
+    }
     zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 
     const elapsed: f64 = @floatFromInt(timer.read());
@@ -136,6 +153,7 @@ pub fn rightClickMenu(m: *Module) void {
     const UiData = struct {
         var edge_length_factor: f32 = 1.0;
         var percent_vertices_to_keep: i32 = 75;
+        var adaptive_remeshing: bool = false;
     };
 
     const style = c.ImGui_GetStyle();
@@ -232,7 +250,8 @@ pub fn rightClickMenu(m: *Module) void {
                 c.ImGui_PushID("Edge length factor");
                 _ = c.ImGui_SliderFloatEx("", &UiData.edge_length_factor, 0.1, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
                 c.ImGui_PopID();
-                const disabled =
+                _ = c.ImGui_Checkbox("Curvature adaptive", &UiData.adaptive_remeshing);
+                var disabled =
                     info.bvh.bvh_ptr == null or
                     info.std_data.vertex_position == null or
                     info.std_data.corner_angle == null or
@@ -242,6 +261,12 @@ pub fn rightClickMenu(m: *Module) void {
                     info.std_data.edge_dihedral_angle == null or
                     info.std_data.vertex_area == null or
                     info.std_data.vertex_normal == null;
+                const curvature_datas = zgp.surface_mesh_curvature.surfaceMeshCurvatureDatas(sm);
+                if (UiData.adaptive_remeshing) {
+                    if (curvature_datas.vertex_kmin == null or curvature_datas.vertex_Kmin == null or curvature_datas.vertex_kmax == null or curvature_datas.vertex_Kmax == null) {
+                        disabled = true;
+                    }
+                }
                 if (disabled) {
                     c.ImGui_BeginDisabled(true);
                 }
@@ -250,6 +275,7 @@ pub fn rightClickMenu(m: *Module) void {
                         sm,
                         info.bvh,
                         UiData.edge_length_factor,
+                        UiData.adaptive_remeshing,
                         info.std_data.vertex_position.?,
                         info.std_data.corner_angle.?,
                         info.std_data.face_area.?,
@@ -258,6 +284,7 @@ pub fn rightClickMenu(m: *Module) void {
                         info.std_data.edge_dihedral_angle.?,
                         info.std_data.vertex_area.?,
                         info.std_data.vertex_normal.?,
+                        curvature_datas,
                     ) catch |err| {
                         std.debug.print("Error remeshing: {}\n", .{err});
                     };

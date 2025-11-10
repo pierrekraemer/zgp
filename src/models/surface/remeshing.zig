@@ -9,6 +9,7 @@ const angle = @import("angle.zig");
 const subdivision = @import("subdivision.zig");
 const area = @import("area.zig");
 const normal = @import("normal.zig");
+const curvature = @import("curvature.zig");
 
 const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
@@ -39,11 +40,15 @@ fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
 /// Remesh the given SurfaceMesh.
 /// The obtained mesh will be triangular, with isotropic triangles and edge lengths
 /// close to the mean edge length of the initial mesh times the given length factor.
-/// TODO: adaptive sampling guided by a curvature dependent sizing field.
+/// If adaptive is true, the remeshing will use a curvature-dependent sizing field (and the given vertex_curvature datas
+/// are supposed to be not null). Otherwise, a uniform sizing field will be used.
+/// => Adaptive Remeshing for Real-Time Mesh Deformation (https://hal.science/hal-01295339/file/EGshort2013_Dunyach_et_al.pdf)
+/// The given dependent datas will be updated accordingly after remeshing.
 pub fn pliantRemeshing(
     sm: *SurfaceMesh,
     sm_bvh: bvh.TrianglesBVH,
     edge_length_factor: f32,
+    adaptive: bool,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
@@ -52,6 +57,7 @@ pub fn pliantRemeshing(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     try subdivision.triangulateFaces(sm);
 
@@ -99,10 +105,14 @@ pub fn pliantRemeshing(
         }
     }
 
+    // sizing field for adaptive remeshing
+    var vertex_sizing_field = try sm.addData(.vertex, f32, "__vertex_sizing_field");
+    defer sm.removeData(.vertex, vertex_sizing_field.gen());
+
     var edge_marker = try SurfaceMesh.CellMarker(.edge).init(sm);
     defer edge_marker.deinit();
 
-    for (0..5) |_| {
+    for (0..5) |iteration| {
         // cut long edges
         edge_marker.reset();
         edge_it.reset();
@@ -112,9 +122,12 @@ pub fn pliantRemeshing(
             }
             const d = edge.dart();
             const dd = sm.phi2(d);
-            // const length_squared = vec.squaredNorm3f(vec.sub3f(vertex_position.value(v2), vertex_position.value(v1)));
             const l = edge_length.value(edge);
-            if (l > length_goal * 1.8) {
+            const length_goal_edge = if (adaptive and iteration > 1) @min(
+                vertex_sizing_field.value(.{ .vertex = d }),
+                vertex_sizing_field.value(.{ .vertex = dd }),
+            ) else length_goal;
+            if (l > length_goal_edge * 1.8) {
                 const new_pos = vec.mulScalar3f(
                     vec.add3f(
                         vertex_position.value(.{ .vertex = d }),
@@ -129,6 +142,10 @@ pub fn pliantRemeshing(
                 if (feature_edge.value(edge)) {
                     feature_edge.valuePtr(.{ .edge = dd }).* = true;
                     feature_vertex.valuePtr(v).* = true;
+                }
+                if (adaptive and iteration > 1) {
+                    vertex_sizing_field.valuePtr(v).* = 0.5 * (vertex_sizing_field.value(.{ .vertex = d }) +
+                        vertex_sizing_field.value(.{ .vertex = dd }));
                 }
                 // triangulate adjacent (non-boundary) faces
                 const d1 = sm.phi1(d);
@@ -164,7 +181,11 @@ pub fn pliantRemeshing(
                 continue;
             }
             const l = edge_length.value(edge);
-            if (l < length_goal * 0.6) {
+            const length_goal_edge = if (adaptive and iteration > 1) @min(
+                vertex_sizing_field.value(v1),
+                vertex_sizing_field.value(v2),
+            ) else length_goal;
+            if (l < length_goal_edge * 0.6) {
                 if (sm.canCollapseEdge(edge)) {
                     var new_pos = vec.mulScalar3f(
                         vec.add3f(vertex_position.value(v1), vertex_position.value(v2)),
@@ -177,6 +198,8 @@ pub fn pliantRemeshing(
                             new_pos = vertex_position.value(v2);
                         }
                     }
+                    const new_sizing_field = if (adaptive and iteration > 1) 0.5 * (vertex_sizing_field.value(v1) +
+                        vertex_sizing_field.value(v2)) else length_goal;
                     const v = sm.collapseEdge(edge);
                     var dart_it = sm.cellDartIterator(v);
                     while (dart_it.next()) |vd| {
@@ -184,6 +207,9 @@ pub fn pliantRemeshing(
                         edge_length.valuePtr(e).* = length.edgeLength(sm, e, vertex_position);
                     }
                     vertex_position.valuePtr(v).* = new_pos;
+                    if (adaptive and iteration > 1) {
+                        vertex_sizing_field.valuePtr(v).* = new_sizing_field;
+                    }
                 }
             }
         }
@@ -196,12 +222,13 @@ pub fn pliantRemeshing(
             }
             if (sm.canFlipEdge(edge) and edgeShouldFlip(sm, edge)) {
                 sm.flipEdge(edge);
-                // not useful here as we recompute all lengths right after
+                // not useful here as edge lengths are not used in this loop and will be recomputed right after
                 // edge_length.valuePtr(edge).* = length.edgeLength(sm, edge, vertex_position);
             }
         }
 
         // tangential relaxation
+        // first, update datas needed for relaxation after remeshing operations
         try length.computeEdgeLengths(sm, vertex_position, edge_length);
         try angle.computeCornerAngles(sm, vertex_position, corner_angle);
         try area.computeFaceAreas(sm, vertex_position, face_area);
@@ -241,9 +268,41 @@ pub fn pliantRemeshing(
                 ));
             }
         }
+
+        // in the adaptive case, compute a curvature-based sizing field at the end of iterations 1 and 3
+        // (sizing field is not used on iterations 0 and 1 to allow initial mesh regularization)
+        if (adaptive and (iteration == 1 or iteration == 3)) {
+            // first, update data needed for sizing field computation
+            try angle.computeCornerAngles(sm, vertex_position, corner_angle);
+            try area.computeFaceAreas(sm, vertex_position, face_area);
+            try normal.computeFaceNormals(sm, vertex_position, face_normal);
+            try area.computeVertexAreas(sm, face_area, vertex_area);
+            try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
+            try curvature.computeVertexCurvatures(
+                sm,
+                vertex_position,
+                vertex_normal,
+                edge_dihedral_angle,
+                edge_length,
+                face_area,
+                vertex_curvature,
+            );
+            vertex_it.reset();
+            while (vertex_it.next()) |vertex| {
+                const kmin = vertex_curvature.vertex_kmin.?.value(vertex);
+                const kmax = vertex_curvature.vertex_kmax.?.value(vertex);
+                const k = @max(@abs(kmax), @abs(kmin));
+                const h = std.math.clamp(
+                    0.5 / (k + 1e-4),
+                    length_goal * 0.5,
+                    length_goal * 2.0,
+                );
+                vertex_sizing_field.valuePtr(vertex).* = h;
+            }
+        }
     }
 
-    // update dependent datas one last time after remeshing
+    // update all given dependent datas one last time after remeshing
     try length.computeEdgeLengths(sm, vertex_position, edge_length);
     try angle.computeCornerAngles(sm, vertex_position, corner_angle);
     try area.computeFaceAreas(sm, vertex_position, face_area);
@@ -251,4 +310,15 @@ pub fn pliantRemeshing(
     try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
     try area.computeVertexAreas(sm, face_area, vertex_area);
     try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
+    if (adaptive) {
+        try curvature.computeVertexCurvatures(
+            sm,
+            vertex_position,
+            vertex_normal,
+            edge_dihedral_angle,
+            edge_length,
+            face_area,
+            vertex_curvature,
+        );
+    }
 }

@@ -10,6 +10,20 @@ const mat = @import("../../geometry/mat.zig");
 const Mat3f = mat.Mat3f;
 const eigen = @import("../../geometry/eigen.zig");
 
+const VertexCurvatureValues = struct {
+    kmin: f32,
+    Kmin: Vec3f,
+    kmax: f32,
+    Kmax: Vec3f,
+};
+
+pub const SurfaceMeshCurvatureDatas = struct {
+    vertex_kmin: ?SurfaceMesh.CellData(.vertex, f32) = null,
+    vertex_Kmin: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
+    vertex_kmax: ?SurfaceMesh.CellData(.vertex, f32) = null,
+    vertex_Kmax: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
+};
+
 fn addEdgeContributionToTensor(
     sm: *const SurfaceMesh,
     d: SurfaceMesh.Dart,
@@ -45,7 +59,7 @@ pub fn vertexCurvature(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     edge_length: SurfaceMesh.CellData(.edge, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
-) !struct { f32, Vec3f, f32, Vec3f } {
+) !VertexCurvatureValues {
     assert(vertex.cellType() == .vertex);
 
     const n = vertex_normal.value(vertex);
@@ -99,15 +113,15 @@ pub fn vertexCurvature(
     }
 
     return .{
-        @floatCast(evals[imin]), // kmin
-        vec.vec3fFromVec3d(evecs[imax]), // Kmin
-        @floatCast(evals[imax]), // kmax
-        vec.vec3fFromVec3d(evecs[imin]), // Kmax
+        .kmin = @floatCast(evals[imin]),
+        .Kmin = vec.vec3fFromVec3d(evecs[imax]),
+        .kmax = @floatCast(evals[imax]),
+        .Kmax = vec.vec3fFromVec3d(evecs[imin]),
     };
 }
 
 /// Compute the principal curvatures magnitudes and directions of all vertices of the given SurfaceMesh
-/// and store the results in the given datas.
+/// and store the results in the given datas (which are supposed to be not null).
 pub fn computeVertexCurvatures(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -115,15 +129,12 @@ pub fn computeVertexCurvatures(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     edge_length: SurfaceMesh.CellData(.edge, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
-    vertex_kmin: SurfaceMesh.CellData(.vertex, f32),
-    vertex_Kmin: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_kmax: SurfaceMesh.CellData(.vertex, f32),
-    vertex_Kmax: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_curvature: *SurfaceMeshCurvatureDatas,
 ) !void {
     var it = try SurfaceMesh.CellIterator(.vertex).init(sm);
     defer it.deinit();
     while (it.next()) |vertex| {
-        const kmin, const Kmin, const kmax, const Kmax = try vertexCurvature(
+        const curvature_values = try vertexCurvature(
             sm,
             vertex,
             vertex_position,
@@ -132,10 +143,10 @@ pub fn computeVertexCurvatures(
             edge_length,
             face_area,
         );
-        vertex_kmin.valuePtr(vertex).* = kmin;
-        vertex_Kmin.valuePtr(vertex).* = Kmin;
-        vertex_kmax.valuePtr(vertex).* = kmax;
-        vertex_Kmax.valuePtr(vertex).* = Kmax;
+        vertex_curvature.vertex_kmin.?.valuePtr(vertex).* = curvature_values.kmin;
+        vertex_curvature.vertex_Kmin.?.valuePtr(vertex).* = curvature_values.Kmin;
+        vertex_curvature.vertex_kmax.?.valuePtr(vertex).* = curvature_values.kmax;
+        vertex_curvature.vertex_Kmax.?.valuePtr(vertex).* = curvature_values.Kmax;
     }
 }
 

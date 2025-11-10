@@ -16,13 +16,6 @@ const Vec3f = vec.Vec3f;
 
 const curvature = @import("../models/surface/curvature.zig");
 
-const CurvatureDatas = struct {
-    vertex_kmin: ?SurfaceMesh.CellData(.vertex, f32) = null,
-    vertex_Kmin: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
-    vertex_kmax: ?SurfaceMesh.CellData(.vertex, f32) = null,
-    vertex_Kmax: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
-};
-
 module: Module = .{
     .name = "Surface Mesh Curvature",
     .vtable = &.{
@@ -32,7 +25,7 @@ module: Module = .{
     },
 },
 allocator: std.mem.Allocator,
-surface_meshes_curvature_datas: std.AutoHashMap(*SurfaceMesh, CurvatureDatas),
+surface_meshes_curvature_datas: std.AutoHashMap(*SurfaceMesh, curvature.SurfaceMeshCurvatureDatas),
 
 pub fn init(allocator: std.mem.Allocator) SurfaceMeshCurvature {
     return .{
@@ -53,10 +46,7 @@ fn computeVertexCurvatures(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     edge_length: SurfaceMesh.CellData(.edge, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
-    vertex_kmin: SurfaceMesh.CellData(.vertex, f32),
-    vertex_Kmin: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_kmax: SurfaceMesh.CellData(.vertex, f32),
-    vertex_Kmax: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     var timer = try std.time.Timer.start();
 
@@ -67,18 +57,19 @@ fn computeVertexCurvatures(
         edge_dihedral_angle,
         edge_length,
         face_area,
-        vertex_kmin,
-        vertex_Kmin,
-        vertex_kmax,
-        vertex_Kmax,
+        vertex_curvature,
     );
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_kmin);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_Kmin);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_kmax);
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_Kmax);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_curvature.vertex_kmin.?);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_curvature.vertex_Kmin.?);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_curvature.vertex_kmax.?);
+    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_curvature.vertex_Kmax.?);
 
     const elapsed: f64 = @floatFromInt(timer.read());
     zgp_log.info("Curvatures computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+}
+
+pub fn surfaceMeshCurvatureDatas(smc: *SurfaceMeshCurvature, surface_mesh: *SurfaceMesh) *curvature.SurfaceMeshCurvatureDatas {
+    return smc.surface_meshes_curvature_datas.getPtr(surface_mesh).?;
 }
 
 /// Part of the Module interface.
@@ -113,7 +104,7 @@ pub fn rightClickMenu(m: *Module) void {
 
         if (sms.selected_surface_mesh) |sm| {
             const info = sms.surfaceMeshInfo(sm);
-            var curvature_datas = smc.surface_meshes_curvature_datas.getPtr(sm).?;
+            var curvature_datas = smc.surfaceMeshCurvatureDatas(sm);
 
             if (c.ImGui_BeginMenu("Curvature")) {
                 defer c.ImGui_EndMenu();
@@ -163,7 +154,7 @@ pub fn rightClickMenu(m: *Module) void {
                 c.ImGui_PopID();
 
                 if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                    inline for (@typeInfo(CurvatureDatas).@"struct".fields) |*field| {
+                    inline for (@typeInfo(curvature.SurfaceMeshCurvatureDatas).@"struct".fields) |*field| {
                         if (@field(curvature_datas, field.name) == null) {
                             const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
                             if (maybe_data) |data| {
@@ -196,10 +187,7 @@ pub fn rightClickMenu(m: *Module) void {
                         info.std_data.edge_dihedral_angle.?,
                         info.std_data.edge_length.?,
                         info.std_data.face_area.?,
-                        curvature_datas.vertex_kmin.?,
-                        curvature_datas.vertex_Kmin.?,
-                        curvature_datas.vertex_kmax.?,
-                        curvature_datas.vertex_Kmax.?,
+                        curvature_datas,
                     ) catch |err| {
                         std.debug.print("Error computing curvatures: {}\n", .{err});
                     };
