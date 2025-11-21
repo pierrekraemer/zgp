@@ -123,6 +123,8 @@ fn decimate(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     nb_vertices_to_remove: u32,
 ) !void {
+    var timer = try std.time.Timer.start();
+
     var vertex_qem = try sm.addData(.vertex, Mat4f, "__vertex_qem");
     defer sm.removeData(.vertex, vertex_qem.gen());
     try qem.computeVertexQEMs(
@@ -142,6 +144,9 @@ fn decimate(
     );
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
     zgp.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
+
+    const elapsed: f64 = @floatFromInt(timer.read());
+    zgp_log.info("Decimation computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
 
 /// Part of the Module interface.

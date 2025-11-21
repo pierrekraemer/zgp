@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const PriorityQueue = @import("../../utils/PriorityQueue.zig").PriorityQueue;
 
 const zgp_log = std.log.scoped(.zgp);
 
@@ -16,21 +17,24 @@ const qem = @import("qem.zig");
 
 const EdgeInfo = struct {
     edge: SurfaceMesh.Cell,
-    edge_index: u32,
     cost: f32,
-    pub fn cmp(_: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
+    pub fn cmp(ctx: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
         const cost_order = std.math.order(a.cost, b.cost);
         if (cost_order != .eq) return cost_order;
-        return std.math.order(a.edge_index, b.edge_index);
+        // tie-breaker: use edge indices to have a deterministic order
+        return std.math.order(ctx.surface_mesh.cellIndex(a.edge), ctx.surface_mesh.cellIndex(b.edge));
+    }
+    pub fn setEdgeIndexInQueue(ctx: EdgeQueueContext, a: EdgeInfo, index: usize) void {
+        ctx.edge_queue_index.valuePtr(a.edge).* = index;
     }
 };
 const EdgeQueueContext = struct {
     surface_mesh: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
-    edge_in_queue: SurfaceMesh.CellData(.edge, bool),
+    edge_queue_index: SurfaceMesh.CellData(.edge, ?usize),
 };
-const EdgeQueue = std.PriorityQueue(EdgeInfo, EdgeQueueContext, EdgeInfo.cmp);
+const EdgeQueue = PriorityQueue(EdgeInfo, EdgeQueueContext, EdgeInfo.cmp, EdgeInfo.setEdgeIndexInQueue);
 
 fn edgeCollapsePositionAndQuadric(queue: *EdgeQueue, edge: SurfaceMesh.Cell) struct { Vec3f, Mat4f } {
     assert(edge.cellType() == .edge);
@@ -69,38 +73,28 @@ fn edgeCollapsePositionAndQuadric(queue: *EdgeQueue, edge: SurfaceMesh.Cell) str
 
 fn addEdgeToQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
     assert(edge.cellType() == .edge);
-    const ctx: EdgeQueueContext = queue.context;
     const p, const q = edgeCollapsePositionAndQuadric(queue, edge);
     const p_hom: Vec4f = .{ p[0], p[1], p[2], 1.0 };
     // cost = p^T * Q * p
     try queue.add(.{
         .edge = edge,
-        .edge_index = ctx.surface_mesh.cellIndex(edge),
         .cost = vec.dot4f(p_hom, mat.mulVec4f(q, p_hom)),
     });
-    ctx.edge_in_queue.valuePtr(edge).* = true;
 }
 
-// TODO: find a way to avoid the O(n) complexity here
 fn removeEdgeFromQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) void {
     assert(edge.cellType() == .edge);
     const ctx: EdgeQueueContext = queue.context;
-    const edge_index = ctx.surface_mesh.cellIndex(edge);
-    for (queue.items, 0..) |einfo, i| {
-        if (einfo.edge_index == edge_index) {
-            _ = queue.removeIndex(i);
-            ctx.edge_in_queue.valuePtr(edge).* = false;
-            return;
-        }
+    if (ctx.edge_queue_index.value(edge)) |index| {
+        _ = queue.removeIndex(index);
     }
+    ctx.edge_queue_index.valuePtr(edge).* = null;
 }
 
 fn updateEdgeInQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
     assert(edge.cellType() == .edge);
     const ctx: EdgeQueueContext = queue.context;
-    if (ctx.edge_in_queue.value(edge)) {
-        removeEdgeFromQueue(queue, edge);
-    }
+    removeEdgeFromQueue(queue, edge);
     if (ctx.surface_mesh.canCollapseEdge(edge)) {
         try addEdgeToQueue(queue, edge);
     }
@@ -116,15 +110,15 @@ pub fn decimateQEM(
 ) !void {
     try subdivision.triangulateFaces(sm);
 
-    var edge_in_queue = try sm.addData(.edge, bool, "__edge_in_queue");
-    defer sm.removeData(.edge, edge_in_queue.gen());
-    edge_in_queue.data.fill(false);
+    var edge_queue_index = try sm.addData(.edge, ?usize, "__edge_queue_index");
+    defer sm.removeData(.edge, edge_queue_index.gen());
+    edge_queue_index.data.fill(null);
 
     var queue: EdgeQueue = EdgeQueue.init(sm.allocator, .{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_qem = vertex_qem,
-        .edge_in_queue = edge_in_queue,
+        .edge_queue_index = edge_queue_index,
     });
     defer queue.deinit();
 
@@ -150,18 +144,10 @@ pub fn decimateQEM(
         const d_12 = sm.phi2(d_1);
         const dd_12 = sm.phi2(dd_1);
 
-        if (edge_in_queue.value(.{ .edge = d1 })) {
-            removeEdgeFromQueue(&queue, .{ .edge = d1 });
-        }
-        if (edge_in_queue.value(.{ .edge = d_1 })) {
-            removeEdgeFromQueue(&queue, .{ .edge = d_1 });
-        }
-        if (edge_in_queue.value(.{ .edge = dd1 })) {
-            removeEdgeFromQueue(&queue, .{ .edge = dd1 });
-        }
-        if (edge_in_queue.value(.{ .edge = dd_1 })) {
-            removeEdgeFromQueue(&queue, .{ .edge = dd_1 });
-        }
+        removeEdgeFromQueue(&queue, .{ .edge = d1 });
+        removeEdgeFromQueue(&queue, .{ .edge = d_1 });
+        removeEdgeFromQueue(&queue, .{ .edge = dd1 });
+        removeEdgeFromQueue(&queue, .{ .edge = dd_1 });
 
         const p, const q = edgeCollapsePositionAndQuadric(&queue, info.edge);
         const v = sm.collapseEdge(info.edge);
