@@ -5,7 +5,9 @@ const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
-/// Compute and return the cotan weight of the given halfedge.
+/// Compute and return the cotan weight of the given halfedge,
+/// i.e. the cotan(theta)/2 where theta is the angle
+/// opposite to the halfedge in its incident face.
 pub fn halfedgeCotanWeight(
     sm: *const SurfaceMesh,
     halfedge: SurfaceMesh.Cell,
@@ -25,7 +27,9 @@ pub fn halfedgeCotanWeight(
     const p3 = vertex_position.value(.{ .vertex = d_1 });
     const vecR = vec.sub3f(p1, p3);
     const vecL = vec.sub3f(p2, p3);
+    // cotan(theta_i^jk) = (u . v) / ||u x v||
     return 0.5 * (vec.dot3f(vecR, vecL) / vec.norm3f(vec.cross3f(vecR, vecL)));
+    // cotan(theta_i^jk) = (|ij|2 + |ik|2 - |jk|2) / (4 * Area(ijk))
 }
 
 /// Compute the cotan weights of all halfedges of the given SurfaceMesh

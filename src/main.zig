@@ -6,7 +6,7 @@ pub const c = @cImport({
     @cInclude("SDL3/SDL_revision.h");
     @cDefine("SDL_MAIN_HANDLED", {});
     @cInclude("SDL3/SDL_main.h");
-    @cInclude("SDL3/SDL_opengl.h");
+    // @cInclude("SDL3/SDL_opengl.h");
     @cInclude("dcimgui.h");
     @cInclude("backends/dcimgui_impl_sdl3.h");
     @cInclude("backends/dcimgui_impl_opengl3.h");
@@ -61,8 +61,8 @@ var allocator: std.mem.Allocator = undefined;
 /// - modules list
 pub var rng: std.Random.DefaultPrng = undefined;
 pub var thread_pool: std.Thread.Pool = undefined;
-pub var surface_mesh_store: SurfaceMeshStore = undefined;
 pub var point_cloud_store: PointCloudStore = undefined;
+pub var surface_mesh_store: SurfaceMeshStore = undefined;
 pub var modules: std.ArrayList(*Module) = .empty;
 
 /// ZGP modules
@@ -96,6 +96,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // SDL & GL initialization
     // ***********************
 
+    const platform: [*:0]const u8 = c.SDL_GetPlatform();
+    sdl_log.info("SDL platform: {s}", .{platform});
     sdl_log.info("SDL build time version: {d}.{d}.{d}", .{
         c.SDL_MAJOR_VERSION,
         c.SDL_MINOR_VERSION,

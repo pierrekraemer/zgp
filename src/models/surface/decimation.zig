@@ -84,18 +84,16 @@ fn addEdgeToQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
 
 fn removeEdgeFromQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) void {
     assert(edge.cellType() == .edge);
-    const ctx: EdgeQueueContext = queue.context;
-    if (ctx.edge_queue_index.value(edge)) |index| {
+    if (queue.context.edge_queue_index.value(edge)) |index| {
         _ = queue.removeIndex(index);
     }
-    ctx.edge_queue_index.valuePtr(edge).* = null;
+    queue.context.edge_queue_index.valuePtr(edge).* = null;
 }
 
 fn updateEdgeInQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
     assert(edge.cellType() == .edge);
-    const ctx: EdgeQueueContext = queue.context;
     removeEdgeFromQueue(queue, edge);
-    if (ctx.surface_mesh.canCollapseEdge(edge)) {
+    if (queue.context.surface_mesh.canCollapseEdge(edge)) {
         try addEdgeToQueue(queue, edge);
     }
 }
@@ -146,8 +144,10 @@ pub fn decimateQEM(
 
         removeEdgeFromQueue(&queue, .{ .edge = d1 });
         removeEdgeFromQueue(&queue, .{ .edge = d_1 });
-        removeEdgeFromQueue(&queue, .{ .edge = dd1 });
-        removeEdgeFromQueue(&queue, .{ .edge = dd_1 });
+        if (!sm.isBoundaryDart(dd)) { // if the edge is incident to a boundary face, the boundary dart is necessarily dd
+            removeEdgeFromQueue(&queue, .{ .edge = dd1 });
+            removeEdgeFromQueue(&queue, .{ .edge = dd_1 });
+        }
 
         const p, const q = edgeCollapsePositionAndQuadric(&queue, info.edge);
         const v = sm.collapseEdge(info.edge);

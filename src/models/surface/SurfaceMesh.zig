@@ -821,6 +821,20 @@ pub fn addUnboundedFace(sm: *SurfaceMesh, nb_vertices: u32) !Cell {
     return .{ .face = d1 };
 }
 
+/// Removes the given unbounded face from the SurfaceMesh.
+/// All the darts of the face are removed from the SurfaceMesh.
+/// WARNING: this function does not create or merge any boundary face to close the holes created by the removal of the face.
+/// This function is only intended for use in SurfaceMesh creation process (import, ...) as the SurfaceMesh is not
+/// valid after this function is called.
+pub fn removeFace(sm: *SurfaceMesh, face: Cell) void {
+    assert(face.cellType() == .face);
+    var dart_it = sm.cellDartIterator(face);
+    while (dart_it.next()) |d| {
+        // TODO: should unsew phi2 links?
+        sm.removeDart(d);
+    }
+}
+
 /// Closes the given SurfaceMesh by adding boundary faces where needed.
 /// Open edges (darts phi2-linked to themselves) are detected and boundary faces
 /// are created by following the open boundary cycles.
@@ -1111,4 +1125,28 @@ pub fn cutFace(sm: *SurfaceMesh, d1: Dart, d2: Dart) !Cell {
     }
 
     return .{ .edge = d_1 };
+}
+
+/// Removes the given vertex by merging all its incident faces.
+/// TODO: does not handle boundary vertices yet
+pub fn removeVertex(sm: *SurfaceMesh, vertex: Cell) void {
+    assert(vertex.cellType() == .vertex);
+    const d = vertex.dart();
+    const d1 = sm.phi1(d);
+    var v_dart_it = sm.cellDartIterator(vertex);
+    while (v_dart_it.next()) |it| {
+        sm.phi1Sew(it, sm.phi_1(sm.phi2(it)));
+    }
+    sm.removeFace(.{ .face = d });
+
+    {
+        // Vertex indices.
+    }
+    {
+        // Edge indices.
+    }
+    {
+        // Face indices.
+        sm.setCellIndex(.{ .face = d1 }, sm.dartCellIndex(d1, .face));
+    }
 }

@@ -61,7 +61,7 @@ pub fn pliantRemeshing(
 ) !void {
     try subdivision.triangulateFaces(sm);
 
-    const mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
+    var mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
     const length_goal = mean_edge_length * edge_length_factor;
 
     var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
@@ -113,6 +113,30 @@ pub fn pliantRemeshing(
     defer edge_marker.deinit();
 
     for (0..5) |iteration| {
+        // remove "flat" degree-3 vertices
+        try normal.computeFaceNormals(sm, vertex_position, face_normal);
+        try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
+        vertex_it.reset();
+        while (vertex_it.next()) |vertex| {
+            if (feature_corner.value(vertex)) {
+                continue;
+            }
+            if (sm.degree(vertex) == 3) {
+                var dart_it = sm.cellDartIterator(vertex);
+                var is_flat: bool = true;
+                while (dart_it.next()) |d| {
+                    if (@abs(edge_dihedral_angle.value(.{ .edge = d })) > (10.0 * (std.math.pi / 180.0))) {
+                        is_flat = false;
+                        break;
+                    }
+                }
+                if (is_flat) {
+                    sm.removeVertex(vertex);
+                    std.debug.print("remove vertex {}\n", .{sm.cellIndex(vertex)});
+                }
+            }
+        }
+
         // cut long edges
         edge_marker.reset();
         edge_it.reset();
@@ -127,7 +151,7 @@ pub fn pliantRemeshing(
                 vertex_sizing_field.value(.{ .vertex = d }),
                 vertex_sizing_field.value(.{ .vertex = dd }),
             ) else length_goal;
-            if (l > length_goal_edge * 1.8) {
+            if (l > length_goal_edge * 1.75) {
                 const new_pos = vec.mulScalar3f(
                     vec.add3f(
                         vertex_position.value(.{ .vertex = d }),
@@ -242,15 +266,39 @@ pub fn pliantRemeshing(
             }
             var q = vec.zero3f;
             var w: f32 = 0.0;
-            var dart_it = sm.cellDartIterator(vertex);
-            while (dart_it.next()) |d| {
-                const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
-                const a = vertex_area.value(nv);
-                q = vec.add3f(
-                    q,
-                    vec.mulScalar3f(vertex_position.value(nv), a),
-                );
-                w += a;
+            if (adaptive and iteration > 1) {
+                // in the adaptive case, use area-weighted average of neighbors
+                var dart_it = sm.cellDartIterator(vertex);
+                while (dart_it.next()) |d| {
+                    const f: SurfaceMesh.Cell = .{ .face = d };
+                    var avg_sizing_field: f32 = 0.0;
+                    var avg_position = vec.zero3f;
+                    var count: u32 = 0;
+                    var face_dart_it = sm.cellDartIterator(f);
+                    while (face_dart_it.next()) |fd| {
+                        const iv: SurfaceMesh.Cell = .{ .vertex = fd };
+                        avg_sizing_field += vertex_sizing_field.value(iv);
+                        avg_position = vec.add3f(avg_position, vertex_position.value(iv));
+                        count += 1;
+                    }
+                    avg_sizing_field /= @floatFromInt(count);
+                    avg_position = vec.divScalar3f(avg_position, @floatFromInt(count));
+                    const a = face_area.value(f) * avg_sizing_field;
+                    q = vec.add3f(q, vec.mulScalar3f(avg_position, a));
+                    w += a;
+                }
+            } else {
+                // in the uniform case, use uniform average of neighbors
+                var dart_it = sm.cellDartIterator(vertex);
+                while (dart_it.next()) |d| {
+                    const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
+                    const a = vertex_area.value(nv);
+                    q = vec.add3f(
+                        q,
+                        vec.mulScalar3f(vertex_position.value(nv), a),
+                    );
+                    w += a;
+                }
             }
             if (w > 0.0) {
                 q = vec.divScalar3f(q, w);
@@ -270,12 +318,14 @@ pub fn pliantRemeshing(
         }
 
         // in the adaptive case, compute a curvature-based sizing field at the end of iterations 1 and 3
-        // (sizing field is not used on iterations 0 and 1 to allow initial mesh regularization)
+        // (sizing field is not used on iterations 0 and 1 to allow for initial mesh regularization)
         if (adaptive and (iteration == 1 or iteration == 3)) {
             // first, update data needed for sizing field computation
+            try length.computeEdgeLengths(sm, vertex_position, edge_length);
             try angle.computeCornerAngles(sm, vertex_position, corner_angle);
             try area.computeFaceAreas(sm, vertex_position, face_area);
             try normal.computeFaceNormals(sm, vertex_position, face_normal);
+            try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
             try area.computeVertexAreas(sm, face_area, vertex_area);
             try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
             try curvature.computeVertexCurvatures(
@@ -287,17 +337,19 @@ pub fn pliantRemeshing(
                 face_area,
                 vertex_curvature,
             );
+            mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
+            const approx_tolerance = mean_edge_length * 0.05;
             vertex_it.reset();
             while (vertex_it.next()) |vertex| {
                 const kmin = vertex_curvature.vertex_kmin.?.value(vertex);
                 const kmax = vertex_curvature.vertex_kmax.?.value(vertex);
-                const k = @max(@abs(kmax), @abs(kmin));
+                const k = @max(@abs(kmax), @abs(kmin)) + 1e-4;
                 const h = std.math.clamp(
-                    0.5 / (k + 1e-4),
-                    length_goal * 0.5,
-                    length_goal * 2.0,
+                    (6.0 * approx_tolerance / k) - (3.0 * approx_tolerance * approx_tolerance),
+                    1e-5,
+                    2e-3,
                 );
-                vertex_sizing_field.valuePtr(vertex).* = h;
+                vertex_sizing_field.valuePtr(vertex).* = @sqrt(h);
             }
         }
     }

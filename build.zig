@@ -1,4 +1,5 @@
 const std = @import("std");
+const zigglgen = @import("zigglgen");
 const cimgui = @import("cimgui_zig");
 
 pub fn build(b: *std.Build) void {
@@ -18,6 +19,7 @@ pub fn build(b: *std.Build) void {
     const ceigen_dep = b.dependency("ceigen", .{
         .target = target,
         .optimize = optimize,
+        // .lto = lto,
     });
     const ceigen_lib = ceigen_dep.artifact("ceigen");
     exe_mod.linkLibrary(ceigen_lib);
@@ -28,20 +30,32 @@ pub fn build(b: *std.Build) void {
     const clibacc_dep = b.dependency("clibacc", .{
         .target = target,
         .optimize = optimize,
+        // .lto = lto,
     });
     const clibacc_lib = clibacc_dep.artifact("clibacc");
     exe_mod.linkLibrary(clibacc_lib);
     // exe_mod.addImport("clibacc", clibacc_dep.module("clibacc"));
+
+    // GL_BINDINGS
+
+    const gl_bindings = zigglgen.generateBindingsModule(b, .{
+        .api = .gl,
+        .version = .@"4.1",
+        .profile = .core,
+        // .extensions = &.{ .ARB_clip_control, .NV_scissor_exclusive },
+    });
+    exe_mod.addImport("gl", gl_bindings);
 
     // SDL
 
     const sdl_dep = b.dependency("sdl", .{
         .target = target,
         .optimize = optimize,
+        // .lto = lto,
         //.preferred_linkage = .static,
         //.strip = null,
+        //.sanitize_c = null,
         //.pic = null,
-        //.lto = optimize != .Debug,
         //.emscripten_pthreads = false,
         //.install_build_config_h = false,
     });
@@ -54,21 +68,12 @@ pub fn build(b: *std.Build) void {
     const cimgui_dep = b.dependency("cimgui_zig", .{
         .target = target,
         .optimize = optimize,
-        .platform = cimgui.Platform.SDL3,
-        .renderer = cimgui.Renderer.OpenGL3,
+        // .lto = lto,
+        .platforms = &[_]cimgui.Platform{.SDL3},
+        .renderers = &[_]cimgui.Renderer{.OpenGL3},
     });
     const cimgui_lib = cimgui_dep.artifact("cimgui");
     exe_mod.linkLibrary(cimgui_lib);
-
-    // GL_BINDINGS
-
-    const gl_bindings = @import("zigglgen").generateBindingsModule(b, .{
-        .api = .gl,
-        .version = .@"4.1",
-        .profile = .core,
-        // .extensions = &.{ .ARB_clip_control, .NV_scissor_exclusive },
-    });
-    exe_mod.addImport("gl", gl_bindings);
 
     // BUILD EXE
 
@@ -76,17 +81,17 @@ pub fn build(b: *std.Build) void {
         .name = "zgp",
         .root_module = exe_mod,
     });
-    // exe.want_lto = optimize != .Debug;
+    // exe.lto = lto;
     exe.addIncludePath(b.path("src"));
     b.installArtifact(exe);
 
     // RUN CMD
 
     const run_cmd = b.addRunArtifact(exe);
-    run_cmd.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
         run_cmd.addArgs(args);
     }
+    run_cmd.step.dependOn(b.getInstallStep());
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);

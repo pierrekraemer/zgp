@@ -9,22 +9,22 @@
             .hash = "zigglgen-0.4.0-bmyqLV6PLwAt0VCiGVgz6kZ448zaiTix2Z8MXEEuN4Vi",
         },
         .sdl = .{
-            .url = "git+https://github.com/castholm/SDL.git#f103a1439670c35be756d4491b296a6e3ccffaed",
-            .hash = "sdl-0.3.2+3.2.26-7uIn9BNgfwHaS0qXiSIBLkJf8Jfrh5P6gSWdQvtnvxEp",
+            .url = "git+https://github.com/castholm/SDL.git#ae5deb068787bd71d9aadbc054ff1af54f5d058c",
+            .hash = "sdl-0.4.0+3.4.0-SDL--u6yowGyvoiJ5qkFm_T1-MpmvnHShh2q2mTZf1fo",
         },
         .cimgui_zig = .{
             .url = "https://github.com/tiawl/cimgui.zig/archive/refs/heads/docking.zip",
-            .hash = "cimgui_zig-1.0.0-2Xubkj56YACaEs8Bjx_9XG5Zocy1rWvK4jmQcPV_laUQ",
+            .hash = "cimgui_zig-1.0.0-2XubksicYgDNxauHM4llUyo1U_r2qB_h47okccSpZVgO",
         },
         .ceigen = .{
             // .path = "../ceigen",
-            .url = "git+https://github.com/pierrekraemer/ceigen.git#f25e81efdd05f55bf81e4920597ea9569753f19b",
-            .hash = "ceigen-0.0.0-nikIKfGSBgF7VrKUuElq53a1pkK_i2hPtFBjrEn5d16g",
+            .url = "git+https://github.com/pierrekraemer/ceigen.git#6d362d64e12e191f70d7c0d0464a048482811890",
+            .hash = "ceigen-0.0.0-nikIKfGSBgGzcDFVnaG8zRRYCGdxJwvD_DNzYTtJMyAu",
         },
         .clibacc = .{
             // .path = "../clibacc",
-            .url = "git+https://github.com/pierrekraemer/clibacc.git#838a4b9f96eadf8b189787bf602c781b568fdfe6",
-            .hash = "clibacc-0.0.0-HMOW8UqvAAD5t87IQrYYQ8yGToeXmtVGkssg91XozQZj",
+            .url = "git+https://github.com/pierrekraemer/clibacc.git#17c50be8cd2620cc5abe1ea8d2366d7df519c045",
+            .hash = "clibacc-0.0.0-HMOW8SewAAAtaRzDzYQbvj2FGkzxlZEK9PGRrASum_Rt",
         },
     },
     .paths = .{
