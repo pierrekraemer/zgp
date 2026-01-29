@@ -448,10 +448,9 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
         }
         // TODO: implement edge & face sets rendering
         if (p.draw_boundaries) {
-            p.line_bold_shader_parameters.model_view_matrix = @bitCast(view_matrix);
-            p.line_bold_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-            p.line_bold_shader_parameters.line_color = .{ 1.0, 0.0, 0.0, 1.0 }; // Red for boundaries
-            p.line_bold_shader_parameters.draw(info.boundaries_ibo);
+            p.boundary_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+            p.boundary_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+            p.boundary_shader_parameters.draw(info.boundaries_ibo);
         }
     }
 }
@@ -559,7 +558,7 @@ pub fn uiPanel(m: *Module) void {
                     zgp.requestRedraw();
                 }
                 c.ImGui_PopID();
-                if (c.ImGui_ColorEdit4("Global color", &p.line_bold_shader_parameters.line_color, c.ImGuiColorEditFlags_NoInputs)) {
+                if (c.ImGui_ColorEdit4("Global color##DrawEdgesColorGlobalEdit", &p.line_bold_shader_parameters.line_color, c.ImGuiColorEditFlags_NoInputs)) {
                     zgp.requestRedraw();
                 }
             }
@@ -678,9 +677,21 @@ pub fn uiPanel(m: *Module) void {
                     else => unreachable,
                 }
             }
+
             c.ImGui_SeparatorText("Boundaries");
             if (c.ImGui_Checkbox("draw boundaries", &p.draw_boundaries)) {
                 zgp.requestRedraw();
+            }
+            if (p.draw_boundaries) {
+                c.ImGui_Text("Width");
+                c.ImGui_PushID("DrawBoundariesWidth");
+                if (c.ImGui_SliderFloatEx("", &p.boundary_shader_parameters.line_width, 0.1, 10.0, "%.1f", c.ImGuiSliderFlags_Logarithmic)) {
+                    zgp.requestRedraw();
+                }
+                c.ImGui_PopID();
+                if (c.ImGui_ColorEdit4("Global color##DrawBoundariesColorGlobalEdit", &p.boundary_shader_parameters.line_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    zgp.requestRedraw();
+                }
             }
         } else {
             c.ImGui_Text("No parameters found for the selected Surface Mesh");
