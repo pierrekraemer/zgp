@@ -92,7 +92,7 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
 /// Describe the right-click menu interface.
 pub fn rightClickMenu(m: *Module) void {
     const smc: *SurfaceMeshCurvature = @alignCast(@fieldParentPtr("module", m));
-    const sms = &zgp.surface_mesh_store;
+    const sm_store = &zgp.surface_mesh_store;
 
     const style = c.ImGui_GetStyle();
 
@@ -102,8 +102,8 @@ pub fn rightClickMenu(m: *Module) void {
     if (c.ImGui_BeginMenu(m.name.ptr)) {
         defer c.ImGui_EndMenu();
 
-        if (sms.selected_surface_mesh) |sm| {
-            const info = sms.surfaceMeshInfo(sm);
+        if (sm_store.selected_surface_mesh) |sm| {
+            const info = sm_store.surfaceMeshInfo(sm);
             var curvature_datas = smc.surfaceMeshCurvatureDatas(sm);
 
             if (c.ImGui_BeginMenu("Curvature")) {

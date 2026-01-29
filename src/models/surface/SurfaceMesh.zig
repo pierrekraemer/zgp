@@ -376,11 +376,11 @@ pub fn CellSet(comptime cell_type: CellType) type {
         pub fn remove(self: *Self, c: Cell) void {
             assert(c.cellType() == cell_type);
             const c_index = self.surface_mesh.cellIndex(c);
-            self.marker.valuePtr(c_index).* = false;
-            for (self.cells.indices, 0..) |index, i| {
+            self.marker.valuePtr(c).* = false;
+            for (self.indices.items, 0..) |index, i| {
                 if (index == c_index) {
-                    self.cells.swapRemove(i);
-                    self.indices.swapRemove(i);
+                    _ = self.cells.swapRemove(i);
+                    _ = self.indices.swapRemove(i);
                     break;
                 }
             }
@@ -810,13 +810,6 @@ pub fn addUnboundedFace(sm: *SurfaceMesh, nb_vertices: u32) !Cell {
     for (1..nb_vertices) |_| {
         const d2 = try sm.addDart();
         sm.phi1Sew(d1, d2);
-    }
-    var it = d1;
-    while (true) {
-        it = sm.phi1(it);
-        if (it == d1) {
-            break;
-        }
     }
     return .{ .face = d1 };
 }

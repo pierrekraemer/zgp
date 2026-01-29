@@ -66,7 +66,7 @@ fn computeVertexGeodesicDistancesFromSource(
 /// Describe the right-click menu interface.
 pub fn rightClickMenu(m: *Module) void {
     const smd: *SurfaceMeshDistance = @alignCast(@fieldParentPtr("module", m));
-    const sms = &zgp.surface_mesh_store;
+    const sm_store = &zgp.surface_mesh_store;
 
     const UiData = struct {
         var diffusion_time: f32 = 1.0;
@@ -82,8 +82,8 @@ pub fn rightClickMenu(m: *Module) void {
     if (c.ImGui_BeginMenu(m.name.ptr)) {
         defer c.ImGui_EndMenu();
 
-        if (sms.selected_surface_mesh) |sm| {
-            const info = sms.surfaceMeshInfo(sm);
+        if (sm_store.selected_surface_mesh) |sm| {
+            const info = sm_store.surfaceMeshInfo(sm);
 
             if (c.ImGui_BeginMenu("Geodesic Distance")) {
                 defer c.ImGui_EndMenu();

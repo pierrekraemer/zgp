@@ -4,6 +4,9 @@ const std = @import("std");
 const gl = @import("gl");
 const gl_log = std.log.scoped(.gl);
 
+const zgp = @import("../main.zig");
+const c = zgp.c;
+
 const Module = @import("../modules/Module.zig");
 
 const eigen = @import("../geometry/eigen.zig");
@@ -132,6 +135,58 @@ pub fn draw(view: *View, modules: []*Module) void {
     gl.UseProgram(0);
 }
 
+pub fn sdlEvent(view: *View, event: *const c.SDL_Event) void {
+    switch (event.type) {
+        c.SDL_EVENT_WINDOW_RESIZED => {
+            view.resize(zgp.window_width, zgp.window_height);
+        },
+        c.SDL_EVENT_MOUSE_BUTTON_UP => {
+            switch (event.button.button) {
+                c.SDL_BUTTON_LEFT => {
+                    const modState = c.SDL_GetModState();
+                    if (view.camera != null and (modState & c.SDL_KMOD_SHIFT) != 0 and event.button.clicks == 2) {
+                        const world_pos = view.pixelWorldPosition(event.button.x, event.button.y);
+                        if (world_pos) |wp| {
+                            view.camera.?.pivot_position = wp;
+                        } else {
+                            view.camera.?.pivot_position = .{ 0.0, 0.0, 0.0 };
+                        }
+                        view.camera.?.lookAtPivotPosition();
+                    }
+                },
+                c.SDL_BUTTON_RIGHT => {},
+                else => {},
+            }
+        },
+        c.SDL_EVENT_MOUSE_MOTION => {
+            switch (event.motion.state) {
+                c.SDL_BUTTON_LMASK => {
+                    const modState = c.SDL_GetModState();
+                    if (view.camera != null) {
+                        if ((modState & c.SDL_KMOD_SHIFT) != 0) {
+                            view.camera.?.translateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
+                        } else {
+                            view.camera.?.rotateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
+                        }
+                    }
+                },
+                c.SDL_BUTTON_RMASK => {},
+                else => {},
+            }
+        },
+        c.SDL_EVENT_MOUSE_WHEEL => {
+            const wheel = event.wheel.y;
+            if (view.camera != null and wheel != 0) {
+                view.camera.?.moveForward(wheel * 0.01);
+                if (view.camera.?.projection_type == .orthographic) {
+                    view.camera.?.updateProjectionMatrix();
+                }
+            }
+        },
+        else => {},
+    }
+}
+
 pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
     if (view.camera == null) {
         gl_log.err("No camera set for view", .{});
@@ -181,56 +236,6 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
     const p_world_f = vec.vec4fFromVec4d(mat.mulVec4d(m_view_inv, p_view));
     return .{ p_world_f[0], p_world_f[1], p_world_f[2] };
 }
-
-// pub fn pixelWorldRay(view: *const View, x: f32, y: f32) ?Ray {
-//     if (view.camera == null) {
-//         gl_log.err("No camera set for view", .{});
-//         return null;
-//     }
-//     const near_ndc: Vec4d = .{
-//         2.0 * (x / @as(f32, @floatFromInt(view.width))) - 1.0,
-//         1.0 - (2.0 * y) / @as(f32, @floatFromInt(view.height)),
-//         0.0,
-//         1.0,
-//     };
-//     const far_ndc: Vec4d = .{
-//         2.0 * (x / @as(f32, @floatFromInt(view.width))) - 1.0,
-//         1.0 - (2.0 * y) / @as(f32, @floatFromInt(view.height)),
-//         1.0,
-//         1.0,
-//     };
-//     const m_proj = mat.mat4dFromMat4f(view.camera.?.projection_matrix);
-//     const m_proj_inv = eigen.computeInverse4d(m_proj) orelse {
-//         gl_log.err("Cannot invert projection matrix", .{});
-//         return null;
-//     };
-//     var near_view = mat.mulVec4d(m_proj_inv, near_ndc);
-//     if (near_view[3] == 0.0) {
-//         gl_log.err("Cannot divide by zero w component", .{});
-//         return null;
-//     }
-//     near_view = vec.divScalar4d(near_view, near_view[3]);
-//     var far_view = mat.mulVec4d(m_proj_inv, far_ndc);
-//     if (far_view[3] == 0.0) {
-//         gl_log.err("Cannot divide by zero w component", .{});
-//         return null;
-//     }
-//     far_view = vec.divScalar4d(far_view, far_view[3]);
-//     const m_view = mat.mat4dFromMat4f(view.camera.?.view_matrix);
-//     const m_view_inv = eigen.computeInverse4d(m_view) orelse {
-//         gl_log.err("Cannot invert view matrix", .{});
-//         return null;
-//     };
-//     const near_world_f = vec.vec4fFromVec4d(mat.mulVec4d(m_view_inv, near_view));
-//     const far_world_f = vec.vec4fFromVec4d(mat.mulVec4d(m_view_inv, far_view));
-//     return .{
-//         .origin = .{ near_world_f[0], near_world_f[1], near_world_f[2] },
-//         .direction = vec.normalized3f(vec.sub3f(
-//             .{ far_world_f[0], far_world_f[1], far_world_f[2] },
-//             .{ near_world_f[0], near_world_f[1], near_world_f[2] },
-//         )),
-//     };
-// }
 
 pub fn pixelWorldRayIfGeometry(view: *const View, x: f32, y: f32) ?Ray {
     if (view.camera == null) {

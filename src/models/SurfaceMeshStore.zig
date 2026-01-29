@@ -345,12 +345,12 @@ pub fn setSurfaceMeshStdData(
 pub fn menuBar(_: *SurfaceMeshStore) void {}
 
 pub fn uiPanel(sms: *SurfaceMeshStore) void {
-    const CreateDataTypes = union(enum) { f32: f32, Vec3f: Vec3f };
+    const CreateDataTypes = union(enum) { bool: bool, u32: u32, f32: f32, Vec3f: Vec3f };
     const CreateDataTypesTag = std.meta.Tag(CreateDataTypes);
     const UiData = struct {
         var selected_surface_mesh_cell_type: SurfaceMesh.CellType = .vertex;
         var selected_data_type: CreateDataTypesTag = .f32;
-        var data_name_buf: [32]u8 = undefined;
+        var data_name_buf: [32]u8 = @splat(0);
     };
 
     c.ImGui_PushIDPtr(sms); // push a unique ID for this panel

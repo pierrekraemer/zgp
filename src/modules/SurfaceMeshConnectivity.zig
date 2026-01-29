@@ -153,7 +153,7 @@ fn decimate(
 /// Describe the right-click menu interface.
 pub fn rightClickMenu(m: *Module) void {
     const smc: *SurfaceMeshConnectivity = @alignCast(@fieldParentPtr("module", m));
-    const sms = &zgp.surface_mesh_store;
+    const sm_store = &zgp.surface_mesh_store;
 
     const UiData = struct {
         var edge_length_factor: f32 = 1.0;
@@ -169,8 +169,8 @@ pub fn rightClickMenu(m: *Module) void {
     if (c.ImGui_BeginMenu(m.name.ptr)) {
         defer c.ImGui_EndMenu();
 
-        if (sms.selected_surface_mesh) |sm| {
-            const info = sms.surfaceMeshInfo(sm);
+        if (sm_store.selected_surface_mesh) |sm| {
+            const info = sm_store.surfaceMeshInfo(sm);
 
             if (c.ImGui_BeginMenu("Cut edges")) {
                 defer c.ImGui_EndMenu();

@@ -164,8 +164,8 @@ pub fn dataComputableAndUpToDate(
     sm: *SurfaceMesh,
     comptime tag: SurfaceMeshStdDataTag,
 ) struct { bool, bool } {
-    const sms = &zgp.surface_mesh_store;
-    const info = sms.surfaceMeshInfo(sm);
+    const sm_store = &zgp.surface_mesh_store;
+    const info = sm_store.surfaceMeshInfo(sm);
     inline for (std_data_computations) |comp| {
         if (comp.computes == tag) {
             // found a computation for this data
@@ -174,7 +174,7 @@ pub fn dataComputableAndUpToDate(
                 return .{ false, false }; // computed data is not present in mesh info, so not computable nor up-to-date
             }
             var upToDate = true;
-            const computes_last_update = sms.dataLastUpdate(computes_data.?.gen());
+            const computes_last_update = sm_store.dataLastUpdate(computes_data.?.gen());
             inline for (comp.reads) |reads_tag| {
                 const reads_data = @field(info.std_data, @tagName(reads_tag));
                 if (reads_data == null) {
@@ -182,7 +182,7 @@ pub fn dataComputableAndUpToDate(
                 }
                 // the computed data is up-to-date only if the last update of the computed data is after the last update of all read data
                 // and all read data are themselves up-to-date (recursive call)
-                const reads_last_update = sms.dataLastUpdate(reads_data.?.gen());
+                const reads_last_update = sm_store.dataLastUpdate(reads_data.?.gen());
                 if (computes_last_update == null or reads_last_update == null or computes_last_update.?.order(reads_last_update.?) == .lt) {
                     upToDate = false;
                 } else {

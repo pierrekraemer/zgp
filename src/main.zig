@@ -24,6 +24,7 @@ const Module = @import("modules/Module.zig");
 const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
+const SurfaceMeshSelection = @import("modules/SurfaceMeshSelection.zig");
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
 const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
 const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
@@ -58,11 +59,13 @@ var allocator: std.mem.Allocator = undefined;
 /// - random number generator
 /// - thread pool
 /// - PointCloud / SurfaceMesh / VolumeMesh stores
+/// - view
 /// - modules list
 pub var rng: std.Random.DefaultPrng = undefined;
 pub var thread_pool: std.Thread.Pool = undefined;
 pub var point_cloud_store: PointCloudStore = undefined;
 pub var surface_mesh_store: SurfaceMeshStore = undefined;
+pub var view: View = undefined;
 pub var modules: std.ArrayList(*Module) = .empty;
 
 /// ZGP modules
@@ -70,6 +73,7 @@ pub var modules: std.ArrayList(*Module) = .empty;
 pub var point_cloud_renderer: PointCloudRenderer = undefined;
 pub var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 pub var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
+pub var surface_mesh_selection: SurfaceMeshSelection = undefined;
 pub var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
 pub var surface_mesh_distance: SurfaceMeshDistance = undefined;
 pub var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
@@ -77,13 +81,12 @@ pub var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
 
 /// Application SDL Window & OpenGL context
 var window: *c.SDL_Window = undefined;
-var window_width: c_int = 1200;
-var window_height: c_int = 800;
+pub var window_width: c_int = 1200;
+pub var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
 
 var camera: Camera = undefined;
-var view: View = undefined;
 
 pub fn requestRedraw() void {
     view.need_redraw = true;
@@ -253,6 +256,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_renderer.deinit();
     vector_per_vertex_renderer = .init(allocator);
     errdefer vector_per_vertex_renderer.deinit();
+    surface_mesh_selection = .init();
+    errdefer surface_mesh_selection.deinit();
     surface_mesh_connectivity = .init();
     errdefer surface_mesh_connectivity.deinit();
     surface_mesh_distance = .init();
@@ -267,6 +272,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(allocator, &point_cloud_renderer.module);
     try modules.append(allocator, &surface_mesh_renderer.module);
     try modules.append(allocator, &vector_per_vertex_renderer.module);
+    try modules.append(allocator, &surface_mesh_selection.module);
     try modules.append(allocator, &surface_mesh_connectivity.module);
     try modules.append(allocator, &surface_mesh_distance.module);
     try modules.append(allocator, &surface_mesh_curvature.module);
@@ -330,6 +336,9 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
     var main_menu_bar_size: c.ImVec2 = undefined;
 
+    // Right-click context menu
+    // ************************
+
     const imgui_io = c.ImGui_GetIO();
     if (imgui_io.*.MouseClicked[1] and !(imgui_io.*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow))) {
         c.ImGui_OpenPopup("RightClickMenu", 0);
@@ -344,6 +353,9 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             return c.SDL_APP_SUCCESS;
         }
     }
+
+    // Main menu bar
+    // *************
 
     if (c.ImGui_BeginMainMenuBar()) {
         defer c.ImGui_EndMainMenuBar();
@@ -394,6 +406,9 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowRounding, 0.0);
     c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowBorderSize, 0.0);
 
+    // Left panel: models stores
+    // *************************
+
     c.ImGui_SetNextWindowPos(c.ImVec2{
         .x = imgui_viewport.*.Pos.x,
         .y = imgui_viewport.*.Pos.y + main_menu_bar_size.y,
@@ -410,6 +425,9 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         surface_mesh_store.uiPanel();
         point_cloud_store.uiPanel();
     }
+
+    // Right panel: modules
+    // ********************
 
     c.ImGui_SetNextWindowPos(c.ImVec2{
         .x = imgui_viewport.*.Pos.x + imgui_viewport.*.Size.x * 0.78,
@@ -461,103 +479,36 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
     _ = appstate;
 
-    const UiData = struct {
-        var selecting = false;
-    };
-
     _ = c.cImGui_ImplSDL3_ProcessEvent(event);
-    if (c.ImGui_GetIO().*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow)) {
-        return c.SDL_APP_CONTINUE;
-    }
 
-    // TODO: pass mouse/keyboard events to the view & to the modules (e.g. for interaction)
-    // instead of having all the logic here
-
+    // handle window events
     switch (event.type) {
         c.SDL_EVENT_QUIT => {
             return c.SDL_APP_SUCCESS;
         },
         c.SDL_EVENT_WINDOW_RESIZED => {
             try errify(c.SDL_GetWindowSizeInPixels(window, &window_width, &window_height));
-            view.resize(window_width, window_height);
         },
         c.SDL_EVENT_KEY_DOWN => {
             switch (event.key.key) {
                 c.SDLK_ESCAPE => return c.SDL_APP_SUCCESS,
-                c.SDLK_S => UiData.selecting = true,
                 else => {},
-            }
-        },
-        c.SDL_EVENT_KEY_UP => {
-            switch (event.key.key) {
-                c.SDLK_S => UiData.selecting = false,
-                else => {},
-            }
-        },
-        c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
-            switch (event.button.button) {
-                c.SDL_BUTTON_LEFT => {
-                    if (UiData.selecting and surface_mesh_store.selected_surface_mesh != null) {
-                        const sm = surface_mesh_store.selected_surface_mesh.?;
-                        const info = surface_mesh_store.surfaceMeshInfo(sm);
-                        if (info.bvh.bvh_ptr) |_| {
-                            if (view.pixelWorldRayIfGeometry(event.button.x, event.button.y)) |ray| {
-                                if (info.bvh.intersectedVertex(ray)) |v| {
-                                    try info.vertex_set.add(v);
-                                    surface_mesh_store.surfaceMeshCellSetUpdated(sm, .vertex);
-                                }
-                            }
-                        }
-                    }
-                },
-                c.SDL_BUTTON_RIGHT => {},
-                else => {},
-            }
-        },
-        c.SDL_EVENT_MOUSE_BUTTON_UP => {
-            switch (event.button.button) {
-                c.SDL_BUTTON_LEFT => {
-                    const modState = c.SDL_GetModState();
-                    if ((modState & c.SDL_KMOD_SHIFT) != 0 and event.button.clicks == 2) {
-                        const world_pos = view.pixelWorldPosition(event.button.x, event.button.y);
-                        if (world_pos) |wp| {
-                            camera.pivot_position = wp;
-                        } else {
-                            camera.pivot_position = .{ 0.0, 0.0, 0.0 };
-                        }
-                        camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
-                        camera.updateViewMatrix();
-                        requestRedraw();
-                    }
-                },
-                c.SDL_BUTTON_RIGHT => {},
-                else => {},
-            }
-        },
-        c.SDL_EVENT_MOUSE_MOTION => {
-            switch (event.motion.state) {
-                c.SDL_BUTTON_LMASK => {
-                    const modState = c.SDL_GetModState();
-                    if ((modState & c.SDL_KMOD_SHIFT) != 0) {
-                        camera.translateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
-                    } else {
-                        camera.rotateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
-                    }
-                },
-                c.SDL_BUTTON_RMASK => {},
-                else => {},
-            }
-        },
-        c.SDL_EVENT_MOUSE_WHEEL => {
-            const wheel = event.wheel.y;
-            if (wheel != 0) {
-                camera.moveForward(wheel * 0.01);
-                if (camera.projection_type == .orthographic) {
-                    camera.updateProjectionMatrix();
-                }
             }
         },
         else => {},
+    }
+
+    // if ImGui wants to capture the mouse, do not process mouse events
+    if (c.ImGui_GetIO().*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow)) {
+        return c.SDL_APP_CONTINUE;
+    }
+
+    // dispatch event to view
+    view.sdlEvent(event);
+
+    // dispatch event to modules
+    for (modules.items) |module| {
+        module.sdlEvent(event);
     }
 
     return c.SDL_APP_CONTINUE;
@@ -582,6 +533,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         point_cloud_renderer.deinit();
         surface_mesh_renderer.deinit();
         vector_per_vertex_renderer.deinit();
+        surface_mesh_selection.deinit();
         surface_mesh_connectivity.deinit();
         surface_mesh_distance.deinit();
         surface_mesh_curvature.deinit();

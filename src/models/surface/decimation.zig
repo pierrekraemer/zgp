@@ -149,6 +149,7 @@ pub fn decimateQEM(
             removeEdgeFromQueue(&queue, .{ .edge = dd_1 });
         }
 
+        // TODO: check for potential face flips before collapsing
         const p, const q = edgeCollapsePositionAndQuadric(&queue, info.edge);
         const v = sm.collapseEdge(info.edge);
         vertex_position.valuePtr(v).* = p;

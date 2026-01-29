@@ -55,6 +55,7 @@ const SurfaceMeshRendererParameters = struct {
     tri_flat_shader_parameters: TriFlat.Parameters,
     tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters,
     tri_flat_scalar_per_vertex_shader_parameters: TriFlatScalarPerVertex.Parameters,
+    boundary_shader_parameters: LineBold.Parameters,
 
     draw_vertices: bool = true,
     draw_edges: bool = true,
@@ -81,6 +82,7 @@ const SurfaceMeshRendererParameters = struct {
             .tri_flat_shader_parameters = TriFlat.Parameters.init(),
             .tri_flat_color_per_vertex_shader_parameters = TriFlatColorPerVertex.Parameters.init(),
             .tri_flat_scalar_per_vertex_shader_parameters = TriFlatScalarPerVertex.Parameters.init(),
+            .boundary_shader_parameters = LineBold.Parameters.init(),
         };
     }
 
@@ -92,6 +94,7 @@ const SurfaceMeshRendererParameters = struct {
         self.tri_flat_shader_parameters.deinit();
         self.tri_flat_color_per_vertex_shader_parameters.deinit();
         self.tri_flat_scalar_per_vertex_shader_parameters.deinit();
+        self.boundary_shader_parameters.deinit();
     }
 };
 
@@ -162,6 +165,7 @@ pub fn surfaceMeshStdDataChanged(
                 p.tri_flat_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.tri_flat_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+                p.boundary_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
                 p.point_sphere_color_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
@@ -170,6 +174,7 @@ pub fn surfaceMeshStdDataChanged(
                 p.tri_flat_shader_parameters.unsetVertexAttribArray(.position);
                 p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
                 p.tri_flat_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
+                p.boundary_shader_parameters.unsetVertexAttribArray(.position);
             }
         },
         else => return, // Ignore other standard data changes

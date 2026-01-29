@@ -321,7 +321,7 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
 /// Describe the right-click menu interface.
 pub fn uiPanel(m: *Module) void {
     const smma: *SurfaceMeshMedialAxis = @alignCast(@fieldParentPtr("module", m));
-    const sms = &zgp.surface_mesh_store;
+    const sm_store = &zgp.surface_mesh_store;
 
     const style = c.ImGui_GetStyle();
 
@@ -329,7 +329,7 @@ pub fn uiPanel(m: *Module) void {
     defer c.ImGui_PopItemWidth();
 
     if (zgp.surface_mesh_store.selected_surface_mesh) |sm| {
-        const info = sms.surfaceMeshInfo(sm);
+        const info = sm_store.surfaceMeshInfo(sm);
         const ma_data = smma.surface_meshes_data.getPtr(sm).?;
         const disabled =
             info.std_data.vertex_position == null or

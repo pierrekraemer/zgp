@@ -76,6 +76,11 @@ pub fn updateProjectionMatrix(c: *Camera) void {
     }
 }
 
+pub fn lookAtPivotPosition(c: *Camera) void {
+    c.look_dir = vec.normalized3f(vec.sub3f(c.pivot_position, c.position));
+    c.updateViewMatrix();
+}
+
 pub fn rotateFromScreenVec(c: *Camera, screen_vec: Vec2f) void {
     const screen_axis4: Vec4f = .{ screen_vec[1], screen_vec[0], 0.0, 0.0 };
     const angle = vec.norm4f(screen_axis4) * 0.01; // TODO: normalize with window dimensions

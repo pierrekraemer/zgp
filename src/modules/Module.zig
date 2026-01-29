@@ -1,5 +1,8 @@
 const Module = @This();
 
+const zgp = @import("../main.zig");
+const c = zgp.c;
+
 const DataGen = @import("../utils/Data.zig").DataGen;
 
 const mat = @import("../geometry/mat.zig");
@@ -33,6 +36,8 @@ const VTable = struct {
     rightClickMenu: ?*const fn (m: *Module) void = null,
 
     draw: ?*const fn (m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void = null,
+
+    sdlEvent: ?*const fn (m: *Module, event: *const c.SDL_Event) void = null,
 };
 
 pub inline fn pointCloudCreated(m: *Module, pc: *PointCloud) void {
@@ -108,5 +113,10 @@ pub inline fn rightClickMenu(m: *Module) void {
 pub inline fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     if (m.vtable.draw) |func| {
         func(m, view_matrix, projection_matrix);
+    }
+}
+pub inline fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
+    if (m.vtable.sdlEvent) |func| {
+        func(m, event);
     }
 }
