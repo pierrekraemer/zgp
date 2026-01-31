@@ -29,6 +29,7 @@ const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
 const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
 const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
 const SurfaceMeshMedialAxis = @import("modules/SurfaceMeshMedialAxis.zig");
+const SurfaceMeshProceduralTexturing = @import("modules/SurfaceMeshProceduralTexturing.zig");
 
 const geometry_utils = @import("geometry/utils.zig");
 const vec = @import("geometry/vec.zig");
@@ -78,6 +79,7 @@ pub var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
 pub var surface_mesh_distance: SurfaceMeshDistance = undefined;
 pub var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
 pub var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
+pub var surface_mesh_procedural_texturing: SurfaceMeshProceduralTexturing = undefined;
 
 /// Application SDL Window & OpenGL context
 var window: *c.SDL_Window = undefined;
@@ -85,6 +87,8 @@ pub var window_width: c_int = 1200;
 pub var window_height: c_int = 800;
 var gl_context: c.SDL_GLContext = undefined;
 var gl_procs: gl.ProcTable = undefined;
+
+// TODO: add a console bar at the bottom of the window to display logs & info messages
 
 var camera: Camera = undefined;
 
@@ -256,7 +260,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_renderer.deinit();
     vector_per_vertex_renderer = .init(allocator);
     errdefer vector_per_vertex_renderer.deinit();
-    surface_mesh_selection = .init();
+    surface_mesh_selection = .init(allocator);
     errdefer surface_mesh_selection.deinit();
     surface_mesh_connectivity = .init();
     errdefer surface_mesh_connectivity.deinit();
@@ -266,6 +270,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_curvature.deinit();
     surface_mesh_medial_axis = .init(allocator);
     errdefer surface_mesh_medial_axis.deinit();
+    surface_mesh_procedural_texturing = .init(allocator);
+    errdefer surface_mesh_procedural_texturing.deinit();
 
     // TODO: find a way to tag Modules with the type of model they handle (PointCloud, SurfaceMesh, etc.)
     // and only show them in the UI when a compatible model is selected
@@ -277,6 +283,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(allocator, &surface_mesh_distance.module);
     try modules.append(allocator, &surface_mesh_curvature.module);
     try modules.append(allocator, &surface_mesh_medial_axis.module);
+    try modules.append(allocator, &surface_mesh_procedural_texturing.module);
     errdefer modules.deinit(allocator);
 
     // CLI arguments parsing
@@ -538,6 +545,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         surface_mesh_distance.deinit();
         surface_mesh_curvature.deinit();
         surface_mesh_medial_axis.deinit();
+        surface_mesh_procedural_texturing.deinit();
         modules.deinit(allocator);
 
         camera.deinit(allocator);

@@ -312,8 +312,8 @@ pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
 /// Remove the MedialAxisData associated to the destroyed SurfaceMesh.
 pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smma: *SurfaceMeshMedialAxis = @alignCast(@fieldParentPtr("module", m));
-    const ma_data = smma.surface_meshes_data.getPtr(surface_mesh) orelse return;
-    ma_data.deinit();
+    const mad = smma.surface_meshes_data.getPtr(surface_mesh) orelse return;
+    mad.deinit();
     _ = smma.surface_meshes_data.remove(surface_mesh);
 }
 
@@ -330,7 +330,7 @@ pub fn uiPanel(m: *Module) void {
 
     if (zgp.surface_mesh_store.selected_surface_mesh) |sm| {
         const info = sm_store.surfaceMeshInfo(sm);
-        const ma_data = smma.surface_meshes_data.getPtr(sm).?;
+        const mad = smma.surface_meshes_data.getPtr(sm).?;
         const disabled =
             info.std_data.vertex_position == null or
             info.std_data.vertex_area == null or
@@ -339,8 +339,8 @@ pub fn uiPanel(m: *Module) void {
         if (disabled) {
             c.ImGui_BeginDisabled(true);
         }
-        if (c.ImGui_ButtonEx(if (ma_data.initialized) "Reinitialize data" else "Initialize data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            _ = ma_data.init(
+        if (c.ImGui_ButtonEx(if (mad.initialized) "Reinitialize data" else "Initialize data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            _ = mad.init(
                 info.std_data.vertex_position.?,
                 info.std_data.vertex_area.?,
                 info.std_data.face_area.?,
@@ -352,15 +352,15 @@ pub fn uiPanel(m: *Module) void {
         if (disabled) {
             c.ImGui_EndDisabled();
         }
-        if (ma_data.initialized) {
-            _ = c.ImGui_SliderFloatEx("", &ma_data.lambda, 0.0001, 1.0, "%.4f", c.ImGuiSliderFlags_Logarithmic);
+        if (mad.initialized) {
+            _ = c.ImGui_SliderFloatEx("", &mad.lambda, 0.0001, 1.0, "%.4f", c.ImGuiSliderFlags_Logarithmic);
             if (c.ImGui_ButtonEx("Update spheres", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                ma_data.updateSpheres() catch |err| {
+                mad.updateSpheres() catch |err| {
                     std.debug.print("Failed to update Medial Axis spheres for SurfaceMesh: {}\n", .{err});
                 };
             }
             if (c.ImGui_ButtonEx("Split worse sphere", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                ma_data.splitWorseSphere() catch |err| {
+                mad.splitWorseSphere() catch |err| {
                     std.debug.print("Failed to split worse Medial Axis sphere for SurfaceMesh: {}\n", .{err});
                 };
             }

@@ -16,26 +16,6 @@ const usage_fmt =
     \\
 ;
 
-// const usage_fmt =
-//     \\Usage: {s} [-B buf_size] [-o OUT_WAV_FILE] DURATION PORT1 [PORT2]...
-//     \\
-//     \\Options:
-//     \\  -B buf_size    Buffer size in bytes (default: 16384)
-//     \\  -o OUT_WAV_FILE  Output WAV file path (default: wave_out.wav)
-//     \\  -v             Verbose output
-//     \\
-//     \\Arguments:
-//     \\  DURATION       Duration in seconds
-//     \\  port1 [ port2 ... ]  List of ports
-//     \\
-// ;
-
-// verbose: bool = false,
-// buf_size: u32 = 16384,
-// output_path: []const u8 = "wave_out.wav",
-// duration: u32 = 0,
-// ports: [][]u8 = undefined,
-
 normalize: bool = false,
 center: bool = false,
 mesh_files: [][:0]u8 = undefined,
@@ -57,24 +37,18 @@ pub fn init(argv: [][:0]u8) ArgParseError!CLIArgs {
             args.normalize = true;
         } else if (std.mem.eql(u8, argv[optind], "-c")) {
             args.center = true;
-            // } else if (std.mem.eql(u8, argv[optind], "-B")) {
-            //     if (optind + 1 >= argv.len) {
-            //         display_usage();
-            //         return error.MissingArgs;
-            //     }
-            //     optind += 1;
-            //     args.buf_size = std.fmt.parseInt(u32, argv[optind], 10) catch {
-            //         display_usage();
-            //         std.debug.print("Invalid buffer size: '{s}'\n", .{argv[optind]});
-            //         return error.InvalidArgs;
-            //     };
-            // } else if (std.mem.eql(u8, argv[optind], "-o")) {
-            //     if (optind + 1 >= argv.len) {
-            //         display_usage();
-            //         return error.MissingArgs;
-            //     }
-            //     optind += 1;
-            //     args.output_path = argv[optind];
+        } else if (std.mem.eql(u8, argv[optind], "-B")) {
+            // // example of option with a following argument (here a buffer size as a parsed integer)
+            // if (optind + 1 >= argv.len) {
+            //     display_usage();
+            //     return error.MissingArgs;
+            // }
+            // optind += 1;
+            // args.buf_size = std.fmt.parseInt(u32, argv[optind], 10) catch {
+            //     display_usage();
+            //     std.debug.print("Invalid buffer size: '{s}'\n", .{argv[optind]});
+            //     return error.InvalidArgs;
+            // };
         } else {
             display_usage();
             std.debug.print("Unknown option: {s}\n", .{argv[optind]});
@@ -89,14 +63,7 @@ pub fn init(argv: [][:0]u8) ArgParseError!CLIArgs {
         return error.MissingArgs;
     }
 
-    // args.duration = std.fmt.parseInt(u32, argv[optind], 10) catch {
-    //     display_usage();
-    //     std.debug.print("Invalid duration: '{s}'\n", .{argv[optind]});
-    //     return error.InvalidArgs;
-    // };
-    // optind += 1;
-
-    args.mesh_files = argv[optind..];
+    args.mesh_files = argv[optind..]; // slice of remaining arguments
 
     return args;
 }

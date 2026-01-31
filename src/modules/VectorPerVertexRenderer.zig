@@ -131,7 +131,8 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     while (sm_it.next()) |entry| {
         const surface_mesh = entry.value_ptr.*;
         const surface_mesh_info = zgp.surface_mesh_store.surfaceMeshInfo(surface_mesh);
-        const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(surface_mesh) orelse continue;
+        const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(surface_mesh).?;
+
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.model_view_matrix = @bitCast(view_matrix);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.projection_matrix = @bitCast(projection_matrix);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.draw(surface_mesh_info.points_ibo);
@@ -149,30 +150,26 @@ pub fn uiPanel(m: *Module) void {
     defer c.ImGui_PopItemWidth();
 
     if (zgp.surface_mesh_store.selected_surface_mesh) |sm| {
-        const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(sm);
-        if (vector_per_vertex_renderer_parameters) |p| {
-            c.ImGui_Text("Vector");
-            c.ImGui_PushID("VectorData");
-            if (imgui_utils.surfaceMeshCellDataComboBox(
-                sm,
-                .vertex,
-                Vec3f,
-                p.vertex_vector,
-            )) |data| {
-                vpvr.setSurfaceMeshVectorData(sm, data);
-            }
-            c.ImGui_PopID();
-            c.ImGui_Text("Vector scale");
-            c.ImGui_PushID("VectorScale");
-            if (c.ImGui_SliderFloatEx("", &p.point_vector_shader_parameters.vector_scale, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                zgp.requestRedraw();
-            }
-            c.ImGui_PopID();
-            if (c.ImGui_ColorEdit3("Vector color", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs)) {
-                zgp.requestRedraw();
-            }
-        } else {
-            c.ImGui_Text("No parameters found for the selected Surface Mesh");
+        const p = vpvr.parameters.getPtr(sm).?;
+        c.ImGui_Text("Vector");
+        c.ImGui_PushID("VectorData");
+        if (imgui_utils.surfaceMeshCellDataComboBox(
+            sm,
+            .vertex,
+            Vec3f,
+            p.vertex_vector,
+        )) |data| {
+            vpvr.setSurfaceMeshVectorData(sm, data);
+        }
+        c.ImGui_PopID();
+        c.ImGui_Text("Vector scale");
+        c.ImGui_PushID("VectorScale");
+        if (c.ImGui_SliderFloatEx("", &p.point_vector_shader_parameters.vector_scale, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+            zgp.requestRedraw();
+        }
+        c.ImGui_PopID();
+        if (c.ImGui_ColorEdit3("Vector color", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs)) {
+            zgp.requestRedraw();
         }
     } else {
         c.ImGui_Text("No Surface Mesh selected");

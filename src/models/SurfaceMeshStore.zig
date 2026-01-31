@@ -33,6 +33,8 @@ const bvh = @import("../geometry/bvh.zig");
 /// - the IBOs (for rendering).
 /// The SurfaceMeshInfo associated with a SurfaceMesh is accessible via the surfaceMeshInfo function.
 const SurfaceMeshInfo = struct {
+    allocator: std.mem.Allocator,
+
     std_data: SurfaceMeshStdDatas = .{},
 
     bvh: bvh.TrianglesBVH = .{},
@@ -52,8 +54,9 @@ const SurfaceMeshInfo = struct {
     edge_set_ibo: IBO,
     face_set_ibo: IBO,
 
-    pub fn init(surface_mesh: *SurfaceMesh) !SurfaceMeshInfo {
+    pub fn init(allocator: std.mem.Allocator, surface_mesh: *SurfaceMesh) !SurfaceMeshInfo {
         return .{
+            .allocator = allocator,
             .points_ibo = IBO.init(),
             .lines_ibo = IBO.init(),
             .triangles_ibo = IBO.init(),
@@ -140,7 +143,7 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     errdefer sms.allocator.free(owned_name);
     try sms.surface_meshes.put(owned_name, sm);
     errdefer _ = sms.surface_meshes.remove(owned_name);
-    var info = try SurfaceMeshInfo.init(sm);
+    var info = try SurfaceMeshInfo.init(sms.allocator, sm);
     errdefer info.deinit();
     try sms.surface_meshes_info.put(sm, info);
     errdefer _ = sms.surface_meshes_info.remove(sm);
@@ -240,14 +243,17 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
         zgp_log.err("Failed to update vertex set for SurfaceMesh: {}", .{err});
         return;
     };
+    sms.surfaceMeshCellSetUpdated(sm, .vertex);
     info.edge_set.update() catch |err| {
         zgp_log.err("Failed to update edge set for SurfaceMesh: {}", .{err});
         return;
     };
+    sms.surfaceMeshCellSetUpdated(sm, .edge);
     info.face_set.update() catch |err| {
         zgp_log.err("Failed to update face set for SurfaceMesh: {}", .{err});
         return;
     };
+    sms.surfaceMeshCellSetUpdated(sm, .face);
 
     info.vertex_set_ibo.fillFromSlice(info.vertex_set.indices.items) catch |err| {
         zgp_log.err("Failed to fill vertex set IBO for SurfaceMesh: {}", .{err});
@@ -275,9 +281,42 @@ pub fn surfaceMeshCellSetUpdated(
                 return;
             };
         },
-        // TODO: manage edge & face set IBOs
-        .edge => {},
-        .face => {},
+        .edge => {
+            // TODO: manage edge set IBO
+        },
+        .face => {
+            var indices = std.ArrayList(u32).initCapacity(sms.allocator, 128) catch |err| {
+                zgp_log.err("Failed to create indices array list for face set IBO: {}", .{err});
+                return;
+            };
+            defer indices.deinit(sms.allocator);
+            for (info.face_set.cells.items) |f| {
+                // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
+                var dart_it = sm.cellDartIterator(f);
+                const dart_start = dart_it.next() orelse break;
+                const start_index = sm.cellIndex(.{ .vertex = dart_start });
+                var dart_v1 = dart_it.next() orelse break;
+                var v1_index = sm.cellIndex(.{ .vertex = dart_v1 });
+                while (dart_it.next()) |dart_v2| {
+                    const v2_index = sm.cellIndex(.{ .vertex = dart_v2 });
+                    indices.append(sms.allocator, start_index) catch {
+                        break;
+                    };
+                    indices.append(sms.allocator, v1_index) catch {
+                        break;
+                    };
+                    indices.append(sms.allocator, v2_index) catch {
+                        break;
+                    };
+                    dart_v1 = dart_v2;
+                    v1_index = v2_index;
+                }
+            }
+            info.face_set_ibo.fillFromSlice(indices.items) catch |err| {
+                zgp_log.err("Failed to fill face set IBO for SurfaceMesh: {}", .{err});
+                return;
+            };
+        },
         else => {},
     }
 
@@ -380,25 +419,9 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
         if (sms.selected_surface_mesh) |sm| {
             var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name + cell count
             const info = sms.surface_meshes_info.getPtr(sm).?;
-            inline for (.{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
+            inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
                 const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type) ++ " | {d} | ({d:.1}%)", .{ sm.nbCells(cell_type), sm.dataContainer(cell_type).density() * 100 }) catch "";
                 c.ImGui_SeparatorText(cells.ptr);
-                // TODO: improve UI for cell sets (clear, invert, etc.)
-                switch (cell_type) {
-                    .vertex => {
-                        c.ImGui_Text("#vertices in set: %d", info.vertex_set.cells.items.len);
-                        c.ImGui_Separator();
-                    },
-                    .edge => {
-                        c.ImGui_Text("#edges in set: %d", info.edge_set.cells.items.len);
-                        c.ImGui_Separator();
-                    },
-                    .face => {
-                        c.ImGui_Text("#faces in set: %d", info.face_set.cells.items.len);
-                        c.ImGui_Separator();
-                    },
-                    else => {},
-                }
                 inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
                     if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
                     c.ImGui_Text(field.name);
@@ -546,7 +569,6 @@ pub fn uiPanel(sms: *SurfaceMeshStore) void {
                             }
                         },
                     }
-                    // c.ImGui_CloseCurrentPopup();
                 }
             }
 
