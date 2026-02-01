@@ -138,11 +138,12 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     sd.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
     sd.point_sphere_shader_parameters.draw(info.vertex_set_ibo);
 
-    gl.PolygonOffset(0.0, 1.5);
+    gl.Enable(gl.POLYGON_OFFSET_FILL);
+    gl.PolygonOffset(1.0, 0.0);
     sd.tri_flat_shader_parameters.model_view_matrix = @bitCast(view_matrix);
     sd.tri_flat_shader_parameters.projection_matrix = @bitCast(projection_matrix);
     sd.tri_flat_shader_parameters.draw(info.face_set_ibo);
-    gl.PolygonOffset(1.0, 1.5);
+    gl.Disable(gl.POLYGON_OFFSET_FILL);
 
     // TODO: implement edge sets rendering
 }

@@ -118,18 +118,14 @@ pub fn draw(view: *View, modules: []*Module) void {
         // gl.Enable(gl.CULL_FACE);
         // gl.CullFace(gl.BACK);
         gl.Enable(gl.DEPTH_TEST);
-        gl.Enable(gl.POLYGON_OFFSET_FILL);
-        gl.PolygonOffset(1.0, 1.5);
         // gl.DrawBuffer(gl.COLOR_ATTACHMENT0); // not needed as it is already the default
         for (modules) |module| {
             module.draw(view.camera.?.view_matrix, view.camera.?.projection_matrix);
         }
+        gl.Disable(gl.DEPTH_TEST);
         view.need_redraw = false;
     }
     gl.Clear(gl.COLOR_BUFFER_BIT);
-    // gl.Disable(gl.CULL_FACE);
-    gl.Disable(gl.DEPTH_TEST);
-    gl.Disable(gl.POLYGON_OFFSET_FILL);
     view.fullscreen_texture_shader_parameters.useShader();
     view.fullscreen_texture_shader_parameters.draw();
     gl.UseProgram(0);

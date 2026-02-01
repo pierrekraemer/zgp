@@ -367,6 +367,10 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
         const info = zgp.surface_mesh_store.surfaceMeshInfo(sm);
         const p = smr.parameters.getPtr(sm).?;
         if (p.draw_faces) {
+            if (p.draw_edges) {
+                gl.Enable(gl.POLYGON_OFFSET_FILL);
+                gl.PolygonOffset(1.0, 1.0);
+            }
             switch (p.draw_faces_color.defined_on) {
                 .global => {
                     p.tri_flat_shader_parameters.model_view_matrix = @bitCast(view_matrix);
@@ -400,6 +404,9 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
                     }
                 },
                 else => unreachable,
+            }
+            if (p.draw_edges) {
+                gl.Disable(gl.POLYGON_OFFSET_FILL);
             }
         }
         if (p.draw_edges) {
