@@ -237,15 +237,13 @@ pub fn uiPanel(m: *Module) void {
         const sd = sms.surface_meshes_data.getPtr(sm).?;
         const info = sm_store.surfaceMeshInfo(sm);
 
-        if (sms.selecting) {
-            c.ImGui_Text("Selection mode: ON (hold 'S' to select)");
-        } else {
-            c.ImGui_Text("Selection mode: OFF (hold 'S' to select)");
+        c.ImGui_TextWrapped("Hold (shift+)'S' to (de)select cells");
+        if (info.bvh.bvh_ptr == null) {
+            c.ImGui_TextWrapped("A BVH must exist for the SurfaceMesh to select cells");
         }
         c.ImGui_Separator();
 
         inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
-            // TODO: improve UI for cell sets (clear, invert, etc.)
             c.ImGui_PushID(@tagName(cell_type));
             defer c.ImGui_PopID();
             if (c.ImGui_RadioButton(@tagName(cell_type), sms.selecting_cell_type == cell_type)) {
@@ -254,12 +252,19 @@ pub fn uiPanel(m: *Module) void {
             switch (cell_type) {
                 .vertex => {
                     c.ImGui_Text("#vertices in set: %d", info.vertex_set.cells.items.len);
+                    const disabled = info.vertex_set.cells.items.len == 0;
+                    if (disabled) {
+                        c.ImGui_BeginDisabled(true);
+                    }
                     if (c.ImGui_ButtonEx(
                         if (info.vertex_set.cells.items.len > 0) "Clear selection" else "No selection to clear",
                         c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 },
                     )) {
                         info.vertex_set.clear();
                         sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
+                    }
+                    if (disabled) {
+                        c.ImGui_EndDisabled();
                     }
 
                     c.ImGui_Text("Size");
@@ -274,6 +279,10 @@ pub fn uiPanel(m: *Module) void {
                 },
                 .edge => {
                     c.ImGui_Text("#edges in set: %d", info.edge_set.cells.items.len);
+                    const disabled = info.edge_set.cells.items.len == 0;
+                    if (disabled) {
+                        c.ImGui_BeginDisabled(true);
+                    }
                     if (c.ImGui_ButtonEx(
                         if (info.edge_set.cells.items.len > 0) "Clear selection" else "No selection to clear",
                         c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 },
@@ -281,15 +290,29 @@ pub fn uiPanel(m: *Module) void {
                         info.edge_set.clear();
                         sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
                     }
+                    if (disabled) {
+                        c.ImGui_EndDisabled();
+                    }
                 },
                 .face => {
                     c.ImGui_Text("#faces in set: %d", info.face_set.cells.items.len);
+                    const disabled = info.face_set.cells.items.len == 0;
+                    if (disabled) {
+                        c.ImGui_BeginDisabled(true);
+                    }
                     if (c.ImGui_ButtonEx(
                         if (info.face_set.cells.items.len > 0) "Clear selection" else "No selection to clear",
                         c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 },
                     )) {
                         info.face_set.clear();
                         sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
+                    }
+                    if (disabled) {
+                        c.ImGui_EndDisabled();
+                    }
+
+                    if (c.ImGui_ColorEdit4("Global color##SelectedFacesColorEdit", &sd.tri_flat_shader_parameters.vertex_color, c.ImGuiColorEditFlags_NoInputs)) {
+                        zgp.requestRedraw();
                     }
                 },
                 else => {},

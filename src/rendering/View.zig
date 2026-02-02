@@ -115,8 +115,6 @@ pub fn draw(view: *View, modules: []*Module) void {
         gl.BindFramebuffer(gl.FRAMEBUFFER, view.fbo.index);
         defer gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
         gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-        // gl.Enable(gl.CULL_FACE);
-        // gl.CullFace(gl.BACK);
         gl.Enable(gl.DEPTH_TEST);
         // gl.DrawBuffer(gl.COLOR_ATTACHMENT0); // not needed as it is already the default
         for (modules) |module| {
@@ -208,8 +206,8 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
     // reconstruct the world position from the depth value
     // warning: Eigen (via ceigen) uses double precision
     const p_ndc: Vec4d = .{
-        2.0 * (x / @as(f32, @floatFromInt(view.width))) - 1.0,
-        1.0 - (2.0 * y) / @as(f32, @floatFromInt(view.height)),
+        2.0 * (x / @as(f64, @floatFromInt(view.width))) - 1.0,
+        1.0 - (2.0 * y) / @as(f64, @floatFromInt(view.height)),
         z * 2.0 - 1.0,
         1.0,
     };
