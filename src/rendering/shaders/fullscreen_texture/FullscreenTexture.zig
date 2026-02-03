@@ -65,15 +65,14 @@ pub const Parameters = struct {
         p.texture_unit = unit;
     }
 
-    pub fn useShader(p: *Parameters) void {
+    pub fn draw(p: *Parameters) void {
         gl.UseProgram(p.shader.program.index);
+        defer gl.UseProgram(0);
+
         const unit: c_uint = @intCast(p.texture_unit);
         gl.ActiveTexture(gl.TEXTURE0 + unit);
         gl.BindTexture(gl.TEXTURE_2D, p.tex.index);
-        gl.Uniform1i(p.shader.texture_unit_uniform, p.texture_unit);
-    }
 
-    pub fn draw(p: *Parameters) void {
         gl.BindVertexArray(p.vao.index); // even an empty VAO is needed in order for DrawArrays to work
         defer gl.BindVertexArray(0);
         gl.DrawArrays(gl.TRIANGLES, 0, 3);

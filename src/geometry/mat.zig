@@ -44,11 +44,26 @@ pub const zero4f: Mat4f = .{ vec.zero4f, vec.zero4f, vec.zero4f, vec.zero4f };
 pub const zero3d: Mat3d = .{ vec.zero3d, vec.zero3d, vec.zero3d };
 pub const zero4d: Mat4d = .{ vec.zero4d, vec.zero4d, vec.zero4d, vec.zero4d };
 
+pub fn mat3fFromMat3d(m: Mat3d) Mat3f {
+    return .{
+        vec.vec3fFromVec3d(m[0]),
+        vec.vec3fFromVec3d(m[1]),
+        vec.vec3fFromVec3d(m[2]),
+    };
+}
 pub fn mat3dFromMat3f(m: Mat3f) Mat3d {
     return .{
         vec.vec3dFromVec3f(m[0]),
         vec.vec3dFromVec3f(m[1]),
         vec.vec3dFromVec3f(m[2]),
+    };
+}
+pub fn mat4fFromMat4d(m: Mat4d) Mat4f {
+    return .{
+        vec.vec4fFromVec4d(m[0]),
+        vec.vec4fFromVec4d(m[1]),
+        vec.vec4fFromVec4d(m[2]),
+        vec.vec4fFromVec4d(m[3]),
     };
 }
 pub fn mat4dFromMat4f(m: Mat4f) Mat4d {

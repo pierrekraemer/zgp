@@ -251,7 +251,8 @@ pub fn uiPanel(m: *Module) void {
             }
             switch (cell_type) {
                 .vertex => {
-                    c.ImGui_Text("#vertices in set: %d", info.vertex_set.cells.items.len);
+                    c.ImGui_SameLine();
+                    c.ImGui_Text("(#vertices in set: %d)", info.vertex_set.cells.items.len);
                     const disabled = info.vertex_set.cells.items.len == 0;
                     if (disabled) {
                         c.ImGui_BeginDisabled(true);
@@ -278,7 +279,8 @@ pub fn uiPanel(m: *Module) void {
                     }
                 },
                 .edge => {
-                    c.ImGui_Text("#edges in set: %d", info.edge_set.cells.items.len);
+                    c.ImGui_SameLine();
+                    c.ImGui_Text("(#edges in set: %d)", info.edge_set.cells.items.len);
                     const disabled = info.edge_set.cells.items.len == 0;
                     if (disabled) {
                         c.ImGui_BeginDisabled(true);
@@ -295,7 +297,8 @@ pub fn uiPanel(m: *Module) void {
                     }
                 },
                 .face => {
-                    c.ImGui_Text("#faces in set: %d", info.face_set.cells.items.len);
+                    c.ImGui_SameLine();
+                    c.ImGui_Text("(#faces in set: %d)", info.face_set.cells.items.len);
                     const disabled = info.face_set.cells.items.len == 0;
                     if (disabled) {
                         c.ImGui_BeginDisabled(true);

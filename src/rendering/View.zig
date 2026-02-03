@@ -124,7 +124,6 @@ pub fn draw(view: *View, modules: []*Module) void {
         view.need_redraw = false;
     }
     gl.Clear(gl.COLOR_BUFFER_BIT);
-    view.fullscreen_texture_shader_parameters.useShader();
     view.fullscreen_texture_shader_parameters.draw();
     gl.UseProgram(0);
 }

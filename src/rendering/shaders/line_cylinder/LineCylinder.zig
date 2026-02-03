@@ -1,4 +1,4 @@
-const LineBold = @This();
+const LineCylinder = @This();
 
 const std = @import("std");
 const gl = @import("gl");
@@ -8,12 +8,12 @@ const VAO = @import("../../VAO.zig");
 const VBO = @import("../../VBO.zig");
 const IBO = @import("../../IBO.zig");
 
-var global_instance: LineBold = undefined;
+var global_instance: LineCylinder = undefined;
 var init_global_once = std.once(init_global);
 fn init_global() void {
     global_instance = init() catch unreachable;
 }
-pub fn instance() *LineBold {
+pub fn instance() *LineCylinder {
     init_global_once.call();
     return &global_instance;
 }
@@ -22,52 +22,58 @@ program: Shader,
 
 model_view_matrix_uniform: c_int = undefined,
 projection_matrix_uniform: c_int = undefined,
-line_color_uniform: c_int = undefined,
-line_width_uniform: c_int = undefined,
+ambiant_color_uniform: c_int = undefined,
+light_position_uniform: c_int = undefined,
+cylinder_radius_uniform: c_int = undefined,
+cylinder_color_uniform: c_int = undefined,
 
 position_attrib: VAO.VertexAttribInfo = undefined,
 
-fn init() !LineBold {
-    var lb: LineBold = .{
+fn init() !LineCylinder {
+    var lc: LineCylinder = .{
         .program = Shader.init(),
     };
 
     const vertex_shader_source = @embedFile("vs.glsl");
-    // const geometry_shader_source = @embedFile("gs.glsl");
+    const geometry_shader_source = @embedFile("gs.glsl");
     const fragment_shader_source = @embedFile("fs.glsl");
 
-    try lb.program.setShader(.vertex, vertex_shader_source);
-    // try lb.program.setShader(.geometry, geometry_shader_source);
-    try lb.program.setShader(.fragment, fragment_shader_source);
-    try lb.program.linkProgram();
+    try lc.program.setShader(.vertex, vertex_shader_source);
+    try lc.program.setShader(.geometry, geometry_shader_source);
+    try lc.program.setShader(.fragment, fragment_shader_source);
+    try lc.program.linkProgram();
 
-    lb.model_view_matrix_uniform = gl.GetUniformLocation(lb.program.index, "u_model_view_matrix");
-    lb.projection_matrix_uniform = gl.GetUniformLocation(lb.program.index, "u_projection_matrix");
-    lb.line_color_uniform = gl.GetUniformLocation(lb.program.index, "u_line_color");
-    lb.line_width_uniform = gl.GetUniformLocation(lb.program.index, "u_line_width");
+    lc.model_view_matrix_uniform = gl.GetUniformLocation(lc.program.index, "u_model_view_matrix");
+    lc.projection_matrix_uniform = gl.GetUniformLocation(lc.program.index, "u_projection_matrix");
+    lc.ambiant_color_uniform = gl.GetUniformLocation(lc.program.index, "u_ambiant_color");
+    lc.light_position_uniform = gl.GetUniformLocation(lc.program.index, "u_light_position");
+    lc.cylinder_radius_uniform = gl.GetUniformLocation(lc.program.index, "u_cylinder_radius");
+    lc.cylinder_color_uniform = gl.GetUniformLocation(lc.program.index, "u_cylinder_color");
 
-    lb.position_attrib = .{
-        .index = @intCast(gl.GetAttribLocation(lb.program.index, "a_position")),
+    lc.position_attrib = .{
+        .index = @intCast(gl.GetAttribLocation(lc.program.index, "a_position")),
         .size = 3,
         .type = gl.FLOAT,
         .normalized = false,
     };
 
-    return lb;
+    return lc;
 }
 
-pub fn deinit(lb: *LineBold) void {
-    lb.program.deinit();
+pub fn deinit(lc: *LineCylinder) void {
+    lc.program.deinit();
 }
 
 pub const Parameters = struct {
-    shader: *const LineBold,
+    shader: *const LineCylinder,
     vao: VAO,
 
     model_view_matrix: [16]f32 = undefined,
     projection_matrix: [16]f32 = undefined,
-    line_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1.0 },
-    line_width: f32 = 1.0,
+    ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
+    light_position: [3]f32 = .{ -10, 0, 100 },
+    cylinder_radius: f32 = 0.0005,
+    cylinder_color: [4]f32 = .{ 0.0, 0.15, 0.25, 1.0 },
 
     const VertexAttrib = enum {
         position,
@@ -105,9 +111,11 @@ pub const Parameters = struct {
         gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
         // var viewport: [4]i32 = .{ 0, 0, 0, 0 };
         // gl.GetIntegerv(gl.VIEWPORT, &viewport);
-        // gl.Uniform2f(p.shader.viewport_size_uniform, @as(f32, @floatFromInt(viewport[2])), @as(f32, @floatFromInt(viewport[3])));
-        gl.Uniform4fv(p.shader.line_color_uniform, 1, @ptrCast(&p.line_color));
-        gl.LineWidth(p.line_width);
+        // gl.Uniform4iv(p.shader.viewport_uniform, 1, @ptrCast(&viewport));
+        gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
+        gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
+        gl.Uniform1f(p.shader.cylinder_radius_uniform, p.cylinder_radius);
+        gl.Uniform4fv(p.shader.cylinder_color_uniform, 1, @ptrCast(&p.cylinder_color));
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);

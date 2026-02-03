@@ -17,12 +17,13 @@ const DataGen = @import("../utils/Data.zig").DataGen;
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const PointSphereColorPerVertex = @import("../rendering/shaders/point_sphere_color_per_vertex/PointSphereColorPerVertex.zig");
 const PointSphereScalarPerVertex = @import("../rendering/shaders/point_sphere_scalar_per_vertex/PointSphereScalarPerVertex.zig");
-const LineBold = @import("../rendering/shaders/line_bold/LineBold.zig");
+const LineCylinder = @import("../rendering/shaders/line_cylinder/LineCylinder.zig");
 const TriFlat = @import("../rendering/shaders/tri_flat/TriFlat.zig");
 const TriFlatColorPerVertex = @import("../rendering/shaders/tri_flat_color_per_vertex/TriFlatColorPerVertex.zig");
 const TriFlatScalarPerVertex = @import("../rendering/shaders/tri_flat_scalar_per_vertex/TriFlatScalarPerVertex.zig");
 const VBO = @import("../rendering/VBO.zig");
 
+const eigen = @import("../geometry/eigen.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const mat = @import("../geometry/mat.zig");
@@ -51,11 +52,11 @@ const SurfaceMeshRendererParameters = struct {
     point_sphere_shader_parameters: PointSphere.Parameters,
     point_sphere_color_per_vertex_shader_parameters: PointSphereColorPerVertex.Parameters,
     point_sphere_scalar_per_vertex_shader_parameters: PointSphereScalarPerVertex.Parameters,
-    line_bold_shader_parameters: LineBold.Parameters,
+    line_cylinder_shader_parameters: LineCylinder.Parameters,
     tri_flat_shader_parameters: TriFlat.Parameters,
     tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters,
     tri_flat_scalar_per_vertex_shader_parameters: TriFlatScalarPerVertex.Parameters,
-    boundary_shader_parameters: LineBold.Parameters,
+    boundary_shader_parameters: LineCylinder.Parameters,
 
     draw_vertices: bool = true,
     draw_edges: bool = true,
@@ -74,11 +75,11 @@ const SurfaceMeshRendererParameters = struct {
             .point_sphere_shader_parameters = PointSphere.Parameters.init(),
             .point_sphere_color_per_vertex_shader_parameters = PointSphereColorPerVertex.Parameters.init(),
             .point_sphere_scalar_per_vertex_shader_parameters = PointSphereScalarPerVertex.Parameters.init(),
-            .line_bold_shader_parameters = LineBold.Parameters.init(),
+            .line_cylinder_shader_parameters = LineCylinder.Parameters.init(),
             .tri_flat_shader_parameters = TriFlat.Parameters.init(),
             .tri_flat_color_per_vertex_shader_parameters = TriFlatColorPerVertex.Parameters.init(),
             .tri_flat_scalar_per_vertex_shader_parameters = TriFlatScalarPerVertex.Parameters.init(),
-            .boundary_shader_parameters = LineBold.Parameters.init(),
+            .boundary_shader_parameters = LineCylinder.Parameters.init(),
         };
     }
 
@@ -86,7 +87,7 @@ const SurfaceMeshRendererParameters = struct {
         self.point_sphere_shader_parameters.deinit();
         self.point_sphere_color_per_vertex_shader_parameters.deinit();
         self.point_sphere_scalar_per_vertex_shader_parameters.deinit();
-        self.line_bold_shader_parameters.deinit();
+        self.line_cylinder_shader_parameters.deinit();
         self.tri_flat_shader_parameters.deinit();
         self.tri_flat_color_per_vertex_shader_parameters.deinit();
         self.tri_flat_scalar_per_vertex_shader_parameters.deinit();
@@ -157,7 +158,7 @@ pub fn surfaceMeshStdDataChanged(
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
-                p.line_bold_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+                p.line_cylinder_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.tri_flat_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.tri_flat_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -166,7 +167,7 @@ pub fn surfaceMeshStdDataChanged(
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
                 p.point_sphere_color_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
                 p.point_sphere_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
-                p.line_bold_shader_parameters.unsetVertexAttribArray(.position);
+                p.line_cylinder_shader_parameters.unsetVertexAttribArray(.position);
                 p.tri_flat_shader_parameters.unsetVertexAttribArray(.position);
                 p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
                 p.tri_flat_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
@@ -406,9 +407,12 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
             gl.Disable(gl.POLYGON_OFFSET_FILL);
         }
         if (p.draw_edges) {
-            p.line_bold_shader_parameters.model_view_matrix = @bitCast(view_matrix);
-            p.line_bold_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-            p.line_bold_shader_parameters.draw(info.lines_ibo);
+            gl.Enable(gl.CULL_FACE);
+            gl.CullFace(gl.BACK);
+            p.line_cylinder_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+            p.line_cylinder_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+            p.line_cylinder_shader_parameters.draw(info.lines_ibo);
+            gl.Disable(gl.CULL_FACE);
         }
         if (p.draw_vertices) {
             switch (p.draw_vertices_color.defined_on) {
@@ -435,9 +439,12 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
             }
         }
         if (p.draw_boundaries) {
+            gl.Enable(gl.CULL_FACE);
+            gl.CullFace(gl.BACK);
             p.boundary_shader_parameters.model_view_matrix = @bitCast(view_matrix);
             p.boundary_shader_parameters.projection_matrix = @bitCast(projection_matrix);
             p.boundary_shader_parameters.draw(info.boundaries_ibo);
+            gl.Disable(gl.CULL_FACE);
         }
     }
 }
@@ -535,11 +542,11 @@ pub fn uiPanel(m: *Module) void {
         if (p.draw_edges) {
             c.ImGui_Text("Width");
             c.ImGui_PushID("DrawEdgesWidth");
-            if (c.ImGui_SliderFloatEx("", &p.line_bold_shader_parameters.line_width, 0.1, 10.0, "%.1f", c.ImGuiSliderFlags_Logarithmic)) {
+            if (c.ImGui_SliderFloatEx("", &p.line_cylinder_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
                 zgp.requestRedraw();
             }
             c.ImGui_PopID();
-            if (c.ImGui_ColorEdit4("Global color##DrawEdgesColorGlobalEdit", &p.line_bold_shader_parameters.line_color, c.ImGuiColorEditFlags_NoInputs)) {
+            if (c.ImGui_ColorEdit4("Global color##DrawEdgesColorGlobalEdit", &p.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
                 zgp.requestRedraw();
             }
         }
@@ -666,11 +673,11 @@ pub fn uiPanel(m: *Module) void {
         if (p.draw_boundaries) {
             c.ImGui_Text("Width");
             c.ImGui_PushID("DrawBoundariesWidth");
-            if (c.ImGui_SliderFloatEx("", &p.boundary_shader_parameters.line_width, 0.1, 10.0, "%.1f", c.ImGuiSliderFlags_Logarithmic)) {
+            if (c.ImGui_SliderFloatEx("", &p.boundary_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
                 zgp.requestRedraw();
             }
             c.ImGui_PopID();
-            if (c.ImGui_ColorEdit4("Global color##DrawBoundariesColorGlobalEdit", &p.boundary_shader_parameters.line_color, c.ImGuiColorEditFlags_NoInputs)) {
+            if (c.ImGui_ColorEdit4("Global color##DrawBoundariesColorGlobalEdit", &p.boundary_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
                 zgp.requestRedraw();
             }
         }
