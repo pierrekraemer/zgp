@@ -11,11 +11,6 @@ smooth out vec3 view_pos;
 void main() {
   view_v0 = gl_in[0].gl_Position.xyz / gl_in[0].gl_Position.w;
   view_v1 = gl_in[1].gl_Position.xyz / gl_in[1].gl_Position.w;
-  if (view_v0.z > view_v1.z) {
-    vec3 tmp = view_v0;
-    view_v0 = view_v1;
-    view_v1 = tmp;
-  }
 
   vec3 cylDir = normalize(view_v1 - view_v0);
   vec3 basisX = vec3(1., 0., 0.);

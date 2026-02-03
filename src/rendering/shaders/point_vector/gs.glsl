@@ -1,64 +1,68 @@
 layout (points) in;
-layout (line_strip, max_vertices = 2) out;
+layout (triangle_strip, max_vertices = 14) out;
 
 uniform mat4 u_projection_matrix;
-uniform mat4 u_model_view_matrix;
-// uniform vec2 u_vector_width;
+uniform float u_cone_radius;
 
-in vec3 v_vector_end[];
+in vec4 v_vector_end[];
 
-void main()
-{
-  vec4 A = u_projection_matrix * u_model_view_matrix * gl_in[0].gl_Position;
-  vec4 B = u_projection_matrix * u_model_view_matrix * vec4(v_vector_end[0], 1.0);
-  gl_Position = A;
-  EmitVertex();
-  gl_Position = B;
-  EmitVertex();
-  EndPrimitive();
+flat out vec3 view_v0;
+flat out vec3 view_v1;
+smooth out vec3 view_pos;
 
-  // vec4 A = u_model_view_matrix * gl_in[0].gl_Position;
-  // vec4 B = u_model_view_matrix * vec4(v_vector_end[0], 1.0);
-  // float nearZ = 1.0;
-  // if (u_projection_matrix[2][2] != 1.0)
-  //   nearZ = -u_projection_matrix[3][2] / (u_projection_matrix[2][2] - 1.0);
-  // if (A.z < nearZ || B.z < nearZ) {
-  //   if (A.z >= nearZ)
-  //     A = B + (A - B) * (nearZ - B.z) / (A.z - B.z);
-  //   if (B.z >= nearZ)
-  //     B = A + (B - A) * (nearZ - A.z) / (B.z - A.z);
-    
-  //   vec3 AB = B.xyz / B.w - A.xyz / A.w;
-  //   // vec3 Nl = normalize(cross(AB, vec3(0.0, 0.0, 1.0)));
-  //   // vec3 Nm = normalize(cross(Nl, AB));
+void main() {
+  view_v0 = gl_in[0].gl_Position.xyz / gl_in[0].gl_Position.w;
+  view_v1 = v_vector_end[0].xyz / v_vector_end[0].w;
 
-  //   A = u_projection_matrix * A;
-  //   B = u_projection_matrix * B;
-  //   A = A / A.w;
-  //   B = B / B.w;
-  //   vec2 U2 = normalize(vec2(u_vector_width[1], u_vector_width[0]) * (B.xy - A.xy));
-  //   vec2 LWCorr = u_vector_width * max(abs(U2.x), abs(U2.y));
-  //   vec3 U = vec3(0.5 * LWCorr * U2, 0.0);
-  //   vec3 V = vec3(LWCorr * vec2(U2[1], -U2[0]), 0.0);
+  vec3 coneDir = normalize(view_v1 - view_v0);
+  vec3 basisX = vec3(1., 0., 0.);
+  basisX -= dot(basisX, coneDir) * coneDir;
+  if (abs(basisX.x) < 0.1) {
+    basisX = vec3(0., 1., 0.);
+    basisX -= dot(basisX, coneDir) * coneDir;
+  }
+  basisX = normalize(basisX);
+  vec3 basisY = normalize(cross(coneDir, basisX));
 
-  //   // N = Nl;
-  //   gl_Position = vec4(A.xyz - V, 1.0);
-  //   EmitVertex();
-  //   // N = Nl;
-  //   gl_Position = vec4(B.xyz - V, 1.0);
-  //   EmitVertex();
-  //   // N = Nm;
-  //   gl_Position = vec4(A.xyz - U, 1.0);
-  //   EmitVertex();
-  //   // N = Nm;
-  //   gl_Position = vec4(B.xyz + U, 1.0);
-  //   EmitVertex();
-  //   // N = -Nl;
-  //   gl_Position = vec4(A.xyz + V, 1.0);
-  //   EmitVertex();
-  //   // N = -Nl;
-  //   gl_Position = vec4(B.xyz + V, 1.0);
-  //   EmitVertex();
-  //   EndPrimitive();
-	// }
+  vec4 dx = vec4(basisX * u_cone_radius, 0.);
+  vec4 dy = vec4(basisY * u_cone_radius, 0.);
+
+  vec4 p1 = gl_in[0].gl_Position - dx - dy;
+  vec4 p2 = gl_in[0].gl_Position + dx - dy;
+  vec4 p3 = gl_in[0].gl_Position - dx + dy;
+  vec4 p4 = gl_in[0].gl_Position + dx + dy;
+  vec4 p5 = v_vector_end[0] - dx - dy;
+  vec4 p6 = v_vector_end[0] + dx - dy;
+  vec4 p7 = v_vector_end[0] - dx + dy;
+  vec4 p8 = v_vector_end[0] + dx + dy;
+  
+  vec4 v0_proj = u_projection_matrix * gl_in[0].gl_Position;
+  vec4 v1_proj = u_projection_matrix * v_vector_end[0];
+
+  vec4 dx_proj = u_projection_matrix * dx;
+  vec4 dy_proj = u_projection_matrix * dy;
+
+  vec4 p1_proj = v0_proj - dx_proj - dy_proj;
+  vec4 p2_proj = v0_proj + dx_proj - dy_proj;
+  vec4 p3_proj = v0_proj - dx_proj + dy_proj;
+  vec4 p4_proj = v0_proj + dx_proj + dy_proj;
+  vec4 p5_proj = v1_proj - dx_proj - dy_proj;
+  vec4 p6_proj = v1_proj + dx_proj - dy_proj;
+  vec4 p7_proj = v1_proj - dx_proj + dy_proj;
+  vec4 p8_proj = v1_proj + dx_proj + dy_proj;
+  
+  view_pos = p7.xyz; gl_Position = p7_proj; EmitVertex();
+  view_pos = p8.xyz; gl_Position = p8_proj; EmitVertex();
+  view_pos = p5.xyz; gl_Position = p5_proj; EmitVertex();
+  view_pos = p6.xyz; gl_Position = p6_proj; EmitVertex();
+  view_pos = p2.xyz; gl_Position = p2_proj; EmitVertex();
+  view_pos = p8.xyz; gl_Position = p8_proj; EmitVertex();
+  view_pos = p4.xyz; gl_Position = p4_proj; EmitVertex();
+  view_pos = p7.xyz; gl_Position = p7_proj; EmitVertex();
+  view_pos = p3.xyz; gl_Position = p3_proj; EmitVertex();
+  view_pos = p5.xyz; gl_Position = p5_proj; EmitVertex();
+  view_pos = p1.xyz; gl_Position = p1_proj; EmitVertex();
+  view_pos = p2.xyz; gl_Position = p2_proj; EmitVertex();
+  view_pos = p3.xyz; gl_Position = p3_proj; EmitVertex();
+  view_pos = p4.xyz; gl_Position = p4_proj; EmitVertex();
 }

@@ -22,9 +22,11 @@ program: Shader,
 
 model_view_matrix_uniform: c_int = undefined,
 projection_matrix_uniform: c_int = undefined,
-vector_scale_uniform: c_int = undefined,
+ambiant_color_uniform: c_int = undefined,
+light_position_uniform: c_int = undefined,
+cone_radius_uniform: c_int = undefined,
 vector_color_uniform: c_int = undefined,
-// vector_width_uniform: c_int = undefined,
+vector_scale_uniform: c_int = undefined,
 
 position_attrib: VAO.VertexAttribInfo = undefined,
 vector_attrib: VAO.VertexAttribInfo = undefined,
@@ -45,9 +47,11 @@ fn init() !PointVector {
 
     pv.model_view_matrix_uniform = gl.GetUniformLocation(pv.program.index, "u_model_view_matrix");
     pv.projection_matrix_uniform = gl.GetUniformLocation(pv.program.index, "u_projection_matrix");
-    pv.vector_scale_uniform = gl.GetUniformLocation(pv.program.index, "u_vector_scale");
+    pv.ambiant_color_uniform = gl.GetUniformLocation(pv.program.index, "u_ambiant_color");
+    pv.light_position_uniform = gl.GetUniformLocation(pv.program.index, "u_light_position");
+    pv.cone_radius_uniform = gl.GetUniformLocation(pv.program.index, "u_cone_radius");
     pv.vector_color_uniform = gl.GetUniformLocation(pv.program.index, "u_vector_color");
-    // pv.vector_width_uniform = gl.GetUniformLocation(pv.program.index, "u_vector_width");
+    pv.vector_scale_uniform = gl.GetUniformLocation(pv.program.index, "u_vector_scale");
 
     pv.position_attrib = .{
         .index = @intCast(gl.GetAttribLocation(pv.program.index, "a_position")),
@@ -75,9 +79,11 @@ pub const Parameters = struct {
 
     model_view_matrix: [16]f32 = undefined,
     projection_matrix: [16]f32 = undefined,
-    vector_scale: f32 = 0.005,
+    ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
+    light_position: [3]f32 = .{ -10, 0, 100 },
+    cone_radius: f32 = 0.0005,
     vector_color: [4]f32 = .{ 0.0, 0.0, 0.0, 1.0 },
-    vector_width: f32 = 1.0,
+    vector_scale: f32 = 0.005,
 
     const VertexAttrib = enum {
         position,
@@ -116,12 +122,11 @@ pub const Parameters = struct {
         defer gl.UseProgram(0);
         gl.UniformMatrix4fv(p.shader.model_view_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.model_view_matrix));
         gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
-        gl.Uniform1f(p.shader.vector_scale_uniform, p.vector_scale);
+        gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
+        gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
+        gl.Uniform1f(p.shader.cone_radius_uniform, p.cone_radius);
         gl.Uniform4fv(p.shader.vector_color_uniform, 1, @ptrCast(&p.vector_color));
-        // var viewport: [4]i32 = .{ 0, 0, 0, 0 };
-        // gl.GetIntegerv(gl.VIEWPORT, &viewport);
-        // gl.Uniform2f(p.shader.vector_width_uniform, p.vector_width / @as(f32, @floatFromInt(viewport[2])), p.vector_width / @as(f32, @floatFromInt(viewport[3])));
-        gl.LineWidth(p.vector_width);
+        gl.Uniform1f(p.shader.vector_scale_uniform, p.vector_scale);
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);

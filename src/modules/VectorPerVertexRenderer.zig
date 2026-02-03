@@ -133,9 +133,12 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
         const surface_mesh_info = zgp.surface_mesh_store.surfaceMeshInfo(surface_mesh);
         const vector_per_vertex_renderer_parameters = vpvr.parameters.getPtr(surface_mesh).?;
 
+        gl.Enable(gl.CULL_FACE);
+        gl.CullFace(gl.BACK);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.model_view_matrix = @bitCast(view_matrix);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.projection_matrix = @bitCast(projection_matrix);
         vector_per_vertex_renderer_parameters.point_vector_shader_parameters.draw(surface_mesh_info.points_ibo);
+        gl.Disable(gl.CULL_FACE);
     }
 }
 
