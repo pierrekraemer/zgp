@@ -26,8 +26,9 @@ const TnBData = struct {
         if (!tbd.initialized) {
             tbd.vertex_ref_edge = try tbd.surface_mesh.addData(.vertex, SurfaceMesh.Cell, "__vertex_ref_edge");
         }
-        try tbd.computeVertexRefEdges();
         tbd.initialized = true;
+
+        try tbd.computeVertexRefEdges();
     }
 
     pub fn deinit(tbd: *TnBData) void {

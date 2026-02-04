@@ -131,9 +131,6 @@ vec3 calcConeNormal(vec3 p, vec3 pa, vec3 pb, float ra) {
     float cosSlope = ra / slantDist;
     
     // The normal points "out" (radial) and "down" (towards base, opposite to axis)
-    // Wait: axisDir points Tip->Base. 
-    // The surface tilts IN towards the tip.
-    // N = Radial * (Height/Slant) - Axis * (Radius/Slant)
     return normalize(radial * sinSlope - axisDir * cosSlope);
 }
 
@@ -155,6 +152,6 @@ void main() {
         result += vec4(u_ambiant_color.rgb, 0.0);
         f_color = result;
     } else {
-        f_color = vec4(1.0, 0.0, 0.0, 0.0);
+        discard;
     }
 }
