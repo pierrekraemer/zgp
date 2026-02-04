@@ -24,8 +24,8 @@ model_view_matrix_uniform: c_int = undefined,
 projection_matrix_uniform: c_int = undefined,
 ambiant_color_uniform: c_int = undefined,
 light_position_uniform: c_int = undefined,
-point_size_uniform: c_int = undefined,
-point_color_uniform: c_int = undefined,
+sphere_radius_uniform: c_int = undefined,
+sphere_color_uniform: c_int = undefined,
 
 position_attrib: VAO.VertexAttribInfo = undefined,
 
@@ -47,8 +47,8 @@ fn init() !PointSphere {
     ps.projection_matrix_uniform = gl.GetUniformLocation(ps.program.index, "u_projection_matrix");
     ps.ambiant_color_uniform = gl.GetUniformLocation(ps.program.index, "u_ambiant_color");
     ps.light_position_uniform = gl.GetUniformLocation(ps.program.index, "u_light_position");
-    ps.point_size_uniform = gl.GetUniformLocation(ps.program.index, "u_point_size");
-    ps.point_color_uniform = gl.GetUniformLocation(ps.program.index, "u_point_color");
+    ps.sphere_radius_uniform = gl.GetUniformLocation(ps.program.index, "u_sphere_radius");
+    ps.sphere_color_uniform = gl.GetUniformLocation(ps.program.index, "u_sphere_color");
 
     ps.position_attrib = .{
         .index = @intCast(gl.GetAttribLocation(ps.program.index, "a_position")),
@@ -72,8 +72,8 @@ pub const Parameters = struct {
     projection_matrix: [16]f32 = undefined,
     ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
     light_position: [3]f32 = .{ -100, 0, 100 },
-    point_size: f32 = 0.001,
-    point_color: [4]f32 = .{ 0.8, 0.8, 0.8, 1 },
+    sphere_radius: f32 = 0.001,
+    sphere_color: [4]f32 = .{ 0.8, 0.8, 0.8, 1 },
 
     const VertexAttrib = enum {
         position,
@@ -111,8 +111,8 @@ pub const Parameters = struct {
         gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
         gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
         gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
-        gl.Uniform1f(p.shader.point_size_uniform, p.point_size);
-        gl.Uniform4fv(p.shader.point_color_uniform, 1, @ptrCast(&p.point_color));
+        gl.Uniform1f(p.shader.sphere_radius_uniform, p.sphere_radius);
+        gl.Uniform4fv(p.shader.sphere_color_uniform, 1, @ptrCast(&p.sphere_color));
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);

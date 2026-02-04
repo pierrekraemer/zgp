@@ -1,3 +1,4 @@
+uniform mat4 u_model_view_matrix;
 uniform float u_min_value;
 uniform float u_max_value;
 
@@ -26,7 +27,7 @@ vec4 color_map_blue_white_red(float x)
 }
 
 void main() {
-	gl_Position = a_position;
+	gl_Position = u_model_view_matrix * a_position;
   v_value = scale_and_clamp_to_0_1(a_scalar, u_min_value, u_max_value);
   v_color = color_map_blue_white_red(v_value);
 }

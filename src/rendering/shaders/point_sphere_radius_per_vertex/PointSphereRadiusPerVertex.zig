@@ -24,7 +24,7 @@ model_view_matrix_uniform: c_int = undefined,
 projection_matrix_uniform: c_int = undefined,
 ambiant_color_uniform: c_int = undefined,
 light_position_uniform: c_int = undefined,
-point_color_uniform: c_int = undefined,
+sphere_color_uniform: c_int = undefined,
 
 position_attrib: VAO.VertexAttribInfo = undefined,
 radius_attrib: VAO.VertexAttribInfo = undefined,
@@ -47,7 +47,7 @@ fn init() !PointSphereRadiusPerVertex {
     psrpv.projection_matrix_uniform = gl.GetUniformLocation(psrpv.program.index, "u_projection_matrix");
     psrpv.ambiant_color_uniform = gl.GetUniformLocation(psrpv.program.index, "u_ambiant_color");
     psrpv.light_position_uniform = gl.GetUniformLocation(psrpv.program.index, "u_light_position");
-    psrpv.point_color_uniform = gl.GetUniformLocation(psrpv.program.index, "u_point_color");
+    psrpv.sphere_color_uniform = gl.GetUniformLocation(psrpv.program.index, "u_sphere_color");
 
     psrpv.position_attrib = .{
         .index = @intCast(gl.GetAttribLocation(psrpv.program.index, "a_position")),
@@ -77,7 +77,7 @@ pub const Parameters = struct {
     projection_matrix: [16]f32 = undefined,
     ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
     light_position: [3]f32 = .{ -100, 0, 100 },
-    point_color: [4]f32 = .{ 0.8, 0.8, 0.8, 1 },
+    sphere_color: [4]f32 = .{ 0.8, 0.8, 0.8, 1 },
 
     const VertexAttrib = enum {
         position,
@@ -118,7 +118,7 @@ pub const Parameters = struct {
         gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
         gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
         gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
-        gl.Uniform4fv(p.shader.point_color_uniform, 1, @ptrCast(&p.point_color));
+        gl.Uniform4fv(p.shader.sphere_color_uniform, 1, @ptrCast(&p.sphere_color));
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);

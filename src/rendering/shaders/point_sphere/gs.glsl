@@ -1,26 +1,39 @@
 layout (points) in;
 layout (triangle_strip, max_vertices=4) out;
 
-uniform mat4 u_model_view_matrix;
 uniform mat4 u_projection_matrix;
-uniform float u_point_size;
+uniform float u_sphere_radius;
 
-out vec3 sphere_center;
-out vec2 sprite_coord;
-
-void corner(vec4 center, float x, float y) {
-  sprite_coord = vec2(x, y);
-  vec4 pos = center + vec4(u_point_size * x, u_point_size * y, 0.0, 0.0);
-  gl_Position = u_projection_matrix * pos;
-  EmitVertex();
-}
+flat out vec3 sphere_center;
+smooth out vec3 proxy_pos;
 
 void main() {
-  vec4 pos_center = u_model_view_matrix * gl_in[0].gl_Position;
-  sphere_center = pos_center.xyz;
-  corner(pos_center, -1.4,  1.4);
-  corner(pos_center, -1.4, -1.4);
-  corner(pos_center,  1.4,  1.4);
-  corner(pos_center,  1.4, -1.4);
+  sphere_center = gl_in[0].gl_Position.xyz / gl_in[0].gl_Position.w;
+
+  vec3 basisX = vec3(1., 0., 0.);
+  vec3 basisY = vec3(0., 1., 0.);
+
+  vec4 dx = vec4(basisX * u_sphere_radius, 0.);
+  vec4 dy = vec4(basisY * u_sphere_radius, 0.);
+
+  vec4 p1 = gl_in[0].gl_Position - dx - dy;
+  vec4 p2 = gl_in[0].gl_Position + dx - dy;
+  vec4 p3 = gl_in[0].gl_Position - dx + dy;
+  vec4 p4 = gl_in[0].gl_Position + dx + dy;
+
+  vec4 center_proj = u_projection_matrix * gl_in[0].gl_Position;
+
+  vec4 dx_proj = u_projection_matrix * dx;
+  vec4 dy_proj = u_projection_matrix * dy;
+
+  vec4 p1_proj = center_proj - dx_proj - dy_proj;
+  vec4 p2_proj = center_proj + dx_proj - dy_proj;
+  vec4 p3_proj = center_proj - dx_proj + dy_proj;
+  vec4 p4_proj = center_proj + dx_proj + dy_proj;
+
+  proxy_pos = p1.xyz; gl_Position = p1_proj; EmitVertex();
+  proxy_pos = p2.xyz; gl_Position = p2_proj; EmitVertex();
+  proxy_pos = p3.xyz; gl_Position = p3_proj; EmitVertex();
+  proxy_pos = p4.xyz; gl_Position = p4_proj; EmitVertex();
   EndPrimitive();
 }

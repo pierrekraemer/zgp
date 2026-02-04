@@ -469,10 +469,10 @@ pub fn uiPanel(m: *Module) void {
         if (p.draw_vertices) {
             c.ImGui_Text("Size");
             c.ImGui_PushID("DrawVerticesSize");
-            if (c.ImGui_SliderFloatEx("", &p.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+            if (c.ImGui_SliderFloatEx("", &p.point_sphere_shader_parameters.sphere_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
                 // sync value to other point sphere shaders
-                p.point_sphere_scalar_per_vertex_shader_parameters.point_size = p.point_sphere_shader_parameters.point_size;
-                p.point_sphere_color_per_vertex_shader_parameters.point_size = p.point_sphere_shader_parameters.point_size;
+                p.point_sphere_scalar_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
+                p.point_sphere_color_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
                 zgp.requestRedraw();
             }
             c.ImGui_PopID();
@@ -492,7 +492,7 @@ pub fn uiPanel(m: *Module) void {
             }
             switch (p.draw_vertices_color.defined_on) {
                 .global => {
-                    if (c.ImGui_ColorEdit3("Global color##DrawVerticesColorGlobalEdit", &p.point_sphere_shader_parameters.point_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    if (c.ImGui_ColorEdit3("Global color##DrawVerticesColorGlobalEdit", &p.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
                         zgp.requestRedraw();
                     }
                 },

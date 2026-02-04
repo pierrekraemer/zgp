@@ -29,8 +29,8 @@ const SelectionData = struct {
 
     pub fn init() SelectionData {
         var p = PointSphere.Parameters.init();
-        p.point_size = 0.002;
-        p.point_color = .{ 0.0, 1.0, 0.0, 1.0 };
+        p.sphere_radius = 0.002;
+        p.sphere_color = .{ 0.0, 1.0, 0.0, 1.0 };
         var t = TriFlat.Parameters.init();
         t.vertex_color = .{ 0.0, 1.0, 0.0, 1.0 };
         return .{
@@ -270,11 +270,11 @@ pub fn uiPanel(m: *Module) void {
 
                     c.ImGui_Text("Size");
                     c.ImGui_PushID("DrawSelectedVerticesSize");
-                    if (c.ImGui_SliderFloatEx("", &sd.point_sphere_shader_parameters.point_size, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+                    if (c.ImGui_SliderFloatEx("", &sd.point_sphere_shader_parameters.sphere_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
                         zgp.requestRedraw();
                     }
                     c.ImGui_PopID();
-                    if (c.ImGui_ColorEdit3("Color##SelectedVerticesColorEdit", &sd.point_sphere_shader_parameters.point_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    if (c.ImGui_ColorEdit3("Color##SelectedVerticesColorEdit", &sd.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
                         zgp.requestRedraw();
                     }
                 },

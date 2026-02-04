@@ -6,7 +6,7 @@ uniform float u_cylinder_radius;
 
 flat out vec3 view_v0;
 flat out vec3 view_v1;
-smooth out vec3 view_pos;
+smooth out vec3 proxy_pos;
 
 void main() {
   view_v0 = gl_in[0].gl_Position.xyz / gl_in[0].gl_Position.w;
@@ -49,18 +49,19 @@ void main() {
   vec4 p7_proj = v1_proj - dx_proj + dy_proj;
   vec4 p8_proj = v1_proj + dx_proj + dy_proj;
   
-  view_pos = p7.xyz; gl_Position = p7_proj; EmitVertex();
-  view_pos = p8.xyz; gl_Position = p8_proj; EmitVertex();
-  view_pos = p5.xyz; gl_Position = p5_proj; EmitVertex();
-  view_pos = p6.xyz; gl_Position = p6_proj; EmitVertex();
-  view_pos = p2.xyz; gl_Position = p2_proj; EmitVertex();
-  view_pos = p8.xyz; gl_Position = p8_proj; EmitVertex();
-  view_pos = p4.xyz; gl_Position = p4_proj; EmitVertex();
-  view_pos = p7.xyz; gl_Position = p7_proj; EmitVertex();
-  view_pos = p3.xyz; gl_Position = p3_proj; EmitVertex();
-  view_pos = p5.xyz; gl_Position = p5_proj; EmitVertex();
-  view_pos = p1.xyz; gl_Position = p1_proj; EmitVertex();
-  view_pos = p2.xyz; gl_Position = p2_proj; EmitVertex();
-  view_pos = p3.xyz; gl_Position = p3_proj; EmitVertex();
-  view_pos = p4.xyz; gl_Position = p4_proj; EmitVertex();
+  proxy_pos = p7.xyz; gl_Position = p7_proj; EmitVertex();
+  proxy_pos = p8.xyz; gl_Position = p8_proj; EmitVertex();
+  proxy_pos = p5.xyz; gl_Position = p5_proj; EmitVertex();
+  proxy_pos = p6.xyz; gl_Position = p6_proj; EmitVertex();
+  proxy_pos = p2.xyz; gl_Position = p2_proj; EmitVertex();
+  proxy_pos = p8.xyz; gl_Position = p8_proj; EmitVertex();
+  proxy_pos = p4.xyz; gl_Position = p4_proj; EmitVertex();
+  proxy_pos = p7.xyz; gl_Position = p7_proj; EmitVertex();
+  proxy_pos = p3.xyz; gl_Position = p3_proj; EmitVertex();
+  proxy_pos = p5.xyz; gl_Position = p5_proj; EmitVertex();
+  proxy_pos = p1.xyz; gl_Position = p1_proj; EmitVertex();
+  proxy_pos = p2.xyz; gl_Position = p2_proj; EmitVertex();
+  proxy_pos = p3.xyz; gl_Position = p3_proj; EmitVertex();
+  proxy_pos = p4.xyz; gl_Position = p4_proj; EmitVertex();
+  EndPrimitive();
 }

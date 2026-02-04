@@ -24,7 +24,7 @@ model_view_matrix_uniform: c_int = undefined,
 projection_matrix_uniform: c_int = undefined,
 ambiant_color_uniform: c_int = undefined,
 light_position_uniform: c_int = undefined,
-point_size_uniform: c_int = undefined,
+sphere_radius_uniform: c_int = undefined,
 min_value_uniform: c_int = undefined,
 max_value_uniform: c_int = undefined,
 
@@ -49,7 +49,7 @@ fn init() !PointSphereScalarPerVertex {
     psspv.projection_matrix_uniform = gl.GetUniformLocation(psspv.program.index, "u_projection_matrix");
     psspv.ambiant_color_uniform = gl.GetUniformLocation(psspv.program.index, "u_ambiant_color");
     psspv.light_position_uniform = gl.GetUniformLocation(psspv.program.index, "u_light_position");
-    psspv.point_size_uniform = gl.GetUniformLocation(psspv.program.index, "u_point_size");
+    psspv.sphere_radius_uniform = gl.GetUniformLocation(psspv.program.index, "u_sphere_radius");
     psspv.min_value_uniform = gl.GetUniformLocation(psspv.program.index, "u_min_value");
     psspv.max_value_uniform = gl.GetUniformLocation(psspv.program.index, "u_max_value");
 
@@ -81,7 +81,7 @@ pub const Parameters = struct {
     projection_matrix: [16]f32 = undefined,
     ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
     light_position: [3]f32 = .{ -100, 0, 100 },
-    point_size: f32 = 0.001,
+    sphere_radius: f32 = 0.001,
     min_value: f32 = 0.0,
     max_value: f32 = 1.0,
 
@@ -124,7 +124,7 @@ pub const Parameters = struct {
         gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
         gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
         gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
-        gl.Uniform1f(p.shader.point_size_uniform, p.point_size);
+        gl.Uniform1f(p.shader.sphere_radius_uniform, p.sphere_radius);
         gl.Uniform1f(p.shader.min_value_uniform, p.min_value);
         gl.Uniform1f(p.shader.max_value_uniform, p.max_value);
         gl.BindVertexArray(p.vao.index);
