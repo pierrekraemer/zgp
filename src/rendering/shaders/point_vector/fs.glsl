@@ -139,7 +139,7 @@ vec3 calcConeNormal(vec3 p, vec3 pa, vec3 pb, float ra) {
 
 void main() {
     vec3 rayStart = vec3(0.0, 0.0, 0.0);
-	  vec3 rayDir = normalize(view_pos);
+	vec3 rayDir = normalize(view_pos);
     
     float t = interCone(rayStart, rayDir, view_v0, view_v1, u_cone_radius);
 
@@ -155,6 +155,6 @@ void main() {
         result += vec4(u_ambiant_color.rgb, 0.0);
         f_color = result;
     } else {
-        discard;
+        f_color = vec4(1.0, 0.0, 0.0, 0.0);
     }
 }
