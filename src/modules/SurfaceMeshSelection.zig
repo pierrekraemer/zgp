@@ -178,7 +178,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                         const info = sm_store.surfaceMeshInfo(sm);
                         // TODO: fallback to brute-force search if the BVH is not available
                         if (info.bvh.bvh_ptr) |_| {
-                            if (view.pixelWorldRayIfGeometry(event.button.x, event.button.y)) |ray| {
+                            if (view.viewToWorldRayIfGeometry(event.button.x, event.button.y)) |ray| {
                                 switch (sms.selecting_cell_type) {
                                     .vertex => {
                                         if (info.bvh.intersectedVertex(ray)) |v| {

@@ -88,7 +88,8 @@ const StdDataComputation = struct {
         } });
     }
 
-    // get the standard datas to read and the one to compute from the SurfaceMeshStdDatas of the given SurfaceMesh
+    // actually calls the computation function with the right arguments
+    // taken from the SurfaceMeshStdDatas of the given SurfaceMesh.
     pub fn compute(comptime self: *const StdDataComputation, sm: *SurfaceMesh) void {
         const info = zgp.surface_mesh_store.surfaceMeshInfo(sm);
         const func: *const self.ComputeFuncType() = @ptrCast(@alignCast(self.func));
@@ -201,10 +202,10 @@ fn computeCornerAngles(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
 ) !void {
-    var timer = try std.time.Timer.start();
+    // var timer = try std.time.Timer.start();
     try angle.computeCornerAngles(sm, vertex_position, corner_angle);
-    const elapsed: f64 = @floatFromInt(timer.read());
-    zgp_log.info("Corner angles computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+    // const elapsed: f64 = @floatFromInt(timer.read());
+    // zgp_log.info("Corner angles computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
 }
 

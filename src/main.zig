@@ -25,6 +25,7 @@ const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
 const SurfaceMeshSelection = @import("modules/SurfaceMeshSelection.zig");
+const SurfaceMeshDeformation = @import("modules/SurfaceMeshDeformation.zig");
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
 const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
 const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
@@ -35,6 +36,7 @@ const geometry_utils = @import("geometry/utils.zig");
 const vec = @import("geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
+const Window = @import("utils/Window.zig");
 const Camera = @import("rendering/Camera.zig");
 const View = @import("rendering/View.zig");
 
@@ -57,17 +59,21 @@ var allocator: std.mem.Allocator = undefined;
 // TODO: use the thread pool to parallelize stuff (cell iterators, etc.)
 
 /// Global elements publicly accessible from all modules:
+/// - PointCloud / SurfaceMesh / VolumeMesh stores
+/// - modules list
+/// - view
+/// - window
 /// - random number generator
 /// - thread pool
-/// - PointCloud / SurfaceMesh / VolumeMesh stores
-/// - view
-/// - modules list
-pub var rng: std.Random.DefaultPrng = undefined;
-pub var thread_pool: std.Thread.Pool = undefined;
 pub var point_cloud_store: PointCloudStore = undefined;
 pub var surface_mesh_store: SurfaceMeshStore = undefined;
-pub var view: View = undefined;
 pub var modules: std.ArrayList(*Module) = .empty;
+pub var view: View = undefined;
+pub var window: Window = undefined;
+pub var rng: std.Random.DefaultPrng = undefined;
+pub var thread_pool: std.Thread.Pool = undefined;
+
+var camera: Camera = undefined;
 
 /// ZGP modules
 /// TODO: could be declared in a config file and loaded at runtime
@@ -75,23 +81,16 @@ pub var point_cloud_renderer: PointCloudRenderer = undefined;
 pub var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 pub var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
 pub var surface_mesh_selection: SurfaceMeshSelection = undefined;
+pub var surface_mesh_deformation: SurfaceMeshDeformation = undefined;
 pub var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
 pub var surface_mesh_distance: SurfaceMeshDistance = undefined;
 pub var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
 pub var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
 pub var surface_mesh_procedural_texturing: SurfaceMeshProceduralTexturing = undefined;
 
-/// Application SDL Window & OpenGL context
-var window: *c.SDL_Window = undefined;
-pub var window_width: c_int = 1200;
-pub var window_height: c_int = 800;
-var gl_context: c.SDL_GLContext = undefined;
-var gl_procs: gl.ProcTable = undefined;
-
 // TODO: add a console bar at the bottom of the window to display logs & info messages
 
-var camera: Camera = undefined;
-
+// TODO: find a better place to put this function (or remove it and directly access 'view.need_redraw' from the modules)
 pub fn requestRedraw() void {
     view.need_redraw = true;
 }
@@ -100,92 +99,10 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = appstate;
     _ = argv;
 
-    // SDL & GL initialization
-    // ***********************
+    // SDL window & GL initialization
+    // ******************************
 
-    const platform: [*:0]const u8 = c.SDL_GetPlatform();
-    sdl_log.info("SDL platform: {s}", .{platform});
-    sdl_log.info("SDL build time version: {d}.{d}.{d}", .{
-        c.SDL_MAJOR_VERSION,
-        c.SDL_MINOR_VERSION,
-        c.SDL_MICRO_VERSION,
-    });
-    sdl_log.info("SDL build time revision: {s}", .{c.SDL_REVISION});
-    {
-        const version = c.SDL_GetVersion();
-        sdl_log.info("SDL runtime version: {d}.{d}.{d}", .{
-            c.SDL_VERSIONNUM_MAJOR(version),
-            c.SDL_VERSIONNUM_MINOR(version),
-            c.SDL_VERSIONNUM_MICRO(version),
-        });
-        const revision: [*:0]const u8 = c.SDL_GetRevision();
-        sdl_log.info("SDL runtime revision: {s}", .{revision});
-    }
-
-    try errify(c.SDL_SetAppMetadata("zgp", "0.0.0", "zgp"));
-
-    try errify(c.SDL_Init(c.SDL_INIT_VIDEO));
-    // We don't need to call 'SDL_Quit()' when using main callbacks.
-
-    try errify(c.SDL_GL_SetAttribute(c.SDL_GL_CONTEXT_MAJOR_VERSION, gl.info.version_major));
-    try errify(c.SDL_GL_SetAttribute(c.SDL_GL_CONTEXT_MINOR_VERSION, gl.info.version_minor));
-    try errify(c.SDL_GL_SetAttribute(
-        c.SDL_GL_CONTEXT_PROFILE_MASK,
-        switch (gl.info.api) {
-            .gl => if (gl.info.profile) |profile| switch (profile) {
-                .core => c.SDL_GL_CONTEXT_PROFILE_CORE,
-                .compatibility => c.SDL_GL_CONTEXT_PROFILE_COMPATIBILITY,
-                else => comptime unreachable,
-            } else 0,
-            .gles, .glsc => c.SDL_GL_CONTEXT_PROFILE_ES,
-        },
-    ));
-    try errify(c.SDL_GL_SetAttribute(
-        c.SDL_GL_CONTEXT_FLAGS,
-        if (gl.info.api == .gl and gl.info.version_major >= 3) c.SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG else 0,
-    ));
-
-    var nb_displays: c_int = 0;
-    const displays = try errify(c.SDL_GetDisplays(&nb_displays));
-    if (nb_displays > 0) {
-        for (0..@intCast(nb_displays)) |i| {
-            const display_name = c.SDL_GetDisplayName(displays[i]);
-            sdl_log.info("Display {d}: {s}", .{ i, display_name });
-        }
-        const display_mode = try errify(c.SDL_GetDesktopDisplayMode(displays[0]));
-        window_width = display_mode.*.w - 200;
-        window_height = display_mode.*.h;
-    } else {
-        sdl_log.warn("No display found", .{});
-    }
-    c.SDL_free(displays);
-
-    window = try errify(c.SDL_CreateWindow("zgp", window_width, window_height, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_RESIZABLE));
-    errdefer c.SDL_DestroyWindow(window);
-
-    gl_context = try errify(c.SDL_GL_CreateContext(window));
-    errdefer errify(c.SDL_GL_DestroyContext(gl_context)) catch {};
-
-    try errify(c.SDL_GL_MakeCurrent(window, gl_context));
-    errdefer errify(c.SDL_GL_MakeCurrent(window, null)) catch {};
-
-    try errify(c.SDL_GL_SetSwapInterval(1));
-
-    if (!gl_procs.init(c.SDL_GL_GetProcAddress)) return error.GlInitFailed;
-
-    gl.makeProcTableCurrent(&gl_procs);
-    errdefer gl.makeProcTableCurrent(null);
-
-    const shader_version = switch (gl.info.api) {
-        .gl => (
-            \\#version 410 core
-            \\
-        ),
-        .gles, .glsc => (
-            \\#version 300 es
-            \\
-        ),
-    };
+    try window.init();
 
     // Camera & View initialization
     // ****************************
@@ -195,13 +112,13 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         .{ 0.0, 0.0, -1.0 },
         .{ 0.0, 1.0, 0.0 },
         .{ 0.0, 0.0, 0.0 },
-        @as(f32, @floatFromInt(window_width)) / @as(f32, @floatFromInt(window_height)),
+        @as(f32, @floatFromInt(window.width)) / @as(f32, @floatFromInt(window.height)),
         0.2 * std.math.pi,
         .perspective,
     );
     errdefer camera.deinit(allocator);
 
-    view = try View.init(window_width, window_height);
+    view = try View.init(window.width, window.height);
     errdefer view.deinit();
 
     try view.setCamera(&camera, allocator);
@@ -236,7 +153,18 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     imstyle.*.SeparatorTextAlign = c.ImVec2{ .x = 1.0, .y = 0.0 };
     imstyle.*.FrameRounding = 3;
 
-    _ = c.cImGui_ImplSDL3_InitForOpenGL(window, gl_context);
+    const shader_version = switch (gl.info.api) {
+        .gl => (
+            \\#version 410 core
+            \\
+        ),
+        .gles, .glsc => (
+            \\#version 300 es
+            \\
+        ),
+    };
+
+    _ = c.cImGui_ImplSDL3_InitForOpenGL(window.sdl_window, window.gl_context);
     errdefer c.cImGui_ImplSDL3_Shutdown();
     _ = c.cImGui_ImplOpenGL3_InitEx(shader_version);
     errdefer c.cImGui_ImplOpenGL3_Shutdown();
@@ -262,6 +190,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer vector_per_vertex_renderer.deinit();
     surface_mesh_selection = .init(allocator);
     errdefer surface_mesh_selection.deinit();
+    surface_mesh_deformation = .init();
+    errdefer surface_mesh_deformation.deinit();
     surface_mesh_connectivity = .init();
     errdefer surface_mesh_connectivity.deinit();
     surface_mesh_distance = .init();
@@ -279,6 +209,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(allocator, &surface_mesh_renderer.module);
     try modules.append(allocator, &vector_per_vertex_renderer.module);
     try modules.append(allocator, &surface_mesh_selection.module);
+    try modules.append(allocator, &surface_mesh_deformation.module);
     try modules.append(allocator, &surface_mesh_connectivity.module);
     try modules.append(allocator, &surface_mesh_distance.module);
     try modules.append(allocator, &surface_mesh_curvature.module);
@@ -333,7 +264,13 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
     gl.ClearColor(UiData.background_color[0], UiData.background_color[1], UiData.background_color[2], UiData.background_color[3]);
 
+    // Draw the main view
+    // ******************
+
     view.draw(modules.items);
+
+    // ImGui frame initialization
+    // **************************
 
     c.cImGui_ImplOpenGL3_NewFrame();
     c.cImGui_ImplSDL3_NewFrame();
@@ -402,8 +339,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             }
         }
 
-        surface_mesh_store.menuBar();
         point_cloud_store.menuBar();
+        surface_mesh_store.menuBar();
 
         for (modules.items) |module| {
             module.menuBar();
@@ -476,9 +413,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     c.ImGui_UpdatePlatformWindows();
     c.ImGui_RenderPlatformWindowsDefault();
 
-    try errify(c.SDL_GL_MakeCurrent(window, gl_context));
-
-    try errify(c.SDL_GL_SwapWindow(window));
+    try errify(c.SDL_GL_MakeCurrent(window.sdl_window, window.gl_context));
+    try errify(c.SDL_GL_SwapWindow(window.sdl_window));
 
     return c.SDL_APP_CONTINUE;
 }
@@ -488,13 +424,10 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
 
     _ = c.cImGui_ImplSDL3_ProcessEvent(event);
 
-    // handle window events
+    // handle app events
     switch (event.type) {
         c.SDL_EVENT_QUIT => {
             return c.SDL_APP_SUCCESS;
-        },
-        c.SDL_EVENT_WINDOW_RESIZED => {
-            try errify(c.SDL_GetWindowSizeInPixels(window, &window_width, &window_height));
         },
         c.SDL_EVENT_KEY_DOWN => {
             switch (event.key.key) {
@@ -505,7 +438,10 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         else => {},
     }
 
-    // if ImGui wants to capture the mouse, do not process mouse events
+    // dispatch event to window
+    window.sdlEvent(event);
+
+    // if ImGui wants to capture the mouse, do not process mouse events further
     if (c.ImGui_GetIO().*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow)) {
         return c.SDL_APP_CONTINUE;
     }
@@ -541,6 +477,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         surface_mesh_renderer.deinit();
         vector_per_vertex_renderer.deinit();
         surface_mesh_selection.deinit();
+        surface_mesh_deformation.deinit();
         surface_mesh_connectivity.deinit();
         surface_mesh_distance.deinit();
         surface_mesh_curvature.deinit();
@@ -554,10 +491,8 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         point_cloud_store.deinit();
         surface_mesh_store.deinit();
 
-        gl.makeProcTableCurrent(null);
-        errify(c.SDL_GL_MakeCurrent(window, null)) catch {};
-        errify(c.SDL_GL_DestroyContext(gl_context)) catch {};
-        c.SDL_DestroyWindow(window);
+        window.deinit();
+
         fully_initialized = false;
     }
 }
@@ -614,7 +549,7 @@ fn sdlAppQuitC(appstate: ?*anyopaque, result: c.SDL_AppResult) callconv(.c) void
 }
 
 /// Converts the return value of an SDL function to an error union.
-inline fn errify(value: anytype) error{SdlError}!switch (@typeInfo(@TypeOf(value))) {
+pub inline fn errify(value: anytype) error{SdlError}!switch (@typeInfo(@TypeOf(value))) {
     .bool => void,
     .pointer, .optional => @TypeOf(value.?),
     .int => |info| switch (info.signedness) {

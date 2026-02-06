@@ -62,7 +62,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
     defer Lc.deinit();
 
     // setup mass-matrix A (vertex areas) and
-    // initial heat vector heat_0 (1.0 at source vertex, 0.0 elsewhere)
+    // initial heat vector heat_0 (1.0 at source vertices, 0.0 elsewhere)
     var massCoeffs: std.ArrayList(eigen.Scalar) = .empty;
     defer massCoeffs.deinit(sm.allocator);
     try massCoeffs.resize(sm.allocator, nb_vertices);

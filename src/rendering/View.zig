@@ -131,14 +131,14 @@ pub fn draw(view: *View, modules: []*Module) void {
 pub fn sdlEvent(view: *View, event: *const c.SDL_Event) void {
     switch (event.type) {
         c.SDL_EVENT_WINDOW_RESIZED => {
-            view.resize(zgp.window_width, zgp.window_height);
+            view.resize(zgp.window.width, zgp.window.height);
         },
         c.SDL_EVENT_MOUSE_BUTTON_UP => {
             switch (event.button.button) {
                 c.SDL_BUTTON_LEFT => {
                     const modState = c.SDL_GetModState();
                     if (view.camera != null and (modState & c.SDL_KMOD_SHIFT) != 0 and event.button.clicks == 2) {
-                        const world_pos = view.pixelWorldPosition(event.button.x, event.button.y);
+                        const world_pos = view.viewToWorld(event.button.x, event.button.y);
                         if (world_pos) |wp| {
                             view.camera.?.pivot_position = wp;
                         } else {
@@ -180,26 +180,12 @@ pub fn sdlEvent(view: *View, event: *const c.SDL_Event) void {
     }
 }
 
-pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
+/// Reconstruct the world position of the pixel at (x, y) in the view with given depth value z.
+/// z is expected to be in [0, 1], as read from the depth buffer.
+/// Returns null if the world position cannot be reconstructed (e.g. if the camera is not set or if the projection/view matrix cannot be inverted).
+pub fn viewToWorldZ(view: *const View, x: f32, y: f32, z: f32) ?Vec3f {
     if (view.camera == null) {
         gl_log.err("No camera set for view", .{});
-        return null;
-    }
-    var z: f32 = undefined;
-    gl.BindFramebuffer(gl.READ_FRAMEBUFFER, view.fbo.index);
-    defer gl.BindFramebuffer(gl.READ_FRAMEBUFFER, 0);
-    gl.ReadBuffer(gl.DEPTH_ATTACHMENT);
-    gl.ReadPixels(
-        @intFromFloat(x),
-        view.height - 1 - @as(c_int, @intFromFloat(y)), // OpenGL's origin is bottom-left
-        1,
-        1,
-        gl.DEPTH_COMPONENT,
-        gl.FLOAT,
-        &z,
-    );
-    if (z == 1.0) {
-        // no geometry was drawn at this pixel
         return null;
     }
     // reconstruct the world position from the depth value
@@ -230,14 +216,62 @@ pub fn pixelWorldPosition(view: *const View, x: f32, y: f32) ?Vec3f {
     return .{ p_world_f[0], p_world_f[1], p_world_f[2] };
 }
 
-pub fn pixelWorldRayIfGeometry(view: *const View, x: f32, y: f32) ?Ray {
+/// Reconstruct the world position of the pixel at (x, y) in the view with depth value read from the depth buffer.
+/// Returns null if no geometry was drawn at this pixel (i.e. if the depth value is 1.0).
+pub fn viewToWorld(view: *const View, x: f32, y: f32) ?Vec3f {
     if (view.camera == null) {
         gl_log.err("No camera set for view", .{});
         return null;
     }
-    const pwp = pixelWorldPosition(view, x, y);
+    var z: f32 = undefined;
+    gl.BindFramebuffer(gl.READ_FRAMEBUFFER, view.fbo.index);
+    defer gl.BindFramebuffer(gl.READ_FRAMEBUFFER, 0);
+    gl.ReadBuffer(gl.DEPTH_ATTACHMENT);
+    gl.ReadPixels(
+        @intFromFloat(x),
+        view.height - 1 - @as(c_int, @intFromFloat(y)), // OpenGL's origin is bottom-left
+        1,
+        1,
+        gl.DEPTH_COMPONENT,
+        gl.FLOAT,
+        &z,
+    );
+    if (z == 1.0) {
+        // no geometry was drawn at this pixel
+        return null;
+    }
+    return view.viewToWorldZ(x, y, z);
+}
+
+/// Reconstruct a ray in world space from the camera position through the pixel at (x, y) in the view.
+/// Returns null if no geometry was drawn at this pixel (i.e. if the depth value read from the depth buffer is 1.0).
+pub fn viewToWorldRayIfGeometry(view: *const View, x: f32, y: f32) ?Ray {
+    if (view.camera == null) {
+        gl_log.err("No camera set for view", .{});
+        return null;
+    }
+    const pwp = viewToWorld(view, x, y);
     return if (pwp == null) null else .{
         .origin = view.camera.?.position,
         .direction = vec.normalized3f(vec.sub3f(pwp.?, view.camera.?.position)),
+    };
+}
+
+pub fn worldToView(view: *const View, world_pos: Vec3f) ?Vec3f {
+    if (view.camera == null) {
+        gl_log.err("No camera set for view", .{});
+        return null;
+    }
+    const p_world: Vec4f = .{ world_pos[0], world_pos[1], world_pos[2], 1.0 };
+    const p_clip = mat.mulVec4f(view.camera.?.projection_matrix, mat.mulVec4f(view.camera.?.view_matrix, p_world));
+    if (p_clip[3] == 0.0) {
+        gl_log.err("Cannot divide by zero w component", .{});
+        return null;
+    }
+    const p_ndc = vec.divScalar4f(p_clip, p_clip[3]);
+    return .{
+        ((p_ndc[0] + 1.0) / 2.0) * @as(f32, @floatFromInt(view.width)),
+        ((1.0 - p_ndc[1]) / 2.0) * @as(f32, @floatFromInt(view.height)),
+        (p_ndc[2] + 1.0) / 2.0,
     };
 }

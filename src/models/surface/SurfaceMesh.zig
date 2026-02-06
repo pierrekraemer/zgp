@@ -418,9 +418,15 @@ pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
             assert(c.cellType() == cell_type);
             return self.data.value(self.surface_mesh.cellIndex(c));
         }
+        pub fn valueByIndex(self: Self, index: u32) T {
+            return self.data.value(index);
+        }
         pub fn valuePtr(self: Self, c: Cell) *T {
             assert(c.cellType() == cell_type);
             return self.data.valuePtr(self.surface_mesh.cellIndex(c));
+        }
+        pub fn valuePtrByIndex(self: Self, index: u32) *T {
+            return self.data.valuePtr(index);
         }
         pub fn name(self: Self) []const u8 {
             return self.data.data_gen.name;
