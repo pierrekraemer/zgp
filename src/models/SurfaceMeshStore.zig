@@ -282,7 +282,25 @@ pub fn surfaceMeshCellSetUpdated(
             };
         },
         .edge => {
-            // TODO: manage edge set IBO
+            var indices = std.ArrayList(u32).initCapacity(sms.allocator, 128) catch |err| {
+                zgp_log.err("Failed to create indices array list for face set IBO: {}", .{err});
+                return;
+            };
+            defer indices.deinit(sms.allocator);
+            for (info.edge_set.cells.items) |e| {
+                const d = e.dart();
+                const d1 = sm.phi1(d);
+                indices.append(sms.allocator, sm.cellIndex(.{ .vertex = d })) catch {
+                    continue;
+                };
+                indices.append(sms.allocator, sm.cellIndex(.{ .vertex = d1 })) catch {
+                    continue;
+                };
+            }
+            info.edge_set_ibo.fillFromSlice(indices.items) catch |err| {
+                zgp_log.err("Failed to fill edge set IBO for SurfaceMesh: {}", .{err});
+                return;
+            };
         },
         .face => {
             var indices = std.ArrayList(u32).initCapacity(sms.allocator, 128) catch |err| {

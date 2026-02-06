@@ -15,6 +15,7 @@ const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfaceMeshStdData = @import("../models/surface/SurfaceMeshStdDatas.zig").SurfaceMeshStdData;
 
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
+const LineCylinder = @import("../rendering/shaders/line_cylinder/LineCylinder.zig");
 const TriFlat = @import("../rendering/shaders/tri_flat/TriFlat.zig");
 const VBO = @import("../rendering/VBO.zig");
 
@@ -25,22 +26,28 @@ const Mat4f = mat.Mat4f;
 
 const SelectionData = struct {
     point_sphere_shader_parameters: PointSphere.Parameters,
+    line_cylinder_shader_parameters: LineCylinder.Parameters,
     tri_flat_shader_parameters: TriFlat.Parameters,
 
     pub fn init() SelectionData {
         var p = PointSphere.Parameters.init();
         p.sphere_radius = 0.002;
         p.sphere_color = .{ 0.0, 1.0, 0.0, 1.0 };
+        var l = LineCylinder.Parameters.init();
+        l.cylinder_radius = 0.001;
+        l.cylinder_color = .{ 0.0, 1.0, 0.0, 1.0 };
         var t = TriFlat.Parameters.init();
         t.vertex_color = .{ 0.0, 1.0, 0.0, 1.0 };
         return .{
             .point_sphere_shader_parameters = p,
+            .line_cylinder_shader_parameters = l,
             .tri_flat_shader_parameters = t,
         };
     }
 
     pub fn deinit(sd: *SelectionData) void {
         sd.point_sphere_shader_parameters.deinit();
+        sd.line_cylinder_shader_parameters.deinit();
         sd.tri_flat_shader_parameters.deinit();
     }
 };
@@ -112,9 +119,11 @@ pub fn surfaceMeshStdDataChanged(
             if (maybe_vertex_position) |vertex_position| {
                 const position_vbo: VBO = zgp.surface_mesh_store.dataVBO(.vertex, Vec3f, vertex_position);
                 sd.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+                sd.line_cylinder_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 sd.tri_flat_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 sd.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
+                sd.line_cylinder_shader_parameters.unsetVertexAttribArray(.position);
                 sd.tri_flat_shader_parameters.unsetVertexAttribArray(.position);
             }
         },
@@ -134,18 +143,23 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
 
     const sd = sms.surface_meshes_data.getPtr(sm) orelse return;
 
+    // draw selected vertices
     sd.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
     sd.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
     sd.point_sphere_shader_parameters.draw(info.vertex_set_ibo);
 
+    // draw selected edges
+    sd.line_cylinder_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+    sd.line_cylinder_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+    sd.line_cylinder_shader_parameters.draw(info.edge_set_ibo);
+
+    // draw selected faces
     gl.Enable(gl.POLYGON_OFFSET_FILL);
     gl.PolygonOffset(1.0, 0.0);
     sd.tri_flat_shader_parameters.model_view_matrix = @bitCast(view_matrix);
     sd.tri_flat_shader_parameters.projection_matrix = @bitCast(projection_matrix);
     sd.tri_flat_shader_parameters.draw(info.face_set_ibo);
     gl.Disable(gl.POLYGON_OFFSET_FILL);
-
-    // TODO: implement edge sets rendering
 }
 
 /// Part of the Module interface.
@@ -194,7 +208,20 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                             sm_store.surfaceMeshCellSetUpdated(sm, .vertex);
                                         }
                                     },
-                                    .edge => {},
+                                    .edge => {
+                                        if (info.bvh.intersectedEdge(ray)) |e| {
+                                            const modState = c.SDL_GetModState();
+                                            if ((modState & c.SDL_KMOD_SHIFT) != 0) {
+                                                info.edge_set.remove(e);
+                                            } else {
+                                                info.edge_set.add(e) catch |err| {
+                                                    std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
+                                                    return;
+                                                };
+                                            }
+                                            sm_store.surfaceMeshCellSetUpdated(sm, .edge);
+                                        }
+                                    },
                                     .face => {
                                         if (info.bvh.intersectedTriangle(ray)) |f| {
                                             const modState = c.SDL_GetModState();
@@ -243,24 +270,24 @@ pub fn uiPanel(m: *Module) void {
         }
         c.ImGui_Separator();
 
+        var buf: [64]u8 = undefined;
+
         inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
             c.ImGui_PushID(@tagName(cell_type));
             defer c.ImGui_PopID();
-            if (c.ImGui_RadioButton(@tagName(cell_type), sms.selecting_cell_type == cell_type)) {
-                sms.selecting_cell_type = cell_type;
-            }
             switch (cell_type) {
                 .vertex => {
+                    const text = std.fmt.bufPrintZ(&buf, "Vertices | #selected: {d}", .{info.vertex_set.cells.items.len}) catch "";
+                    c.ImGui_SeparatorText(text);
+                    if (c.ImGui_RadioButton("Vertex", sms.selecting_cell_type == .vertex)) {
+                        sms.selecting_cell_type = .vertex;
+                    }
                     c.ImGui_SameLine();
-                    c.ImGui_Text("(#vertices in set: %d)", info.vertex_set.cells.items.len);
                     const disabled = info.vertex_set.cells.items.len == 0;
                     if (disabled) {
                         c.ImGui_BeginDisabled(true);
                     }
-                    if (c.ImGui_ButtonEx(
-                        if (info.vertex_set.cells.items.len > 0) "Clear selection" else "No selection to clear",
-                        c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 },
-                    )) {
+                    if (c.ImGui_Button(if (info.vertex_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
                         info.vertex_set.clear();
                         sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
                     }
@@ -279,34 +306,46 @@ pub fn uiPanel(m: *Module) void {
                     }
                 },
                 .edge => {
+                    const text = std.fmt.bufPrintZ(&buf, "Edges | #selected: {d}", .{info.edge_set.cells.items.len}) catch "";
+                    c.ImGui_SeparatorText(text);
+                    if (c.ImGui_RadioButton("Edge", sms.selecting_cell_type == .edge)) {
+                        sms.selecting_cell_type = .edge;
+                    }
                     c.ImGui_SameLine();
-                    c.ImGui_Text("(#edges in set: %d)", info.edge_set.cells.items.len);
                     const disabled = info.edge_set.cells.items.len == 0;
                     if (disabled) {
                         c.ImGui_BeginDisabled(true);
                     }
-                    if (c.ImGui_ButtonEx(
-                        if (info.edge_set.cells.items.len > 0) "Clear selection" else "No selection to clear",
-                        c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 },
-                    )) {
+                    if (c.ImGui_Button(if (info.edge_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
                         info.edge_set.clear();
                         sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
                     }
                     if (disabled) {
                         c.ImGui_EndDisabled();
                     }
+
+                    c.ImGui_Text("Size");
+                    c.ImGui_PushID("DrawSelectedEdgesSize");
+                    if (c.ImGui_SliderFloatEx("", &sd.line_cylinder_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+                        zgp.requestRedraw();
+                    }
+                    c.ImGui_PopID();
+                    if (c.ImGui_ColorEdit3("Color##SelectedEdgesColorEdit", &sd.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
+                        zgp.requestRedraw();
+                    }
                 },
                 .face => {
+                    const text = std.fmt.bufPrintZ(&buf, "Faces | #selected: {d}", .{info.face_set.cells.items.len}) catch "";
+                    c.ImGui_SeparatorText(text);
+                    if (c.ImGui_RadioButton("Face", sms.selecting_cell_type == .face)) {
+                        sms.selecting_cell_type = .face;
+                    }
                     c.ImGui_SameLine();
-                    c.ImGui_Text("(#faces in set: %d)", info.face_set.cells.items.len);
                     const disabled = info.face_set.cells.items.len == 0;
                     if (disabled) {
                         c.ImGui_BeginDisabled(true);
                     }
-                    if (c.ImGui_ButtonEx(
-                        if (info.face_set.cells.items.len > 0) "Clear selection" else "No selection to clear",
-                        c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 },
-                    )) {
+                    if (c.ImGui_Button(if (info.face_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
                         info.face_set.clear();
                         sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
                     }
@@ -320,7 +359,6 @@ pub fn uiPanel(m: *Module) void {
                 },
                 else => {},
             }
-            c.ImGui_Separator();
         }
     } else {
         c.ImGui_Text("No SurfaceMesh selected");

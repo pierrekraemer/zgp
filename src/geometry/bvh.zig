@@ -102,6 +102,26 @@ pub const TrianglesBVH = struct {
         return null;
     }
 
+    pub fn intersectedEdge(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Cell {
+        if (tbvh.intersect(ray)) |h| {
+            const f = tbvh.surface_mesh_faces.items[h.triIndex];
+            if (h.bcoords[0] < h.bcoords[1]) {
+                if (h.bcoords[0] < h.bcoords[2]) { // bcoords[0] is smallest
+                    return .{ .edge = tbvh.surface_mesh.?.phi1(f.dart()) };
+                } else { // bcoords[2] is smallest
+                    return .{ .edge = f.dart() };
+                }
+            } else {
+                if (h.bcoords[1] < h.bcoords[2]) { // bcoords[1] is smallest
+                    return .{ .edge = tbvh.surface_mesh.?.phi_1(f.dart()) };
+                } else { // bcoords[2] is smallest
+                    return .{ .edge = f.dart() };
+                }
+            }
+        }
+        return null;
+    }
+
     pub fn intersectedVertex(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Cell {
         if (tbvh.intersect(ray)) |h| {
             const f = tbvh.surface_mesh_faces.items[h.triIndex];
