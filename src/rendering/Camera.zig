@@ -68,8 +68,8 @@ pub fn updateViewMatrix(c: *Camera) void {
 
 pub fn updateProjectionMatrix(c: *Camera) void {
     c.projection_matrix = switch (c.projection_type) {
-        .perspective => mat.perspective(c.field_of_view, c.aspect_ratio, 0.1, 3.0),
-        .orthographic => mat.orthographic(c.aspect_ratio * -c.view_matrix[3][2], -c.view_matrix[3][2], 0.1, 3.0),
+        .perspective => mat.perspective(c.field_of_view, c.aspect_ratio, 0.01, 3.0),
+        .orthographic => mat.orthographic(c.aspect_ratio * -c.view_matrix[3][2], -c.view_matrix[3][2], 0.01, 3.0),
     };
     for (c.views_using_camera.items) |view| {
         view.need_redraw = true;

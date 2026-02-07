@@ -80,14 +80,41 @@ pub fn computeEdgeDihedralAngles(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
 ) !void {
-    var it = try SurfaceMesh.CellIterator(.edge).init(sm);
-    defer it.deinit();
-    while (it.next()) |edge| {
-        edge_dihedral_angle.valuePtr(edge).* = edgeDihedralAngle(
-            sm,
-            edge,
-            vertex_position,
-            face_normal,
-        );
-    }
+    // var it = try SurfaceMesh.CellIterator(.edge).init(sm);
+    // defer it.deinit();
+    // while (it.next()) |edge| {
+    //     edge_dihedral_angle.valuePtr(edge).* = edgeDihedralAngle(
+    //         sm,
+    //         edge,
+    //         vertex_position,
+    //         face_normal,
+    //     );
+    // }
+
+    const Task = struct {
+        const Task = @This();
+
+        surface_mesh: *const SurfaceMesh,
+        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        face_normal: SurfaceMesh.CellData(.face, Vec3f),
+        edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
+
+        pub fn run(t: *const Task, edge: SurfaceMesh.Cell) void {
+            t.edge_dihedral_angle.valuePtr(edge).* = edgeDihedralAngle(
+                t.surface_mesh,
+                edge,
+                t.vertex_position,
+                t.face_normal,
+            );
+        }
+    };
+
+    var pcp = try SurfaceMesh.ParallelCellTaskRunner(.edge).init(sm);
+    defer pcp.deinit();
+    try pcp.run(Task{
+        .surface_mesh = sm,
+        .vertex_position = vertex_position,
+        .face_normal = face_normal,
+        .edge_dihedral_angle = edge_dihedral_angle,
+    });
 }

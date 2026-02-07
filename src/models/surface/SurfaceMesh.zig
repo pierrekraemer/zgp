@@ -23,6 +23,7 @@ const SurfaceMesh = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 
+const zgp = @import("../../main.zig");
 const zgp_log = std.log.scoped(.zgp);
 
 const data = @import("../../utils/Data.zig");
@@ -265,6 +266,88 @@ pub fn CellIterator(comptime cell_type: CellType) type {
             if (self.marker) |*marker| {
                 marker.reset();
             }
+        }
+    };
+}
+
+pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
+    return struct {
+        const Self = @This();
+
+        surface_mesh: *SurfaceMesh,
+        iterator: CellIterator(cell_type),
+        buffers: [2][]std.ArrayList(Cell), // double buffering
+
+        const BUFFER_SIZE: usize = 512;
+
+        pub fn init(sm: *SurfaceMesh) !Self {
+            const buffers0 = try sm.allocator.alloc(std.ArrayList(Cell), try std.Thread.getCpuCount());
+            const buffers1 = try sm.allocator.alloc(std.ArrayList(Cell), try std.Thread.getCpuCount());
+            for (buffers0) |*buffer| {
+                buffer.* = try std.ArrayList(Cell).initCapacity(sm.allocator, BUFFER_SIZE);
+            }
+            for (buffers1) |*buffer| {
+                buffer.* = try std.ArrayList(Cell).initCapacity(sm.allocator, BUFFER_SIZE);
+            }
+            return .{
+                .surface_mesh = sm,
+                .iterator = try CellIterator(cell_type).init(sm),
+                .buffers = .{ buffers0, buffers1 },
+            };
+        }
+        pub fn deinit(pcp: *Self) void {
+            pcp.iterator.deinit();
+            for (0..2) |i| {
+                for (pcp.buffers[i]) |*buffer| {
+                    buffer.deinit(pcp.surface_mesh.allocator);
+                }
+                pcp.surface_mesh.allocator.free(pcp.buffers[i]);
+            }
+        }
+
+        fn runTaskOnBuffer(task: anytype, buf: []Cell) void {
+            for (buf) |cell| {
+                task.run(cell);
+            }
+        }
+
+        pub fn run(self: *Self, task: anytype) !void {
+            var wg: [2]std.Thread.WaitGroup = .{ .{}, .{} }; // one WaitGroup per buffer group
+            var current_buf_group: usize = 0;
+            var current_buf_index: usize = 0;
+            while (self.iterator.next()) |cell| {
+                // add cell to current buffer of current buffer group
+                self.buffers[current_buf_group][current_buf_index].appendAssumeCapacity(cell);
+                // if the current buffer is full, run the task on it and switch to the next buffer of the current buffer group
+                if (self.buffers[current_buf_group][current_buf_index].items.len == BUFFER_SIZE) {
+                    zgp.thread_pool.spawnWg(
+                        &wg[current_buf_group],
+                        runTaskOnBuffer,
+                        .{ &task, self.buffers[current_buf_group][current_buf_index].items },
+                    );
+                    current_buf_index += 1;
+                }
+                // if we have used all the buffers of the current buffer group, switch to the next buffer group
+                if (current_buf_index == self.buffers[current_buf_group].len) {
+                    current_buf_group = (current_buf_group + 1) % 2;
+                    // threads working on this buffer group are waited for before clearing the buffers
+                    wg[current_buf_group].wait();
+                    wg[current_buf_group].reset();
+                    for (self.buffers[current_buf_group]) |*buffer| {
+                        buffer.clearRetainingCapacity();
+                    }
+                    current_buf_index = 0;
+                }
+            }
+            // run the task on the last potentially partially filled buffer and wait for the threads to finish
+            if (self.buffers[current_buf_group][current_buf_index].items.len > 0) {
+                zgp.thread_pool.spawnWg(
+                    &wg[current_buf_group],
+                    runTaskOnBuffer,
+                    .{ &task, self.buffers[current_buf_group][current_buf_index].items },
+                );
+            }
+            wg[current_buf_group].wait();
         }
     };
 }

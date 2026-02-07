@@ -171,6 +171,12 @@ pub fn uiPanel(m: *Module) void {
             zgp.requestRedraw();
         }
         c.ImGui_PopID();
+        c.ImGui_Text("Vector radius");
+        c.ImGui_PushID("VectorRadius");
+        if (c.ImGui_SliderFloatEx("", &p.point_vector_shader_parameters.cone_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+            zgp.requestRedraw();
+        }
+        c.ImGui_PopID();
         if (c.ImGui_ColorEdit3("Vector color", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs)) {
             zgp.requestRedraw();
         }

@@ -202,10 +202,7 @@ fn computeCornerAngles(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
 ) !void {
-    // var timer = try std.time.Timer.start();
     try angle.computeCornerAngles(sm, vertex_position, corner_angle);
-    // const elapsed: f64 = @floatFromInt(timer.read());
-    // zgp_log.info("Corner angles computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
 }
 
@@ -233,7 +230,10 @@ fn computeEdgeDihedralAngles(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
 ) !void {
+    var timer = try std.time.Timer.start();
     try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
+    const elapsed: f64 = @floatFromInt(timer.read());
+    zgp_log.info("Edge dihedral angles computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
 }
 
@@ -251,7 +251,10 @@ fn computeFaceNormals(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
 ) !void {
+    var timer = try std.time.Timer.start();
     try normal.computeFaceNormals(sm, vertex_position, face_normal);
+    const elapsed: f64 = @floatFromInt(timer.read());
+    zgp_log.info("Face normals computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, Vec3f, face_normal);
 }
 
@@ -270,7 +273,10 @@ fn computeVertexNormals(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
+    var timer = try std.time.Timer.start();
     try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
+    const elapsed: f64 = @floatFromInt(timer.read());
+    zgp_log.info("Vertex normals computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_normal);
 }
 
