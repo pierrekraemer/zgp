@@ -109,9 +109,9 @@ pub fn computeEdgeDihedralAngles(
         }
     };
 
-    var pcp = try SurfaceMesh.ParallelCellTaskRunner(.edge).init(sm);
-    defer pcp.deinit();
-    try pcp.run(Task{
+    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.edge).init(sm);
+    defer pctr.deinit();
+    try pctr.run(Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .face_normal = face_normal,

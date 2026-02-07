@@ -176,7 +176,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     point_cloud_store = .init(allocator);
     errdefer point_cloud_store.deinit();
-    surface_mesh_store = .init(allocator);
+    surface_mesh_store = try .init(allocator);
     errdefer surface_mesh_store.deinit();
 
     // Modules initialization

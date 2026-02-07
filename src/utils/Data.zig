@@ -357,6 +357,7 @@ pub const DataContainer = struct {
         };
     }
 
+    //TODO: should probably better be thread-safe!
     pub fn getMarker(dc: *DataContainer) !*Data(bool) {
         const index = dc.available_markers_indices.pop();
         if (index) |i| {

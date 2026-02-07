@@ -18,6 +18,7 @@ const SurfaceMeshStdData = SurfaceMeshStdDatas.SurfaceMeshStdData;
 
 const Data = @import("../utils/Data.zig").Data;
 const DataGen = @import("../utils/Data.zig").DataGen;
+const BufferPool = @import("../utils/BufferPool.zig").BufferPool;
 
 const VBO = @import("../rendering/VBO.zig");
 const IBO = @import("../rendering/IBO.zig");
@@ -33,8 +34,6 @@ const bvh = @import("../geometry/bvh.zig");
 /// - the IBOs (for rendering).
 /// The SurfaceMeshInfo associated with a SurfaceMesh is accessible via the surfaceMeshInfo function.
 const SurfaceMeshInfo = struct {
-    allocator: std.mem.Allocator,
-
     std_data: SurfaceMeshStdDatas = .{},
 
     bvh: bvh.TrianglesBVH = .{},
@@ -54,9 +53,8 @@ const SurfaceMeshInfo = struct {
     edge_set_ibo: IBO,
     face_set_ibo: IBO,
 
-    pub fn init(allocator: std.mem.Allocator, surface_mesh: *SurfaceMesh) !SurfaceMeshInfo {
+    pub fn init(surface_mesh: *SurfaceMesh) !SurfaceMeshInfo {
         return .{
-            .allocator = allocator,
             .points_ibo = IBO.init(),
             .lines_ibo = IBO.init(),
             .triangles_ibo = IBO.init(),
@@ -93,13 +91,16 @@ selected_surface_mesh: ?*SurfaceMesh = null,
 data_vbo: std.AutoHashMap(*const DataGen, VBO),
 data_last_update: std.AutoHashMap(*const DataGen, std.time.Instant),
 
-pub fn init(allocator: std.mem.Allocator) SurfaceMeshStore {
+cell_buffer_pool: BufferPool(SurfaceMesh.Cell),
+
+pub fn init(allocator: std.mem.Allocator) !SurfaceMeshStore {
     return .{
         .allocator = allocator,
         .surface_meshes = .init(allocator),
         .surface_meshes_info = .init(allocator),
         .data_vbo = .init(allocator),
         .data_last_update = .init(allocator),
+        .cell_buffer_pool = try .init(allocator, 1024, 64, 32),
     };
 }
 
@@ -128,6 +129,8 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
     }
     sms.data_vbo.deinit();
     sms.data_last_update.deinit();
+
+    sms.cell_buffer_pool.deinit();
 }
 
 pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh {
@@ -137,13 +140,13 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     }
     var sm = try sms.allocator.create(SurfaceMesh);
     errdefer sms.allocator.destroy(sm);
-    sm.* = try SurfaceMesh.init(sms.allocator);
+    sm.* = try SurfaceMesh.init(sms.allocator, &sms.cell_buffer_pool);
     errdefer sm.deinit();
     const owned_name = try sms.allocator.dupeZ(u8, name);
     errdefer sms.allocator.free(owned_name);
     try sms.surface_meshes.put(owned_name, sm);
     errdefer _ = sms.surface_meshes.remove(owned_name);
-    var info = try SurfaceMeshInfo.init(sms.allocator, sm);
+    var info = try SurfaceMeshInfo.init(sm);
     errdefer info.deinit();
     try sms.surface_meshes_info.put(sm, info);
     errdefer _ = sms.surface_meshes_info.remove(sm);

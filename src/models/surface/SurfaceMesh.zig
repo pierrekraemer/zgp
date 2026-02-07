@@ -30,6 +30,7 @@ const data = @import("../../utils/Data.zig");
 const DataContainer = data.DataContainer;
 const DataGen = data.DataGen;
 const Data = data.Data;
+const BufferPool = @import("../../utils/BufferPool.zig").BufferPool;
 
 pub const Dart = u32;
 const invalid_index = std.math.maxInt(u32);
@@ -63,6 +64,7 @@ pub const CellType = std.meta.Tag(Cell);
 // TODO: try to have a type for the different cell types rather than having to assert the type through the Cell active tag
 
 allocator: std.mem.Allocator,
+cell_buffer_pool: *BufferPool(Cell),
 
 /// Data containers for darts & the different cell types.
 dart_data: *DataContainer, // also used to store corner & halfedge data
@@ -79,9 +81,10 @@ dart_edge_index: *Data(u32) = undefined, // index of the edge the dart belongs t
 dart_face_index: *Data(u32) = undefined, // index of the face the dart belongs to
 dart_boundary_marker: *Data(bool) = undefined, // true if the dart is a boundary dart (i.e. belongs to a boundary face)
 
-pub fn init(allocator: std.mem.Allocator) !SurfaceMesh {
+pub fn init(allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !SurfaceMesh {
     var sm: SurfaceMesh = .{
         .allocator = allocator,
+        .cell_buffer_pool = cell_buffer_pool,
         .dart_data = try DataContainer.init(allocator),
         .vertex_data = try DataContainer.init(allocator),
         .edge_data = try DataContainer.init(allocator),
@@ -273,35 +276,46 @@ pub fn CellIterator(comptime cell_type: CellType) type {
 pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
     return struct {
         const Self = @This();
+        const CellBuffer = BufferPool(Cell).Buffer;
 
         surface_mesh: *SurfaceMesh,
         iterator: CellIterator(cell_type),
-        buffers: [2][]std.ArrayList(Cell), // double buffering
-
-        const BUFFER_SIZE: usize = 512;
+        buffers: [2][]CellBuffer, // manage two groups of buffers to be able to run tasks on one group while filling the other
+        wg: [2]std.Thread.WaitGroup, // one WaitGroup per group of buffers to be able to wait for the completion of tasks on each group independently
 
         pub fn init(sm: *SurfaceMesh) !Self {
-            const buffers0 = try sm.allocator.alloc(std.ArrayList(Cell), try std.Thread.getCpuCount());
-            const buffers1 = try sm.allocator.alloc(std.ArrayList(Cell), try std.Thread.getCpuCount());
-            for (buffers0) |*buffer| {
-                buffer.* = try std.ArrayList(Cell).initCapacity(sm.allocator, BUFFER_SIZE);
-            }
-            for (buffers1) |*buffer| {
-                buffer.* = try std.ArrayList(Cell).initCapacity(sm.allocator, BUFFER_SIZE);
-            }
+            const cpu_count = try std.Thread.getCpuCount();
             return .{
                 .surface_mesh = sm,
                 .iterator = try CellIterator(cell_type).init(sm),
-                .buffers = .{ buffers0, buffers1 },
+                .buffers = .{
+                    blk: {
+                        // acquire buffers from the pool (one buffer per thread) - first group
+                        const buffers: []CellBuffer = try sm.allocator.alloc(CellBuffer, cpu_count);
+                        for (buffers) |*buffer| {
+                            buffer.* = try sm.cell_buffer_pool.acquire();
+                        }
+                        break :blk buffers;
+                    },
+                    blk: {
+                        // acquire buffers from the pool (one buffer per thread) - second group
+                        const buffers: []CellBuffer = try sm.allocator.alloc(CellBuffer, cpu_count);
+                        for (buffers) |*buffer| {
+                            buffer.* = try sm.cell_buffer_pool.acquire();
+                        }
+                        break :blk buffers;
+                    },
+                },
+                .wg = .{ .{}, .{} },
             };
         }
-        pub fn deinit(pcp: *Self) void {
-            pcp.iterator.deinit();
+        pub fn deinit(pctr: *Self) void {
+            pctr.iterator.deinit();
             for (0..2) |i| {
-                for (pcp.buffers[i]) |*buffer| {
-                    buffer.deinit(pcp.surface_mesh.allocator);
+                for (pctr.buffers[i]) |*buffer| {
+                    buffer.release();
                 }
-                pcp.surface_mesh.allocator.free(pcp.buffers[i]);
+                pctr.surface_mesh.allocator.free(pctr.buffers[i]);
             }
         }
 
@@ -312,42 +326,41 @@ pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
         }
 
         pub fn run(self: *Self, task: anytype) !void {
-            var wg: [2]std.Thread.WaitGroup = .{ .{}, .{} }; // one WaitGroup per buffer group
             var current_buf_group: usize = 0;
             var current_buf_index: usize = 0;
+            var current_index_in_buffer: usize = 0;
             while (self.iterator.next()) |cell| {
                 // add cell to current buffer of current buffer group
-                self.buffers[current_buf_group][current_buf_index].appendAssumeCapacity(cell);
+                self.buffers[current_buf_group][current_buf_index].data[current_index_in_buffer] = cell;
+                current_index_in_buffer += 1;
                 // if the current buffer is full, run the task on it and switch to the next buffer of the current buffer group
-                if (self.buffers[current_buf_group][current_buf_index].items.len == BUFFER_SIZE) {
+                if (current_index_in_buffer == self.buffers[current_buf_group][current_buf_index].data.len) {
                     zgp.thread_pool.spawnWg(
-                        &wg[current_buf_group],
+                        &self.wg[current_buf_group],
                         runTaskOnBuffer,
-                        .{ &task, self.buffers[current_buf_group][current_buf_index].items },
+                        .{ &task, self.buffers[current_buf_group][current_buf_index].data },
                     );
                     current_buf_index += 1;
+                    current_index_in_buffer = 0;
                 }
                 // if we have used all the buffers of the current buffer group, switch to the next buffer group
                 if (current_buf_index == self.buffers[current_buf_group].len) {
                     current_buf_group = (current_buf_group + 1) % 2;
-                    // threads working on this buffer group are waited for before clearing the buffers
-                    wg[current_buf_group].wait();
-                    wg[current_buf_group].reset();
-                    for (self.buffers[current_buf_group]) |*buffer| {
-                        buffer.clearRetainingCapacity();
-                    }
+                    // threads working on this buffer group are waited on before we can reuse the buffers of this group
+                    self.wg[current_buf_group].wait();
+                    self.wg[current_buf_group].reset();
                     current_buf_index = 0;
                 }
             }
             // run the task on the last potentially partially filled buffer and wait for the threads to finish
-            if (self.buffers[current_buf_group][current_buf_index].items.len > 0) {
+            if (current_index_in_buffer > 0) {
                 zgp.thread_pool.spawnWg(
-                    &wg[current_buf_group],
+                    &self.wg[current_buf_group],
                     runTaskOnBuffer,
-                    .{ &task, self.buffers[current_buf_group][current_buf_index].items },
+                    .{ &task, self.buffers[current_buf_group][current_buf_index].data[0..current_index_in_buffer] },
                 );
             }
-            wg[current_buf_group].wait();
+            self.wg[current_buf_group].wait();
         }
     };
 }

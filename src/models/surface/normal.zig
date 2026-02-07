@@ -69,9 +69,9 @@ pub fn computeFaceNormals(
     //     }
     // };
 
-    // var pcp = try SurfaceMesh.ParallelCellTaskRunner(.face).init(sm);
-    // defer pcp.deinit();
-    // try pcp.run(Task{
+    // var pctr = try SurfaceMesh.ParallelCellTaskRunner(.face).init(sm);
+    // defer pctr.deinit();
+    // try pctr.run(Task{
     //     .surface_mesh = sm,
     //     .vertex_position = vertex_position,
     //     .face_normal = face_normal,
@@ -154,9 +154,9 @@ pub fn computeVertexNormals(
         }
     };
 
-    var pcp = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
-    defer pcp.deinit();
-    try pcp.run(Task{
+    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
+    defer pctr.deinit();
+    try pctr.run(Task{
         .surface_mesh = sm,
         .corner_angle = corner_angle,
         .face_normal = face_normal,
