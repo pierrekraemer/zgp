@@ -258,12 +258,6 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
     };
     sms.surfaceMeshCellSetUpdated(sm, .face);
 
-    info.vertex_set_ibo.fillFromSlice(info.vertex_set.indices.items) catch |err| {
-        zgp_log.err("Failed to fill vertex set IBO for SurfaceMesh: {}", .{err});
-        return;
-    };
-    // TODO: manage edge & face set IBOs
-
     // TODO: find a way to only notify modules that have registered interest in SurfaceMesh
     for (zgp.modules.items) |module| {
         module.surfaceMeshConnectivityUpdated(sm);
@@ -279,66 +273,24 @@ pub fn surfaceMeshCellSetUpdated(
     const info = sms.surface_meshes_info.getPtr(sm).?;
     switch (cell_type) {
         .vertex => {
-            info.vertex_set_ibo.fillFromSlice(info.vertex_set.indices.items) catch |err| {
+            info.vertex_set_ibo.fillFromIndexSlice(info.vertex_set.indices.items) catch |err| {
                 zgp_log.err("Failed to fill vertex set IBO for SurfaceMesh: {}", .{err});
                 return;
             };
         },
         .edge => {
-            var indices = std.ArrayList(u32).initCapacity(sms.allocator, 128) catch |err| {
-                zgp_log.err("Failed to create indices array list for face set IBO: {}", .{err});
-                return;
-            };
-            defer indices.deinit(sms.allocator);
-            for (info.edge_set.cells.items) |e| {
-                const d = e.dart();
-                const d1 = sm.phi1(d);
-                indices.append(sms.allocator, sm.cellIndex(.{ .vertex = d })) catch {
-                    continue;
-                };
-                indices.append(sms.allocator, sm.cellIndex(.{ .vertex = d1 })) catch {
-                    continue;
-                };
-            }
-            info.edge_set_ibo.fillFromSlice(indices.items) catch |err| {
+            info.edge_set_ibo.fillFromCellSlice(sm, info.edge_set.cells.items, sms.allocator) catch |err| {
                 zgp_log.err("Failed to fill edge set IBO for SurfaceMesh: {}", .{err});
                 return;
             };
         },
         .face => {
-            var indices = std.ArrayList(u32).initCapacity(sms.allocator, 128) catch |err| {
-                zgp_log.err("Failed to create indices array list for face set IBO: {}", .{err});
-                return;
-            };
-            defer indices.deinit(sms.allocator);
-            for (info.face_set.cells.items) |f| {
-                // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
-                var dart_it = sm.cellDartIterator(f);
-                const dart_start = dart_it.next() orelse break;
-                const start_index = sm.cellIndex(.{ .vertex = dart_start });
-                var dart_v1 = dart_it.next() orelse break;
-                var v1_index = sm.cellIndex(.{ .vertex = dart_v1 });
-                while (dart_it.next()) |dart_v2| {
-                    const v2_index = sm.cellIndex(.{ .vertex = dart_v2 });
-                    indices.append(sms.allocator, start_index) catch {
-                        break;
-                    };
-                    indices.append(sms.allocator, v1_index) catch {
-                        break;
-                    };
-                    indices.append(sms.allocator, v2_index) catch {
-                        break;
-                    };
-                    dart_v1 = dart_v2;
-                    v1_index = v2_index;
-                }
-            }
-            info.face_set_ibo.fillFromSlice(indices.items) catch |err| {
+            info.face_set_ibo.fillFromCellSlice(sm, info.face_set.cells.items, sms.allocator) catch |err| {
                 zgp_log.err("Failed to fill face set IBO for SurfaceMesh: {}", .{err});
                 return;
             };
         },
-        else => {},
+        else => unreachable,
     }
 
     // TODO: find a way to only notify modules that have registered interest in SurfaceMesh

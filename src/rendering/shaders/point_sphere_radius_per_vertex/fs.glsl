@@ -61,7 +61,7 @@ void main() {
         
         vec3 L = normalize(u_light_position - hitPos);
         float lambert_term = dot(normal, L);
-        vec4 result = vec4(u_sphere_color.rgb * lambert_term, 1.0);
+        vec4 result = vec4(u_sphere_color.rgb * lambert_term, u_sphere_color.a);
         result += vec4(u_ambiant_color.rgb, 0.0);
         f_color = result;
     } else {
