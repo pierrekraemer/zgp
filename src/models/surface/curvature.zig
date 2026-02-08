@@ -52,7 +52,7 @@ fn addEdgeContributionToTensor(
 /// Compute and return the principal curvatures magnitudes and directions of the given vertex.
 /// Results are returned as (kmin, Kmin, kmax, Kmax).
 pub fn vertexCurvature(
-    sm: *SurfaceMesh,
+    sm: *const SurfaceMesh,
     vertex: SurfaceMesh.Cell,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -131,23 +131,45 @@ pub fn computeVertexCurvatures(
     face_area: SurfaceMesh.CellData(.face, f32),
     vertex_curvature: *SurfaceMeshCurvatureDatas,
 ) !void {
-    var it = try SurfaceMesh.CellIterator(.vertex).init(sm);
-    defer it.deinit();
-    while (it.next()) |vertex| {
-        const curvature_values = try vertexCurvature(
-            sm,
-            vertex,
-            vertex_position,
-            vertex_normal,
-            edge_dihedral_angle,
-            edge_length,
-            face_area,
-        );
-        vertex_curvature.vertex_kmin.?.valuePtr(vertex).* = curvature_values.kmin;
-        vertex_curvature.vertex_Kmin.?.valuePtr(vertex).* = curvature_values.Kmin;
-        vertex_curvature.vertex_kmax.?.valuePtr(vertex).* = curvature_values.kmax;
-        vertex_curvature.vertex_Kmax.?.valuePtr(vertex).* = curvature_values.Kmax;
-    }
+    const Task = struct {
+        const Task = @This();
+
+        surface_mesh: *const SurfaceMesh,
+        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
+        edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
+        edge_length: SurfaceMesh.CellData(.edge, f32),
+        face_area: SurfaceMesh.CellData(.face, f32),
+        vertex_curvature: *SurfaceMeshCurvatureDatas,
+
+        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+            const curvature_values = try vertexCurvature(
+                t.surface_mesh,
+                vertex,
+                t.vertex_position,
+                t.vertex_normal,
+                t.edge_dihedral_angle,
+                t.edge_length,
+                t.face_area,
+            );
+            t.vertex_curvature.vertex_kmin.?.valuePtr(vertex).* = curvature_values.kmin;
+            t.vertex_curvature.vertex_Kmin.?.valuePtr(vertex).* = curvature_values.Kmin;
+            t.vertex_curvature.vertex_kmax.?.valuePtr(vertex).* = curvature_values.kmax;
+            t.vertex_curvature.vertex_Kmax.?.valuePtr(vertex).* = curvature_values.Kmax;
+        }
+    };
+
+    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
+    defer pctr.deinit();
+    try pctr.run(Task{
+        .surface_mesh = sm,
+        .vertex_position = vertex_position,
+        .vertex_normal = vertex_normal,
+        .edge_dihedral_angle = edge_dihedral_angle,
+        .edge_length = edge_length,
+        .face_area = face_area,
+        .vertex_curvature = vertex_curvature,
+    });
 }
 
 /// Compute and return the Gaussian curvature of the given vertex
