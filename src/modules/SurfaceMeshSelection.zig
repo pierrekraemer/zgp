@@ -58,8 +58,8 @@ surface_meshes_data: std.AutoHashMap(*SurfaceMesh, SelectionData),
 
 selecting: bool = false,
 selecting_cell_type: SurfaceMesh.CellType = .vertex,
-selecting_cell: ?SurfaceMesh.Cell = null,
-selecting_cell_ibo: IBO,
+hovered_cell: ?SurfaceMesh.Cell = null,
+hovered_cell_ibo: IBO,
 
 module: Module = .{
     .name = "Surface Mesh Selection",
@@ -77,7 +77,7 @@ pub fn init(allocator: std.mem.Allocator) SurfaceMeshSelection {
     return .{
         .allocator = allocator,
         .surface_meshes_data = .init(allocator),
-        .selecting_cell_ibo = IBO.init(),
+        .hovered_cell_ibo = IBO.init(),
     };
 }
 
@@ -165,8 +165,9 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     sd.tri_flat_shader_parameters.draw(info.face_set_ibo);
     gl.Disable(gl.POLYGON_OFFSET_FILL);
 
-    if (sms.selecting and sms.selecting_cell != null) {
-        const cell_type = sms.selecting_cell.?.cellType();
+    // draw currently hovered cell
+    if (sms.selecting and sms.hovered_cell != null) {
+        const cell_type = sms.hovered_cell.?.cellType();
         switch (cell_type) {
             .vertex => {
                 const sphere_radius_backup = sd.point_sphere_shader_parameters.sphere_radius;
@@ -177,7 +178,7 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
                 sd.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
                 gl.Enable(gl.BLEND);
                 gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                sd.point_sphere_shader_parameters.draw(sms.selecting_cell_ibo);
+                sd.point_sphere_shader_parameters.draw(sms.hovered_cell_ibo);
                 gl.Disable(gl.BLEND);
                 sd.point_sphere_shader_parameters.sphere_radius = sphere_radius_backup;
                 sd.point_sphere_shader_parameters.sphere_color = sphere_color_backup;
@@ -191,7 +192,7 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
                 sd.line_cylinder_shader_parameters.projection_matrix = @bitCast(projection_matrix);
                 gl.Enable(gl.BLEND);
                 gl.BlendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-                sd.line_cylinder_shader_parameters.draw(sms.selecting_cell_ibo);
+                sd.line_cylinder_shader_parameters.draw(sms.hovered_cell_ibo);
                 gl.Disable(gl.BLEND);
                 sd.line_cylinder_shader_parameters.cylinder_radius = cylinder_radius_backup;
                 sd.line_cylinder_shader_parameters.cylinder_color = cylinder_color_backup;
@@ -203,7 +204,7 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
                 sd.tri_flat_shader_parameters.projection_matrix = @bitCast(projection_matrix);
                 gl.Enable(gl.POLYGON_OFFSET_FILL);
                 gl.PolygonOffset(0.5, 0.0);
-                sd.tri_flat_shader_parameters.draw(sms.selecting_cell_ibo);
+                sd.tri_flat_shader_parameters.draw(sms.hovered_cell_ibo);
                 gl.Disable(gl.POLYGON_OFFSET_FILL);
                 sd.tri_flat_shader_parameters.vertex_color = vertex_color_backup;
             },
@@ -232,9 +233,9 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
             switch (event.key.key) {
                 c.SDLK_S => {
                     sms.selecting = false;
-                    sms.selecting_cell = null;
-                    sms.selecting_cell_ibo.fillFromIndexSlice(&.{}) catch |err| {
-                        std.debug.print("Failed to clear selecting cell IBO: {}\n", .{err});
+                    sms.hovered_cell = null;
+                    sms.hovered_cell_ibo.fillFromIndexSlice(&.{}) catch |err| {
+                        std.debug.print("Failed to clear hovered cell IBO: {}\n", .{err});
                         return;
                     };
                     zgp.requestRedraw();
@@ -250,23 +251,24 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                     if (view.viewToWorldRayIfGeometry(event.motion.x, event.motion.y)) |ray| {
                         switch (sms.selecting_cell_type) {
                             .vertex => {
-                                sms.selecting_cell = info.bvh.intersectedVertex(ray);
+                                sms.hovered_cell = info.bvh.intersectedVertex(ray);
                             },
                             .edge => {
-                                sms.selecting_cell = info.bvh.intersectedEdge(ray);
+                                sms.hovered_cell = info.bvh.intersectedEdge(ray);
                             },
                             .face => {
-                                sms.selecting_cell = info.bvh.intersectedTriangle(ray);
+                                sms.hovered_cell = info.bvh.intersectedTriangle(ray);
                             },
                             else => unreachable,
                         }
-                        sms.selecting_cell_ibo.fillFromCellSlice(sm, &[_]SurfaceMesh.Cell{sms.selecting_cell.?}, sms.allocator) catch |err| {
+                        sms.hovered_cell_ibo.fillFromCellSlice(sm, &[_]SurfaceMesh.Cell{sms.hovered_cell.?}, sms.allocator) catch |err| {
                             std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
                             return;
                         };
                     } else {
-                        sms.selecting_cell = null;
-                        sms.selecting_cell_ibo.fillFromIndexSlice(&.{}) catch |err| {
+                        // no cell is currently hovered, clear the selecting cell
+                        sms.hovered_cell = null;
+                        sms.hovered_cell_ibo.fillFromIndexSlice(&.{}) catch |err| {
                             std.debug.print("Failed to clear selecting cell IBO: {}\n", .{err});
                             return;
                         };
