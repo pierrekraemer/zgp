@@ -148,22 +148,28 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     const sd = sms.surface_meshes_data.getPtr(sm) orelse return;
 
     // draw selected vertices
-    sd.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
-    sd.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-    sd.point_sphere_shader_parameters.draw(info.vertex_set_ibo);
+    if (info.vertex_set.cells.items.len > 0) {
+        sd.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+        sd.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+        sd.point_sphere_shader_parameters.draw(info.vertex_set_ibo);
+    }
 
     // draw selected edges
-    sd.line_cylinder_shader_parameters.model_view_matrix = @bitCast(view_matrix);
-    sd.line_cylinder_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-    sd.line_cylinder_shader_parameters.draw(info.edge_set_ibo);
+    if (info.edge_set.cells.items.len > 0) {
+        sd.line_cylinder_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+        sd.line_cylinder_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+        sd.line_cylinder_shader_parameters.draw(info.edge_set_ibo);
+    }
 
     // draw selected faces
-    gl.Enable(gl.POLYGON_OFFSET_FILL);
-    gl.PolygonOffset(1.0, 0.0);
-    sd.tri_flat_shader_parameters.model_view_matrix = @bitCast(view_matrix);
-    sd.tri_flat_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-    sd.tri_flat_shader_parameters.draw(info.face_set_ibo);
-    gl.Disable(gl.POLYGON_OFFSET_FILL);
+    if (info.face_set.cells.items.len > 0) {
+        gl.Enable(gl.POLYGON_OFFSET_FILL);
+        gl.PolygonOffset(1.0, 0.0);
+        sd.tri_flat_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+        sd.tri_flat_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+        sd.tri_flat_shader_parameters.draw(info.face_set_ibo);
+        gl.Disable(gl.POLYGON_OFFSET_FILL);
+    }
 
     // draw currently hovered cell
     if (sms.selecting and sms.hovered_cell != null) {
@@ -234,7 +240,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                 c.SDLK_S => {
                     sms.selecting = false;
                     sms.hovered_cell = null;
-                    sms.hovered_cell_ibo.fillFromIndexSlice(&.{}) catch |err| {
+                    sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{}) catch |err| {
                         std.debug.print("Failed to clear hovered cell IBO: {}\n", .{err});
                         return;
                     };
@@ -268,7 +274,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                     } else {
                         // no cell is currently hovered, clear the selecting cell
                         sms.hovered_cell = null;
-                        sms.hovered_cell_ibo.fillFromIndexSlice(&.{}) catch |err| {
+                        sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{}) catch |err| {
                             std.debug.print("Failed to clear selecting cell IBO: {}\n", .{err});
                             return;
                         };

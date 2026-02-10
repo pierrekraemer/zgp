@@ -16,21 +16,21 @@ float scale_and_clamp_to_0_1(float x, float min, float max)
   return clamp(v, 0.0, 1.0);
 }
 
-vec4 color_map_blue_white_red(float x)
+vec3 color_map_blue_white_red(float x)
 {
   float x2 = 2.0 * x;
   switch (int(floor(max(0.0,x2+1.0))))
   {
-    case 0: return vec4(0.0, 0.0, 1.0, 1.0);
-    case 1: return vec4(x2, x2 , 1.0, 1.0);
-    case 2: return vec4(1.0, 2.0 - x2, 2.0 - x2, 1.0);
+    case 0: return vec3(0.0, 0.0, 1.0);
+    case 1: return vec3(x2, x2 , 1.0);
+    case 2: return vec3(1.0, 2.0 - x2, 2.0 - x2);
   }
-  return vec4(1.0, 0.0, 0.0, 1.0);
+  return vec3(1.0, 0.0, 0.0);
 }
 
 void main() {
 	gl_Position = u_model_view_matrix * a_position;
   v_value = scale_and_clamp_to_0_1(a_scalar, u_min_value, u_max_value);
-  v_color = color_map_blue_white_red(v_value);
+  v_color = vec4(color_map_blue_white_red(v_value), 1.0);
   v_radius = a_radius;
 }

@@ -132,7 +132,6 @@ pub fn pliantRemeshing(
                 }
                 if (is_flat) {
                     sm.removeVertex(vertex);
-                    std.debug.print("remove vertex {}\n", .{sm.cellIndex(vertex)});
                 }
             }
         }

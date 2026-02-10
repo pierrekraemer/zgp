@@ -273,7 +273,7 @@ pub fn surfaceMeshCellSetUpdated(
     const info = sms.surface_meshes_info.getPtr(sm).?;
     switch (cell_type) {
         .vertex => {
-            info.vertex_set_ibo.fillFromIndexSlice(info.vertex_set.indices.items) catch |err| {
+            info.vertex_set_ibo.fillFromCellSlice(sm, info.vertex_set.cells.items, sms.allocator) catch |err| {
                 zgp_log.err("Failed to fill vertex set IBO for SurfaceMesh: {}", .{err});
                 return;
             };

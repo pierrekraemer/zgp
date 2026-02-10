@@ -1,6 +1,7 @@
 const TriFlatScalarPerVertex = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 const gl = @import("gl");
 
 const Shader = @import("../../Shader.zig");
@@ -121,6 +122,7 @@ pub const Parameters = struct {
     pub fn draw(p: *Parameters, ibo: IBO) void {
         gl.UseProgram(p.shader.program.index);
         defer gl.UseProgram(0);
+
         gl.UniformMatrix4fv(p.shader.model_view_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.model_view_matrix));
         gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
         gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
@@ -129,10 +131,14 @@ pub const Parameters = struct {
         gl.Uniform1f(p.shader.max_value_uniform, p.max_value);
         gl.Uniform1i(p.shader.show_isolines_uniform, if (p.show_isolines) 1 else 0);
         gl.Uniform1i(p.shader.nb_isolines_uniform, p.nb_isolines);
+
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);
+
+        assert(ibo.primitive == .triangles);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);
         defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
+
         gl.DrawElements(gl.TRIANGLES, @intCast(ibo.nb_indices), gl.UNSIGNED_INT, 0);
     }
 };

@@ -29,9 +29,12 @@ camera: ?*Camera = null,
 
 width: c_int,
 height: c_int,
+// screen_color_tex_ms: Texture2D = undefined,
+// screen_depth_tex_ms: Texture2D = undefined,
 screen_color_tex: Texture2D = undefined,
 screen_depth_tex: Texture2D = undefined,
 
+// fbo_ms: FBO = undefined,
 fbo: FBO = undefined,
 fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = undefined,
 
@@ -44,16 +47,30 @@ pub fn init(width: c_int, height: c_int) !View {
         .need_redraw = true,
     };
 
-    view.screen_color_tex = Texture2D.init(&[_]Texture2D.Parameter{
+    // view.screen_color_tex_ms = Texture2D.init(true, 4, &[_]Texture2D.Parameter{
+    //     .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
+    //     .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
+    // });
+    // view.screen_color_tex_ms.resize(view.width, view.height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
+    // view.screen_depth_tex_ms = Texture2D.init(true, 4, &[_]Texture2D.Parameter{
+    //     .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
+    //     .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
+    // });
+    // view.screen_depth_tex_ms.resize(view.width, view.height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
+    view.screen_color_tex = Texture2D.init(false, 1, &[_]Texture2D.Parameter{
         .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
         .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
     });
     view.screen_color_tex.resize(view.width, view.height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
-    view.screen_depth_tex = Texture2D.init(&[_]Texture2D.Parameter{
+    view.screen_depth_tex = Texture2D.init(false, 1, &[_]Texture2D.Parameter{
         .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
         .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
     });
     view.screen_depth_tex.resize(view.width, view.height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
+
+    // view.fbo_ms = FBO.init();
+    // view.fbo_ms.attachTexture(gl.COLOR_ATTACHMENT0, view.screen_color_tex_ms);
+    // view.fbo_ms.attachTexture(gl.DEPTH_ATTACHMENT, view.screen_depth_tex_ms);
 
     view.fbo = FBO.init();
     view.fbo.attachTexture(gl.COLOR_ATTACHMENT0, view.screen_color_tex);
@@ -65,7 +82,7 @@ pub fn init(width: c_int, height: c_int) !View {
     }
 
     view.fullscreen_texture_shader_parameters = FullscreenTexture.Parameters.init();
-    view.fullscreen_texture_shader_parameters.setTexture(view.screen_color_tex, 0);
+    view.fullscreen_texture_shader_parameters.setTexture(view.screen_color_tex);
 
     return view;
 }
@@ -73,8 +90,11 @@ pub fn init(width: c_int, height: c_int) !View {
 pub fn deinit(view: *View) void {
     view.fullscreen_texture_shader_parameters.deinit();
     view.fbo.deinit();
+    // view.fbo_ms.deinit();
     view.screen_depth_tex.deinit();
     view.screen_color_tex.deinit();
+    // view.screen_depth_tex_ms.deinit();
+    // view.screen_color_tex_ms.deinit();
 }
 
 pub fn setCamera(view: *View, camera: *Camera, allocator: std.mem.Allocator) !void {
@@ -94,6 +114,8 @@ pub fn setCamera(view: *View, camera: *Camera, allocator: std.mem.Allocator) !vo
 pub fn resize(view: *View, width: c_int, height: c_int) void {
     view.width = width;
     view.height = height;
+    // view.screen_color_tex_ms.resize(width, height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
+    // view.screen_depth_tex_ms.resize(width, height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
     view.screen_color_tex.resize(width, height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
     view.screen_depth_tex.resize(width, height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
 
@@ -114,13 +136,30 @@ pub fn draw(view: *View, modules: []*Module) void {
     if (view.need_redraw) {
         gl.BindFramebuffer(gl.FRAMEBUFFER, view.fbo.index);
         defer gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
+
         gl.Clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
         gl.Enable(gl.DEPTH_TEST);
-        // gl.DrawBuffer(gl.COLOR_ATTACHMENT0); // not needed as it is already the default
+        gl.DrawBuffer(gl.COLOR_ATTACHMENT0);
         for (modules) |module| {
             module.draw(view.camera.?.view_matrix, view.camera.?.projection_matrix);
         }
         gl.Disable(gl.DEPTH_TEST);
+
+        // gl.BindFramebuffer(gl.READ_FRAMEBUFFER, view.fbo_ms.index);
+        // gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, view.fbo.index);
+        // gl.BlitFramebuffer(
+        //     0,
+        //     0,
+        //     view.width,
+        //     view.height,
+        //     0,
+        //     0,
+        //     view.width,
+        //     view.height,
+        //     gl.COLOR_BUFFER_BIT, // | gl.DEPTH_BUFFER_BIT,
+        //     gl.NEAREST,
+        // );
+
         view.need_redraw = false;
     }
     gl.Clear(gl.COLOR_BUFFER_BIT);

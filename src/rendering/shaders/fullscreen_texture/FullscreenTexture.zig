@@ -46,7 +46,7 @@ pub const Parameters = struct {
     shader: *const FullscreenTexture,
     vao: VAO,
 
-    tex: Texture2D = undefined,
+    texture: Texture2D = undefined,
     texture_unit: c_int = undefined,
 
     pub fn init() Parameters {
@@ -60,9 +60,9 @@ pub const Parameters = struct {
         p.vao.deinit();
     }
 
-    pub fn setTexture(p: *Parameters, tex: Texture2D, unit: c_int) void {
-        p.tex = tex;
-        p.texture_unit = unit;
+    pub fn setTexture(p: *Parameters, texture: Texture2D) void {
+        p.texture = texture;
+        p.texture_unit = 0;
     }
 
     pub fn draw(p: *Parameters) void {
@@ -71,7 +71,8 @@ pub const Parameters = struct {
 
         const unit: c_uint = @intCast(p.texture_unit);
         gl.ActiveTexture(gl.TEXTURE0 + unit);
-        gl.BindTexture(gl.TEXTURE_2D, p.tex.index);
+        gl.BindTexture(gl.TEXTURE_2D, p.texture.index);
+        defer gl.BindTexture(gl.TEXTURE_2D, 0);
 
         gl.BindVertexArray(p.vao.index); // even an empty VAO is needed in order for DrawArrays to work
         defer gl.BindVertexArray(0);

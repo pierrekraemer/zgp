@@ -1,6 +1,7 @@
 const LineCylinder = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 const gl = @import("gl");
 
 const Shader = @import("../../Shader.zig");
@@ -107,19 +108,21 @@ pub const Parameters = struct {
     pub fn draw(p: *Parameters, ibo: IBO) void {
         gl.UseProgram(p.shader.program.index);
         defer gl.UseProgram(0);
+
         gl.UniformMatrix4fv(p.shader.model_view_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.model_view_matrix));
         gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
-        // var viewport: [4]i32 = .{ 0, 0, 0, 0 };
-        // gl.GetIntegerv(gl.VIEWPORT, &viewport);
-        // gl.Uniform4iv(p.shader.viewport_uniform, 1, @ptrCast(&viewport));
         gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
         gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
         gl.Uniform1f(p.shader.cylinder_radius_uniform, p.cylinder_radius);
         gl.Uniform4fv(p.shader.cylinder_color_uniform, 1, @ptrCast(&p.cylinder_color));
+
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);
+
+        assert(ibo.primitive == .lines);
         gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo.index);
         defer gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
+
         gl.DrawElements(gl.LINES, @intCast(ibo.nb_indices), gl.UNSIGNED_INT, 0);
     }
 };

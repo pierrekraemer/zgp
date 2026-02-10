@@ -21,6 +21,8 @@ const LineCylinder = @import("../rendering/shaders/line_cylinder/LineCylinder.zi
 const TriFlat = @import("../rendering/shaders/tri_flat/TriFlat.zig");
 const TriFlatColorPerVertex = @import("../rendering/shaders/tri_flat_color_per_vertex/TriFlatColorPerVertex.zig");
 const TriFlatScalarPerVertex = @import("../rendering/shaders/tri_flat_scalar_per_vertex/TriFlatScalarPerVertex.zig");
+const TriFlatColorPerFace = @import("../rendering/shaders/tri_flat_color_per_face/TriFlatColorPerFace.zig");
+const TriFlatScalarPerFace = @import("../rendering/shaders/tri_flat_scalar_per_face/TriFlatScalarPerFace.zig");
 const VBO = @import("../rendering/VBO.zig");
 
 const eigen = @import("../geometry/eigen.zig");
@@ -56,6 +58,8 @@ const SurfaceMeshRendererParameters = struct {
     tri_flat_shader_parameters: TriFlat.Parameters,
     tri_flat_color_per_vertex_shader_parameters: TriFlatColorPerVertex.Parameters,
     tri_flat_scalar_per_vertex_shader_parameters: TriFlatScalarPerVertex.Parameters,
+    tri_flat_color_per_face_shader_parameters: TriFlatColorPerFace.Parameters,
+    tri_flat_scalar_per_face_shader_parameters: TriFlatScalarPerFace.Parameters,
     boundary_shader_parameters: LineCylinder.Parameters,
 
     draw_vertices: bool = true,
@@ -79,6 +83,8 @@ const SurfaceMeshRendererParameters = struct {
             .tri_flat_shader_parameters = TriFlat.Parameters.init(),
             .tri_flat_color_per_vertex_shader_parameters = TriFlatColorPerVertex.Parameters.init(),
             .tri_flat_scalar_per_vertex_shader_parameters = TriFlatScalarPerVertex.Parameters.init(),
+            .tri_flat_color_per_face_shader_parameters = TriFlatColorPerFace.Parameters.init(),
+            .tri_flat_scalar_per_face_shader_parameters = TriFlatScalarPerFace.Parameters.init(),
             .boundary_shader_parameters = LineCylinder.Parameters.init(),
         };
     }
@@ -91,6 +97,8 @@ const SurfaceMeshRendererParameters = struct {
         self.tri_flat_shader_parameters.deinit();
         self.tri_flat_color_per_vertex_shader_parameters.deinit();
         self.tri_flat_scalar_per_vertex_shader_parameters.deinit();
+        self.tri_flat_color_per_face_shader_parameters.deinit();
+        self.tri_flat_scalar_per_face_shader_parameters.deinit();
         self.boundary_shader_parameters.deinit();
     }
 };
@@ -162,6 +170,8 @@ pub fn surfaceMeshStdDataChanged(
                 p.tri_flat_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.tri_flat_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.tri_flat_scalar_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+                p.tri_flat_color_per_face_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
+                p.tri_flat_scalar_per_face_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.boundary_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
             } else {
                 p.point_sphere_shader_parameters.unsetVertexAttribArray(.position);
@@ -171,6 +181,8 @@ pub fn surfaceMeshStdDataChanged(
                 p.tri_flat_shader_parameters.unsetVertexAttribArray(.position);
                 p.tri_flat_color_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
                 p.tri_flat_scalar_per_vertex_shader_parameters.unsetVertexAttribArray(.position);
+                p.tri_flat_color_per_face_shader_parameters.unsetVertexAttribArray(.position);
+                p.tri_flat_scalar_per_face_shader_parameters.unsetVertexAttribArray(.position);
                 p.boundary_shader_parameters.unsetVertexAttribArray(.position);
             }
         },
@@ -214,10 +226,9 @@ pub fn surfaceMeshDataUpdated(
             if (p.draw_vertices_color.face_scalar_data != null and
                 p.draw_vertices_color.face_scalar_data.?.gen() == data_gen)
             {
-                // Not supported yet
-                // const min, const max = p.draw_vertices_color.face_scalar_data.?.data.minMaxValues(.{}, compareScalar);
-                // p.tri_flat_scalar_per_face_shader_parameters.min_value = min;
-                // p.tri_flat_scalar_per_face_shader_parameters.max_value = max;
+                const min, const max = p.draw_vertices_color.face_scalar_data.?.data.minMaxValues(CompareScalarContext{}, compareScalar);
+                p.tri_flat_scalar_per_face_shader_parameters.min_value = min;
+                p.tri_flat_scalar_per_face_shader_parameters.max_value = max;
             }
         },
         else => return, // Ignore other cell types
@@ -313,15 +324,14 @@ fn setSurfaceMeshDrawFacesColorData(
                 },
                 .face => {
                     p.draw_faces_color.face_scalar_data = data;
-                    // Not supported yet
-                    // if (p.draw_faces_color.face_scalar_data) |scalar| {
-                    // const scalar_vbo = zgp.surface_mesh_store.dataVBO(.face, f32, scalar);
-                    // p.tri_flat_scalar_per_face_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
-                    // } else {
-                    // p.tri_flat_scalar_per_face_shader_parameters.unsetVertexAttribArray(.scalar);
-                    // }
-                    // p.tri_flat_scalar_per_face_shader_parameters.min_value = min;
-                    // p.tri_flat_scalar_per_face_shader_parameters.max_value = max;
+                    if (p.draw_faces_color.face_scalar_data) |scalar| {
+                        const scalar_vbo = zgp.surface_mesh_store.dataVBO(.face, f32, scalar);
+                        p.tri_flat_scalar_per_face_shader_parameters.face_scalar_buffer = scalar_vbo;
+                    } else {
+                        p.tri_flat_scalar_per_face_shader_parameters.face_scalar_buffer = null;
+                    }
+                    p.tri_flat_scalar_per_face_shader_parameters.min_value = min;
+                    p.tri_flat_scalar_per_face_shader_parameters.max_value = max;
                 },
                 else => unreachable,
             }
@@ -342,13 +352,12 @@ fn setSurfaceMeshDrawFacesColorData(
                 },
                 .face => {
                     p.draw_faces_color.face_vector_data = data;
-                    // Not supported yet
-                    // if (p.draw_faces_color.face_vector_data) |vector| {
-                    // const vector_vbo = zgp.surface_mesh_store.dataVBO(.face, Vec3f, vector);
-                    // p.tri_flat_color_per_face_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
-                    // } else {
-                    // p.tri_flat_color_per_face_shader_parameters.unsetVertexAttribArray(.color);
-                    // }
+                    if (p.draw_faces_color.face_vector_data) |vector| {
+                        const vector_vbo = zgp.surface_mesh_store.dataVBO(.face, Vec3f, vector);
+                        p.tri_flat_color_per_face_shader_parameters.face_color_buffer = vector_vbo;
+                    } else {
+                        p.tri_flat_color_per_face_shader_parameters.face_color_buffer = null;
+                    }
                 },
                 else => unreachable,
             }
@@ -393,12 +402,14 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
                 .face => {
                     switch (p.draw_faces_color.type) {
                         .scalar => {
-                            // Not supported yet
-                            // TODO: write TriFlatScalarPerFaceShader
+                            p.tri_flat_scalar_per_face_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+                            p.tri_flat_scalar_per_face_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+                            p.tri_flat_scalar_per_face_shader_parameters.draw(info.triangles_ibo);
                         },
                         .vector => {
-                            // Not supported yet
-                            // TODO: write TriFlatColorPerFaceShader
+                            p.tri_flat_color_per_face_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+                            p.tri_flat_color_per_face_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+                            p.tri_flat_color_per_face_shader_parameters.draw(info.triangles_ibo);
                         },
                     }
                 },

@@ -23,5 +23,11 @@ pub fn deinit(f: *FBO) void {
 pub fn attachTexture(f: FBO, attachement: c_uint, texture: Texture2D) void {
     gl.BindFramebuffer(gl.FRAMEBUFFER, f.index);
     defer gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
-    gl.FramebufferTexture2D(gl.FRAMEBUFFER, attachement, gl.TEXTURE_2D, texture.index, 0);
+    gl.FramebufferTexture2D(
+        gl.FRAMEBUFFER,
+        attachement,
+        if (texture.multisample) gl.TEXTURE_2D_MULTISAMPLE else gl.TEXTURE_2D,
+        texture.index,
+        0,
+    );
 }
