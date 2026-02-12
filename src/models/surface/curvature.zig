@@ -69,6 +69,7 @@ pub fn vertexCurvature(
 
     // accumulate edge contributions to the curvature tensor & face area
     // in the 2-ring around the vertex
+    // TODO: compare to the results obtained using selection.cellsWithinSphereAroundVertex (multithread warning for markers)
     var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
         var d_it = sm.phi2(d);
@@ -142,7 +143,7 @@ pub fn computeVertexCurvatures(
         face_area: SurfaceMesh.CellData(.face, f32),
         vertex_curvature: *SurfaceMeshCurvatureDatas,
 
-        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub inline fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
             const curvature_values = try vertexCurvature(
                 t.surface_mesh,
                 vertex,

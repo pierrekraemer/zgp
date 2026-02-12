@@ -280,8 +280,10 @@ pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
 
         surface_mesh: *SurfaceMesh,
         iterator: CellIterator(cell_type),
-        buffers: [2][]CellBuffer, // manage two groups of buffers to be able to run tasks on one group while filling the other
-        wg: [2]std.Thread.WaitGroup, // one WaitGroup per group of buffers to be able to wait for the completion of tasks on each group independently
+        // manage two groups of buffers to be able to run tasks on one group while filling the other
+        buffers: [2][]CellBuffer,
+        // one WaitGroup per group of buffers to be able to wait for the completion of tasks on each group independently
+        wg: [2]std.Thread.WaitGroup,
 
         pub fn init(sm: *SurfaceMesh) !Self {
             const cpu_count = try std.Thread.getCpuCount();
@@ -309,6 +311,7 @@ pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
                 .wg = .{ .{}, .{} },
             };
         }
+
         pub fn deinit(pctr: *Self) void {
             pctr.iterator.deinit();
             for (0..2) |i| {
@@ -558,6 +561,14 @@ pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T:
     } else return null;
 }
 
+pub fn getOrAddData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
+    const dc = dataContainer(sm, cell_type);
+    return .{
+        .surface_mesh = sm,
+        .data = try dc.getOrAddData(T, name),
+    };
+}
+
 pub fn removeData(sm: *SurfaceMesh, comptime cell_type: CellType, attribute_gen: *DataGen) void {
     const dc = dataContainer(sm, cell_type);
     dc.removeData(attribute_gen);
@@ -687,6 +698,7 @@ pub fn setDartCellIndex(sm: *SurfaceMesh, d: Dart, comptime cell_type: CellType,
     index_data.valuePtr(d).* = index;
 }
 
+/// Returns the index of the cell of type cell_type the dart d belongs to.
 pub fn dartCellIndex(sm: *const SurfaceMesh, d: Dart, cell_type: CellType) u32 {
     switch (cell_type) {
         .halfedge, .corner => return d,
@@ -722,10 +734,15 @@ fn setCellIndex(sm: *SurfaceMesh, c: Cell, index: u32) void {
     }
 }
 
+/// Returns the index of the given cell.
 pub fn cellIndex(sm: *const SurfaceMesh, c: Cell) u32 {
     return sm.dartCellIndex(c.dart(), c.cellType());
 }
 
+/// Iterates over the cells of the given cell type and assigns them an index if they don't have one yet
+/// (i.e. if their index is invalid_index).
+/// This function is mainly intended to be used after the creation of the mesh (import, ...) to index all the cells of the mesh.
+/// However, it is harmless to call it at any time (but likely unnecessary).
 pub fn indexCells(sm: *SurfaceMesh, comptime cell_type: CellType) !void {
     assert(cell_type == .vertex or cell_type == .edge or cell_type == .face);
     var it = try CellIterator(cell_type).init(sm);
@@ -739,11 +756,38 @@ pub fn indexCells(sm: *SurfaceMesh, comptime cell_type: CellType) !void {
 }
 
 /// Returns the number of cells of the given CellType in the given SurfaceMesh.
-pub fn nbCells(sm: *const SurfaceMesh, comptime cell_type: CellType) u32 {
-    // TODO: count boundary faces
-    // TODO: should exclude boundary darts from the count of halfedges & corners
-    const dc = dataContainer(sm, cell_type);
-    return dc.nbElements();
+/// For vertices, edges and faces, the number of cells is simply the number of elements (active indices)
+/// in the corresponding DataContainer (very efficient).
+/// For halfedges and corners, the number of cells is the number of non-boundary darts (each halfedge/corner
+/// is represented by a single non-boundary dart) (needs an explicit traversal of the darts).
+/// For boundary faces, as there is no index and no data container, an explicit traversal is also needed).
+pub fn nbCells(sm: *SurfaceMesh, comptime cell_type: CellType) u32 {
+    switch (cell_type) {
+        .vertex, .edge, .face => {
+            const dc = dataContainer(sm, cell_type);
+            return dc.nbElements();
+        },
+        .halfedge, .corner => {
+            var count: u32 = 0;
+            var it = try CellIterator(cell_type).init(sm);
+            defer it.deinit();
+            while (it.next()) |cell| {
+                if (!sm.isBoundaryDart(cell.dart())) {
+                    count += 1;
+                }
+            }
+            return count;
+        },
+        .boundary => {
+            var count: u32 = 0;
+            var it = try CellIterator(.boundary).init(sm);
+            defer it.deinit();
+            while (it.next()) |_| {
+                count += 1;
+            }
+            return count;
+        },
+    }
 }
 
 /// Returns the degree of the given cell (number of d+1 incident cells).
@@ -934,7 +978,7 @@ pub fn removeFace(sm: *SurfaceMesh, face: Cell) void {
 /// Open edges (darts phi2-linked to themselves) are detected and boundary faces
 /// are created by following the open boundary cycles.
 /// This function is meant to be called after a construction process of a SurfaceMesh
-/// such as importing from files (see ModelsRegistry.loadSurfaceMeshFromFile)
+/// such as importing from files (see SurfaceMeshStore.loadSurfaceMeshFromFile)
 pub fn close(sm: *SurfaceMesh) !u32 {
     var nb_boundary_faces: u32 = 0;
     var dart_it = sm.dartIterator();

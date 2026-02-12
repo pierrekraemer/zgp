@@ -40,15 +40,43 @@ pub fn computeFaceAreas(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
 ) !void {
-    var it = try SurfaceMesh.CellIterator(.face).init(sm);
-    defer it.deinit();
-    while (it.next()) |face| {
-        face_area.valuePtr(face).* = faceArea(
-            sm,
-            face,
-            vertex_position,
-        );
-    }
+    const Task = struct {
+        const Task = @This();
+
+        surface_mesh: *const SurfaceMesh,
+        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        face_area: SurfaceMesh.CellData(.face, f32),
+
+        pub inline fn run(t: *const Task, face: SurfaceMesh.Cell) void {
+            t.face_area.valuePtr(face).* = faceArea(
+                t.surface_mesh,
+                face,
+                t.vertex_position,
+            );
+        }
+    };
+
+    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.face).init(sm);
+    defer pctr.deinit();
+    try pctr.run(Task{
+        .surface_mesh = sm,
+        .vertex_position = vertex_position,
+        .face_area = face_area,
+    });
+
+    // single-threaded version for the record
+    // (task closure is not actually needed here)
+
+    // const task: Task = .{
+    //     .surface_mesh = sm,
+    //     .vertex_position = vertex_position,
+    //     .face_area = face_area,
+    // };
+    // var it = try SurfaceMesh.CellIterator(.face).init(sm);
+    // defer it.deinit();
+    // while (it.next()) |face| {
+    //     task.run(face);
+    // }
 }
 
 /// Compute and return the area of the given vertex.
@@ -75,7 +103,7 @@ pub fn vertexArea(
 /// and store them in the given vertex_area data.
 /// The area of a vertex is defined as a sum of contributions from its incident faces.
 /// Each face f contributes 1/codegree(f) of its area to the area of its incident vertices.
-/// Executed here in a face-centric manner for better performance.
+/// Executed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance)
 pub fn computeVertexAreas(
     sm: *SurfaceMesh,
     face_area: SurfaceMesh.CellData(.face, f32),

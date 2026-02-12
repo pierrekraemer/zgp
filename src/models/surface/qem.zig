@@ -67,7 +67,7 @@ pub fn vertexQEM(
 /// A regularization term is added to ensure QEM is well-conditioned by adding a small contribution of the vertices tangent basis planes.
 /// SGP2025: Controlling Quadric Error Simplification with Line Quadrics
 /// https://www.dgp.toronto.edu/~hsuehtil/pdf/lineQuadric.pdf
-/// Face contributions to vertices quadrics are computed here in a face-centric manner for better performance.
+/// Face contributions to vertices quadrics are computed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance)
 pub fn computeVertexQEMs(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),

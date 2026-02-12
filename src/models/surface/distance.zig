@@ -114,8 +114,8 @@ pub fn computeVertexGeodesicDistancesFromSource(
         sm,
         vertex_position,
         vertex_heat,
-        face_normal,
         face_area,
+        face_normal,
         face_heat_grad,
     );
 

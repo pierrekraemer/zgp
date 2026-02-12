@@ -48,22 +48,42 @@ pub fn computeScalarFieldFaceGradients(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_scalar_field: SurfaceMesh.CellData(.vertex, f64),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
     face_gradient: SurfaceMesh.CellData(.face, Vec3d),
 ) !void {
-    var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
-    defer face_it.deinit();
-    while (face_it.next()) |face| {
-        face_gradient.valuePtr(face).* = scalarFieldFaceGradient(
-            sm,
-            face,
-            vertex_position,
-            vertex_scalar_field,
-            face_area,
-            face_normal,
-        );
-    }
+    const Task = struct {
+        const Task = @This();
+
+        surface_mesh: *const SurfaceMesh,
+        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        vertex_scalar_field: SurfaceMesh.CellData(.vertex, f64),
+        face_area: SurfaceMesh.CellData(.face, f32),
+        face_normal: SurfaceMesh.CellData(.face, Vec3f),
+        face_gradient: SurfaceMesh.CellData(.face, Vec3d),
+
+        pub inline fn run(t: *const Task, face: SurfaceMesh.Cell) void {
+            t.face_gradient.valuePtr(face).* = scalarFieldFaceGradient(
+                t.surface_mesh,
+                face,
+                t.vertex_position,
+                t.vertex_scalar_field,
+                t.face_area,
+                t.face_normal,
+            );
+        }
+    };
+
+    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.face).init(sm);
+    defer pctr.deinit();
+    try pctr.run(Task{
+        .surface_mesh = sm,
+        .vertex_position = vertex_position,
+        .vertex_scalar_field = vertex_scalar_field,
+        .face_area = face_area,
+        .face_normal = face_normal,
+        .face_gradient = face_gradient,
+    });
 }
 
 /// Compute the divergence of a vector field defined on the incident faces of the given vertex.
@@ -110,15 +130,33 @@ pub fn computeVectorFieldVertexDivergences(
     face_vector_field: SurfaceMesh.CellData(.face, Vec3d),
     vertex_divergence: SurfaceMesh.CellData(.vertex, f64),
 ) !void {
-    var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
-    defer vertex_it.deinit();
-    while (vertex_it.next()) |vertex| {
-        vertex_divergence.valuePtr(vertex).* = vectorFieldVertexDivergence(
-            sm,
-            vertex,
-            halfedge_cotan_weight,
-            vertex_position,
-            face_vector_field,
-        );
-    }
+    const Task = struct {
+        const Task = @This();
+
+        surface_mesh: *const SurfaceMesh,
+        halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        face_vector_field: SurfaceMesh.CellData(.face, Vec3d),
+        vertex_divergence: SurfaceMesh.CellData(.vertex, f64),
+
+        pub inline fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+            t.vertex_divergence.valuePtr(vertex).* = vectorFieldVertexDivergence(
+                t.surface_mesh,
+                vertex,
+                t.halfedge_cotan_weight,
+                t.vertex_position,
+                t.face_vector_field,
+            );
+        }
+    };
+
+    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
+    defer pctr.deinit();
+    try pctr.run(Task{
+        .surface_mesh = sm,
+        .halfedge_cotan_weight = halfedge_cotan_weight,
+        .vertex_position = vertex_position,
+        .face_vector_field = face_vector_field,
+        .vertex_divergence = vertex_divergence,
+    });
 }

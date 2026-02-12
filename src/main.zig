@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 const gl = @import("gl");
 pub const c = @cImport({
     @cDefine("SDL_DISABLE_OLD_NAMES", {});
@@ -56,7 +57,9 @@ var fully_initialized = false;
 
 var allocator: std.mem.Allocator = undefined;
 
-// TODO: use the thread pool to parallelize stuff (cell iterators, etc.)
+// TODO: parallel execution of quantity computations over cells using ParallelCellTaskRunner
+// is actually only beneficial for heavy computations or on meshes with a very large number of cells.
+// Should benchmark and switch between parallel and sequential execution based on the mesh size and the type of quantity computed.
 
 /// Global elements publicly accessible from all modules:
 /// - PointCloud / SurfaceMesh / VolumeMesh stores
@@ -502,10 +505,16 @@ pub fn main() !u8 {
     var empty_argv: [0:null]?[*:0]u8 = .{};
 
     var da: std.heap.DebugAllocator(.{}) = .init;
-    defer _ = da.deinit();
-    defer _ = da.detectLeaks();
-    allocator = da.allocator();
-    // allocator = std.heap.smp_allocator;
+    if (builtin.mode == .Debug) {
+        da = .init;
+        allocator = da.allocator();
+    } else {
+        allocator = std.heap.smp_allocator; // use the SmpAllocator in release mode for better performance
+    }
+    defer if (builtin.mode == .Debug) {
+        _ = da.detectLeaks();
+        _ = da.deinit();
+    };
 
     const argv = std.process.argsAlloc(allocator) catch {
         zgp_log.err("Failed to get command line arguments", .{});
@@ -521,6 +530,7 @@ pub fn main() !u8 {
 
     rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
 
+    zgp_log.info("Thread mode: {s}", .{if (builtin.single_threaded) "single-threaded" else "multi-threaded"});
     try thread_pool.init(.{ .allocator = allocator });
     defer thread_pool.deinit();
 

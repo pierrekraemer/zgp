@@ -311,6 +311,14 @@ pub const DataContainer = struct {
         }
     }
 
+    pub fn getOrAddData(dc: *DataContainer, comptime T: type, name: []const u8) !*Data(T) {
+        if (dc.getData(T, name)) |data| {
+            return data;
+        } else {
+            return try dc.addData(T, name);
+        }
+    }
+
     pub fn removeData(dc: *DataContainer, data_gen: *DataGen) void {
         assert(data_gen.container == dc);
         if (dc.datas.remove(data_gen.name)) {
@@ -357,7 +365,7 @@ pub const DataContainer = struct {
         };
     }
 
-    //TODO: should probably better be thread-safe!
+    // TODO: should probably better be thread-safe!
     pub fn getMarker(dc: *DataContainer) !*Data(bool) {
         const index = dc.available_markers_indices.pop();
         if (index) |i| {
