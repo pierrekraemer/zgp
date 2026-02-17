@@ -3,12 +3,12 @@ const SurfaceMeshProceduralTexturing = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 
-// const imgui_utils = @import("../utils/imgui.zig");
+// const imgui_utils = @import("../ui/imgui.zig");
 // const zgp_log = std.log.scoped(.zgp);
 
-const zgp = @import("../main.zig");
-const c = zgp.c;
+const c = @import("../main.zig").c;
 
+const AppContext = @import("../main.zig").AppContext;
 const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 
@@ -48,23 +48,22 @@ const TnBData = struct {
     }
 };
 
+app_ctx: *AppContext,
 module: Module = .{
     .name = "Surface Mesh Procedural Texturing",
     .vtable = &.{
         .surfaceMeshCreated = surfaceMeshCreated,
         .surfaceMeshDestroyed = surfaceMeshDestroyed,
         .sdlEvent = sdlEvent,
-        .uiPanel = uiPanel,
+        .rightPanel = rightPanel,
     },
 },
-
-allocator: std.mem.Allocator,
 surface_meshes_data: std.AutoHashMap(*SurfaceMesh, TnBData),
 
-pub fn init(allocator: std.mem.Allocator) SurfaceMeshProceduralTexturing {
+pub fn init(app_ctx: *AppContext) SurfaceMeshProceduralTexturing {
     return .{
-        .allocator = allocator,
-        .surface_meshes_data = .init(allocator),
+        .app_ctx = app_ctx,
+        .surface_meshes_data = .init(app_ctx.allocator),
     };
 }
 
@@ -123,25 +122,25 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
 
 /// Part of the Module interface.
 /// Describe the right-click menu interface.
-pub fn uiPanel(m: *Module) void {
+pub fn rightPanel(m: *Module) void {
     const smpt: *SurfaceMeshProceduralTexturing = @alignCast(@fieldParentPtr("module", m));
-    const sm_store = &zgp.surface_mesh_store;
+    const sm_store = &smpt.app_ctx.surface_mesh_store;
 
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (zgp.surface_mesh_store.selected_surface_mesh) |sm| {
+    if (sm_store.selected_surface_mesh) |sm| {
         const info = sm_store.surfaceMeshInfo(sm);
         const tnb_data = smpt.surface_meshes_data.getPtr(sm).?;
 
-        const disabled = info.std_data.vertex_position == null;
+        const disabled = info.std_datas.vertex_position == null;
         if (disabled) {
             c.ImGui_BeginDisabled(true);
         }
         if (c.ImGui_ButtonEx(if (tnb_data.initialized) "Reinitialize data" else "Initialize data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            _ = tnb_data.init(info.std_data.vertex_position.?) catch |err| {
+            _ = tnb_data.init(info.std_datas.vertex_position.?) catch |err| {
                 std.debug.print("Failed to initialize Procedural Texturing data for SurfaceMesh: {}\n", .{err});
             };
         }

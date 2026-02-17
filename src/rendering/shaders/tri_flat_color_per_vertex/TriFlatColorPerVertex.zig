@@ -13,6 +13,7 @@ var global_instance: TriFlatColorPerVertex = undefined;
 var init_global_once = std.once(init_global);
 fn init_global() void {
     global_instance = init() catch unreachable;
+    Shader.register(&global_instance.program);
 }
 pub fn instance() *TriFlatColorPerVertex {
     init_global_once.call();
@@ -65,10 +66,6 @@ fn init() !TriFlatColorPerVertex {
     };
 
     return tfcpv;
-}
-
-pub fn deinit(tfcpv: *TriFlatColorPerVertex) void {
-    tfcpv.program.deinit();
 }
 
 pub const Parameters = struct {

@@ -13,6 +13,7 @@ var global_instance: PointSphereRadiusPerVertex = undefined;
 var init_global_once = std.once(init_global);
 fn init_global() void {
     global_instance = init() catch unreachable;
+    Shader.register(&global_instance.program);
 }
 pub fn instance() *PointSphereRadiusPerVertex {
     init_global_once.call();
@@ -64,10 +65,6 @@ fn init() !PointSphereRadiusPerVertex {
     };
 
     return psrpv;
-}
-
-pub fn deinit(psrpv: *PointSphereRadiusPerVertex) void {
-    psrpv.program.deinit();
 }
 
 pub const Parameters = struct {

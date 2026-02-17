@@ -4,15 +4,14 @@ const std = @import("std");
 const gl = @import("gl");
 const assert = std.debug.assert;
 
-// const imgui_utils = @import("../utils/imgui.zig");
 const zgp_log = std.log.scoped(.zgp);
 
-const zgp = @import("../main.zig");
-const c = zgp.c;
+const c = @import("../main.zig").c;
 
+const AppContext = @import("../main.zig").AppContext;
 const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
-const SurfaceMeshStdData = @import("../models/surface/SurfaceMeshStdDatas.zig").SurfaceMeshStdData;
+const SurfaceMeshStdData = @import("../models/SurfaceMeshStore.zig").SurfaceMeshStdData;
 
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const LineCylinder = @import("../rendering/shaders/line_cylinder/LineCylinder.zig");
@@ -53,14 +52,7 @@ const SelectionData = struct {
     }
 };
 
-allocator: std.mem.Allocator,
-surface_meshes_data: std.AutoHashMap(*SurfaceMesh, SelectionData),
-
-selecting: bool = false,
-selecting_cell_type: SurfaceMesh.CellType = .vertex,
-hovered_cell: ?SurfaceMesh.Cell = null,
-hovered_cell_ibo: IBO,
-
+app_ctx: *AppContext,
 module: Module = .{
     .name = "Surface Mesh Selection",
     .vtable = &.{
@@ -69,15 +61,21 @@ module: Module = .{
         .surfaceMeshStdDataChanged = surfaceMeshStdDataChanged,
         .draw = draw,
         .sdlEvent = sdlEvent,
-        .uiPanel = uiPanel,
+        .rightPanel = rightPanel,
     },
 },
+surface_meshes_data: std.AutoHashMap(*SurfaceMesh, SelectionData),
 
-pub fn init(allocator: std.mem.Allocator) SurfaceMeshSelection {
+selecting: bool = false,
+selecting_cell_type: SurfaceMesh.CellType = .vertex,
+hovered_cell: ?SurfaceMesh.Cell = null,
+hovered_cell_ibo: IBO,
+
+pub fn init(app_ctx: *AppContext) SurfaceMeshSelection {
     return .{
-        .allocator = allocator,
-        .surface_meshes_data = .init(allocator),
-        .hovered_cell_ibo = IBO.init(),
+        .app_ctx = app_ctx,
+        .surface_meshes_data = .init(app_ctx.allocator),
+        .hovered_cell_ibo = .init(),
     };
 }
 
@@ -121,7 +119,7 @@ pub fn surfaceMeshStdDataChanged(
     switch (std_data) {
         .vertex_position => |maybe_vertex_position| {
             if (maybe_vertex_position) |vertex_position| {
-                const position_vbo: VBO = zgp.surface_mesh_store.dataVBO(.vertex, Vec3f, vertex_position);
+                const position_vbo: VBO = sms.app_ctx.surface_mesh_store.dataVBO(.vertex, Vec3f, vertex_position);
                 sd.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 sd.line_cylinder_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 sd.tri_flat_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -139,7 +137,7 @@ pub fn surfaceMeshStdDataChanged(
 /// Render the selected cells of the currently selected SurfaceMesh.
 pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     const sms: *SurfaceMeshSelection = @alignCast(@fieldParentPtr("module", m));
-    const sm_store = &zgp.surface_mesh_store;
+    const sm_store = &sms.app_ctx.surface_mesh_store;
 
     // only draw selection for the currently selected SurfaceMesh
     const sm = sm_store.selected_surface_mesh orelse return;
@@ -223,8 +221,8 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
 /// Manage SDL events.
 pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
     const sms: *SurfaceMeshSelection = @alignCast(@fieldParentPtr("module", m));
-    const sm_store = &zgp.surface_mesh_store;
-    const view = &zgp.view;
+    const sm_store = &sms.app_ctx.surface_mesh_store;
+    const view = &sms.app_ctx.view;
 
     switch (event.type) {
         c.SDL_EVENT_KEY_DOWN => {
@@ -244,7 +242,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                         std.debug.print("Failed to clear hovered cell IBO: {}\n", .{err});
                         return;
                     };
-                    zgp.requestRedraw();
+                    sms.app_ctx.requestRedraw();
                 },
                 else => {},
             }
@@ -267,7 +265,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                             },
                             else => unreachable,
                         }
-                        sms.hovered_cell_ibo.fillFromCellSlice(sm, &[_]SurfaceMesh.Cell{sms.hovered_cell.?}, sms.allocator) catch |err| {
+                        sms.hovered_cell_ibo.fillFromCellSlice(sm, &[_]SurfaceMesh.Cell{sms.hovered_cell.?}, sms.app_ctx.allocator) catch |err| {
                             std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
                             return;
                         };
@@ -279,7 +277,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                             return;
                         };
                     }
-                    zgp.requestRedraw();
+                    sms.app_ctx.requestRedraw();
                 }
             }
         },
@@ -305,6 +303,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                                 };
                                             }
                                             sm_store.surfaceMeshCellSetUpdated(sm, .vertex);
+                                            sms.app_ctx.requestRedraw();
                                         }
                                     },
                                     .edge => {
@@ -319,6 +318,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                                 };
                                             }
                                             sm_store.surfaceMeshCellSetUpdated(sm, .edge);
+                                            sms.app_ctx.requestRedraw();
                                         }
                                     },
                                     .face => {
@@ -333,6 +333,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                                 };
                                             }
                                             sm_store.surfaceMeshCellSetUpdated(sm, .face);
+                                            sms.app_ctx.requestRedraw();
                                         }
                                     },
                                     else => {},
@@ -350,9 +351,9 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
 
 /// Part of the Module interface.
 /// Show a UI panel to control the selected cells of the selected SurfaceMesh.
-pub fn uiPanel(m: *Module) void {
+pub fn rightPanel(m: *Module) void {
     const sms: *SurfaceMeshSelection = @alignCast(@fieldParentPtr("module", m));
-    const sm_store = &zgp.surface_mesh_store;
+    const sm_store = &sms.app_ctx.surface_mesh_store;
 
     const style = c.ImGui_GetStyle();
 
@@ -389,6 +390,7 @@ pub fn uiPanel(m: *Module) void {
                     if (c.ImGui_Button(if (info.vertex_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
                         info.vertex_set.clear();
                         sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
+                        sms.app_ctx.requestRedraw();
                     }
                     if (disabled) {
                         c.ImGui_EndDisabled();
@@ -397,11 +399,11 @@ pub fn uiPanel(m: *Module) void {
                     c.ImGui_Text("Size");
                     c.ImGui_PushID("DrawSelectedVerticesSize");
                     if (c.ImGui_SliderFloatEx("", &sd.point_sphere_shader_parameters.sphere_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                        zgp.requestRedraw();
+                        sms.app_ctx.requestRedraw();
                     }
                     c.ImGui_PopID();
                     if (c.ImGui_ColorEdit3("Color##SelectedVerticesColorEdit", &sd.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
-                        zgp.requestRedraw();
+                        sms.app_ctx.requestRedraw();
                     }
                 },
                 .edge => {
@@ -418,6 +420,7 @@ pub fn uiPanel(m: *Module) void {
                     if (c.ImGui_Button(if (info.edge_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
                         info.edge_set.clear();
                         sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
+                        sms.app_ctx.requestRedraw();
                     }
                     if (disabled) {
                         c.ImGui_EndDisabled();
@@ -426,11 +429,11 @@ pub fn uiPanel(m: *Module) void {
                     c.ImGui_Text("Size");
                     c.ImGui_PushID("DrawSelectedEdgesSize");
                     if (c.ImGui_SliderFloatEx("", &sd.line_cylinder_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                        zgp.requestRedraw();
+                        sms.app_ctx.requestRedraw();
                     }
                     c.ImGui_PopID();
                     if (c.ImGui_ColorEdit3("Color##SelectedEdgesColorEdit", &sd.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
-                        zgp.requestRedraw();
+                        sms.app_ctx.requestRedraw();
                     }
                 },
                 .face => {
@@ -447,13 +450,14 @@ pub fn uiPanel(m: *Module) void {
                     if (c.ImGui_Button(if (info.face_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
                         info.face_set.clear();
                         sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
+                        sms.app_ctx.requestRedraw();
                     }
                     if (disabled) {
                         c.ImGui_EndDisabled();
                     }
 
                     if (c.ImGui_ColorEdit4("Global color##SelectedFacesColorEdit", &sd.tri_flat_shader_parameters.vertex_color, c.ImGuiColorEditFlags_NoInputs)) {
-                        zgp.requestRedraw();
+                        sms.app_ctx.requestRedraw();
                     }
                 },
                 else => {},

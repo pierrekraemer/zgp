@@ -22,14 +22,16 @@ const SurfaceMeshStore = @import("models/SurfaceMeshStore.zig");
 const PointCloudStore = @import("models/PointCloudStore.zig");
 
 const Module = @import("modules/Module.zig");
+const PointCloudStdDatas = @import("modules/PointCloudStdDatas.zig");
+const SurfaceMeshStdDatas = @import("modules/SurfaceMeshStdDatas.zig");
 const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
 const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
 const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
+const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
+const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
 const SurfaceMeshSelection = @import("modules/SurfaceMeshSelection.zig");
 const SurfaceMeshDeformation = @import("modules/SurfaceMeshDeformation.zig");
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
-const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
-const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
 const SurfaceMeshMedialAxis = @import("modules/SurfaceMeshMedialAxis.zig");
 const SurfaceMeshProceduralTexturing = @import("modules/SurfaceMeshProceduralTexturing.zig");
 
@@ -37,12 +39,12 @@ const geometry_utils = @import("geometry/utils.zig");
 const vec = @import("geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
-const Window = @import("utils/Window.zig");
-const Camera = @import("rendering/Camera.zig");
+const Window = @import("ui/Window.zig");
+const imgui = @import("ui/imgui.zig");
 const View = @import("rendering/View.zig");
+const Shader = @import("rendering/Shader.zig");
 
 pub const std_options: std.Options = .{ .log_level = .debug };
-const gl_log = std.log.scoped(.gl);
 const sdl_log = std.log.scoped(.sdl);
 const imgui_log = std.log.scoped(.imgui);
 const zgp_log = std.log.scoped(.zgp);
@@ -53,172 +55,145 @@ const zgp_log = std.log.scoped(.zgp);
 const CLIArgs = @import("utils/CLIArgs.zig");
 var cli_args: CLIArgs = undefined;
 
-var fully_initialized = false;
-
-var allocator: std.mem.Allocator = undefined;
-
 // TODO: parallel execution of quantity computations over cells using ParallelCellTaskRunner
 // is actually only beneficial for heavy computations or on meshes with a very large number of cells.
 // Should benchmark and switch between parallel and sequential execution based on the mesh size and the type of quantity computed.
 
-/// Global elements publicly accessible from all modules:
+/// Application Context:
 /// - PointCloud / SurfaceMesh / VolumeMesh stores
-/// - modules list
-/// - view
 /// - window
+/// - view
 /// - random number generator
 /// - thread pool
-pub var point_cloud_store: PointCloudStore = undefined;
-pub var surface_mesh_store: SurfaceMeshStore = undefined;
-pub var modules: std.ArrayList(*Module) = .empty;
-pub var view: View = undefined;
-pub var window: Window = undefined;
-pub var rng: std.Random.DefaultPrng = undefined;
-pub var thread_pool: std.Thread.Pool = undefined;
+pub const AppContext = struct {
+    allocator: std.mem.Allocator,
+    point_cloud_store: PointCloudStore,
+    surface_mesh_store: SurfaceMeshStore,
+    rng: std.Random.DefaultPrng,
+    window: Window = .{},
+    view: View = .{},
+    thread_pool: std.Thread.Pool = undefined,
 
-var camera: Camera = undefined;
+    pub fn init(allocator: std.mem.Allocator) !AppContext {
+        return .{
+            .allocator = allocator,
+            .point_cloud_store = try PointCloudStore.init(allocator),
+            .surface_mesh_store = try SurfaceMeshStore.init(allocator),
+            .rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp())),
+        };
+    }
+
+    pub fn deinit(self: *AppContext) void {
+        self.surface_mesh_store.deinit();
+        self.point_cloud_store.deinit();
+        self.thread_pool.deinit();
+        self.view.deinit();
+        self.window.deinit();
+    }
+
+    pub fn requestRedraw(ctx: *AppContext) void {
+        ctx.view.needs_redraw = true;
+    }
+};
+
+/// Main application context passed to modules
+var app_ctx: AppContext = undefined;
+
+/// List of type-erased modules
+/// Used to dispatch UI, View and Window events
+var modules: std.ArrayList(*Module) = .empty;
 
 /// ZGP modules
 /// TODO: could be declared in a config file and loaded at runtime
+pub var point_cloud_std_datas: PointCloudStdDatas = undefined;
+pub var surface_mesh_std_datas: SurfaceMeshStdDatas = undefined;
 pub var point_cloud_renderer: PointCloudRenderer = undefined;
 pub var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
 pub var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
+pub var surface_mesh_distance: SurfaceMeshDistance = undefined;
+pub var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
 pub var surface_mesh_selection: SurfaceMeshSelection = undefined;
 pub var surface_mesh_deformation: SurfaceMeshDeformation = undefined;
 pub var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
-pub var surface_mesh_distance: SurfaceMeshDistance = undefined;
-pub var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
 pub var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
 pub var surface_mesh_procedural_texturing: SurfaceMeshProceduralTexturing = undefined;
 
 // TODO: add a console bar at the bottom of the window to display logs & info messages
 
-// TODO: find a better place to put this function (or remove it and directly access 'view.need_redraw' from the modules)
-pub fn requestRedraw() void {
-    view.need_redraw = true;
-}
-
 fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = appstate;
     _ = argv;
 
-    // SDL window & GL initialization
-    // ******************************
+    // View initialization
+    // *******************
 
-    try window.init();
-
-    // Camera & View initialization
-    // ****************************
-
-    camera = Camera.init(
-        .{ 0.0, 0.0, 2.0 },
-        .{ 0.0, 0.0, -1.0 },
-        .{ 0.0, 1.0, 0.0 },
-        .{ 0.0, 0.0, 0.0 },
-        @as(f32, @floatFromInt(window.width)) / @as(f32, @floatFromInt(window.height)),
-        0.2 * std.math.pi,
-        .perspective,
-    );
-    errdefer camera.deinit(allocator);
-
-    view = try View.init(window.width, window.height);
-    errdefer view.deinit();
-
-    try view.setCamera(&camera, allocator);
+    app_ctx.view.resize(app_ctx.window.width, app_ctx.window.height);
 
     // ImGui initialization
     // ********************
 
-    _ = c.CIMGUI_CHECKVERSION();
-    _ = c.ImGui_CreateContext(null);
-    errdefer c.ImGui_DestroyContext(null);
-
-    const font_size: f32 = 16.0;
-    const imio = c.ImGui_GetIO();
-    imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard | c.ImGuiConfigFlags_DockingEnable | c.ImGuiConfigFlags_ViewportsEnable;
-    _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/utils/DroidSans.ttf", font_size, null, null);
-    // _ = c.ImFontAtlas_AddFontDefault(imio.*.Fonts, null);
-    var font_config: c.ImFontConfig = .{};
-    font_config.MergeMode = true;
-    font_config.SizePixels = font_size;
-    font_config.GlyphMinAdvanceX = font_size;
-    font_config.GlyphMaxAdvanceX = font_size;
-    font_config.RasterizerMultiply = 1.0;
-    font_config.RasterizerDensity = 1.0;
-    _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/utils/fa-regular-400.ttf", font_size, &font_config, null);
-    _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/utils/fa-solid-900.ttf", font_size, &font_config, null);
-
-    c.ImGui_StyleColorsDark(null);
-    const imstyle = c.ImGui_GetStyle();
-    imstyle.*.Colors[c.ImGuiCol_Header] = c.ImVec4_t{ .x = 65.0 / 255.0, .y = 255.0 / 255.0, .z = 255.0 / 255.0, .w = 120.0 / 255.0 };
-    imstyle.*.Colors[c.ImGuiCol_HeaderActive] = c.ImVec4_t{ .x = 65.0 / 255.0, .y = 255.0 / 255.0, .z = 255.0 / 255.0, .w = 200.0 / 255.0 };
-    imstyle.*.Colors[c.ImGuiCol_HeaderHovered] = c.ImVec4_t{ .x = 65.0 / 255.0, .y = 255.0 / 255.0, .z = 255.0 / 255.0, .w = 80.0 / 255.0 };
-    imstyle.*.SeparatorTextAlign = c.ImVec2{ .x = 1.0, .y = 0.0 };
-    imstyle.*.FrameRounding = 3;
-
-    const shader_version = switch (gl.info.api) {
-        .gl => (
-            \\#version 410 core
-            \\
-        ),
-        .gles, .glsc => (
-            \\#version 300 es
-            \\
-        ),
-    };
-
-    _ = c.cImGui_ImplSDL3_InitForOpenGL(window.sdl_window, window.gl_context);
-    errdefer c.cImGui_ImplSDL3_Shutdown();
-    _ = c.cImGui_ImplOpenGL3_InitEx(shader_version);
-    errdefer c.cImGui_ImplOpenGL3_Shutdown();
-
-    imgui_log.info("ImGui initialized", .{});
-
-    // PointCloud / SurfaceMesh / VolumeMesh stores initialization
-    // ***********************************************************
-
-    point_cloud_store = .init(allocator);
-    errdefer point_cloud_store.deinit();
-    surface_mesh_store = try .init(allocator);
-    errdefer surface_mesh_store.deinit();
+    imgui.init(app_ctx.window.sdl_window, app_ctx.window.gl_context);
 
     // Modules initialization
     // **********************
 
-    point_cloud_renderer = .init(allocator);
+    point_cloud_std_datas = .init(&app_ctx);
+    surface_mesh_std_datas = .init(&app_ctx);
+    point_cloud_renderer = .init(&app_ctx);
+    surface_mesh_renderer = .init(&app_ctx);
+    vector_per_vertex_renderer = .init(&app_ctx);
+    surface_mesh_distance = .init(&app_ctx);
+    surface_mesh_curvature = .init(&app_ctx);
+    surface_mesh_selection = .init(&app_ctx);
+    surface_mesh_deformation = .init(&app_ctx);
+    surface_mesh_connectivity = .init(&app_ctx, &surface_mesh_curvature);
+    surface_mesh_medial_axis = .init(&app_ctx);
+    surface_mesh_procedural_texturing = .init(&app_ctx);
+
+    errdefer point_cloud_std_datas.deinit();
+    errdefer surface_mesh_std_datas.deinit();
     errdefer point_cloud_renderer.deinit();
-    surface_mesh_renderer = .init(allocator);
     errdefer surface_mesh_renderer.deinit();
-    vector_per_vertex_renderer = .init(allocator);
     errdefer vector_per_vertex_renderer.deinit();
-    surface_mesh_selection = .init(allocator);
-    errdefer surface_mesh_selection.deinit();
-    surface_mesh_deformation = .init();
-    errdefer surface_mesh_deformation.deinit();
-    surface_mesh_connectivity = .init();
-    errdefer surface_mesh_connectivity.deinit();
-    surface_mesh_distance = .init();
     errdefer surface_mesh_distance.deinit();
-    surface_mesh_curvature = .init(allocator);
     errdefer surface_mesh_curvature.deinit();
-    surface_mesh_medial_axis = .init(allocator);
+    errdefer surface_mesh_selection.deinit();
+    errdefer surface_mesh_deformation.deinit();
+    errdefer surface_mesh_connectivity.deinit();
     errdefer surface_mesh_medial_axis.deinit();
-    surface_mesh_procedural_texturing = .init(allocator);
     errdefer surface_mesh_procedural_texturing.deinit();
 
     // TODO: find a way to tag Modules with the type of model they handle (PointCloud, SurfaceMesh, etc.)
     // and only show them in the UI when a compatible model is selected
-    try modules.append(allocator, &point_cloud_renderer.module);
-    try modules.append(allocator, &surface_mesh_renderer.module);
-    try modules.append(allocator, &vector_per_vertex_renderer.module);
-    try modules.append(allocator, &surface_mesh_selection.module);
-    try modules.append(allocator, &surface_mesh_deformation.module);
-    try modules.append(allocator, &surface_mesh_connectivity.module);
-    try modules.append(allocator, &surface_mesh_distance.module);
-    try modules.append(allocator, &surface_mesh_curvature.module);
-    try modules.append(allocator, &surface_mesh_medial_axis.module);
-    try modules.append(allocator, &surface_mesh_procedural_texturing.module);
-    errdefer modules.deinit(allocator);
+    try modules.append(app_ctx.allocator, &point_cloud_std_datas.module);
+    try modules.append(app_ctx.allocator, &surface_mesh_std_datas.module);
+    try modules.append(app_ctx.allocator, &point_cloud_renderer.module);
+    try modules.append(app_ctx.allocator, &surface_mesh_renderer.module);
+    try modules.append(app_ctx.allocator, &vector_per_vertex_renderer.module);
+    try modules.append(app_ctx.allocator, &surface_mesh_distance.module);
+    try modules.append(app_ctx.allocator, &surface_mesh_curvature.module);
+    try modules.append(app_ctx.allocator, &surface_mesh_selection.module);
+    try modules.append(app_ctx.allocator, &surface_mesh_deformation.module);
+    try modules.append(app_ctx.allocator, &surface_mesh_connectivity.module);
+    try modules.append(app_ctx.allocator, &surface_mesh_medial_axis.module);
+    try modules.append(app_ctx.allocator, &surface_mesh_procedural_texturing.module);
+    errdefer modules.deinit(app_ctx.allocator);
+
+    // register modules with model stores they want to get events from
+
+    try app_ctx.point_cloud_store.addListener(&point_cloud_std_datas.module);
+    try app_ctx.point_cloud_store.addListener(&point_cloud_renderer.module);
+
+    try app_ctx.surface_mesh_store.addListener(&surface_mesh_std_datas.module);
+    try app_ctx.surface_mesh_store.addListener(&surface_mesh_renderer.module);
+    try app_ctx.surface_mesh_store.addListener(&vector_per_vertex_renderer.module);
+    try app_ctx.surface_mesh_store.addListener(&surface_mesh_distance.module);
+    try app_ctx.surface_mesh_store.addListener(&surface_mesh_curvature.module);
+    try app_ctx.surface_mesh_store.addListener(&surface_mesh_selection.module);
+    try app_ctx.surface_mesh_store.addListener(&surface_mesh_deformation.module);
+    try app_ctx.surface_mesh_store.addListener(&surface_mesh_connectivity.module);
+    try app_ctx.surface_mesh_store.addListener(&surface_mesh_medial_axis.module);
+    try app_ctx.surface_mesh_store.addListener(&surface_mesh_procedural_texturing.module);
 
     // CLI arguments parsing
     // *********************
@@ -226,7 +201,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     for (cli_args.mesh_files) |mesh_file| {
         var timer = try std.time.Timer.start();
 
-        const sm = try surface_mesh_store.loadSurfaceMeshFromFile(mesh_file);
+        const sm = try app_ctx.surface_mesh_store.loadSurfaceMeshFromFile(mesh_file);
         errdefer sm.deinit();
 
         const vertex_position = sm.getData(.vertex, Vec3f, "position").?;
@@ -240,20 +215,15 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
             geometry_utils.centerAround(vertex_position.data, vec.zero3f);
         }
 
-        surface_mesh_store.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
+        // TODO: why not configure this Data as standard Data directly in the loadSurfaceMeshFromFile function?
+        app_ctx.surface_mesh_store.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
 
-        surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
-        surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
+        app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
+        app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 
         const elapsed: f64 = @floatFromInt(timer.read());
         zgp_log.info("Mesh loaded in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     }
-
-    // Init end
-    // ********
-
-    fully_initialized = true;
-    errdefer comptime unreachable;
 
     return c.SDL_APP_CONTINUE;
 }
@@ -261,16 +231,17 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     _ = appstate;
 
-    const UiData = struct {
-        var background_color: [4]f32 = .{ 0.48, 0.48, 0.48, 1 };
-    };
-
-    gl.ClearColor(UiData.background_color[0], UiData.background_color[1], UiData.background_color[2], UiData.background_color[3]);
+    gl.ClearColor(
+        app_ctx.view.background_color[0],
+        app_ctx.view.background_color[1],
+        app_ctx.view.background_color[2],
+        app_ctx.view.background_color[3],
+    );
 
     // Draw the main view
     // ******************
 
-    view.draw(modules.items);
+    app_ctx.view.draw(modules.items);
 
     // ImGui frame initialization
     // **************************
@@ -280,8 +251,6 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     c.ImGui_NewFrame();
 
     const imgui_viewport = c.ImGui_GetMainViewport();
-
-    var main_menu_bar_size: c.ImVec2 = undefined;
 
     // Right-click context menu
     // ************************
@@ -304,6 +273,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     // Main menu bar
     // *************
 
+    var main_menu_bar_size: c.ImVec2 = undefined;
+
     if (c.ImGui_BeginMainMenuBar()) {
         defer c.ImGui_EndMainMenuBar();
 
@@ -316,35 +287,9 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             }
         }
 
-        if (c.ImGui_BeginMenu("Camera")) {
-            defer c.ImGui_EndMenu();
-            if (c.ImGui_ColorEdit3("Background color", &UiData.background_color, c.ImGuiColorEditFlags_NoInputs)) {
-                requestRedraw();
-            }
-            c.ImGui_Separator();
-            if (c.ImGui_MenuItemEx("Perspective", null, camera.projection_type == .perspective, true)) {
-                camera.projection_type = .perspective;
-                camera.updateProjectionMatrix();
-            }
-            if (c.ImGui_MenuItemEx("Orthographic", null, camera.projection_type == .orthographic, true)) {
-                camera.projection_type = .orthographic;
-                camera.updateProjectionMatrix();
-            }
-            c.ImGui_Separator();
-            if (c.ImGui_Button("Pivot around world origin")) {
-                camera.pivot_position = .{ 0.0, 0.0, 0.0 };
-                camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
-                camera.updateViewMatrix();
-            }
-            if (c.ImGui_Button("Look at pivot point")) {
-                camera.look_dir = vec.normalized3f(vec.sub3f(camera.pivot_position, camera.position));
-                camera.updateViewMatrix();
-            }
-        }
-
-        point_cloud_store.menuBar();
-        surface_mesh_store.menuBar();
-
+        app_ctx.view.menuBar();
+        app_ctx.point_cloud_store.menuBar();
+        app_ctx.surface_mesh_store.menuBar();
         for (modules.items) |module| {
             module.menuBar();
         }
@@ -353,8 +298,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowRounding, 0.0);
     c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowBorderSize, 0.0);
 
-    // Left panel: models stores
-    // *************************
+    // Left panel + models stores
+    // **************************
 
     c.ImGui_SetNextWindowPos(c.ImVec2{
         .x = imgui_viewport.*.Pos.x,
@@ -365,16 +310,30 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
     }, 0);
     c.ImGui_SetNextWindowBgAlpha(0.5);
-    if (c.ImGui_Begin("Models Stores", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
+    if (c.ImGui_Begin("Left panel", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
         c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
     {
         defer c.ImGui_End();
-        surface_mesh_store.uiPanel();
-        point_cloud_store.uiPanel();
+        app_ctx.point_cloud_store.leftPanel();
+        app_ctx.surface_mesh_store.leftPanel();
+        for (modules.items) |module| {
+            if (module.vtable.leftPanel == null) continue; // check if the module has a uiPanel function
+            c.ImGui_PushIDPtr(module);
+            defer c.ImGui_PopID();
+            c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
+            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
+            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
+            if (c.ImGui_CollapsingHeader(module.name.ptr, c.ImGuiTreeNodeFlags_DefaultOpen)) {
+                c.ImGui_PopStyleColorEx(3);
+                module.leftPanel();
+            } else {
+                c.ImGui_PopStyleColorEx(3);
+            }
+        }
     }
 
-    // Right panel: modules
-    // ********************
+    // Right panel
+    // ***********
 
     c.ImGui_SetNextWindowPos(c.ImVec2{
         .x = imgui_viewport.*.Pos.x + imgui_viewport.*.Size.x * 0.78,
@@ -385,12 +344,12 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
     }, 0);
     c.ImGui_SetNextWindowBgAlpha(0.5);
-    if (c.ImGui_Begin("Modules", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
+    if (c.ImGui_Begin("Right panel", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
         c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
     {
         defer c.ImGui_End();
         for (modules.items) |module| {
-            if (module.vtable.uiPanel == null) continue; // check if the module has a uiPanel function
+            if (module.vtable.rightPanel == null) continue; // check if the module has a uiPanel function
             c.ImGui_PushIDPtr(module);
             defer c.ImGui_PopID();
             c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
@@ -398,7 +357,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
             if (c.ImGui_CollapsingHeader(module.name.ptr, 0)) {
                 c.ImGui_PopStyleColorEx(3);
-                module.uiPanel();
+                module.rightPanel();
             } else {
                 c.ImGui_PopStyleColorEx(3);
             }
@@ -416,8 +375,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     c.ImGui_UpdatePlatformWindows();
     c.ImGui_RenderPlatformWindowsDefault();
 
-    try errify(c.SDL_GL_MakeCurrent(window.sdl_window, window.gl_context));
-    try errify(c.SDL_GL_SwapWindow(window.sdl_window));
+    try errify(c.SDL_GL_MakeCurrent(app_ctx.window.sdl_window, app_ctx.window.gl_context));
+    try errify(c.SDL_GL_SwapWindow(app_ctx.window.sdl_window));
 
     return c.SDL_APP_CONTINUE;
 }
@@ -438,11 +397,12 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 else => {},
             }
         },
+        c.SDL_EVENT_WINDOW_RESIZED => {
+            _ = c.SDL_GetWindowSizeInPixels(app_ctx.window.sdl_window, &app_ctx.window.width, &app_ctx.window.height);
+            app_ctx.view.resize(app_ctx.window.width, app_ctx.window.height);
+        },
         else => {},
     }
-
-    // dispatch event to window
-    window.sdlEvent(event);
 
     // if ImGui wants to capture the mouse, do not process mouse events further
     if (c.ImGui_GetIO().*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow)) {
@@ -450,7 +410,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
     }
 
     // dispatch event to view
-    view.sdlEvent(event);
+    app_ctx.view.sdlEvent(event);
 
     // dispatch event to modules
     for (modules.items) |module| {
@@ -467,54 +427,59 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
         sdl_log.err("{s}", .{c.SDL_GetError()});
     };
 
-    if (fully_initialized) {
-        c.cImGui_ImplOpenGL3_Shutdown();
-        c.cImGui_ImplSDL3_Shutdown();
-        c.ImGui_DestroyContext(null);
+    imgui.deinit();
 
-        // clear the list of modules before deinitializing them
-        // to avoid potential inter-dependencies issues
-        modules.clearRetainingCapacity();
+    // clear the list of modules before deinitializing them
+    // to avoid potential inter-dependencies issues
+    modules.clearRetainingCapacity();
 
-        point_cloud_renderer.deinit();
-        surface_mesh_renderer.deinit();
-        vector_per_vertex_renderer.deinit();
-        surface_mesh_selection.deinit();
-        surface_mesh_deformation.deinit();
-        surface_mesh_connectivity.deinit();
-        surface_mesh_distance.deinit();
-        surface_mesh_curvature.deinit();
-        surface_mesh_medial_axis.deinit();
-        surface_mesh_procedural_texturing.deinit();
-        modules.deinit(allocator);
+    point_cloud_std_datas.deinit();
+    surface_mesh_std_datas.deinit();
+    point_cloud_renderer.deinit();
+    surface_mesh_renderer.deinit();
+    vector_per_vertex_renderer.deinit();
+    surface_mesh_distance.deinit();
+    surface_mesh_curvature.deinit();
+    surface_mesh_selection.deinit();
+    surface_mesh_deformation.deinit();
+    surface_mesh_connectivity.deinit();
+    surface_mesh_medial_axis.deinit();
+    surface_mesh_procedural_texturing.deinit();
 
-        camera.deinit(allocator);
-        view.deinit();
+    modules.deinit(app_ctx.allocator);
 
-        point_cloud_store.deinit();
-        surface_mesh_store.deinit();
-
-        window.deinit();
-
-        fully_initialized = false;
-    }
+    Shader.deinitRegistry();
 }
 
 pub fn main() !u8 {
     app_err.reset();
     var empty_argv: [0:null]?[*:0]u8 = .{};
 
+    var allocator: std.mem.Allocator = undefined;
+
     var da: std.heap.DebugAllocator(.{}) = .init;
     if (builtin.mode == .Debug) {
         da = .init;
         allocator = da.allocator();
+        zgp_log.info("Using DebugAllocator", .{});
     } else {
         allocator = std.heap.smp_allocator; // use the SmpAllocator in release mode for better performance
+        zgp_log.info("Using SmpAllocator", .{});
     }
     defer if (builtin.mode == .Debug) {
         _ = da.detectLeaks();
         _ = da.deinit();
     };
+
+    app_ctx = try .init(allocator);
+    defer app_ctx.deinit();
+
+    try app_ctx.window.init();
+    try Shader.initRegistry(allocator);
+    app_ctx.view.init();
+
+    zgp_log.info("Thread mode: {s}", .{if (builtin.single_threaded) "single-threaded" else "multi-threaded"});
+    try app_ctx.thread_pool.init(.{ .allocator = app_ctx.allocator });
 
     const argv = std.process.argsAlloc(allocator) catch {
         zgp_log.err("Failed to get command line arguments", .{});
@@ -527,12 +492,6 @@ pub fn main() !u8 {
             error.InvalidArgs => return c.SDL_APP_FAILURE,
         }
     };
-
-    rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp()));
-
-    zgp_log.info("Thread mode: {s}", .{if (builtin.single_threaded) "single-threaded" else "multi-threaded"});
-    try thread_pool.init(.{ .allocator = allocator });
-    defer thread_pool.deinit();
 
     const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(@intCast(empty_argv.len), @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;

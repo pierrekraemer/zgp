@@ -2,12 +2,12 @@ const SurfaceMeshDistance = @This();
 
 const std = @import("std");
 
-const imgui_utils = @import("../utils/imgui.zig");
+const imgui_utils = @import("../ui/imgui.zig");
 const zgp_log = std.log.scoped(.zgp);
 
-const zgp = @import("../main.zig");
-const c = zgp.c;
+const c = @import("../main.zig").c;
 
+const AppContext = @import("../main.zig").AppContext;
 const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 
@@ -16,6 +16,7 @@ const Vec3f = vec.Vec3f;
 
 const distance = @import("../models/surface/distance.zig");
 
+app_ctx: *AppContext,
 module: Module = .{
     .name = "Surface Mesh Distance",
     .vtable = &.{
@@ -23,14 +24,16 @@ module: Module = .{
     },
 },
 
-pub fn init() SurfaceMeshDistance {
-    return .{};
+pub fn init(app_ctx: *AppContext) SurfaceMeshDistance {
+    return .{
+        .app_ctx = app_ctx,
+    };
 }
 
 pub fn deinit(_: *SurfaceMeshDistance) void {}
 
 fn computeVertexGeodesicDistancesFromSource(
-    _: *SurfaceMeshDistance,
+    smd: *SurfaceMeshDistance,
     sm: *SurfaceMesh,
     source_vertices: []SurfaceMesh.Cell,
     diffusion_time: f32,
@@ -45,6 +48,7 @@ fn computeVertexGeodesicDistancesFromSource(
     var timer = try std.time.Timer.start();
 
     try distance.computeVertexGeodesicDistancesFromSource(
+        smd.app_ctx,
         sm,
         source_vertices,
         diffusion_time,
@@ -56,7 +60,8 @@ fn computeVertexGeodesicDistancesFromSource(
         face_normal,
         vertex_distance,
     );
-    zgp.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_distance);
+    smd.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_distance);
+    smd.app_ctx.requestRedraw();
 
     const elapsed: f64 = @floatFromInt(timer.read());
     zgp_log.info("Geodesic distance computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
@@ -66,7 +71,7 @@ fn computeVertexGeodesicDistancesFromSource(
 /// Describe the right-click menu interface.
 pub fn rightClickMenu(m: *Module) void {
     const smd: *SurfaceMeshDistance = @alignCast(@fieldParentPtr("module", m));
-    const sm_store = &zgp.surface_mesh_store;
+    const sm_store = &smd.app_ctx.surface_mesh_store;
 
     const UiData = struct {
         var diffusion_time: f32 = 1.0;
@@ -103,12 +108,12 @@ pub fn rightClickMenu(m: *Module) void {
                 _ = c.ImGui_SliderFloatEx("", &UiData.diffusion_time, 1.0, 100.0, "%.1f", c.ImGuiSliderFlags_Logarithmic);
                 c.ImGui_PopID();
                 const disabled =
-                    info.std_data.halfedge_cotan_weight == null or
-                    info.std_data.vertex_position == null or
-                    info.std_data.vertex_area == null or
-                    info.std_data.edge_length == null or
-                    info.std_data.face_area == null or
-                    info.std_data.face_normal == null or
+                    info.std_datas.halfedge_cotan_weight == null or
+                    info.std_datas.vertex_position == null or
+                    info.std_datas.vertex_area == null or
+                    info.std_datas.edge_length == null or
+                    info.std_datas.face_area == null or
+                    info.std_datas.face_normal == null or
                     UiData.vertex_distance == null;
                 if (disabled) {
                     c.ImGui_BeginDisabled(true);
@@ -118,12 +123,12 @@ pub fn rightClickMenu(m: *Module) void {
                         sm,
                         info.vertex_set.cells.items,
                         UiData.diffusion_time,
-                        info.std_data.halfedge_cotan_weight.?,
-                        info.std_data.vertex_position.?,
-                        info.std_data.vertex_area.?,
-                        info.std_data.edge_length.?,
-                        info.std_data.face_area.?,
-                        info.std_data.face_normal.?,
+                        info.std_datas.halfedge_cotan_weight.?,
+                        info.std_datas.vertex_position.?,
+                        info.std_datas.vertex_area.?,
+                        info.std_datas.edge_length.?,
+                        info.std_datas.face_area.?,
+                        info.std_datas.face_normal.?,
                         UiData.vertex_distance.?,
                     ) catch |err| {
                         std.debug.print("Error computing geodesic distance: {}\n", .{err});

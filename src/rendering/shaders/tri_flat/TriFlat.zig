@@ -13,6 +13,7 @@ var global_instance: TriFlat = undefined;
 var init_global_once = std.once(init_global);
 fn init_global() void {
     global_instance = init() catch unreachable;
+    Shader.register(&global_instance.program);
 }
 pub fn instance() *TriFlat {
     init_global_once.call();
@@ -59,10 +60,6 @@ fn init() !TriFlat {
     };
 
     return tf;
-}
-
-pub fn deinit(tf: *TriFlat) void {
-    tf.program.deinit();
 }
 
 pub const Parameters = struct {

@@ -5,7 +5,27 @@ const gl = @import("gl");
 
 const gl_log = std.log.scoped(.gl);
 
-// TODO: find a way to register the shader singletons & to deinit them properly
+/// Registry of all shaders
+var shader_registry: std.ArrayList(*Shader) = .empty;
+var allocator: std.mem.Allocator = undefined;
+/// Store an allocator to use in register and deinitRegistry
+pub fn initRegistry(gpa: std.mem.Allocator) !void {
+    allocator = gpa;
+    try shader_registry.ensureTotalCapacity(allocator, 32);
+}
+/// Each Shader registers itself upon singleton initialization
+pub fn register(s: *Shader) void {
+    shader_registry.append(allocator, s) catch {
+        gl_log.err("Failed to register shader: {}", .{s});
+    };
+}
+/// Cleanup function is called when application quits
+pub fn deinitRegistry() void {
+    for (shader_registry.items) |s| {
+        s.deinit();
+    }
+    shader_registry.deinit(allocator);
+}
 
 const shader_version = switch (gl.info.api) {
     .gl => (

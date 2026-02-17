@@ -13,6 +13,7 @@ var global_instance: PointSphere = undefined;
 var init_global_once = std.once(init_global);
 fn init_global() void {
     global_instance = init() catch unreachable;
+    Shader.register(&global_instance.program);
 }
 pub fn instance() *PointSphere {
     init_global_once.call();
@@ -59,10 +60,6 @@ fn init() !PointSphere {
     };
 
     return ps;
-}
-
-pub fn deinit(ps: *PointSphere) void {
-    ps.program.deinit();
 }
 
 pub const Parameters = struct {

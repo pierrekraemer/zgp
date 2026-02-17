@@ -4,8 +4,7 @@ const std = @import("std");
 const gl = @import("gl");
 const gl_log = std.log.scoped(.gl);
 
-const zgp = @import("../main.zig");
-const c = zgp.c;
+const c = @import("../main.zig").c;
 
 const Module = @import("../modules/Module.zig");
 
@@ -25,52 +24,40 @@ const FBO = @import("FBO.zig");
 const Texture2D = @import("Texture2D.zig");
 const FullscreenTexture = @import("shaders/fullscreen_texture/FullscreenTexture.zig");
 
-camera: ?*Camera = null,
+camera: Camera = undefined,
 
-width: c_int,
-height: c_int,
-// screen_color_tex_ms: Texture2D = undefined,
-// screen_depth_tex_ms: Texture2D = undefined,
+width: c_int = 0,
+height: c_int = 0,
+
 screen_color_tex: Texture2D = undefined,
 screen_depth_tex: Texture2D = undefined,
 
-// fbo_ms: FBO = undefined,
 fbo: FBO = undefined,
 fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = undefined,
 
-need_redraw: bool,
+background_color: Vec4f = .{ 0.48, 0.48, 0.48, 1 },
 
-pub fn init(width: c_int, height: c_int) !View {
-    var view: View = .{
-        .width = width,
-        .height = height,
-        .need_redraw = true,
-    };
+needs_redraw: bool = true,
 
-    // view.screen_color_tex_ms = Texture2D.init(true, 4, &[_]Texture2D.Parameter{
-    //     .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
-    //     .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
-    // });
-    // view.screen_color_tex_ms.resize(view.width, view.height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
-    // view.screen_depth_tex_ms = Texture2D.init(true, 4, &[_]Texture2D.Parameter{
-    //     .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
-    //     .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
-    // });
-    // view.screen_depth_tex_ms.resize(view.width, view.height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
-    view.screen_color_tex = Texture2D.init(false, 1, &[_]Texture2D.Parameter{
+pub fn init(view: *View) void {
+    view.camera = Camera.init(
+        .{ 0.0, 0.0, 2.0 },
+        .{ 0.0, 0.0, -1.0 },
+        .{ 0.0, 1.0, 0.0 },
+        .{ 0.0, 0.0, 0.0 },
+        1.0,
+        0.2 * std.math.pi,
+        .perspective,
+    );
+
+    view.screen_color_tex = .init(&[_]Texture2D.Parameter{
         .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
         .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
     });
-    view.screen_color_tex.resize(view.width, view.height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
-    view.screen_depth_tex = Texture2D.init(false, 1, &[_]Texture2D.Parameter{
+    view.screen_depth_tex = .init(&[_]Texture2D.Parameter{
         .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
         .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
     });
-    view.screen_depth_tex.resize(view.width, view.height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
-
-    // view.fbo_ms = FBO.init();
-    // view.fbo_ms.attachTexture(gl.COLOR_ATTACHMENT0, view.screen_color_tex_ms);
-    // view.fbo_ms.attachTexture(gl.DEPTH_ATTACHMENT, view.screen_depth_tex_ms);
 
     view.fbo = FBO.init();
     view.fbo.attachTexture(gl.COLOR_ATTACHMENT0, view.screen_color_tex);
@@ -83,57 +70,28 @@ pub fn init(width: c_int, height: c_int) !View {
 
     view.fullscreen_texture_shader_parameters = FullscreenTexture.Parameters.init();
     view.fullscreen_texture_shader_parameters.setTexture(view.screen_color_tex);
-
-    return view;
 }
 
 pub fn deinit(view: *View) void {
     view.fullscreen_texture_shader_parameters.deinit();
     view.fbo.deinit();
-    // view.fbo_ms.deinit();
     view.screen_depth_tex.deinit();
     view.screen_color_tex.deinit();
-    // view.screen_depth_tex_ms.deinit();
-    // view.screen_color_tex_ms.deinit();
-}
-
-pub fn setCamera(view: *View, camera: *Camera, allocator: std.mem.Allocator) !void {
-    if (view.camera) |old_camera| {
-        // remove the view from its previous camera
-        const idx: usize = for (old_camera.views_using_camera.items, 0..) |v, index| {
-            if (v == view) {
-                break index;
-            }
-        } else unreachable; // the view must be found in the old camera's list of views using it
-        _ = old_camera.views_using_camera.swapRemove(idx);
-    }
-    view.camera = camera;
-    try camera.views_using_camera.append(allocator, view);
 }
 
 pub fn resize(view: *View, width: c_int, height: c_int) void {
     view.width = width;
     view.height = height;
-    // view.screen_color_tex_ms.resize(width, height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
-    // view.screen_depth_tex_ms.resize(width, height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
     view.screen_color_tex.resize(width, height, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE);
     view.screen_depth_tex.resize(width, height, gl.DEPTH_COMPONENT, gl.DEPTH_COMPONENT, gl.FLOAT);
 
-    if (view.camera) |camera| {
-        camera.aspect_ratio = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
-        camera.updateProjectionMatrix();
-    } else {
-        gl_log.err("No camera set for view, cannot update aspect ratio", .{});
-    }
+    view.camera.aspect_ratio = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
+    view.camera.updateProjectionMatrix();
 }
 
 pub fn draw(view: *View, modules: []*Module) void {
-    if (view.camera == null) {
-        gl_log.err("No camera set for view", .{});
-        return;
-    }
     gl.Viewport(0, 0, view.width, view.height);
-    if (view.need_redraw) {
+    if (view.needs_redraw) {
         gl.BindFramebuffer(gl.FRAMEBUFFER, view.fbo.index);
         defer gl.BindFramebuffer(gl.FRAMEBUFFER, 0);
 
@@ -141,49 +99,59 @@ pub fn draw(view: *View, modules: []*Module) void {
         gl.Enable(gl.DEPTH_TEST);
         gl.DrawBuffer(gl.COLOR_ATTACHMENT0);
         for (modules) |module| {
-            module.draw(view.camera.?.view_matrix, view.camera.?.projection_matrix);
+            module.draw(view.camera.view_matrix, view.camera.projection_matrix);
         }
         gl.Disable(gl.DEPTH_TEST);
-
-        // gl.BindFramebuffer(gl.READ_FRAMEBUFFER, view.fbo_ms.index);
-        // gl.BindFramebuffer(gl.DRAW_FRAMEBUFFER, view.fbo.index);
-        // gl.BlitFramebuffer(
-        //     0,
-        //     0,
-        //     view.width,
-        //     view.height,
-        //     0,
-        //     0,
-        //     view.width,
-        //     view.height,
-        //     gl.COLOR_BUFFER_BIT, // | gl.DEPTH_BUFFER_BIT,
-        //     gl.NEAREST,
-        // );
-
-        view.need_redraw = false;
+        view.needs_redraw = false;
     }
     gl.Clear(gl.COLOR_BUFFER_BIT);
     view.fullscreen_texture_shader_parameters.draw();
     gl.UseProgram(0);
 }
 
+pub fn menuBar(view: *View) void {
+    if (c.ImGui_BeginMenu("Camera")) {
+        defer c.ImGui_EndMenu();
+        if (c.ImGui_ColorEdit3("Background color", &view.background_color, c.ImGuiColorEditFlags_NoInputs)) {
+            view.needs_redraw = true;
+        }
+        c.ImGui_Separator();
+        if (c.ImGui_MenuItemEx("Perspective", null, view.camera.projection_type == .perspective, true)) {
+            view.camera.projection_type = .perspective;
+            view.camera.updateProjectionMatrix();
+        }
+        if (c.ImGui_MenuItemEx("Orthographic", null, view.camera.projection_type == .orthographic, true)) {
+            view.camera.projection_type = .orthographic;
+            view.camera.updateProjectionMatrix();
+        }
+        c.ImGui_Separator();
+        if (c.ImGui_Button("Pivot around world origin")) {
+            view.camera.pivot_position = .{ 0.0, 0.0, 0.0 };
+            view.camera.look_dir = vec.normalized3f(vec.sub3f(view.camera.pivot_position, view.camera.position));
+            view.camera.updateViewMatrix();
+        }
+        if (c.ImGui_Button("Look at pivot point")) {
+            view.camera.look_dir = vec.normalized3f(vec.sub3f(view.camera.pivot_position, view.camera.position));
+            view.camera.updateViewMatrix();
+        }
+    }
+}
+
 pub fn sdlEvent(view: *View, event: *const c.SDL_Event) void {
     switch (event.type) {
-        c.SDL_EVENT_WINDOW_RESIZED => {
-            view.resize(zgp.window.width, zgp.window.height);
-        },
         c.SDL_EVENT_MOUSE_BUTTON_UP => {
             switch (event.button.button) {
                 c.SDL_BUTTON_LEFT => {
                     const modState = c.SDL_GetModState();
-                    if (view.camera != null and (modState & c.SDL_KMOD_SHIFT) != 0 and event.button.clicks == 2) {
+                    if ((modState & c.SDL_KMOD_SHIFT) != 0 and event.button.clicks == 2) {
                         const world_pos = view.viewToWorld(event.button.x, event.button.y);
                         if (world_pos) |wp| {
-                            view.camera.?.pivot_position = wp;
+                            view.camera.pivot_position = wp;
                         } else {
-                            view.camera.?.pivot_position = .{ 0.0, 0.0, 0.0 };
+                            view.camera.pivot_position = .{ 0.0, 0.0, 0.0 };
                         }
-                        view.camera.?.lookAtPivotPosition();
+                        view.camera.lookAtPivotPosition();
+                        view.needs_redraw = true;
                     }
                 },
                 c.SDL_BUTTON_RIGHT => {},
@@ -194,12 +162,12 @@ pub fn sdlEvent(view: *View, event: *const c.SDL_Event) void {
             switch (event.motion.state) {
                 c.SDL_BUTTON_LMASK => {
                     const modState = c.SDL_GetModState();
-                    if (view.camera != null) {
-                        if ((modState & c.SDL_KMOD_SHIFT) != 0) {
-                            view.camera.?.translateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
-                        } else {
-                            view.camera.?.rotateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
-                        }
+                    if ((modState & c.SDL_KMOD_SHIFT) != 0) {
+                        view.camera.translateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
+                        view.needs_redraw = true;
+                    } else {
+                        view.camera.rotateFromScreenVec(.{ event.motion.xrel, event.motion.yrel });
+                        view.needs_redraw = true;
                     }
                 },
                 c.SDL_BUTTON_RMASK => {},
@@ -208,11 +176,12 @@ pub fn sdlEvent(view: *View, event: *const c.SDL_Event) void {
         },
         c.SDL_EVENT_MOUSE_WHEEL => {
             const wheel = event.wheel.y;
-            if (view.camera != null and wheel != 0) {
-                view.camera.?.moveForward(wheel * 0.01);
-                if (view.camera.?.projection_type == .orthographic) {
-                    view.camera.?.updateProjectionMatrix();
+            if (wheel != 0) {
+                view.camera.moveForward(wheel * 0.01);
+                if (view.camera.projection_type == .orthographic) {
+                    view.camera.updateProjectionMatrix();
                 }
+                view.needs_redraw = true;
             }
         },
         else => {},
@@ -223,10 +192,6 @@ pub fn sdlEvent(view: *View, event: *const c.SDL_Event) void {
 /// z is expected to be in [0, 1], as read from the depth buffer.
 /// Returns null if the world position cannot be reconstructed (e.g. if the camera is not set or if the projection/view matrix cannot be inverted).
 pub fn viewToWorldZ(view: *const View, x: f32, y: f32, z: f32) ?Vec3f {
-    if (view.camera == null) {
-        gl_log.err("No camera set for view", .{});
-        return null;
-    }
     // reconstruct the world position from the depth value
     // warning: Eigen (via ceigen) uses double precision
     const p_ndc: Vec4d = .{
@@ -235,7 +200,7 @@ pub fn viewToWorldZ(view: *const View, x: f32, y: f32, z: f32) ?Vec3f {
         z * 2.0 - 1.0,
         1.0,
     };
-    const m_proj = mat.mat4dFromMat4f(view.camera.?.projection_matrix);
+    const m_proj = mat.mat4dFromMat4f(view.camera.projection_matrix);
     const m_proj_inv = eigen.computeInverse4d(m_proj) orelse {
         gl_log.err("Cannot invert projection matrix", .{});
         return null;
@@ -246,7 +211,7 @@ pub fn viewToWorldZ(view: *const View, x: f32, y: f32, z: f32) ?Vec3f {
         return null;
     }
     p_view = vec.divScalar4d(p_view, p_view[3]);
-    const m_view = mat.mat4dFromMat4f(view.camera.?.view_matrix);
+    const m_view = mat.mat4dFromMat4f(view.camera.view_matrix);
     const m_view_inv = eigen.computeInverse4d(m_view) orelse {
         gl_log.err("Cannot invert view matrix", .{});
         return null;
@@ -258,10 +223,6 @@ pub fn viewToWorldZ(view: *const View, x: f32, y: f32, z: f32) ?Vec3f {
 /// Reconstruct the world position of the pixel at (x, y) in the view with depth value read from the depth buffer.
 /// Returns null if no geometry was drawn at this pixel (i.e. if the depth value is 1.0).
 pub fn viewToWorld(view: *const View, x: f32, y: f32) ?Vec3f {
-    if (view.camera == null) {
-        gl_log.err("No camera set for view", .{});
-        return null;
-    }
     var z: f32 = undefined;
     gl.BindFramebuffer(gl.READ_FRAMEBUFFER, view.fbo.index);
     defer gl.BindFramebuffer(gl.READ_FRAMEBUFFER, 0);
@@ -285,24 +246,16 @@ pub fn viewToWorld(view: *const View, x: f32, y: f32) ?Vec3f {
 /// Reconstruct a ray in world space from the camera position through the pixel at (x, y) in the view.
 /// Returns null if no geometry was drawn at this pixel (i.e. if the depth value read from the depth buffer is 1.0).
 pub fn viewToWorldRayIfGeometry(view: *const View, x: f32, y: f32) ?Ray {
-    if (view.camera == null) {
-        gl_log.err("No camera set for view", .{});
-        return null;
-    }
     const pwp = viewToWorld(view, x, y);
     return if (pwp == null) null else .{
-        .origin = view.camera.?.position,
-        .direction = vec.normalized3f(vec.sub3f(pwp.?, view.camera.?.position)),
+        .origin = view.camera.position,
+        .direction = vec.normalized3f(vec.sub3f(pwp.?, view.camera.position)),
     };
 }
 
 pub fn worldToView(view: *const View, world_pos: Vec3f) ?Vec3f {
-    if (view.camera == null) {
-        gl_log.err("No camera set for view", .{});
-        return null;
-    }
     const p_world: Vec4f = .{ world_pos[0], world_pos[1], world_pos[2], 1.0 };
-    const p_clip = mat.mulVec4f(view.camera.?.projection_matrix, mat.mulVec4f(view.camera.?.view_matrix, p_world));
+    const p_clip = mat.mulVec4f(view.camera.projection_matrix, mat.mulVec4f(view.camera.view_matrix, p_world));
     if (p_clip[3] == 0.0) {
         gl_log.err("Cannot divide by zero w component", .{});
         return null;

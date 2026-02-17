@@ -3,7 +3,9 @@ const assert = std.debug.assert;
 
 const zgp_log = std.log.scoped(.zgp);
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
+
 const length = @import("length.zig");
 const angle = @import("angle.zig");
 const subdivision = @import("subdivision.zig");
@@ -45,6 +47,7 @@ fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
 /// => Adaptive Remeshing for Real-Time Mesh Deformation (https://hal.science/hal-01295339/file/EGshort2013_Dunyach_et_al.pdf)
 /// The given dependent datas will be updated accordingly after remeshing.
 pub fn pliantRemeshing(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     sm_bvh: bvh.TrianglesBVH,
     edge_length_factor: f32,
@@ -57,7 +60,7 @@ pub fn pliantRemeshing(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
+    vertex_curvature: curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     try subdivision.triangulateFaces(sm);
 
@@ -114,8 +117,8 @@ pub fn pliantRemeshing(
 
     for (0..5) |iteration| {
         // remove "flat" degree-3 vertices
-        try normal.computeFaceNormals(sm, vertex_position, face_normal);
-        try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
+        try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
+        try angle.computeEdgeDihedralAngles(app_ctx, sm, vertex_position, face_normal, edge_dihedral_angle);
         vertex_it.reset();
         while (vertex_it.next()) |vertex| {
             if (feature_corner.value(vertex)) {
@@ -252,12 +255,12 @@ pub fn pliantRemeshing(
 
         // tangential relaxation
         // first, update datas needed for relaxation after remeshing operations
-        try length.computeEdgeLengths(sm, vertex_position, edge_length);
-        try angle.computeCornerAngles(sm, vertex_position, corner_angle);
-        try area.computeFaceAreas(sm, vertex_position, face_area);
-        try normal.computeFaceNormals(sm, vertex_position, face_normal);
-        try area.computeVertexAreas(sm, face_area, vertex_area);
-        try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
+        try length.computeEdgeLengths(app_ctx, sm, vertex_position, edge_length);
+        try angle.computeCornerAngles(app_ctx, sm, vertex_position, corner_angle);
+        try area.computeFaceAreas(app_ctx, sm, vertex_position, face_area);
+        try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
+        try area.computeVertexAreas(app_ctx, sm, face_area, vertex_area);
+        try normal.computeVertexNormals(app_ctx, sm, corner_angle, face_normal, vertex_normal);
         vertex_it.reset();
         while (vertex_it.next()) |vertex| {
             if (sm.isIncidentToBoundary(vertex) or feature_corner.value(vertex) or feature_vertex.value(vertex)) {
@@ -320,22 +323,14 @@ pub fn pliantRemeshing(
         // (sizing field is not used on iterations 0 and 1 to allow for initial mesh regularization)
         if (adaptive and (iteration == 1 or iteration == 3)) {
             // first, update data needed for sizing field computation
-            try length.computeEdgeLengths(sm, vertex_position, edge_length);
-            try angle.computeCornerAngles(sm, vertex_position, corner_angle);
-            try area.computeFaceAreas(sm, vertex_position, face_area);
-            try normal.computeFaceNormals(sm, vertex_position, face_normal);
-            try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
-            try area.computeVertexAreas(sm, face_area, vertex_area);
-            try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
-            try curvature.computeVertexCurvatures(
-                sm,
-                vertex_position,
-                vertex_normal,
-                edge_dihedral_angle,
-                edge_length,
-                face_area,
-                vertex_curvature,
-            );
+            try length.computeEdgeLengths(app_ctx, sm, vertex_position, edge_length);
+            try angle.computeCornerAngles(app_ctx, sm, vertex_position, corner_angle);
+            try area.computeFaceAreas(app_ctx, sm, vertex_position, face_area);
+            try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
+            try angle.computeEdgeDihedralAngles(app_ctx, sm, vertex_position, face_normal, edge_dihedral_angle);
+            try area.computeVertexAreas(app_ctx, sm, face_area, vertex_area);
+            try normal.computeVertexNormals(app_ctx, sm, corner_angle, face_normal, vertex_normal);
+            try curvature.computeVertexCurvatures(app_ctx, sm, vertex_position, vertex_normal, edge_dihedral_angle, edge_length, face_area, vertex_curvature);
             mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
             const approx_tolerance = mean_edge_length * 0.05;
             vertex_it.reset();
@@ -354,22 +349,14 @@ pub fn pliantRemeshing(
     }
 
     // update all given dependent datas one last time after remeshing
-    try length.computeEdgeLengths(sm, vertex_position, edge_length);
-    try angle.computeCornerAngles(sm, vertex_position, corner_angle);
-    try area.computeFaceAreas(sm, vertex_position, face_area);
-    try normal.computeFaceNormals(sm, vertex_position, face_normal);
-    try angle.computeEdgeDihedralAngles(sm, vertex_position, face_normal, edge_dihedral_angle);
-    try area.computeVertexAreas(sm, face_area, vertex_area);
-    try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
+    try length.computeEdgeLengths(app_ctx, sm, vertex_position, edge_length);
+    try angle.computeCornerAngles(app_ctx, sm, vertex_position, corner_angle);
+    try area.computeFaceAreas(app_ctx, sm, vertex_position, face_area);
+    try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
+    try angle.computeEdgeDihedralAngles(app_ctx, sm, vertex_position, face_normal, edge_dihedral_angle);
+    try area.computeVertexAreas(app_ctx, sm, face_area, vertex_area);
+    try normal.computeVertexNormals(app_ctx, sm, corner_angle, face_normal, vertex_normal);
     if (adaptive) {
-        try curvature.computeVertexCurvatures(
-            sm,
-            vertex_position,
-            vertex_normal,
-            edge_dihedral_angle,
-            edge_length,
-            face_area,
-            vertex_curvature,
-        );
+        try curvature.computeVertexCurvatures(app_ctx, sm, vertex_position, vertex_normal, edge_dihedral_angle, edge_length, face_area, vertex_curvature);
     }
 }

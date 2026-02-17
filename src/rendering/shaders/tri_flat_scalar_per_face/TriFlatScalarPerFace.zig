@@ -14,6 +14,7 @@ var global_instance: TriFlatScalarPerFace = undefined;
 var init_global_once = std.once(init_global);
 fn init_global() void {
     global_instance = init() catch unreachable;
+    Shader.register(&global_instance.program);
 }
 pub fn instance() *TriFlatScalarPerFace {
     init_global_once.call();
@@ -66,10 +67,6 @@ fn init() !TriFlatScalarPerFace {
     };
 
     return tfspf;
-}
-
-pub fn deinit(tfspf: *TriFlatScalarPerFace) void {
-    tfspf.program.deinit();
 }
 
 pub const Parameters = struct {

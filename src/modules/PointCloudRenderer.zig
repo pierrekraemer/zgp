@@ -3,15 +3,15 @@ const PointCloudRenderer = @This();
 const std = @import("std");
 const gl = @import("gl");
 
-const zgp = @import("../main.zig");
-const c = zgp.c;
+const c = @import("../main.zig").c;
 
-const imgui_utils = @import("../utils/imgui.zig");
+const imgui_utils = @import("../ui/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 
+const AppContext = @import("../main.zig").AppContext;
 const Module = @import("Module.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
-const PointCloudStdData = @import("../models/point/PointCloudStdDatas.zig").PointCloudStdData;
+const PointCloudStdData = @import("../models/PointCloudStore.zig").PointCloudStdData;
 const DataGen = @import("../utils/Data.zig").DataGen;
 
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
@@ -81,6 +81,7 @@ const PointCloudRendererParameters = struct {
     }
 };
 
+app_ctx: *AppContext,
 module: Module = .{
     .name = "Point Cloud Renderer",
     .vtable = &.{
@@ -88,15 +89,16 @@ module: Module = .{
         .pointCloudDestroyed = pointCloudDestroyed,
         .pointCloudStdDataChanged = pointCloudStdDataChanged,
         .pointCloudDataUpdated = pointCloudDataUpdated,
-        .uiPanel = uiPanel,
+        .rightPanel = rightPanel,
         .draw = draw,
     },
 },
 parameters: std.AutoHashMap(*PointCloud, PointCloudRendererParameters),
 
-pub fn init(allocator: std.mem.Allocator) PointCloudRenderer {
+pub fn init(app_ctx: *AppContext) PointCloudRenderer {
     return .{
-        .parameters = .init(allocator),
+        .app_ctx = app_ctx,
+        .parameters = .init(app_ctx.allocator),
     };
 }
 
@@ -140,7 +142,7 @@ pub fn pointCloudStdDataChanged(
     switch (std_data) {
         .position => |maybe_position| {
             if (maybe_position) |position| {
-                const position_vbo = zgp.point_cloud_store.dataVBO(Vec3f, position);
+                const position_vbo = pcr.app_ctx.point_cloud_store.dataVBO(Vec3f, position);
                 p.point_sphere_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
                 p.point_sphere_radius_per_vertex_shader_parameters.setVertexAttribArray(.position, position_vbo, 0, 0);
@@ -158,7 +160,7 @@ pub fn pointCloudStdDataChanged(
         },
         .radius => |maybe_radius| {
             if (maybe_radius) |radius| {
-                const radius_vbo = zgp.point_cloud_store.dataVBO(f32, radius);
+                const radius_vbo = pcr.app_ctx.point_cloud_store.dataVBO(f32, radius);
                 p.point_sphere_color_radius_per_vertex_shader_parameters.setVertexAttribArray(.radius, radius_vbo, 0, 0);
                 p.point_sphere_radius_per_vertex_shader_parameters.setVertexAttribArray(.radius, radius_vbo, 0, 0);
                 p.point_sphere_scalar_radius_per_vertex_shader_parameters.setVertexAttribArray(.radius, radius_vbo, 0, 0);
@@ -199,17 +201,17 @@ pub fn pointCloudDataUpdated(
 }
 
 fn setPointCloudDrawPointsColorData(
-    smr: *PointCloudRenderer,
+    pcr: *PointCloudRenderer,
     point_cloud: *PointCloud,
     T: type,
     data: ?PointCloud.CellData(T),
 ) void {
-    const p = smr.parameters.getPtr(point_cloud) orelse return;
+    const p = pcr.parameters.getPtr(point_cloud) orelse return;
     switch (@typeInfo(T)) {
         .float => {
             p.draw_points_color.point_scalar_data = data;
             if (p.draw_points_color.point_scalar_data) |scalar| {
-                const scalar_vbo = zgp.point_cloud_store.dataVBO(f32, scalar);
+                const scalar_vbo = pcr.app_ctx.point_cloud_store.dataVBO(f32, scalar);
                 p.point_sphere_scalar_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
                 p.point_sphere_scalar_radius_per_vertex_shader_parameters.setVertexAttribArray(.scalar, scalar_vbo, 0, 0);
             } else {
@@ -219,11 +221,11 @@ fn setPointCloudDrawPointsColorData(
         },
         .array => {
             if (@typeInfo(@typeInfo(T).array.child) != .float) {
-                @compileError("SurfaceMeshRenderer bad vertex color data type");
+                @compileError("PointCloudRenderer bad vertex color data type");
             }
             p.draw_points_color.point_vector_data = data;
             if (p.draw_points_color.point_vector_data) |vector| {
-                const vector_vbo = zgp.point_cloud_store.dataVBO(Vec3f, vector);
+                const vector_vbo = pcr.app_ctx.point_cloud_store.dataVBO(Vec3f, vector);
                 p.point_sphere_color_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
                 p.point_sphere_color_radius_per_vertex_shader_parameters.setVertexAttribArray(.color, vector_vbo, 0, 0);
             } else {
@@ -233,7 +235,7 @@ fn setPointCloudDrawPointsColorData(
         },
         else => @compileError("PointCloudRenderer bad vertex color data type"),
     }
-    zgp.requestRedraw();
+    pcr.app_ctx.requestRedraw();
 }
 
 /// Part of the Module interface.
@@ -244,10 +246,10 @@ pub fn draw(
     projection_matrix: Mat4f,
 ) void {
     const pcr: *PointCloudRenderer = @alignCast(@fieldParentPtr("module", m));
-    var pc_it = zgp.point_cloud_store.point_clouds.iterator();
+    var pc_it = pcr.app_ctx.point_cloud_store.point_clouds.iterator();
     while (pc_it.next()) |entry| {
         const pc = entry.value_ptr.*;
-        const info = zgp.point_cloud_store.pointCloudInfo(pc);
+        const info = pcr.app_ctx.point_cloud_store.pointCloudInfo(pc);
         const p = pcr.parameters.getPtr(pc).?;
         if (p.draw_points) {
             switch (p.draw_points_color.defined_on) {
@@ -304,7 +306,7 @@ pub fn draw(
 
 /// Part of the Module interface.
 /// Show a UI panel to control the PointCloudRendererParameters of the selected PointCloud.
-pub fn uiPanel(m: *Module) void {
+pub fn rightPanel(m: *Module) void {
     const pcr: *PointCloudRenderer = @alignCast(@fieldParentPtr("module", m));
 
     const style = c.ImGui_GetStyle();
@@ -312,10 +314,10 @@ pub fn uiPanel(m: *Module) void {
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (zgp.point_cloud_store.selected_point_cloud) |pc| {
+    if (pcr.app_ctx.point_cloud_store.selected_point_cloud) |pc| {
         const p = pcr.parameters.getPtr(pc).?;
         if (c.ImGui_Checkbox("draw points", &p.draw_points)) {
-            zgp.requestRedraw();
+            pcr.app_ctx.requestRedraw();
         }
         if (p.draw_points) {
             c.ImGui_Text("Size");
@@ -324,12 +326,12 @@ pub fn uiPanel(m: *Module) void {
                 defer c.ImGui_EndGroup();
                 if (c.ImGui_RadioButton("Global##DrawPointsRadiusGlobal", p.draw_points_radius_defined_on == .global)) {
                     p.draw_points_radius_defined_on = .global;
-                    zgp.requestRedraw();
+                    pcr.app_ctx.requestRedraw();
                 }
                 c.ImGui_SameLine();
                 if (c.ImGui_RadioButton("Per point##DrawPointsRadiusPerPoint", p.draw_points_radius_defined_on == .point)) {
                     p.draw_points_radius_defined_on = .point;
-                    zgp.requestRedraw();
+                    pcr.app_ctx.requestRedraw();
                 }
             }
             switch (p.draw_points_radius_defined_on) {
@@ -339,7 +341,7 @@ pub fn uiPanel(m: *Module) void {
                         // sync value to other point sphere shaders
                         p.point_sphere_color_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
                         p.point_sphere_scalar_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
-                        zgp.requestRedraw();
+                        pcr.app_ctx.requestRedraw();
                     }
                     c.ImGui_PopID();
                 },
@@ -352,12 +354,12 @@ pub fn uiPanel(m: *Module) void {
                 defer c.ImGui_EndGroup();
                 if (c.ImGui_RadioButton("Global##DrawPointsColorGlobal", p.draw_points_color.defined_on == .global)) {
                     p.draw_points_color.defined_on = .global;
-                    zgp.requestRedraw();
+                    pcr.app_ctx.requestRedraw();
                 }
                 c.ImGui_SameLine();
                 if (c.ImGui_RadioButton("Per point##DrawPointsColorPerPoint", p.draw_points_color.defined_on == .point)) {
                     p.draw_points_color.defined_on = .point;
-                    zgp.requestRedraw();
+                    pcr.app_ctx.requestRedraw();
                 }
             }
             switch (p.draw_points_color.defined_on) {
@@ -365,7 +367,7 @@ pub fn uiPanel(m: *Module) void {
                     if (c.ImGui_ColorEdit3("Global color##DrawPointsColorGlobalEdit", &p.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
                         // sync value to other point sphere shaders
                         p.point_sphere_radius_per_vertex_shader_parameters.sphere_color = p.point_sphere_shader_parameters.sphere_color;
-                        zgp.requestRedraw();
+                        pcr.app_ctx.requestRedraw();
                     }
                 },
                 .point => {
@@ -374,12 +376,12 @@ pub fn uiPanel(m: *Module) void {
                         defer c.ImGui_EndGroup();
                         if (c.ImGui_RadioButton("Scalar##DrawPointsColorPointScalar", p.draw_points_color.type == .scalar)) {
                             p.draw_points_color.type = .scalar;
-                            zgp.requestRedraw();
+                            pcr.app_ctx.requestRedraw();
                         }
                         c.ImGui_SameLine();
                         if (c.ImGui_RadioButton("Vector##DrawPointsColorPointVector", p.draw_points_color.type == .vector)) {
                             p.draw_points_color.type = .vector;
-                            zgp.requestRedraw();
+                            pcr.app_ctx.requestRedraw();
                         }
                     }
                     c.ImGui_PushID("DrawPointsColorPointData");

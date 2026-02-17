@@ -23,8 +23,9 @@ const SurfaceMesh = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 
-const zgp = @import("../../main.zig");
 const zgp_log = std.log.scoped(.zgp);
+
+const AppContext = @import("../../main.zig").AppContext;
 
 const data = @import("../../utils/Data.zig");
 const DataContainer = data.DataContainer;
@@ -328,7 +329,10 @@ pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
             }
         }
 
-        pub fn run(self: *Self, task: anytype) !void {
+        // The `task` must have:
+        // - a field `app_ctx` of type `*AppContext`
+        // - a method `run(self: *Self, cell: Cell) void`
+        pub fn run(self: *Self, app_ctx: *AppContext, task: anytype) !void {
             var current_buf_group: usize = 0;
             var current_buf_index: usize = 0;
             var current_index_in_buffer: usize = 0;
@@ -338,7 +342,7 @@ pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
                 current_index_in_buffer += 1;
                 // if the current buffer is full, run the task on it and switch to the next buffer of the current buffer group
                 if (current_index_in_buffer == self.buffers[current_buf_group][current_buf_index].data.len) {
-                    zgp.thread_pool.spawnWg(
+                    app_ctx.thread_pool.spawnWg(
                         &self.wg[current_buf_group],
                         runTaskOnBuffer,
                         .{ &task, self.buffers[current_buf_group][current_buf_index].data },
@@ -357,7 +361,7 @@ pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
             }
             // run the task on the last potentially partially filled buffer and wait for the threads to finish
             if (current_index_in_buffer > 0) {
-                zgp.thread_pool.spawnWg(
+                app_ctx.thread_pool.spawnWg(
                     &self.wg[current_buf_group],
                     runTaskOnBuffer,
                     .{ &task, self.buffers[current_buf_group][current_buf_index].data[0..current_index_in_buffer] },

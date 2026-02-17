@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const geometry_utils = @import("../../geometry/utils.zig");
@@ -124,13 +125,14 @@ pub fn vertexCurvature(
 /// Compute the principal curvatures magnitudes and directions of all vertices of the given SurfaceMesh
 /// and store the results in the given datas (which are supposed to be not null).
 pub fn computeVertexCurvatures(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     edge_length: SurfaceMesh.CellData(.edge, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
-    vertex_curvature: *SurfaceMeshCurvatureDatas,
+    vertex_curvature: SurfaceMeshCurvatureDatas,
 ) !void {
     const Task = struct {
         const Task = @This();
@@ -141,7 +143,7 @@ pub fn computeVertexCurvatures(
         edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
         edge_length: SurfaceMesh.CellData(.edge, f32),
         face_area: SurfaceMesh.CellData(.face, f32),
-        vertex_curvature: *SurfaceMeshCurvatureDatas,
+        vertex_curvature: SurfaceMeshCurvatureDatas,
 
         pub inline fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
             const curvature_values = try vertexCurvature(
@@ -162,7 +164,7 @@ pub fn computeVertexCurvatures(
 
     var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
     defer pctr.deinit();
-    try pctr.run(Task{
+    try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_normal = vertex_normal,
@@ -198,6 +200,7 @@ pub fn vertexGaussianCurvature(
 /// Compute the Gaussian curvatures of all vertices of the given SurfaceMesh
 /// and store the results in the given vertex_gaussian_curvature data.
 pub fn computeVertexGaussianCurvatures(
+    _: *AppContext,
     sm: *SurfaceMesh,
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     vertex_gaussian_curvature: SurfaceMesh.CellData(.vertex, f32),

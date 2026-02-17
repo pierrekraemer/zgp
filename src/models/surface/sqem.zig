@@ -1,7 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
+
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec4f = vec.Vec4f;
@@ -84,6 +86,7 @@ pub fn vertexSQEM(
 /// and store them in the given vertex_sqem data.
 /// Face contributions to vertices SQEM are computed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance) pub fn computeVertexSQEMs( sm: *SurfaceMesh, vertex_position: SurfaceMesh.CellData(.vertex, Vec3f), face_area: SurfaceMesh.CellData(.face, f32), face_normal: SurfaceMesh.CellData(.face, Vec3f), vertex_sqem: SurfaceMesh.CellData(.vertex, SQEM), ) !void { vertex_sqem.data.fill(SQEM.zero); var face_it = try SurfaceMesh.CellIterator(.face).init(sm); defer face_it.deinit(); while (face_it.next()) |face| { const n = face_normal.value(face); const p = vertex_position.value(.{ .vertex = face.dart() }); var fsq: SQEM = .init( Vec4f{ p[0], p[1], p[2], 0.0 }, Vec4f{ n[0], n[1], n[2], 1.0 }, ); fsq.mulScalar(face_area.value(face) / 3.0); // TODO: should divide by sm.codegree(face) to avoid triangular hypothesis var dart_it = sm.cellDartIterator(face); while (dart_it.next()) |d| { vertex_sqem.valuePtr(.{ .vertex = d }).*.add(&fsq); } } } /// Compute the QEMs of all vertices of the given SurfaceMesh /// and store them in the given vertex_qem data. /// The QEM of a vertex is defined as the sum of the outer products of the planes of its incident faces. /// The plane of a face is defined by its normal n and a point p on the face as the 4D vector (n, -p.n). /// Face normals are assumed to be normalized. /// A regularization term is added to ensure QEM is well-conditioned by adding a small contribution of the vertices tangent basis planes. /// SGP2025: Controlling Quadric Error Simplification with Line Quadrics /// https://www.dgp.toronto.edu/~hsuehtil/pdf/lineQuadric.pdf /// Face contributions to vertices quadrics are computed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance)
 pub fn computeVertexSQEMs(
+    _: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),

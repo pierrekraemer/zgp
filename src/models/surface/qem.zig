@@ -1,7 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
+
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec4f = vec.Vec4f;
@@ -69,6 +71,7 @@ pub fn vertexQEM(
 /// https://www.dgp.toronto.edu/~hsuehtil/pdf/lineQuadric.pdf
 /// Face contributions to vertices quadrics are computed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance)
 pub fn computeVertexQEMs(
+    _: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),

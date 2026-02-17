@@ -29,8 +29,6 @@ projection_type: CameraProjectionType,
 
 projection_matrix: Mat4f = undefined,
 
-views_using_camera: std.ArrayList(*View),
-
 pub fn init(
     position: Vec3f,
     look_dir: Vec3f,
@@ -48,22 +46,14 @@ pub fn init(
         .aspect_ratio = aspect_ratio,
         .field_of_view = field_of_view,
         .projection_type = projection_type,
-        .views_using_camera = .empty,
     };
     c.updateViewMatrix();
     c.updateProjectionMatrix();
     return c;
 }
 
-pub fn deinit(c: *Camera, allocator: std.mem.Allocator) void {
-    c.views_using_camera.deinit(allocator);
-}
-
 pub fn updateViewMatrix(c: *Camera) void {
     c.view_matrix = mat.lookAt(c.position, c.look_dir, c.up_dir);
-    for (c.views_using_camera.items) |view| {
-        view.need_redraw = true;
-    }
 }
 
 pub fn updateProjectionMatrix(c: *Camera) void {
@@ -71,9 +61,6 @@ pub fn updateProjectionMatrix(c: *Camera) void {
         .perspective => mat.perspective(c.field_of_view, c.aspect_ratio, 0.01, 3.0),
         .orthographic => mat.orthographic(c.aspect_ratio * -c.view_matrix[3][2], -c.view_matrix[3][2], 0.01, 3.0),
     };
-    for (c.views_using_camera.items) |view| {
-        view.need_redraw = true;
-    }
 }
 
 pub fn lookAtPivotPosition(c: *Camera) void {

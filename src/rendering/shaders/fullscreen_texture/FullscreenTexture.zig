@@ -11,6 +11,7 @@ var global_instance: FullscreenTexture = undefined;
 var init_global_once = std.once(init_global);
 fn init_global() void {
     global_instance = init() catch unreachable;
+    Shader.register(&global_instance.program);
 }
 pub fn instance() *FullscreenTexture {
     init_global_once.call();
@@ -36,10 +37,6 @@ fn init() !FullscreenTexture {
     ft.texture_unit_uniform = gl.GetUniformLocation(ft.program.index, "u_texture_unit");
 
     return ft;
-}
-
-fn deinit(ft: *FullscreenTexture) void {
-    ft.program.deinit();
 }
 
 pub const Parameters = struct {

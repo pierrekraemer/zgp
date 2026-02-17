@@ -13,6 +13,7 @@ var global_instance: PointSphereScalarPerVertex = undefined;
 var init_global_once = std.once(init_global);
 fn init_global() void {
     global_instance = init() catch unreachable;
+    Shader.register(&global_instance.program);
 }
 pub fn instance() *PointSphereScalarPerVertex {
     init_global_once.call();
@@ -68,10 +69,6 @@ fn init() !PointSphereScalarPerVertex {
     };
 
     return psspv;
-}
-
-pub fn deinit(psspv: *PointSphereScalarPerVertex) void {
-    psspv.program.deinit();
 }
 
 pub const Parameters = struct {

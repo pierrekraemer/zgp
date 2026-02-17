@@ -1,7 +1,9 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
+
 const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -30,6 +32,7 @@ pub fn vertexTangentBasis(
 /// Compute the tangent bases of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_tangent_basis data.
 pub fn computeVertexTangentBases(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -55,7 +58,7 @@ pub fn computeVertexTangentBases(
 
     var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
     defer pctr.deinit();
-    try pctr.run(Task{
+    try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_normal = vertex_normal,

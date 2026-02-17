@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -36,6 +37,7 @@ pub fn faceArea(
 /// Compute the areas of all faces of the given SurfaceMesh
 /// and store them in the given face_area data.
 pub fn computeFaceAreas(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
@@ -58,7 +60,7 @@ pub fn computeFaceAreas(
 
     var pctr = try SurfaceMesh.ParallelCellTaskRunner(.face).init(sm);
     defer pctr.deinit();
-    try pctr.run(Task{
+    try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .face_area = face_area,
@@ -105,6 +107,7 @@ pub fn vertexArea(
 /// Each face f contributes 1/codegree(f) of its area to the area of its incident vertices.
 /// Executed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance)
 pub fn computeVertexAreas(
+    _: *AppContext,
     sm: *SurfaceMesh,
     face_area: SurfaceMesh.CellData(.face, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),

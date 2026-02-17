@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -45,6 +46,7 @@ pub fn scalarFieldFaceGradient(
 /// The given scalar field and its computed gradients are of type f64 for improved precision.
 /// The faces of the SurfaceMesh are assumed to be triangular.
 pub fn computeScalarFieldFaceGradients(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_scalar_field: SurfaceMesh.CellData(.vertex, f64),
@@ -76,7 +78,7 @@ pub fn computeScalarFieldFaceGradients(
 
     var pctr = try SurfaceMesh.ParallelCellTaskRunner(.face).init(sm);
     defer pctr.deinit();
-    try pctr.run(Task{
+    try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_scalar_field = vertex_scalar_field,
@@ -124,6 +126,7 @@ pub fn vectorFieldVertexDivergence(
 /// The given vector field and its computed divergence are of type f64 for improved precision.
 /// The faces of the SurfaceMesh are assumed to be triangular.
 pub fn computeVectorFieldVertexDivergences(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -152,7 +155,7 @@ pub fn computeVectorFieldVertexDivergences(
 
     var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
     defer pctr.deinit();
-    try pctr.run(Task{
+    try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
         .halfedge_cotan_weight = halfedge_cotan_weight,
         .vertex_position = vertex_position,

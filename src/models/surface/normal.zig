@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -39,6 +40,7 @@ pub fn faceNormal(
 /// Compute the normals of all faces of the given SurfaceMesh
 /// and store them in the given face_normal data.
 pub fn computeFaceNormals(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
@@ -61,7 +63,7 @@ pub fn computeFaceNormals(
 
     var pctr = try SurfaceMesh.ParallelCellTaskRunner(.face).init(sm);
     defer pctr.deinit();
-    try pctr.run(Task{
+    try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .face_normal = face_normal,
@@ -100,6 +102,7 @@ pub fn vertexNormal(
 /// Face normals are assumed to be normalized.
 /// Executed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance)
 pub fn computeVertexNormals(
+    _: *AppContext,
     sm: *SurfaceMesh,
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
@@ -147,7 +150,7 @@ pub fn computeVertexNormals(
 
     // var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
     // defer pctr.deinit();
-    // try pctr.run(Task{
+    // try pctr.run(app_ctx, Task{
     //     .surface_mesh = sm,
     //     .corner_angle = corner_angle,
     //     .face_normal = face_normal,

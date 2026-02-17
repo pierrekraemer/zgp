@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const geometry_utils = @import("../../geometry/utils.zig");
@@ -14,6 +15,7 @@ const laplacian = @import("laplacian.zig");
 const gradient = @import("gradient.zig");
 
 pub fn computeVertexGeodesicDistancesFromSource(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     source_vertices: []SurfaceMesh.Cell,
     diffusion_time: f32,
@@ -111,6 +113,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
     var face_heat_grad = try sm.addData(.face, Vec3d, "__face_heat_grad");
     defer sm.removeData(.face, face_heat_grad.gen());
     try gradient.computeScalarFieldFaceGradients(
+        app_ctx,
         sm,
         vertex_position,
         vertex_heat,
@@ -132,6 +135,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
     var vertex_heat_grad_div = try sm.addData(.vertex, f64, "__vertex_heat_grad_div");
     defer sm.removeData(.vertex, vertex_heat_grad_div.gen());
     try gradient.computeVectorFieldVertexDivergences(
+        app_ctx,
         sm,
         halfedge_cotan_weight,
         vertex_position,

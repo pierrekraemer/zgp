@@ -95,12 +95,3 @@ pub fn deinit(w: *Window) void {
     errify(c.SDL_GL_DestroyContext(w.gl_context)) catch {};
     c.SDL_DestroyWindow(w.sdl_window);
 }
-
-pub fn sdlEvent(w: *Window, event: *const c.SDL_Event) void {
-    switch (event.type) {
-        c.SDL_EVENT_WINDOW_RESIZED => {
-            errify(c.SDL_GetWindowSizeInPixels(w.sdl_window, &w.width, &w.height)) catch {};
-        },
-        else => {},
-    }
-}

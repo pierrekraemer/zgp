@@ -26,7 +26,7 @@ pub fn attachTexture(f: FBO, attachement: c_uint, texture: Texture2D) void {
     gl.FramebufferTexture2D(
         gl.FRAMEBUFFER,
         attachement,
-        if (texture.multisample) gl.TEXTURE_2D_MULTISAMPLE else gl.TEXTURE_2D,
+        gl.TEXTURE_2D,
         texture.index,
         0,
     );

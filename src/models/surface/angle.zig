@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -27,6 +28,7 @@ pub fn cornerAngle(
 /// Compute the angles of all corners of the given SurfaceMesh
 /// and store them in the given corner_angle data.
 pub fn computeCornerAngles(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
@@ -49,7 +51,7 @@ pub fn computeCornerAngles(
 
     var pctr = try SurfaceMesh.ParallelCellTaskRunner(.corner).init(sm);
     defer pctr.deinit();
-    try pctr.run(Task{
+    try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .corner_angle = corner_angle,
@@ -89,6 +91,7 @@ pub fn edgeDihedralAngle(
 /// and store them in the given edge_dihedral_angle data.
 /// Face normals are assumed to be normalized.
 pub fn computeEdgeDihedralAngles(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
@@ -114,7 +117,7 @@ pub fn computeEdgeDihedralAngles(
 
     var pctr = try SurfaceMesh.ParallelCellTaskRunner(.edge).init(sm);
     defer pctr.deinit();
-    try pctr.run(Task{
+    try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .face_normal = face_normal,

@@ -3,21 +3,20 @@ const PointCloudStore = @This();
 const std = @import("std");
 const builtin = @import("builtin");
 
-const zgp = @import("../main.zig");
-const c = zgp.c;
+const c = @import("../main.zig").c;
 
-const imgui_utils = @import("../utils/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 const zgp_log = std.log.scoped(.zgp);
 
+const imgui_utils = @import("../ui/imgui.zig");
 const types_utils = @import("../utils/types.zig");
 
+const Module = @import("../modules/Module.zig");
 const PointCloud = @import("point/PointCloud.zig");
-const PointCloudStdDatas = @import("point/PointCloudStdDatas.zig");
-const PointCloudStdData = PointCloudStdDatas.PointCloudStdData;
 
 const Data = @import("../utils/Data.zig").Data;
 const DataGen = @import("../utils/Data.zig").DataGen;
+const BufferPool = @import("../utils/BufferPool.zig").BufferPool;
 
 const VBO = @import("../rendering/VBO.zig");
 const IBO = @import("../rendering/IBO.zig");
@@ -25,17 +24,31 @@ const IBO = @import("../rendering/IBO.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
+/// This struct defines the standard datas of a PointCloud
+pub const PointCloudStdDatas = struct {
+    position: ?PointCloud.CellData(Vec3f) = null,
+    normal: ?PointCloud.CellData(Vec3f) = null,
+    radius: ?PointCloud.CellData(f32) = null,
+    // color: ?PointCloud.CellData(Vec3f) = null,
+};
+
+/// This tagged union is generated from the PointCloudStdDatas struct and allows to easily provide a single
+/// data entry to the setPointCloudStdData function (in PointCloudStore)
+pub const PointCloudStdData = types_utils.UnionFromStruct(PointCloudStdDatas);
+pub const PointCloudStdDataTag = std.meta.Tag(PointCloudStdData);
+
 /// This struct holds information related to a PointCloud, including:
 /// - its standard datas
 /// - the IBOs (for rendering).
 /// The PointCloudInfo associated with a PointCloud is accessible via the pointCloudInfo function.
 const PointCloudInfo = struct {
-    std_data: PointCloudStdDatas = .{},
+    std_datas: PointCloudStdDatas = .{},
+
     points_ibo: IBO,
 
     pub fn init() PointCloudInfo {
         return .{
-            .points_ibo = IBO.init(),
+            .points_ibo = .init(),
         };
     }
     pub fn deinit(self: *PointCloudInfo) void {
@@ -45,6 +58,9 @@ const PointCloudInfo = struct {
 
 allocator: std.mem.Allocator,
 
+// list of Modules that have registered interest in PointCloud events
+listeners: std.ArrayList(*Module),
+
 point_clouds: std.StringHashMap(*PointCloud),
 point_clouds_info: std.AutoHashMap(*const PointCloud, PointCloudInfo),
 selected_point_cloud: ?*PointCloud = null,
@@ -52,13 +68,17 @@ selected_point_cloud: ?*PointCloud = null,
 data_vbo: std.AutoHashMap(*const DataGen, VBO),
 data_last_update: std.AutoHashMap(*const DataGen, std.time.Instant),
 
-pub fn init(allocator: std.mem.Allocator) PointCloudStore {
+point_buffer_pool: BufferPool(PointCloud.Point),
+
+pub fn init(allocator: std.mem.Allocator) !PointCloudStore {
     return .{
         .allocator = allocator,
+        .listeners = .empty,
         .point_clouds = .init(allocator),
         .point_clouds_info = .init(allocator),
         .data_vbo = .init(allocator),
         .data_last_update = .init(allocator),
+        .point_buffer_pool = try .init(allocator, 1024, 64, 32),
     };
 }
 
@@ -87,6 +107,14 @@ pub fn deinit(pcs: *PointCloudStore) void {
     }
     pcs.data_vbo.deinit();
     pcs.data_last_update.deinit();
+
+    pcs.point_buffer_pool.deinit();
+
+    pcs.listeners.deinit(pcs.allocator);
+}
+
+pub fn addListener(pcs: *PointCloudStore, module: *Module) !void {
+    try pcs.listeners.append(pcs.allocator, module);
 }
 
 pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
@@ -107,8 +135,7 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     try pcs.point_clouds_info.put(pc, info);
     errdefer _ = pcs.point_clouds_info.remove(pc);
 
-    // TODO: find a way to only notify modules that have registered interest in PointCloud
-    for (zgp.modules.items) |module| {
+    for (pcs.listeners.items) |module| {
         module.pointCloudCreated(pc);
     }
 
@@ -121,8 +148,7 @@ pub fn destroyPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
         return;
     };
 
-    // TODO: find a way to only notify modules that have registered interest in PointCloud
-    for (zgp.modules.items) |module| {
+    for (pcs.listeners.items) |module| {
         module.pointCloudDestroyed(pc);
     }
 
@@ -159,11 +185,9 @@ pub fn pointCloudDataUpdated(
         return;
     };
 
-    // TODO: find a way to only notify modules that have registered interest in PointCloud
-    for (zgp.modules.items) |module| {
+    for (pcs.listeners.items) |module| {
         module.pointCloudDataUpdated(pc, data.gen());
     }
-    zgp.requestRedraw();
 }
 
 pub fn pointCloudConnectivityUpdated(pcs: *PointCloudStore, pc: *PointCloud) void {
@@ -174,14 +198,16 @@ pub fn pointCloudConnectivityUpdated(pcs: *PointCloudStore, pc: *PointCloud) voi
         return;
     };
 
-    // TODO: find a way to only notify modules that have registered interest in PointCloud
-    for (zgp.modules.items) |module| {
+    for (pcs.listeners.items) |module| {
         module.pointCloudConnectivityUpdated(pc);
     }
-    zgp.requestRedraw();
 }
 
-pub fn dataVBO(pcs: *PointCloudStore, comptime T: type, data: PointCloud.CellData(T)) VBO {
+pub fn dataVBO(
+    pcs: *PointCloudStore,
+    comptime T: type,
+    data: PointCloud.CellData(T),
+) VBO {
     const vbo = pcs.data_vbo.getOrPut(data.gen()) catch |err| {
         zgp_log.err("Failed to get or add VBO in the registry: {}", .{err});
         return VBO.init(); // return a dummy VBO
@@ -219,20 +245,18 @@ pub fn setPointCloudStdData(
     const info = pcs.point_clouds_info.getPtr(pc).?;
     switch (data) {
         inline else => |val, tag| {
-            @field(info.std_data, @tagName(tag)) = val;
+            @field(info.std_datas, @tagName(tag)) = val;
         },
     }
 
-    // TODO: find a way to only notify modules that have registered interest in PointCloud
-    for (zgp.modules.items) |module| {
+    for (pcs.listeners.items) |module| {
         module.pointCloudStdDataChanged(pc, data);
     }
-    zgp.requestRedraw();
 }
 
 pub fn menuBar(_: *PointCloudStore) void {}
 
-pub fn uiPanel(pcs: *PointCloudStore) void {
+pub fn leftPanel(pcs: *PointCloudStore) void {
     const CreateDataTypes = union(enum) { f32: f32, Vec3f: Vec3f };
     const CreateDataTypesTag = std.meta.Tag(CreateDataTypes);
     const UiData = struct {
@@ -256,66 +280,16 @@ pub fn uiPanel(pcs: *PointCloudStore) void {
 
         const nb_point_clouds_f = @as(f32, @floatFromInt(pcs.point_clouds.count() + 1));
         if (imgui_utils.pointCloudListBox(
-            pcs.selected_point_cloud,
+            pcs,
             style.*.FontSizeBase * nb_point_clouds_f + style.*.ItemSpacing.y * nb_point_clouds_f,
         )) |pc| {
             pcs.selected_point_cloud = pc;
         }
 
-        const button_width = c.ImGui_CalcTextSize("" ++ c.ICON_FA_DATABASE).x + style.*.ItemSpacing.x;
-
         if (pcs.selected_point_cloud) |pc| {
             var buf: [64]u8 = undefined; // guess 64 chars is enough for cell counts
-            const info = pcs.point_clouds_info.getPtr(pc).?;
-            const cells = std.fmt.bufPrintZ(&buf, "Points | {d} |", .{pc.nbPoints()}) catch "";
-            c.ImGui_SeparatorText(cells.ptr);
-            inline for (@typeInfo(PointCloudStdData).@"union".fields) |*field| {
-                c.ImGui_Text(field.name);
-                c.ImGui_SameLine();
-                // align 2 buttons to the right of the text
-                c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + c.ImGui_GetContentRegionAvail().x - 2 * button_width - style.*.ItemSpacing.x);
-                const data_selected = @field(info.std_data, field.name) != null;
-                if (!data_selected) {
-                    c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 128, 128, 200));
-                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 128, 128, 255));
-                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 128, 128, 128));
-                }
-                c.ImGui_PushID(field.name);
-                defer c.ImGui_PopID();
-                if (c.ImGui_Button("" ++ c.ICON_FA_DATABASE)) {
-                    c.ImGui_OpenPopup("select_data_popup", c.ImGuiPopupFlags_NoReopen);
-                }
-                if (!data_selected) {
-                    c.ImGui_PopStyleColorEx(3);
-                }
-                if (c.ImGui_BeginPopup("select_data_popup", 0)) {
-                    defer c.ImGui_EndPopup();
-                    c.ImGui_PushID("select_data_combobox");
-                    defer c.ImGui_PopID();
-                    if (imgui_utils.pointCloudDataComboBox(
-                        pc,
-                        @typeInfo(field.type).optional.child.DataType,
-                        @field(info.std_data, field.name),
-                    )) |data| {
-                        pcs.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
-                    }
-                }
-            }
-
-            c.ImGui_Separator();
-
-            if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                inline for (@typeInfo(PointCloudStdData).@"union".fields) |*field| {
-                    if (@field(info.std_data, field.name) == null) {
-                        const maybe_data = pc.addData(@typeInfo(field.type).optional.child.DataType, field.name);
-                        if (maybe_data) |data| {
-                            pcs.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
-                        } else |err| {
-                            zgp_log.err("Error adding {s} ({s}) data: {}", .{ field.name, @typeName(@typeInfo(field.type).optional.child.DataType), err });
-                        }
-                    }
-                }
-            }
+            const cells = std.fmt.bufPrintZ(&buf, "Points | {d} | ({d:.1}%)", .{ pc.nbPoints(), pc.point_data.density() * 100 }) catch "";
+            c.ImGui_Text(cells.ptr);
 
             if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);

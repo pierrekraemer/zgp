@@ -1,6 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -35,6 +36,7 @@ pub fn halfedgeCotanWeight(
 /// Compute the cotan weights of all halfedges of the given SurfaceMesh
 /// and store them in the given halfedge_cotan_weight data.
 pub fn computeHalfedgeCotanWeights(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
@@ -57,7 +59,7 @@ pub fn computeHalfedgeCotanWeights(
 
     var pctr = try SurfaceMesh.ParallelCellTaskRunner(.halfedge).init(sm);
     defer pctr.deinit();
-    try pctr.run(Task{
+    try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .halfedge_cotan_weight = halfedge_cotan_weight,
