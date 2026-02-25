@@ -13,7 +13,13 @@ const PointCloudStdData = @import("../models/PointCloudStore.zig").PointCloudStd
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfaceMeshStdData = @import("../models/SurfaceMeshStore.zig").SurfaceMeshStdData;
 
+pub const SupportedModels = struct {
+    point_cloud: bool = false,
+    surface_mesh: bool = false,
+};
+
 name: []const u8,
+supported_models: SupportedModels = .{},
 vtable: *const VTable,
 
 const VTable = struct {

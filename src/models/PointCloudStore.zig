@@ -279,11 +279,13 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
         c.ImGui_PopStyleColorEx(3);
 
         const nb_point_clouds_f = @as(f32, @floatFromInt(pcs.point_clouds.count() + 1));
-        if (imgui_utils.pointCloudListBox(
+        switch (imgui_utils.pointCloudListBox(
             pcs,
             style.*.FontSizeBase * nb_point_clouds_f + style.*.ItemSpacing.y * nb_point_clouds_f,
-        )) |pc| {
-            pcs.selected_point_cloud = pc;
+        )) {
+            .unchanged => {},
+            .cleared => pcs.selected_point_cloud = null,
+            .changed => |new_pc| pcs.selected_point_cloud = new_pc,
         }
 
         if (pcs.selected_point_cloud) |pc| {

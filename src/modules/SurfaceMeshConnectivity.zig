@@ -27,6 +27,7 @@ const curvature = @import("../models/surface/curvature.zig");
 app_ctx: *AppContext,
 module: Module = .{
     .name = "Surface Mesh Connectivity",
+    .supported_models = .{ .surface_mesh = true },
     .vtable = &.{
         .rightClickMenu = rightClickMenu,
     },

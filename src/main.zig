@@ -164,8 +164,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_medial_axis.deinit();
     errdefer surface_mesh_procedural_texturing.deinit();
 
-    // TODO: find a way to tag Modules with the type of model they handle (PointCloud, SurfaceMesh, etc.)
-    // and only show them in the UI when a compatible model is selected
     try modules.append(app_ctx.allocator, &point_cloud_std_datas.module);
     try modules.append(app_ctx.allocator, &surface_mesh_std_datas.module);
     try modules.append(app_ctx.allocator, &point_cloud_renderer.module);
@@ -229,6 +227,18 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     return c.SDL_APP_CONTINUE;
 }
 
+/// Helper function to encapsulate module filtering logic
+fn shouldShowModule(module: *Module, ctx: *AppContext) bool {
+    // Fast path: if no models are exclusively supported, it's a global module
+    if (!module.supported_models.point_cloud and !module.supported_models.surface_mesh) return true;
+
+    // Check specific capabilities against currently selected models
+    if (module.supported_models.point_cloud and ctx.point_cloud_store.selected_point_cloud != null) return true;
+    if (module.supported_models.surface_mesh and ctx.surface_mesh_store.selected_surface_mesh != null) return true;
+
+    return false;
+}
+
 fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     _ = appstate;
 
@@ -263,6 +273,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
         defer c.ImGui_EndPopup();
         for (modules.items) |module| {
+            if (!shouldShowModule(module, &app_ctx)) continue;
             module.rightClickMenu();
         }
         c.ImGui_Separator();
@@ -292,6 +303,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         app_ctx.point_cloud_store.menuBar();
         app_ctx.surface_mesh_store.menuBar();
         for (modules.items) |module| {
+            if (!shouldShowModule(module, &app_ctx)) continue;
             module.menuBar();
         }
     }
@@ -318,6 +330,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         app_ctx.point_cloud_store.leftPanel();
         app_ctx.surface_mesh_store.leftPanel();
         for (modules.items) |module| {
+            if (!shouldShowModule(module, &app_ctx)) continue;
             if (module.vtable.leftPanel == null) continue; // check if the module has a uiPanel function
             c.ImGui_PushIDPtr(module);
             defer c.ImGui_PopID();
@@ -350,6 +363,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     {
         defer c.ImGui_End();
         for (modules.items) |module| {
+            if (!shouldShowModule(module, &app_ctx)) continue;
             if (module.vtable.rightPanel == null) continue; // check if the module has a uiPanel function
             c.ImGui_PushIDPtr(module);
             defer c.ImGui_PopID();

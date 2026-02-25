@@ -93,10 +93,18 @@ pub fn tooltip(text: []const u8) void {
 //     return false;
 // }
 
+pub fn SelectionResult(comptime T: type) type {
+    return union(enum) {
+        unchanged,
+        cleared,
+        changed: T,
+    };
+}
+
 pub fn surfaceMeshListBox(
     sm_store: *SurfaceMeshStore,
     height: f32,
-) ?*SurfaceMesh {
+) SelectionResult(*SurfaceMesh) {
     if (c.ImGui_BeginListBox("##Surface Meshes", c.ImVec2{ .x = 0, .y = height })) {
         defer c.ImGui_EndListBox();
         var sm_it = sm_store.surface_meshes.iterator();
@@ -106,7 +114,9 @@ pub fn surfaceMeshListBox(
             const is_selected = sm_store.selected_surface_mesh == sm;
             if (c.ImGui_SelectableEx(name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) {
-                    return sm; // only return if it was not previously selected
+                    return .{ .changed = sm }; // only return if it was not previously selected
+                } else {
+                    return .cleared; // clicking on the currently selected item clears the selection
                 }
             }
             if (is_selected) {
@@ -114,13 +124,13 @@ pub fn surfaceMeshListBox(
             }
         }
     }
-    return null;
+    return .unchanged;
 }
 
 pub fn pointCloudListBox(
     pc_store: *PointCloudStore,
     height: f32,
-) ?*PointCloud {
+) SelectionResult(*PointCloud) {
     if (c.ImGui_BeginListBox("##Point Clouds", c.ImVec2{ .x = 0, .y = height })) {
         defer c.ImGui_EndListBox();
         var pc_it = pc_store.point_clouds.iterator();
@@ -130,7 +140,9 @@ pub fn pointCloudListBox(
             const is_selected = pc_store.selected_point_cloud == pc;
             if (c.ImGui_SelectableEx(name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) {
-                    return pc; // only return if it was not previously selected
+                    return .{ .changed = pc }; // only return if it was not previously selected
+                } else {
+                    return .cleared; // clicking on the currently selected item clears the selection
                 }
             }
             if (is_selected) {
@@ -138,15 +150,7 @@ pub fn pointCloudListBox(
             }
         }
     }
-    return null;
-}
-
-pub fn SelectionResult(comptime T: type) type {
-    return union(enum) {
-        unchanged,
-        cleared,
-        changed: T,
-    };
+    return .unchanged;
 }
 
 pub fn surfaceMeshCellDataComboBox(

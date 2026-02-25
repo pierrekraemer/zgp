@@ -42,6 +42,7 @@ const VectorPerVertexRendererParameters = struct {
 app_ctx: *AppContext,
 module: Module = .{
     .name = "Vector Per Vertex Renderer",
+    .supported_models = .{ .point_cloud = true, .surface_mesh = true },
     .vtable = &.{
         .surfaceMeshCreated = surfaceMeshCreated,
         .surfaceMeshDestroyed = surfaceMeshDestroyed,

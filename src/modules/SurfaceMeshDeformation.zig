@@ -19,6 +19,7 @@ const Mat4f = mat.Mat4f;
 app_ctx: *AppContext,
 module: Module = .{
     .name = "Surface Mesh Deformation",
+    .supported_models = .{ .surface_mesh = true },
     .vtable = &.{
         .sdlEvent = sdlEvent,
     },

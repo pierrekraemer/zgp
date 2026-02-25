@@ -84,6 +84,7 @@ const PointCloudRendererParameters = struct {
 app_ctx: *AppContext,
 module: Module = .{
     .name = "Point Cloud Renderer",
+    .supported_models = .{ .point_cloud = true },
     .vtable = &.{
         .pointCloudCreated = pointCloudCreated,
         .pointCloudDestroyed = pointCloudDestroyed,

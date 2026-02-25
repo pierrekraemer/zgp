@@ -396,11 +396,13 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
         c.ImGui_PopStyleColorEx(3);
 
         const nb_surface_meshes_f = @as(f32, @floatFromInt(sms.surface_meshes.count() + 1));
-        if (imgui_utils.surfaceMeshListBox(
+        switch (imgui_utils.surfaceMeshListBox(
             sms,
             style.*.FontSizeBase * nb_surface_meshes_f + style.*.ItemSpacing.y * nb_surface_meshes_f,
-        )) |sm| {
-            sms.selected_surface_mesh = sm;
+        )) {
+            .unchanged => {},
+            .cleared => sms.selected_surface_mesh = null,
+            .changed => |new_sm| sms.selected_surface_mesh = new_sm,
         }
 
         if (sms.selected_surface_mesh) |sm| {

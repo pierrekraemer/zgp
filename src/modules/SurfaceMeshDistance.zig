@@ -19,6 +19,7 @@ const distance = @import("../models/surface/distance.zig");
 app_ctx: *AppContext,
 module: Module = .{
     .name = "Surface Mesh Distance",
+    .supported_models = .{ .surface_mesh = true },
     .vtable = &.{
         .rightClickMenu = rightClickMenu,
     },

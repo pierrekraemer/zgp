@@ -51,6 +51,7 @@ const TnBData = struct {
 app_ctx: *AppContext,
 module: Module = .{
     .name = "Surface Mesh Procedural Texturing",
+    .supported_models = .{ .surface_mesh = true },
     .vtable = &.{
         .surfaceMeshCreated = surfaceMeshCreated,
         .surfaceMeshDestroyed = surfaceMeshDestroyed,

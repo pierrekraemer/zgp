@@ -29,6 +29,7 @@ const tangentBasis = @import("../models/surface/tangentBasis.zig");
 app_ctx: *AppContext,
 module: Module = .{
     .name = "Surface Mesh Std Datas",
+    .supported_models = .{ .surface_mesh = true },
     .vtable = &.{
         .leftPanel = leftPanel,
     },

@@ -21,6 +21,7 @@ const Vec3f = vec.Vec3f;
 app_ctx: *AppContext,
 module: Module = .{
     .name = "Point Cloud Std Datas",
+    .supported_models = .{ .point_cloud = true },
     .vtable = &.{
         .leftPanel = leftPanel,
     },
