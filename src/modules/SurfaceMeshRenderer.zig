@@ -526,21 +526,15 @@ pub fn rightPanel(m: *Module) void {
                     }
                     c.ImGui_PushID("DrawVerticesColorVertexData");
                     switch (p.draw_vertices_color.type) {
-                        .scalar => if (imgui_utils.surfaceMeshCellDataComboBox(
-                            sm,
-                            .vertex,
-                            f32,
-                            p.draw_vertices_color.vertex_scalar_data,
-                        )) |data| {
-                            smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, f32, data);
+                        .scalar => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, p.draw_vertices_color.vertex_scalar_data)) {
+                            .unchanged => {},
+                            .cleared => smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, f32, null),
+                            .changed => |data| smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, f32, data),
                         },
-                        .vector => if (imgui_utils.surfaceMeshCellDataComboBox(
-                            sm,
-                            .vertex,
-                            Vec3f,
-                            p.draw_vertices_color.vertex_vector_data,
-                        )) |data| {
-                            smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, Vec3f, data);
+                        .vector => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, p.draw_vertices_color.vertex_vector_data)) {
+                            .unchanged => {},
+                            .cleared => smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, Vec3f, null),
+                            .changed => |data| smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, Vec3f, data),
                         },
                     }
                     c.ImGui_PopID();
@@ -612,13 +606,10 @@ pub fn rightPanel(m: *Module) void {
                     c.ImGui_PushID("DrawFacesColorVertexData");
                     switch (p.draw_faces_color.type) {
                         .scalar => {
-                            if (imgui_utils.surfaceMeshCellDataComboBox(
-                                sm,
-                                .vertex,
-                                f32,
-                                p.draw_faces_color.vertex_scalar_data,
-                            )) |data| {
-                                smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, f32, data);
+                            switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, p.draw_faces_color.vertex_scalar_data)) {
+                                .unchanged => {},
+                                .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, f32, null),
+                                .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, f32, data),
                             }
                             if (c.ImGui_Checkbox("Show isolines", &p.tri_flat_scalar_per_vertex_shader_parameters.show_isolines)) {
                                 smr.app_ctx.requestRedraw();
@@ -630,13 +621,10 @@ pub fn rightPanel(m: *Module) void {
                             }
                             c.ImGui_PopID();
                         },
-                        .vector => if (imgui_utils.surfaceMeshCellDataComboBox(
-                            sm,
-                            .vertex,
-                            Vec3f,
-                            p.draw_faces_color.vertex_vector_data,
-                        )) |data| {
-                            smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec3f, data);
+                        .vector => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, p.draw_faces_color.vertex_vector_data)) {
+                            .unchanged => {},
+                            .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec3f, null),
+                            .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec3f, data),
                         },
                     }
                     c.ImGui_PopID();
@@ -657,21 +645,15 @@ pub fn rightPanel(m: *Module) void {
                     }
                     c.ImGui_PushID("DrawFacesColorFaceData");
                     switch (p.draw_faces_color.type) {
-                        .scalar => if (imgui_utils.surfaceMeshCellDataComboBox(
-                            sm,
-                            .face,
-                            f32,
-                            p.draw_faces_color.face_scalar_data,
-                        )) |data| {
-                            smr.setSurfaceMeshDrawFacesColorData(sm, .face, f32, data);
+                        .scalar => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .face, f32, p.draw_faces_color.face_scalar_data)) {
+                            .unchanged => {},
+                            .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .face, f32, null),
+                            .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .face, f32, data),
                         },
-                        .vector => if (imgui_utils.surfaceMeshCellDataComboBox(
-                            sm,
-                            .face,
-                            Vec3f,
-                            p.draw_faces_color.face_vector_data,
-                        )) |data| {
-                            smr.setSurfaceMeshDrawFacesColorData(sm, .face, Vec3f, data);
+                        .vector => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .face, Vec3f, p.draw_faces_color.face_vector_data)) {
+                            .unchanged => {},
+                            .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .face, Vec3f, null),
+                            .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .face, Vec3f, data),
                         },
                     }
                     c.ImGui_PopID();

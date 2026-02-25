@@ -386,19 +386,23 @@ pub fn rightPanel(m: *Module) void {
                     }
                     c.ImGui_PushID("DrawPointsColorPointData");
                     switch (p.draw_points_color.type) {
-                        .scalar => if (imgui_utils.pointCloudDataComboBox(
+                        .scalar => switch (imgui_utils.pointCloudDataComboBox(
                             pc,
                             f32,
                             p.draw_points_color.point_scalar_data,
-                        )) |data| {
-                            pcr.setPointCloudDrawPointsColorData(pc, f32, data);
+                        )) {
+                            .unchanged => {},
+                            .cleared => pcr.setPointCloudDrawPointsColorData(pc, f32, null),
+                            .changed => |data| pcr.setPointCloudDrawPointsColorData(pc, f32, data),
                         },
-                        .vector => if (imgui_utils.pointCloudDataComboBox(
+                        .vector => switch (imgui_utils.pointCloudDataComboBox(
                             pc,
                             Vec3f,
                             p.draw_points_color.point_vector_data,
-                        )) |data| {
-                            pcr.setPointCloudDrawPointsColorData(pc, Vec3f, data);
+                        )) {
+                            .unchanged => {},
+                            .cleared => pcr.setPointCloudDrawPointsColorData(pc, Vec3f, null),
+                            .changed => |data| pcr.setPointCloudDrawPointsColorData(pc, Vec3f, data),
                         },
                     }
                     c.ImGui_PopID();

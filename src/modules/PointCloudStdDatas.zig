@@ -75,13 +75,20 @@ pub fn leftPanel(m: *Module) void {
                 defer c.ImGui_EndPopup();
                 c.ImGui_PushID("select_data_combobox");
                 defer c.ImGui_PopID();
-                if (imgui_utils.pointCloudDataComboBox(
+                switch (imgui_utils.pointCloudDataComboBox(
                     pc,
                     @typeInfo(field.type).optional.child.DataType,
                     @field(info.std_datas, field.name),
-                )) |data| {
-                    pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
-                    pcsd.app_ctx.requestRedraw();
+                )) {
+                    .unchanged => {},
+                    .cleared => {
+                        pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, null));
+                        pcsd.app_ctx.requestRedraw();
+                    },
+                    .changed => |data| {
+                        pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
+                        pcsd.app_ctx.requestRedraw();
+                    },
                 }
             }
         }

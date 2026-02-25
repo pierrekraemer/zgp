@@ -112,46 +112,34 @@ pub fn rightClickMenu(m: *Module) void {
                 defer c.ImGui_EndMenu();
                 c.ImGui_Text("Min curvature");
                 c.ImGui_PushID("MinCurvature");
-                if (imgui_utils.surfaceMeshCellDataComboBox(
-                    sm,
-                    .vertex,
-                    f32,
-                    curvature_datas.vertex_kmin,
-                )) |data| {
-                    curvature_datas.vertex_kmin = data;
+                switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, curvature_datas.vertex_kmin)) {
+                    .unchanged => {},
+                    .cleared => curvature_datas.vertex_kmin = null,
+                    .changed => |data| curvature_datas.vertex_kmin = data,
                 }
                 c.ImGui_PopID();
                 c.ImGui_Text("Min curvature dir");
                 c.ImGui_PushID("MinCurvatureDir");
-                if (imgui_utils.surfaceMeshCellDataComboBox(
-                    sm,
-                    .vertex,
-                    Vec3f,
-                    curvature_datas.vertex_Kmin,
-                )) |data| {
-                    curvature_datas.vertex_Kmin = data;
+                switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, curvature_datas.vertex_Kmin)) {
+                    .unchanged => {},
+                    .cleared => curvature_datas.vertex_Kmin = null,
+                    .changed => |data| curvature_datas.vertex_Kmin = data,
                 }
                 c.ImGui_PopID();
                 c.ImGui_Text("Max curvature");
                 c.ImGui_PushID("MaxCurvature");
-                if (imgui_utils.surfaceMeshCellDataComboBox(
-                    sm,
-                    .vertex,
-                    f32,
-                    curvature_datas.vertex_kmax,
-                )) |data| {
-                    curvature_datas.vertex_kmax = data;
+                switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, curvature_datas.vertex_kmax)) {
+                    .unchanged => {},
+                    .cleared => curvature_datas.vertex_kmax = null,
+                    .changed => |data| curvature_datas.vertex_kmax = data,
                 }
                 c.ImGui_PopID();
                 c.ImGui_Text("Max curvature dir");
                 c.ImGui_PushID("MaxCurvatureDir");
-                if (imgui_utils.surfaceMeshCellDataComboBox(
-                    sm,
-                    .vertex,
-                    Vec3f,
-                    curvature_datas.vertex_Kmax,
-                )) |data| {
-                    curvature_datas.vertex_Kmax = data;
+                switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, curvature_datas.vertex_Kmax)) {
+                    .unchanged => {},
+                    .cleared => curvature_datas.vertex_Kmax = null,
+                    .changed => |data| curvature_datas.vertex_Kmax = data,
                 }
                 c.ImGui_PopID();
 

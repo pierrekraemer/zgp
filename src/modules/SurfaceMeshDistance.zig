@@ -75,7 +75,7 @@ pub fn rightClickMenu(m: *Module) void {
 
     const UiData = struct {
         var diffusion_time: f32 = 1.0;
-        // TODO: this data should be associated to the selected mesh
+        // TODO: ensure that this data is associated to the selected SurfaceMesh
         var vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null;
     };
 
@@ -94,13 +94,10 @@ pub fn rightClickMenu(m: *Module) void {
                 defer c.ImGui_EndMenu();
                 c.ImGui_Text("Distance data (to write)");
                 c.ImGui_PushID("DistanceData");
-                if (imgui_utils.surfaceMeshCellDataComboBox(
-                    sm,
-                    .vertex,
-                    f32,
-                    UiData.vertex_distance,
-                )) |data| {
-                    UiData.vertex_distance = data;
+                switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, UiData.vertex_distance)) {
+                    .unchanged => {},
+                    .cleared => UiData.vertex_distance = null,
+                    .changed => |data| UiData.vertex_distance = data,
                 }
                 c.ImGui_PopID();
                 c.ImGui_Text("Diffusion time");

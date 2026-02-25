@@ -86,14 +86,21 @@ pub fn leftPanel(m: *Module) void {
                     defer c.ImGui_EndPopup();
                     c.ImGui_PushID("select_data_combobox");
                     defer c.ImGui_PopID();
-                    if (imgui_utils.surfaceMeshCellDataComboBox(
+                    switch (imgui_utils.surfaceMeshCellDataComboBox(
                         sm,
                         @typeInfo(field.type).optional.child.CellType,
                         @typeInfo(field.type).optional.child.DataType,
                         @field(info.std_datas, field.name),
-                    )) |data| {
-                        sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
-                        smsd.app_ctx.requestRedraw();
+                    )) {
+                        .unchanged => {},
+                        .cleared => {
+                            sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, null));
+                            smsd.app_ctx.requestRedraw();
+                        },
+                        .changed => |data| {
+                            sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
+                            smsd.app_ctx.requestRedraw();
+                        },
                     }
                 }
                 const data_tag = @field(SurfaceMeshStdDataTag, field.name);

@@ -60,10 +60,11 @@ var cli_args: CLIArgs = undefined;
 // Should benchmark and switch between parallel and sequential execution based on the mesh size and the type of quantity computed.
 
 /// Application Context:
+/// - allocator
 /// - PointCloud / SurfaceMesh / VolumeMesh stores
+/// - random number generator
 /// - window
 /// - view
-/// - random number generator
 /// - thread pool
 pub const AppContext = struct {
     allocator: std.mem.Allocator,
@@ -459,7 +460,6 @@ pub fn main() !u8 {
 
     var da: std.heap.DebugAllocator(.{}) = .init;
     if (builtin.mode == .Debug) {
-        da = .init;
         allocator = da.allocator();
         zgp_log.info("Using DebugAllocator", .{});
     } else {

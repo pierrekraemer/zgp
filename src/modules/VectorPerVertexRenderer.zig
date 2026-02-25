@@ -157,13 +157,10 @@ pub fn rightPanel(m: *Module) void {
         const p = vpvr.parameters.getPtr(sm).?;
         c.ImGui_Text("Vector");
         c.ImGui_PushID("VectorData");
-        if (imgui_utils.surfaceMeshCellDataComboBox(
-            sm,
-            .vertex,
-            Vec3f,
-            p.vertex_vector,
-        )) |data| {
-            vpvr.setSurfaceMeshVectorData(sm, data);
+        switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, p.vertex_vector)) {
+            .unchanged => {},
+            .cleared => vpvr.setSurfaceMeshVectorData(sm, null),
+            .changed => |data| vpvr.setSurfaceMeshVectorData(sm, data),
         }
         c.ImGui_PopID();
         c.ImGui_Text("Vector scale");

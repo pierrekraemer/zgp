@@ -141,16 +141,30 @@ pub fn pointCloudListBox(
     return null;
 }
 
-// TODO: find a way to support "-- none --" selection
-// (cannot simply return null because it is used as a return value to indicate that nothing has been selected)
+pub fn SelectionResult(comptime T: type) type {
+    return union(enum) {
+        unchanged,
+        cleared,
+        changed: T,
+    };
+}
+
 pub fn surfaceMeshCellDataComboBox(
     surface_mesh: *SurfaceMesh,
     comptime cell_type: SurfaceMesh.CellType,
     comptime T: type,
     selected_data: ?SurfaceMesh.CellData(cell_type, T),
-) ?SurfaceMesh.CellData(cell_type, T) {
+) SelectionResult(SurfaceMesh.CellData(cell_type, T)) {
     if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "-- none --", 0)) {
         defer c.ImGui_EndCombo();
+        const is_none_selected = selected_data == null;
+        if (c.ImGui_SelectableEx("-- none --", is_none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+            return .cleared;
+        }
+        if (is_none_selected) {
+            c.ImGui_SetItemDefaultFocus();
+        }
+
         var data_container = switch (cell_type) {
             .halfedge, .corner => surface_mesh.dart_data,
             .vertex => surface_mesh.vertex_data,
@@ -162,39 +176,43 @@ pub fn surfaceMeshCellDataComboBox(
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                if (!is_selected) { // only return if it was not previously selected
-                    return .{ .surface_mesh = surface_mesh, .data = data };
-                }
+                return .{ .changed = .{ .surface_mesh = surface_mesh, .data = data } };
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
             }
         }
     }
-    return null;
+    return .unchanged;
 }
 
 pub fn pointCloudDataComboBox(
     point_cloud: *PointCloud,
     comptime T: type,
     selected_data: ?PointCloud.CellData(T),
-) ?PointCloud.CellData(T) {
+) SelectionResult(PointCloud.CellData(T)) {
     if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "-- none --", 0)) {
         defer c.ImGui_EndCombo();
+        const is_none_selected = selected_data == null;
+        if (c.ImGui_SelectableEx("-- none --", is_none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+            return .cleared;
+        }
+        if (is_none_selected) {
+            c.ImGui_SetItemDefaultFocus();
+        }
+
         var data_it = point_cloud.point_data.typedIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                if (!is_selected) { // only call on_selected if it was not previously selected
-                    return .{ .point_cloud = point_cloud, .data = data };
-                }
+                return .{ .changed = .{ .point_cloud = point_cloud, .data = data } };
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
             }
         }
     }
-    return null;
+    return .unchanged;
 }
 
 pub fn surfaceMeshCellTypeComboBox(
@@ -205,9 +223,7 @@ pub fn surfaceMeshCellTypeComboBox(
         inline for (@typeInfo(SurfaceMesh.CellType).@"enum".fields) |cell_type| {
             const is_selected = @intFromEnum(selected_cell_type) == cell_type.value;
             if (c.ImGui_SelectableEx(cell_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                if (!is_selected) {
-                    return @enumFromInt(cell_type.value); // only return if it was not previously selected
-                }
+                return @enumFromInt(cell_type.value);
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
