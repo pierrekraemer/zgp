@@ -41,12 +41,15 @@ const Vec3f = vec.Vec3f;
 
 const Window = @import("ui/Window.zig");
 const imgui = @import("ui/imgui.zig");
+
 const View = @import("rendering/View.zig");
 const Shader = @import("rendering/Shader.zig");
 
-pub const std_options: std.Options = .{ .log_level = .debug };
+pub const std_options: std.Options = .{
+    .log_level = .debug,
+};
+
 const sdl_log = std.log.scoped(.sdl);
-const imgui_log = std.log.scoped(.imgui);
 const zgp_log = std.log.scoped(.zgp);
 
 // TODO: use a lib like:
@@ -106,18 +109,18 @@ var modules: std.ArrayList(*Module) = .empty;
 
 /// ZGP modules
 /// TODO: could be declared in a config file and loaded at runtime
-pub var point_cloud_std_datas: PointCloudStdDatas = undefined;
-pub var surface_mesh_std_datas: SurfaceMeshStdDatas = undefined;
-pub var point_cloud_renderer: PointCloudRenderer = undefined;
-pub var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
-pub var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
-pub var surface_mesh_distance: SurfaceMeshDistance = undefined;
-pub var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
-pub var surface_mesh_selection: SurfaceMeshSelection = undefined;
-pub var surface_mesh_deformation: SurfaceMeshDeformation = undefined;
-pub var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
-pub var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
-pub var surface_mesh_procedural_texturing: SurfaceMeshProceduralTexturing = undefined;
+var point_cloud_std_datas: PointCloudStdDatas = undefined;
+var surface_mesh_std_datas: SurfaceMeshStdDatas = undefined;
+var point_cloud_renderer: PointCloudRenderer = undefined;
+var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
+var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
+var surface_mesh_distance: SurfaceMeshDistance = undefined;
+var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
+var surface_mesh_selection: SurfaceMeshSelection = undefined;
+var surface_mesh_deformation: SurfaceMeshDeformation = undefined;
+var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
+var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
+var surface_mesh_procedural_texturing: SurfaceMeshProceduralTexturing = undefined;
 
 // TODO: add a console bar at the bottom of the window to display logs & info messages
 
@@ -415,6 +418,7 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         c.SDL_EVENT_WINDOW_RESIZED => {
             _ = c.SDL_GetWindowSizeInPixels(app_ctx.window.sdl_window, &app_ctx.window.width, &app_ctx.window.height);
             app_ctx.view.resize(app_ctx.window.width, app_ctx.window.height);
+            app_ctx.requestRedraw();
         },
         else => {},
     }

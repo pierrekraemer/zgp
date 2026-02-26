@@ -406,12 +406,27 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
         }
 
         if (sms.selected_surface_mesh) |sm| {
-            var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name + cell count
-            const info = sms.surface_meshes_info.getPtr(sm).?;
+            var buf: [64]u8 = undefined; // guess 64 chars is enough for cell stat info
+            if (c.ImGui_BeginTable("CellStats", 3, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
+                defer c.ImGui_EndTable();
 
-            inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
-                const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type) ++ " | {d} | ({d:.1}%)", .{ sm.nbCells(cell_type), sm.dataContainer(cell_type).density() * 100 }) catch "";
-                c.ImGui_Text(cells.ptr);
+                c.ImGui_TableSetupColumn("CellType", c.ImGuiTableColumnFlags_WidthStretch);
+                c.ImGui_TableSetupColumn("Count", c.ImGuiTableColumnFlags_WidthFixed);
+                c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
+                c.ImGui_TableHeadersRow();
+
+                inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
+                    const cells = std.fmt.bufPrintZ(&buf, "{s}", .{@tagName(cell_type)}) catch "";
+                    c.ImGui_TableNextRow();
+                    _ = c.ImGui_TableNextColumn();
+                    c.ImGui_Text(cells.ptr);
+                    _ = c.ImGui_TableNextColumn();
+                    const count = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(cell_type)}) catch "";
+                    c.ImGui_Text(count.ptr);
+                    _ = c.ImGui_TableNextColumn();
+                    const density = std.fmt.bufPrintZ(&buf, "{d:.1}%", .{sm.dataContainer(cell_type).density() * 100}) catch "";
+                    c.ImGui_Text(density.ptr);
+                }
             }
 
             if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
@@ -468,6 +483,8 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
             }
 
             {
+                const info = sms.surface_meshes_info.getPtr(sm).?;
+
                 var bvh_computable = true;
                 if (info.std_datas.vertex_position == null) {
                     bvh_computable = false;

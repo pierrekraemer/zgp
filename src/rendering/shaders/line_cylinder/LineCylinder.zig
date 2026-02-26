@@ -71,7 +71,7 @@ pub const Parameters = struct {
     ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
     light_position: [3]f32 = .{ -10, 0, 100 },
     cylinder_radius: f32 = 0.0005,
-    cylinder_color: [4]f32 = .{ 0.0, 0.15, 0.25, 1.0 },
+    cylinder_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1.0 },
 
     const VertexAttrib = enum {
         position,

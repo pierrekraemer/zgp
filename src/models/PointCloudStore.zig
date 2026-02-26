@@ -290,8 +290,24 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
 
         if (pcs.selected_point_cloud) |pc| {
             var buf: [64]u8 = undefined; // guess 64 chars is enough for cell counts
-            const cells = std.fmt.bufPrintZ(&buf, "Points | {d} | ({d:.1}%)", .{ pc.nbPoints(), pc.point_data.density() * 100 }) catch "";
-            c.ImGui_Text(cells.ptr);
+            if (c.ImGui_BeginTable("CellStats", 3, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
+                defer c.ImGui_EndTable();
+
+                c.ImGui_TableSetupColumn("CellType", c.ImGuiTableColumnFlags_WidthStretch);
+                c.ImGui_TableSetupColumn("Count", c.ImGuiTableColumnFlags_WidthFixed);
+                c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
+                c.ImGui_TableHeadersRow();
+
+                c.ImGui_TableNextRow();
+                _ = c.ImGui_TableNextColumn();
+                c.ImGui_Text("Points");
+                _ = c.ImGui_TableNextColumn();
+                const count = std.fmt.bufPrintZ(&buf, "{d}", .{pc.nbPoints()}) catch "";
+                c.ImGui_Text(count.ptr);
+                _ = c.ImGui_TableNextColumn();
+                const density = std.fmt.bufPrintZ(&buf, "{d:.1}%", .{pc.point_data.density() * 100}) catch "";
+                c.ImGui_Text(density.ptr);
+            }
 
             if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
