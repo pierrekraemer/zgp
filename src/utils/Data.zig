@@ -3,6 +3,8 @@ const assert = std.debug.assert;
 
 const typeId = @import("types.zig").typeId;
 
+pub const invalid_index = std.math.maxInt(u32);
+
 pub const DataGen = struct {
     name: []const u8,
     container: *DataContainer, // pointer to the DataContainer that owns this Data(T)
@@ -235,10 +237,24 @@ pub const DataContainer = struct {
     datas: std.StringHashMap(*DataGen),
     markers: std.ArrayList(*Data(bool)),
     available_markers_indices: std.ArrayList(u32),
-    free_indices: std.ArrayList(u32),
+    // size is the maximum index that has been allocated so far
+    // to get the number of current active elements, use nbElements()
     size: u32 = 0,
+    // the is_active data is used to mark indices as active or inactive
+    // active indices are currently used and processed by iterators
+    // inactive indices are free, skipped by iterators, and will be used upon calls to newIndex
     is_active: *Data(bool) = undefined,
+    // the nb_refs data is used by the refIndex/unrefIndex API
+    // each time an index is returned by newIndex, its nb_refs is set to 0
+    // each time an active index is unreffed, if its nb_refs reaches 0, it is freed (i.e. becomes inactive and added to the list of free indices)
     nb_refs: *Data(u32) = undefined,
+    // the list of free indices is implemented as a linked list using the nb_refs data as a backing store (which is not useful on inactive indices)
+    // when an index is freed, the first_free_index is set to this index
+    // and its nb_refs is set to the previous first_free_index
+    first_free_index: u32 = invalid_index,
+    // nb_free_indices is the number of free indices (i.e. inactive indices)
+    // it is used to quickly check if there are any free indices and quickly compute nbElements and density
+    nb_free_indices: u32 = 0,
 
     pub fn init(allocator: std.mem.Allocator) !*DataContainer {
         const dc = try allocator.create(DataContainer);
@@ -247,7 +263,6 @@ pub const DataContainer = struct {
             .datas = std.StringHashMap(*DataGen).init(allocator),
             .markers = .empty,
             .available_markers_indices = .empty,
-            .free_indices = .empty,
         };
         dc.is_active = try dc.addData(bool, "__is_active");
         dc.nb_refs = try dc.addData(u32, "__nb_refs");
@@ -268,7 +283,6 @@ pub const DataContainer = struct {
         dc.datas.deinit();
         dc.markers.deinit(dc.allocator);
         dc.available_markers_indices.deinit(dc.allocator);
-        dc.free_indices.deinit(dc.allocator);
         dc.allocator.destroy(dc);
     }
 
@@ -281,7 +295,8 @@ pub const DataContainer = struct {
         for (dc.markers.items) |marker| {
             marker.data_gen.clearRetainingCapacity();
         }
-        dc.free_indices.clearRetainingCapacity();
+        dc.first_free_index = invalid_index;
+        dc.nb_free_indices = 0;
         dc.size = 0;
     }
 
@@ -394,7 +409,10 @@ pub const DataContainer = struct {
     }
 
     pub fn newIndex(dc: *DataContainer) !u32 {
-        const index = if (dc.free_indices.pop()) |index| blk: {
+        const index = if (dc.nb_free_indices > 0) blk: {
+            const index = dc.first_free_index;
+            dc.first_free_index = dc.nb_refs.value(index);
+            dc.nb_free_indices -= 1;
             for (dc.markers.items) |marker| {
                 marker.valuePtr(index).* = false; // reset the markers at this index
             }
@@ -412,6 +430,7 @@ pub const DataContainer = struct {
             }
             break :blk index;
         };
+        assert(!dc.is_active.value(index));
         dc.is_active.valuePtr(index).* = true; // index returned by newIndex is active
         dc.nb_refs.valuePtr(index).* = 0; // but has no reference yet
         return index;
@@ -421,10 +440,9 @@ pub const DataContainer = struct {
         assert(index < dc.size);
         assert(dc.is_active.value(index));
         dc.is_active.valuePtr(index).* = false;
-        dc.nb_refs.valuePtr(index).* = 0;
-        dc.free_indices.append(dc.allocator, index) catch |err| {
-            std.debug.print("Error freeing index {}: {}\n", .{ index, err });
-        };
+        dc.nb_refs.valuePtr(index).* = dc.first_free_index;
+        dc.first_free_index = index;
+        dc.nb_free_indices += 1;
     }
 
     pub fn refIndex(dc: *DataContainer, index: u32) void {
@@ -443,14 +461,14 @@ pub const DataContainer = struct {
     }
 
     pub fn nbElements(dc: *const DataContainer) u32 {
-        return @intCast(dc.size - dc.free_indices.items.len);
+        return dc.size - dc.nb_free_indices;
     }
 
     pub fn density(dc: *const DataContainer) f32 {
         if (dc.size == 0) {
             return 0.0;
         }
-        return 1.0 - (@as(f32, @floatFromInt(dc.free_indices.items.len)) / @as(f32, @floatFromInt(dc.size)));
+        return 1.0 - (@as(f32, @floatFromInt(dc.nb_free_indices)) / @as(f32, @floatFromInt(dc.size)));
     }
 
     pub fn firstIndex(dc: *const DataContainer) u32 {

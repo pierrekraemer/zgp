@@ -56,6 +56,13 @@ pub fn computeCornerAngles(
         .vertex_position = vertex_position,
         .corner_angle = corner_angle,
     });
+
+    // _ = app_ctx;
+    // var corner_it = try SurfaceMesh.CellIterator(.corner).init(sm);
+    // defer corner_it.deinit();
+    // while (corner_it.next()) |corner| {
+    //     corner_angle.valuePtr(corner).* = cornerAngle(sm, corner, vertex_position);
+    // }
 }
 
 /// Compute and return the dihedral angle of the given edge.

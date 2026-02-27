@@ -105,6 +105,7 @@ pub fn fillFromCellSlice(i: *IBO, sm: *SurfaceMesh, cells: []const SurfaceMesh.C
             i.primitive = .triangles;
             for (cells) |f| {
                 // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
+                const face_index = sm.cellIndex(f);
                 var dart_it = sm.cellDartIterator(f);
                 const dart_start = dart_it.next() orelse break;
                 const start_index = sm.cellIndex(.{ .vertex = dart_start });
@@ -115,11 +116,12 @@ pub fn fillFromCellSlice(i: *IBO, sm: *SurfaceMesh, cells: []const SurfaceMesh.C
                     try indices.append(allocator, start_index);
                     try indices.append(allocator, v1_index);
                     try indices.append(allocator, v2_index);
+                    // triangle primitive is associated to its face index
+                    // (for polygonal faces, multiple triangle primitives are associated to the same face index)
+                    try cell_indices.append(allocator, face_index);
                     dart_v1 = dart_v2;
                     v1_index = v2_index;
                 }
-                // triangle primitive is associated to its face index
-                try cell_indices.append(allocator, sm.cellIndex(f));
             }
         },
         .boundary => {
@@ -129,9 +131,9 @@ pub fn fillFromCellSlice(i: *IBO, sm: *SurfaceMesh, cells: []const SurfaceMesh.C
                 while (dart_it.next()) |d| {
                     try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
                     try indices.append(allocator, sm.cellIndex(.{ .vertex = sm.phi1(d) }));
+                    // boundary line primitive is associated to its edge index
+                    try cell_indices.append(allocator, sm.cellIndex(.{ .edge = d }));
                 }
-                // boundary line primitive is associated to its edge index
-                try cell_indices.append(allocator, sm.cellIndex(.{ .edge = b.dart() }));
             }
         },
         else => unreachable,
@@ -186,6 +188,7 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
             defer f_it.deinit();
             while (f_it.next()) |f| {
                 // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
+                const face_index = sm.cellIndex(f);
                 var dart_it = sm.cellDartIterator(f);
                 const dart_start = dart_it.next() orelse break;
                 const start_index = sm.cellIndex(.{ .vertex = dart_start });
@@ -196,11 +199,12 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
                     try indices.append(allocator, start_index);
                     try indices.append(allocator, v1_index);
                     try indices.append(allocator, v2_index);
+                    // triangle primitive is associated to its face index
+                    // (for polygonal faces, multiple triangle primitives are associated to the same face index)
+                    try cell_indices.append(allocator, face_index);
                     dart_v1 = dart_v2;
                     v1_index = v2_index;
                 }
-                // triangle primitive is associated to its face index
-                try cell_indices.append(allocator, sm.cellIndex(f));
             }
         },
         .boundary => {
@@ -212,9 +216,9 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
                 while (dart_it.next()) |d| {
                     try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
                     try indices.append(allocator, sm.cellIndex(.{ .vertex = sm.phi1(d) }));
+                    // boundary line primitive is associated to its edge index
+                    try cell_indices.append(allocator, sm.cellIndex(.{ .edge = d }));
                 }
-                // boundary line primitive is associated to its edge index
-                try cell_indices.append(allocator, sm.cellIndex(.{ .edge = b.dart() }));
             }
         },
         else => unreachable,

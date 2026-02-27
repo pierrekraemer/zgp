@@ -31,10 +31,11 @@ const data = @import("../../utils/Data.zig");
 const DataContainer = data.DataContainer;
 const DataGen = data.DataGen;
 const Data = data.Data;
+const invalid_index = data.invalid_index;
+
 const BufferPool = @import("../../utils/BufferPool.zig").BufferPool;
 
 pub const Dart = u32;
-const invalid_index = std.math.maxInt(u32);
 
 /// A cell is a tagged union containing a dart that belongs to the cell of the current tag.
 /// Convenience functions are provided to get the representing dart and the cell type.
@@ -367,7 +368,10 @@ pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
                     .{ &task, self.buffers[current_buf_group][current_buf_index].data[0..current_index_in_buffer] },
                 );
             }
-            self.wg[current_buf_group].wait();
+            self.wg[0].wait();
+            self.wg[0].reset();
+            self.wg[1].wait();
+            self.wg[1].reset();
         }
     };
 }
@@ -649,7 +653,6 @@ pub fn phi2Sew(sm: *SurfaceMesh, d1: Dart, d2: Dart) void {
 }
 
 pub fn phi2Unsew(sm: *SurfaceMesh, d: Dart) void {
-    assert(sm.phi2(d) != d);
     const d2 = sm.phi2(d);
     sm.dart_phi2.valuePtr(d).* = d;
     sm.dart_phi2.valuePtr(d2).* = d2;
@@ -964,6 +967,56 @@ pub fn addUnboundedFace(sm: *SurfaceMesh, nb_vertices: u32) !Cell {
     return .{ .face = d1 };
 }
 
+/// Creates a new pyramid whose base is a polygon with `baseSize` vertices.
+/// Returns the base face of the pyramid.
+pub fn addPyramid(sm: *SurfaceMesh, baseSize: u32) !Cell {
+    // first create the umbrella around the pyramid tip
+    const first = try sm.addUnboundedFace(3);
+    var current_dart = first.dart();
+    for (1..baseSize) |_| {
+        const next = try sm.addUnboundedFace(3);
+        sm.phi2Sew(sm.phi_1(current_dart), sm.phi1(next.dart()));
+        current_dart = next.dart();
+    }
+    sm.phi2Sew(sm.phi_1(current_dart), sm.phi1(first.dart())); // finish the umbrella
+    // then close the hole to create the base face
+    const base = try sm.closeHole(first.dart());
+
+    // set the indices for the cells
+    var dart_it = sm.cellDartIterator(base);
+    while (dart_it.next()) |d| {
+        {
+            // base vertices
+            const index = try sm.newDataIndex(.vertex);
+            sm.setCellIndex(.{ .vertex = d }, index);
+        }
+        {
+            // base & umbrella edges
+            const b_index = try sm.newDataIndex(.edge);
+            sm.setCellIndex(.{ .edge = d }, b_index);
+            const u_index = try sm.newDataIndex(.edge);
+            sm.setCellIndex(.{ .edge = sm.phi1(sm.phi2(d)) }, u_index);
+        }
+        {
+            // umbrella faces
+            const index = try sm.newDataIndex(.face);
+            sm.setCellIndex(.{ .face = sm.phi2(d) }, index);
+        }
+    }
+    {
+        // tip vertex
+        const index = try sm.newDataIndex(.vertex);
+        sm.setCellIndex(.{ .vertex = sm.phi_1(first.dart()) }, index);
+    }
+    {
+        // base face
+        const index = try sm.newDataIndex(.face);
+        sm.setCellIndex(.{ .face = base }, index);
+    }
+
+    return base;
+}
+
 /// Removes the given unbounded face from the SurfaceMesh.
 /// All the darts of the face are removed from the SurfaceMesh.
 /// WARNING: this function does not create or merge any boundary face to close the holes created by the removal of the face.
@@ -973,9 +1026,43 @@ pub fn removeFace(sm: *SurfaceMesh, face: Cell) void {
     assert(face.cellType() == .face);
     var dart_it = sm.cellDartIterator(face);
     while (dart_it.next()) |d| {
-        // TODO: should unsew phi2 links?
+        sm.phi2Unsew(d);
         sm.removeDart(d);
     }
+}
+
+/// Closes the hole incident to the given dart by adding a face.
+/// The given dart must be a dart on the boundary of the hole (phi2-linked to itself).
+/// This function is meant to be called during a construction process of a SurfaceMesh.
+/// It does not:
+///  - set an index for the new face
+///  - mark the new face as boundary
+/// The new face is returned, represented by the dart sewn to d by phi2.
+pub fn closeHole(sm: *SurfaceMesh, d: Dart) !Cell {
+    assert(sm.phi2(d) == d);
+    const b_first = try sm.addDart();
+    sm.phi2Sew(d, b_first);
+    sm.setDartCellIndex(b_first, .vertex, sm.dartCellIndex(sm.phi1(d), .vertex));
+    sm.setDartCellIndex(b_first, .edge, sm.dartCellIndex(d, .edge));
+
+    var d_current = d;
+    out: while (true) {
+        // find the next dart that is phi2-linked to itself
+        while (sm.phi2(d_current) != d_current) {
+            d_current = sm.phi2(sm.phi1(d_current));
+            if (sm.phi2(d_current) == d) {
+                // we are back to the starting dart, so we can stop
+                break :out;
+            }
+        }
+        const b_next = try sm.addDart();
+        sm.phi2Sew(d_current, b_next);
+        sm.phi1Sew(b_first, b_next);
+        sm.setDartCellIndex(b_next, .vertex, sm.dartCellIndex(sm.phi1(d_current), .vertex));
+        sm.setDartCellIndex(b_next, .edge, sm.dartCellIndex(d_current, .edge));
+    }
+
+    return .{ .face = b_first };
 }
 
 /// Closes the given SurfaceMesh by adding boundary faces where needed.
@@ -988,32 +1075,11 @@ pub fn close(sm: *SurfaceMesh) !u32 {
     var dart_it = sm.dartIterator();
     while (dart_it.next()) |d| {
         if (sm.phi2(d) == d) {
-            const b_first = try sm.addDart();
-            sm.dart_boundary_marker.valuePtr(b_first).* = true;
-            sm.phi2Sew(d, b_first);
-            sm.setDartCellIndex(b_first, .vertex, sm.dartCellIndex(sm.phi1(d), .vertex));
-            sm.setDartCellIndex(b_first, .edge, sm.dartCellIndex(d, .edge));
-            // boundary darts do not represent a valid face, thus they do not have a face index
-
-            var d_current = d;
-            out: while (true) {
-                // find the next dart that is phi2-linked to itself
-                while (sm.phi2(d_current) != d_current) {
-                    d_current = sm.phi2(sm.phi1(d_current));
-                    if (sm.phi2(d_current) == d) {
-                        // we are back to the starting dart, so we can stop
-                        break :out;
-                    }
-                }
-                const b_next = try sm.addDart();
-                sm.dart_boundary_marker.valuePtr(b_next).* = true;
-                sm.phi2Sew(d_current, b_next);
-                sm.phi1Sew(b_first, b_next);
-                sm.setDartCellIndex(b_next, .vertex, sm.dartCellIndex(sm.phi1(d_current), .vertex));
-                sm.setDartCellIndex(b_next, .edge, sm.dartCellIndex(d_current, .edge));
-                // boundary darts do not represent a valid face, thus they do not have a face index
+            const f = try closeHole(sm, d);
+            var f_it = sm.cellDartIterator(f);
+            while (f_it.next()) |fd| {
+                sm.dart_boundary_marker.valuePtr(fd).* = true;
             }
-
             nb_boundary_faces += 1;
         }
     }

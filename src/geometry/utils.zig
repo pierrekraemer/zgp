@@ -5,6 +5,8 @@ const Data = @import("../utils/Data.zig").Data;
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
+const epsilon: f32 = 1e-5;
+
 /// Compute and return the angle between two vectors.
 pub fn angle(a: Vec3f, b: Vec3f) f32 {
     return std.math.acos(@max(-1.0, @min(1.0, cosAngle(a, b))));
@@ -32,6 +34,36 @@ pub fn triangleNormal(a: Vec3f, b: Vec3f, c: Vec3f) Vec3f {
         vec.sub3f(b, a),
         vec.sub3f(c, a),
     );
+}
+
+/// Compute the signed distance between the given point p and the plane defined by the given three points a, b, c.
+pub fn signedDistancePlanePoint(a: Vec3f, b: Vec3f, c: Vec3f, p: Vec3f) f32 {
+    const n = vec.normalized3f(triangleNormal(a, b, c));
+    const d = vec.dot3f(n, a);
+    return vec.dot3f(n, p) - d;
+}
+
+/// Compute the distance between the given point p and the plane defined by the given three points a, b, c.
+pub fn distancePlanePoint(a: Vec3f, b: Vec3f, c: Vec3f, p: Vec3f) f32 {
+    return @abs(signedDistancePlanePoint(a, b, c, p));
+}
+
+pub const PlaneOrientation = enum {
+    on,
+    under,
+    over,
+};
+
+/// Compute and return the orientation of the given point with respect to the plane defined by the given three points.
+pub fn planeOrientation(a: Vec3f, b: Vec3f, c: Vec3f, p: Vec3f) PlaneOrientation {
+    const dist = signedDistancePlanePoint(a, b, c, p);
+    if (@abs(dist) <= epsilon) {
+        return .on;
+    } else if (dist < 0.0) {
+        return .under;
+    } else {
+        return .over;
+    }
 }
 
 /// Return a vector where the component of v along unitDir has been removed.
