@@ -23,6 +23,7 @@ const remeshing = @import("../models/surface/remeshing.zig");
 const qem = @import("../models/surface/qem.zig");
 const decimation = @import("../models/surface/decimation.zig");
 const curvature = @import("../models/surface/curvature.zig");
+const convex_hull = @import("../models/point/convex_hull.zig");
 
 app_ctx: *AppContext,
 module: Module = .{
@@ -161,6 +162,35 @@ fn decimate(
 
     const elapsed: f64 = @floatFromInt(timer.read());
     zgp_log.info("Decimation computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+}
+
+fn generateConvexHull(
+    smc: *SurfaceMeshConnectivity,
+    sm: *SurfaceMesh,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+) !void {
+    var timer = try std.time.Timer.start();
+
+    const pc = try smc.app_ctx.point_cloud_store.createPointCloud(smc.app_ctx.surface_mesh_store.surfaceMeshName(sm).?);
+    defer smc.app_ctx.point_cloud_store.destroyPointCloud(pc);
+    const pc_vertex_position = try pc.addData(Vec3f, "position");
+    var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
+    while (vertex_it.next()) |vertex| {
+        const p = try pc.addPoint();
+        pc_vertex_position.valuePtr(p).* = vertex_position.valuePtr(vertex).*;
+    }
+
+    const ch = try smc.app_ctx.surface_mesh_store.createSurfaceMesh("convex_hull");
+    const ch_vertex_position = try ch.addData(.vertex, Vec3f, "position");
+
+    try convex_hull.generateConvexHull(smc.app_ctx, pc, pc_vertex_position, ch, ch_vertex_position);
+    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(ch, .vertex, Vec3f, ch_vertex_position);
+    smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(ch);
+
+    const elapsed: f64 = @floatFromInt(timer.read());
+    zgp_log.info("Convex hull generated in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+
+    smc.app_ctx.requestRedraw();
 }
 
 /// Part of the Module interface.
@@ -329,6 +359,22 @@ pub fn rightClickMenu(m: *Module) void {
                 //     \\ - std vertex_normal
                 //     \\ Update connectivity
                 // );
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
+            }
+
+            if (c.ImGui_BeginMenu("Convex hull")) {
+                defer c.ImGui_EndMenu();
+                const disabled = info.std_datas.vertex_position == null;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_ButtonEx("Generate convex hull", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                    smc.generateConvexHull(sm, info.std_datas.vertex_position.?) catch |err| {
+                        std.debug.print("Error generating convex hull: {}\n", .{err});
+                    };
+                }
                 if (disabled) {
                     c.ImGui_EndDisabled();
                 }

@@ -37,8 +37,7 @@ pub fn BufferPool(comptime T: type) type {
                 free_list.deinit(allocator);
             }
             // Pre-allocate the requested number of buffers
-            var i: usize = 0;
-            while (i < init_pool_size) : (i += 1) {
+            for (0..init_pool_size) |_| {
                 const buf = try allocator.alloc(T, buffer_size);
                 free_list.appendAssumeCapacity(buf);
             }

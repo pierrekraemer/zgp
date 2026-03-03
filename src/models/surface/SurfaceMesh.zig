@@ -179,6 +179,7 @@ pub fn cellDartIterator(sm: *const SurfaceMesh, cell: Cell) CellDartIterator {
     };
 }
 
+// Returns true if the given dart belongs to the given cell, false otherwise.
 pub fn dartBelongsToCell(sm: *const SurfaceMesh, dart: Dart, cell: Cell) bool {
     var dart_it = sm.cellDartIterator(cell);
     return while (dart_it.next()) |d| {
@@ -186,6 +187,7 @@ pub fn dartBelongsToCell(sm: *const SurfaceMesh, dart: Dart, cell: Cell) bool {
     } else false;
 }
 
+// Returns the first dart that is not marked as a boundary dart.
 fn firstNonBoundaryDart(sm: *const SurfaceMesh) Dart {
     var first = sm.dart_data.firstIndex();
     return while (first != sm.dart_data.lastIndex()) : (first = sm.dart_data.nextIndex(first)) {
@@ -193,6 +195,7 @@ fn firstNonBoundaryDart(sm: *const SurfaceMesh) Dart {
     } else sm.dart_data.lastIndex();
 }
 
+// Returns the next dart after the given dart that is not marked as a boundary dart.
 fn nextNonBoundaryDart(sm: *const SurfaceMesh, d: Dart) Dart {
     var next = sm.dart_data.nextIndex(d);
     return while (next != sm.dart_data.lastIndex()) : (next = sm.dart_data.nextIndex(next)) {
@@ -200,6 +203,7 @@ fn nextNonBoundaryDart(sm: *const SurfaceMesh, d: Dart) Dart {
     } else sm.dart_data.lastIndex();
 }
 
+// Returns the first dart that is marked as a boundary dart.
 fn firstBoundaryDart(sm: *const SurfaceMesh) Dart {
     var first = sm.dart_data.firstIndex();
     return while (first != sm.dart_data.lastIndex()) : (first = sm.dart_data.nextIndex(first)) {
@@ -207,6 +211,7 @@ fn firstBoundaryDart(sm: *const SurfaceMesh) Dart {
     } else sm.dart_data.lastIndex();
 }
 
+// Returns the next dart after the given dart that is marked as a boundary dart.
 fn nextBoundaryDart(sm: *const SurfaceMesh, d: Dart) Dart {
     var next = sm.dart_data.nextIndex(d);
     return while (next != sm.dart_data.lastIndex()) : (next = sm.dart_data.nextIndex(next)) {
@@ -214,10 +219,82 @@ fn nextBoundaryDart(sm: *const SurfaceMesh, d: Dart) Dart {
     } else sm.dart_data.lastIndex();
 }
 
+/// A DartMarker stores a boolean for each dart.
+/// It can be used for any purpose, using the value/valuePtr/reset functions.
+pub const DartMarker = struct {
+    surface_mesh: *SurfaceMesh,
+    marker: *Data(bool),
+
+    pub fn init(sm: *SurfaceMesh) !DartMarker {
+        return .{
+            .surface_mesh = sm,
+            .marker = try sm.dart_data.getMarker(),
+        };
+    }
+    pub fn deinit(dm: *DartMarker) void {
+        dm.surface_mesh.dart_data.releaseMarker(dm.marker);
+    }
+
+    pub fn value(dm: DartMarker, d: Dart) bool {
+        return dm.marker.value(d);
+    }
+    pub fn valuePtr(dm: DartMarker, d: Dart) *bool {
+        return dm.marker.valuePtr(d);
+    }
+    pub fn reset(dm: *DartMarker) void {
+        dm.marker.fill(false);
+    }
+};
+
+/// A CellMarker stores a boolean for each cell of the given CellType.
+/// It can be used for any purpose, using the value/valuePtr/reset functions.
+pub fn CellMarker(comptime cell_type: CellType) type {
+    return struct {
+        const Self = @This();
+
+        surface_mesh: *SurfaceMesh,
+        marker: *Data(bool),
+
+        pub fn init(sm: *SurfaceMesh) !Self {
+            return .{
+                .surface_mesh = sm,
+                .marker = try switch (cell_type) {
+                    .halfedge, .corner => sm.dart_data.getMarker(),
+                    .vertex => sm.vertex_data.getMarker(),
+                    .edge => sm.edge_data.getMarker(),
+                    .face => sm.face_data.getMarker(),
+                    else => unreachable,
+                },
+            };
+        }
+        pub fn deinit(self: *Self) void {
+            switch (cell_type) {
+                .halfedge, .corner => self.surface_mesh.dart_data.releaseMarker(self.marker),
+                .vertex => self.surface_mesh.vertex_data.releaseMarker(self.marker),
+                .edge => self.surface_mesh.edge_data.releaseMarker(self.marker),
+                .face => self.surface_mesh.face_data.releaseMarker(self.marker),
+                else => unreachable,
+            }
+        }
+
+        pub fn value(self: Self, c: Cell) bool {
+            assert(c.cellType() == cell_type);
+            return self.marker.value(self.surface_mesh.cellIndex(c));
+        }
+        pub fn valuePtr(self: Self, c: Cell) *bool {
+            assert(c.cellType() == cell_type);
+            return self.marker.valuePtr(self.surface_mesh.cellIndex(c));
+        }
+        pub fn reset(self: *Self) void {
+            self.marker.fill(false);
+        }
+    };
+}
+
 /// CellIterator iterates over all the cells of the given CellType of the SurfaceMesh.
 /// Each iterated cell is guaranteed to be represented by a non-boundary dart of the cell.
 /// When iterating over halfedges, corners or faces, boundary halfedges, boundary corners & boundary faces are not included.
-/// This also means that boundary halfedges, boundary corners & boundary faces have no index and thus do not carry any data.
+/// This also means that boundary halfedges, boundary corners & boundary faces have no index and thus cannot carry any data.
 pub fn CellIterator(comptime cell_type: CellType) type {
     return struct {
         const Self = @This();
@@ -275,6 +352,13 @@ pub fn CellIterator(comptime cell_type: CellType) type {
     };
 }
 
+/// A ParallelCellTaskRunner allows to run tasks on the cells of the given CellType in parallel.
+/// The `run` function takes a Task as an argument which is expected to expose a `run` function that takes a cell of the given CellType as argument.
+/// The main thread iterates over the cells and fills buffers, in a double-buffering scheme.
+/// Once the first group of buffers is filled, threads are spawned to run the task on these buffers, with a WaitGroup to track the completion of the tasks on this group of buffers.
+/// Meanwhile, the main thread continues to iterate over the cells and fills the other group of buffers.
+/// Once the second group of buffers is filled, threads are spawned to run the task on these buffers, with a WaitGroup to track the completion of the tasks on this group of buffers.
+/// This process is repeated until all cells have been processed.
 pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
     return struct {
         const Self = @This();
@@ -330,9 +414,7 @@ pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
             }
         }
 
-        // The `task` must have:
-        // - a field `app_ctx` of type `*AppContext`
-        // - a method `run(self: *Self, cell: Cell) void`
+        // The `task` must expose a `run(self: *Self, cell: Cell) void` function
         pub fn run(self: *Self, app_ctx: *AppContext, task: anytype) !void {
             var current_buf_group: usize = 0;
             var current_buf_index: usize = 0;
@@ -376,74 +458,10 @@ pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
     };
 }
 
-pub fn CellMarker(comptime cell_type: CellType) type {
-    return struct {
-        const Self = @This();
-
-        surface_mesh: *SurfaceMesh,
-        marker: *Data(bool),
-
-        pub fn init(sm: *SurfaceMesh) !Self {
-            return .{
-                .surface_mesh = sm,
-                .marker = try switch (cell_type) {
-                    .halfedge, .corner => sm.dart_data.getMarker(),
-                    .vertex => sm.vertex_data.getMarker(),
-                    .edge => sm.edge_data.getMarker(),
-                    .face => sm.face_data.getMarker(),
-                    else => unreachable,
-                },
-            };
-        }
-        pub fn deinit(self: *Self) void {
-            switch (cell_type) {
-                .halfedge, .corner => self.surface_mesh.dart_data.releaseMarker(self.marker),
-                .vertex => self.surface_mesh.vertex_data.releaseMarker(self.marker),
-                .edge => self.surface_mesh.edge_data.releaseMarker(self.marker),
-                .face => self.surface_mesh.face_data.releaseMarker(self.marker),
-                else => unreachable,
-            }
-        }
-
-        pub fn value(self: Self, c: Cell) bool {
-            assert(c.cellType() == cell_type);
-            return self.marker.value(self.surface_mesh.cellIndex(c));
-        }
-        pub fn valuePtr(self: Self, c: Cell) *bool {
-            assert(c.cellType() == cell_type);
-            return self.marker.valuePtr(self.surface_mesh.cellIndex(c));
-        }
-        pub fn reset(self: *Self) void {
-            self.marker.fill(false);
-        }
-    };
-}
-
-pub const DartMarker = struct {
-    surface_mesh: *SurfaceMesh,
-    marker: *Data(bool),
-
-    pub fn init(sm: *SurfaceMesh) !DartMarker {
-        return .{
-            .surface_mesh = sm,
-            .marker = try sm.dart_data.getMarker(),
-        };
-    }
-    pub fn deinit(dm: *DartMarker) void {
-        dm.surface_mesh.dart_data.releaseMarker(dm.marker);
-    }
-
-    pub fn value(dm: DartMarker, d: Dart) bool {
-        return dm.marker.value(d);
-    }
-    pub fn valuePtr(dm: DartMarker, d: Dart) *bool {
-        return dm.marker.valuePtr(d);
-    }
-    pub fn reset(dm: *DartMarker) void {
-        dm.marker.fill(false);
-    }
-};
-
+/// A CellSet manages a set of cells of a given CellType, using a marker to track the cells.
+/// It provides functions to `add` and `remove` cells, `clear` the set, and check for the presence of a cell (`contains`).
+/// The cells of the set are directly available in the `cells` array, and their indices in the surface mesh are available in the `indices` array.
+/// The `update` function has to be called after the surface mesh has been modified to rebuild the cell set based on the marker.
 pub fn CellSet(comptime cell_type: CellType) type {
     return struct {
         const Self = @This();
@@ -512,6 +530,8 @@ pub fn CellSet(comptime cell_type: CellType) type {
     };
 }
 
+/// A CellData is a handle to a data array of type `T` associated with cells of the given CellType.
+/// It provides functions to access the data associated with a given cell or its index.
 pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
     return struct {
         const Self = @This();
@@ -544,6 +564,7 @@ pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
     };
 }
 
+/// Returns the data container associated with the given cell type.
 pub fn dataContainer(sm: *const SurfaceMesh, comptime cell_type: CellType) *DataContainer {
     return switch (cell_type) {
         .halfedge, .corner => sm.dart_data,
@@ -554,6 +575,8 @@ pub fn dataContainer(sm: *const SurfaceMesh, comptime cell_type: CellType) *Data
     };
 }
 
+/// Creates a new data array of the type `T` associated with cells of the given CellType.
+/// The `name` must be unique for the given cell type for the creation to succeed.
 pub fn addData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
     const dc = dataContainer(sm, cell_type);
     return .{
@@ -562,6 +585,8 @@ pub fn addData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type,
     };
 }
 
+/// Returns a handle to the data array of the type `T` associated with cells of the given CellType
+/// if it exists with the given name, otherwise returns null.
 pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) ?CellData(cell_type, T) {
     const dc = dataContainer(sm, cell_type);
     if (dc.getData(T, name)) |d| {
@@ -569,6 +594,9 @@ pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T:
     } else return null;
 }
 
+/// Returns a handle to the data array of the type `T` associated with cells of the given CellType
+/// if it exists with the given name, otherwise creates a new data array of the type `T` associated with cells of the given CellType
+/// and returns a handle to it.
 pub fn getOrAddData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
     const dc = dataContainer(sm, cell_type);
     return .{
@@ -577,6 +605,7 @@ pub fn getOrAddData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: 
     };
 }
 
+/// Removes the data array, identified by the given DataGen, associated with cells of the given CellType.
 pub fn removeData(sm: *SurfaceMesh, comptime cell_type: CellType, attribute_gen: *DataGen) void {
     const dc = dataContainer(sm, cell_type);
     dc.removeData(attribute_gen);
@@ -970,7 +999,7 @@ pub fn addUnboundedFace(sm: *SurfaceMesh, nb_vertices: u32) !Cell {
 /// Creates a new pyramid whose base is a polygon with `baseSize` vertices.
 /// Returns the base face of the pyramid.
 pub fn addPyramid(sm: *SurfaceMesh, baseSize: u32) !Cell {
-    // first create the umbrella around the pyramid tip
+    // first create the umbrella forming the pyramid tip
     const first = try sm.addUnboundedFace(3);
     var current_dart = first.dart();
     for (1..baseSize) |_| {
@@ -1011,7 +1040,7 @@ pub fn addPyramid(sm: *SurfaceMesh, baseSize: u32) !Cell {
     {
         // base face
         const index = try sm.newDataIndex(.face);
-        sm.setCellIndex(.{ .face = base }, index);
+        sm.setCellIndex(base, index);
     }
 
     return base;
@@ -1031,7 +1060,66 @@ pub fn removeFace(sm: *SurfaceMesh, face: Cell) void {
     }
 }
 
-/// Closes the hole incident to the given dart by adding a face.
+/// Closes the hole incident to the given dart by adding an umbrella.
+/// The given dart must be a dart on the boundary of the hole (phi2-linked to itself).
+pub fn closeHoleWithUmbrella(sm: *SurfaceMesh, d: Dart) !Cell {
+    assert(sm.phi2(d) == d);
+    // create the first face of the umbrella
+    var f_first = try sm.addUnboundedFace(3);
+    sm.phi2Sew(d, f_first.dart());
+
+    var f_current = f_first;
+    var d_hole_current = d;
+    out: while (true) {
+        // find the next dart that is phi2-linked to itself
+        while (sm.phi2(d_hole_current) != d_hole_current) {
+            d_hole_current = sm.phi2(sm.phi1(d_hole_current));
+            if (sm.phi2(d_hole_current) == d) {
+                // we are back to the starting dart, so we can stop
+                break :out;
+            }
+        }
+        const f_next = try sm.addUnboundedFace(3);
+        sm.phi2Sew(d_hole_current, f_next.dart());
+        sm.phi2Sew(sm.phi_1(f_current.dart()), sm.phi1(f_next.dart()));
+        f_current = f_next;
+    }
+    sm.phi2Sew(sm.phi_1(f_current.dart()), sm.phi1(f_first.dart())); // finish the umbrella
+
+    // set the indices for the cells
+    const cv_dart = sm.phi_1(f_first.dart()); // central vertex dart
+    var dart_it = sm.cellDartIterator(.{ .vertex = cv_dart }); // turn around central vertex
+    while (dart_it.next()) |dart| {
+        const d1 = sm.phi1(dart);
+        {
+            // hole vertices
+            const h_index = sm.dartCellIndex(sm.phi1(sm.phi2(d1)), .vertex);
+            sm.setDartCellIndex(d1, .vertex, h_index);
+            sm.setDartCellIndex(sm.phi2(dart), .vertex, h_index);
+        }
+        {
+            // hole & umbrella edges
+            const h_index = sm.dartCellIndex(sm.phi2(d1), .edge);
+            sm.setDartCellIndex(d1, .edge, h_index);
+            const u_index = try sm.newDataIndex(.edge);
+            sm.setCellIndex(.{ .edge = dart }, u_index);
+        }
+        {
+            // umbrella faces
+            const u_index = try sm.newDataIndex(.face);
+            sm.setCellIndex(.{ .face = dart }, u_index);
+        }
+    }
+    {
+        // central vertex
+        const index = try sm.newDataIndex(.vertex);
+        sm.setCellIndex(.{ .vertex = cv_dart }, index);
+    }
+
+    return .{ .vertex = cv_dart };
+}
+
+/// Closes the hole incident to the given dart by adding a polygonal face.
 /// The given dart must be a dart on the boundary of the hole (phi2-linked to itself).
 /// This function is meant to be called during a construction process of a SurfaceMesh.
 /// It does not:
