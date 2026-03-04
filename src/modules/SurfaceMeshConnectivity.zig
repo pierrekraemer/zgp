@@ -182,6 +182,7 @@ fn generateConvexHull(
 
     const ch = try smc.app_ctx.surface_mesh_store.createSurfaceMesh("convex_hull");
     const ch_vertex_position = try ch.addData(.vertex, Vec3f, "position");
+    smc.app_ctx.surface_mesh_store.setSurfaceMeshStdData(ch, .{ .vertex_position = ch_vertex_position });
 
     try convex_hull.generateConvexHull(smc.app_ctx, pc, pc_vertex_position, ch, ch_vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(ch, .vertex, Vec3f, ch_vertex_position);

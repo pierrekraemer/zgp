@@ -149,19 +149,19 @@ pub fn generateConvexHull(
     while (point_it.next()) |p| {
         face_it.reset();
         while (face_it.next()) |f| {
-            const d = geometry_utils.signedDistancePlanePoint(
+            const dist = geometry_utils.signedDistancePlanePoint(
                 vertex_position.value(.{ .vertex = f.dart() }),
                 vertex_position.value(.{ .vertex = sm.phi1(f.dart()) }),
                 vertex_position.value(.{ .vertex = sm.phi_1(f.dart()) }),
                 point_position.value(p),
             );
-            if (d > 0) {
+            if (dist > geometry_utils.epsilon) {
                 try face_points_on_positive_side.valuePtr(f).append(app_ctx.allocator, p);
-                if (d > face_most_distant_point_dist.value(f)) {
-                    face_most_distant_point_dist.valuePtr(f).* = d;
+                if (dist > face_most_distant_point_dist.value(f)) {
+                    face_most_distant_point_dist.valuePtr(f).* = dist;
                     face_most_distant_point_index.valuePtr(f).* = p;
                 }
-                break;
+                break; // each point is only registered in one face (the first one it is on the exterior side of)
             }
         }
     }
@@ -183,8 +183,8 @@ pub fn generateConvexHull(
         const active_point = point_position.value(active_point_index);
 
         // create the list of horizon halfedges
-        var horizon_halfedges, var visible_faces = try buildHorizon(sm, vertex_position, active_point, f, app_ctx.allocator);
-        defer horizon_halfedges.deinit(app_ctx.allocator);
+        var horizon_darts, var visible_faces = try buildHorizon(sm, vertex_position, active_point, f, app_ctx.allocator);
+        defer horizon_darts.deinit(app_ctx.allocator);
         defer visible_faces.deinit(app_ctx.allocator);
 
         // save visible faces points
@@ -200,8 +200,15 @@ pub fn generateConvexHull(
         for (visible_faces.items) |vf| {
             sm.removeFace(vf);
         }
-        const v = try sm.closeHoleWithUmbrella(horizon_halfedges.items[0].dart());
+        const v = try sm.closeHoleWithUmbrella(horizon_darts.items[0]);
         vertex_position.valuePtr(v).* = active_point;
+
+        // std.debug.print("Deleted faces: {d}\n", .{visible_faces.items.len});
+        // std.debug.print("Horizon halfedges: {d}\n", .{horizon_darts.items.len});
+        // std.debug.print("Umbrella degree: {d}\n", .{sm.degree(v)});
+        // if (!try sm.checkIntegrity()) {
+        //     return error.IntegrityCheckFailed;
+        // }
 
         // clear the face datas for the new umbrella faces
         var dart_it = sm.cellDartIterator(v);
@@ -221,12 +228,12 @@ pub fn generateConvexHull(
             while (dart_it.next()) |d| {
                 const uf: SurfaceMesh.Cell = .{ .face = d };
                 const dist = geometry_utils.signedDistancePlanePoint(
-                    vertex_position.value(.{ .vertex = uf.dart() }),
-                    vertex_position.value(.{ .vertex = sm.phi1(uf.dart()) }),
-                    vertex_position.value(.{ .vertex = sm.phi_1(uf.dart()) }),
+                    vertex_position.value(.{ .vertex = d }),
+                    vertex_position.value(.{ .vertex = sm.phi1(d) }),
+                    vertex_position.value(.{ .vertex = sm.phi_1(d) }),
                     point_position.value(p),
                 );
-                if (dist > 0) {
+                if (dist > geometry_utils.epsilon) {
                     try face_points_on_positive_side.valuePtr(uf).append(app_ctx.allocator, p);
                     if (dist > face_most_distant_point_dist.value(uf)) {
                         face_most_distant_point_dist.valuePtr(uf).* = dist;
@@ -255,11 +262,22 @@ fn buildHorizon(
     face: SurfaceMesh.Cell,
     allocator: std.mem.Allocator,
 ) !struct {
-    std.ArrayList(SurfaceMesh.Cell), // horizon halfedges
+    std.ArrayList(SurfaceMesh.Dart), // horizon darts
     std.ArrayList(SurfaceMesh.Cell), // visible faces
 } {
-    var horizon_halfedges: std.ArrayList(SurfaceMesh.Cell) = .empty;
+    var horizon_darts: std.ArrayList(SurfaceMesh.Dart) = .empty;
     var visible_faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
+
+    // ensure face is visible from the point
+    assert(geometry_utils.planeOrientation(
+        vertex_position.value(.{ .vertex = face.dart() }),
+        vertex_position.value(.{ .vertex = sm.phi1(face.dart()) }),
+        vertex_position.value(.{ .vertex = sm.phi_1(face.dart()) }),
+        point,
+    ) == .over);
+
+    var horizon_darts_marker = try SurfaceMesh.DartMarker.init(sm);
+    defer horizon_darts_marker.deinit();
 
     try visible_faces.append(allocator, face);
     var visible_faces_marker = try SurfaceMesh.CellMarker(.face).init(sm);
@@ -271,6 +289,7 @@ fn buildHorizon(
         const f = visible_faces.items[i];
         var dart_it = sm.cellDartIterator(f);
         while (dart_it.next()) |d| {
+            // iterate over the adjacent faces of f
             const d2 = sm.phi2(d);
             if (visible_faces_marker.value(.{ .face = d2 })) {
                 continue;
@@ -285,26 +304,31 @@ fn buildHorizon(
                 try visible_faces.append(allocator, af);
                 visible_faces_marker.valuePtr(af).* = true;
             } else {
-                try horizon_halfedges.append(allocator, .{ .halfedge = sm.phi2(d) });
+                try horizon_darts.append(allocator, d2);
+                horizon_darts_marker.valuePtr(d2).* = true;
             }
         }
     }
 
-    // // reorder horizon halfedges into a cycle
-    // for (horizon_halfedges.items, 0..) |h, i| {
-    //     const end_vertex_index = sm.cellIndex(.{ .vertex = sm.phi1(h.dart()) });
-    //     for (horizon_halfedges.items[i + 1 ..], i + 1..) |h2, j| {
-    //         const begin_vertex_index = sm.cellIndex(.{ .vertex = h2.dart() });
-    //         if (begin_vertex_index == end_vertex_index) {
-    //             if (j > i + 1) {
-    //                 const tmp = horizon_halfedges.items[i + 1];
-    //                 horizon_halfedges.items[i + 1] = horizon_halfedges.items[j];
-    //                 horizon_halfedges.items[j] = tmp;
-    //             }
+    // // check that the horizon halfedges form a cycle, starting from the first horizon halfedge
+    // var count: u32 = 1;
+    // const d_first = horizon_darts.items[0];
+    // var d_current = d_first;
+    // out: while (true) {
+    //     while (true) {
+    //         d_current = sm.phi1(d_current);
+    //         if (d_current == d_first) {
+    //             // we are back to the starting dart, so we can stop
+    //             break :out;
+    //         }
+    //         if (horizon_darts_marker.value(d_current)) {
     //             break;
     //         }
+    //         d_current = sm.phi2(d_current);
     //     }
+    //     count += 1;
     // }
+    // assert(count == horizon_darts.items.len);
 
-    return .{ horizon_halfedges, visible_faces };
+    return .{ horizon_darts, visible_faces };
 }

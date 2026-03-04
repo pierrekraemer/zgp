@@ -454,6 +454,7 @@ pub const DataContainer = struct {
     pub fn unrefIndex(dc: *DataContainer, index: u32) void {
         assert(index < dc.size);
         assert(dc.is_active.value(index));
+        assert(dc.nb_refs.value(index) > 0);
         dc.nb_refs.valuePtr(index).* -= 1;
         if (dc.nb_refs.value(index) == 0) {
             dc.freeIndex(index);

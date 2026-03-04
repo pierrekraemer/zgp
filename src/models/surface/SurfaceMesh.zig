@@ -935,19 +935,19 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
             switch (cell_type) {
                 .vertex => {
                     if (c.* < 2) {
-                        zgp_log.warn("Inconsistent vertex darts count for vertex {d}: {d} < 2", .{ cell.dart(), c.* });
+                        zgp_log.warn("Inconsistent vertex darts count for vertex of dart {d}: {d} < 2", .{ cell.dart(), c.* });
                         ok = false;
                     }
                 },
                 .edge => {
                     if (c.* != 2) {
-                        zgp_log.warn("Inconsistent edge darts count for edge {d}: {d} != 2", .{ cell.dart(), c.* });
+                        zgp_log.warn("Inconsistent edge darts count for edge of dart {d}: {d} != 2", .{ cell.dart(), c.* });
                         ok = false;
                     }
                 },
                 .face => {
                     if (c.* < 3) {
-                        zgp_log.warn("Inconsistent face darts count for face {d}: {d} < 3", .{ cell.dart(), c.* });
+                        zgp_log.warn("Inconsistent face darts count for face of dart {d}: {d} < 3", .{ cell.dart(), c.* });
                         ok = false;
                     }
                 },
@@ -1009,7 +1009,7 @@ pub fn addPyramid(sm: *SurfaceMesh, baseSize: u32) !Cell {
     }
     sm.phi2Sew(sm.phi_1(current_dart), sm.phi1(first.dart())); // finish the umbrella
     // then close the hole to create the base face
-    const base = try sm.closeHole(first.dart());
+    const base = try sm.closeHoleWithPolygon(first.dart());
 
     // set the indices for the cells
     var dart_it = sm.cellDartIterator(base);
@@ -1060,6 +1060,38 @@ pub fn removeFace(sm: *SurfaceMesh, face: Cell) void {
     }
 }
 
+/// Closes the hole incident to the given dart by adding a polygonal face.
+/// The given dart must be a dart on the boundary of the hole (phi2-linked to itself).
+/// This function is meant to be called during a construction process of a SurfaceMesh.
+/// WARNING: this function does not set an index to the new face.
+/// The new face is returned, represented by the dart sewn to d by phi2.
+pub fn closeHoleWithPolygon(sm: *SurfaceMesh, d: Dart) !Cell {
+    assert(sm.phi2(d) == d);
+    const b_first = try sm.addDart();
+    sm.phi2Sew(d, b_first);
+    sm.setDartCellIndex(b_first, .vertex, sm.dartCellIndex(sm.phi1(d), .vertex));
+    sm.setDartCellIndex(b_first, .edge, sm.dartCellIndex(d, .edge));
+
+    var d_current = d;
+    out: while (true) {
+        // find the next dart that is phi2-linked to itself
+        while (sm.phi2(d_current) != d_current) {
+            d_current = sm.phi2(sm.phi1(d_current));
+            if (sm.phi2(d_current) == d) {
+                // we are back to the starting dart, so we can stop
+                break :out;
+            }
+        }
+        const b_next = try sm.addDart();
+        sm.phi2Sew(d_current, b_next);
+        sm.phi1Sew(b_first, b_next);
+        sm.setDartCellIndex(b_next, .vertex, sm.dartCellIndex(sm.phi1(d_current), .vertex));
+        sm.setDartCellIndex(b_next, .edge, sm.dartCellIndex(d_current, .edge));
+    }
+
+    return .{ .face = b_first };
+}
+
 /// Closes the hole incident to the given dart by adding an umbrella.
 /// The given dart must be a dart on the boundary of the hole (phi2-linked to itself).
 pub fn closeHoleWithUmbrella(sm: *SurfaceMesh, d: Dart) !Cell {
@@ -1088,8 +1120,10 @@ pub fn closeHoleWithUmbrella(sm: *SurfaceMesh, d: Dart) !Cell {
 
     // set the indices for the cells
     const cv_dart = sm.phi_1(f_first.dart()); // central vertex dart
+    const cv_index = try sm.newDataIndex(.vertex); // new index for central vertex
     var dart_it = sm.cellDartIterator(.{ .vertex = cv_dart }); // turn around central vertex
     while (dart_it.next()) |dart| {
+        sm.setDartCellIndex(dart, .vertex, cv_index);
         const d1 = sm.phi1(dart);
         {
             // hole vertices
@@ -1110,47 +1144,8 @@ pub fn closeHoleWithUmbrella(sm: *SurfaceMesh, d: Dart) !Cell {
             sm.setCellIndex(.{ .face = dart }, u_index);
         }
     }
-    {
-        // central vertex
-        const index = try sm.newDataIndex(.vertex);
-        sm.setCellIndex(.{ .vertex = cv_dart }, index);
-    }
 
     return .{ .vertex = cv_dart };
-}
-
-/// Closes the hole incident to the given dart by adding a polygonal face.
-/// The given dart must be a dart on the boundary of the hole (phi2-linked to itself).
-/// This function is meant to be called during a construction process of a SurfaceMesh.
-/// It does not:
-///  - set an index for the new face
-///  - mark the new face as boundary
-/// The new face is returned, represented by the dart sewn to d by phi2.
-pub fn closeHole(sm: *SurfaceMesh, d: Dart) !Cell {
-    assert(sm.phi2(d) == d);
-    const b_first = try sm.addDart();
-    sm.phi2Sew(d, b_first);
-    sm.setDartCellIndex(b_first, .vertex, sm.dartCellIndex(sm.phi1(d), .vertex));
-    sm.setDartCellIndex(b_first, .edge, sm.dartCellIndex(d, .edge));
-
-    var d_current = d;
-    out: while (true) {
-        // find the next dart that is phi2-linked to itself
-        while (sm.phi2(d_current) != d_current) {
-            d_current = sm.phi2(sm.phi1(d_current));
-            if (sm.phi2(d_current) == d) {
-                // we are back to the starting dart, so we can stop
-                break :out;
-            }
-        }
-        const b_next = try sm.addDart();
-        sm.phi2Sew(d_current, b_next);
-        sm.phi1Sew(b_first, b_next);
-        sm.setDartCellIndex(b_next, .vertex, sm.dartCellIndex(sm.phi1(d_current), .vertex));
-        sm.setDartCellIndex(b_next, .edge, sm.dartCellIndex(d_current, .edge));
-    }
-
-    return .{ .face = b_first };
 }
 
 /// Closes the given SurfaceMesh by adding boundary faces where needed.
@@ -1163,7 +1158,7 @@ pub fn close(sm: *SurfaceMesh) !u32 {
     var dart_it = sm.dartIterator();
     while (dart_it.next()) |d| {
         if (sm.phi2(d) == d) {
-            const f = try closeHole(sm, d);
+            const f = try closeHoleWithPolygon(sm, d);
             var f_it = sm.cellDartIterator(f);
             while (f_it.next()) |fd| {
                 sm.dart_boundary_marker.valuePtr(fd).* = true;
