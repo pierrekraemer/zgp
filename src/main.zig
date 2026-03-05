@@ -32,6 +32,7 @@ const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
 const SurfaceMeshSelection = @import("modules/SurfaceMeshSelection.zig");
 const SurfaceMeshDeformation = @import("modules/SurfaceMeshDeformation.zig");
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
+const SurfaceMeshSampling = @import("modules/SurfaceMeshSampling.zig");
 const SurfaceMeshMedialAxis = @import("modules/SurfaceMeshMedialAxis.zig");
 const SurfaceMeshProceduralTexturing = @import("modules/SurfaceMeshProceduralTexturing.zig");
 
@@ -81,9 +82,9 @@ pub const AppContext = struct {
     pub fn init(allocator: std.mem.Allocator) !AppContext {
         return .{
             .allocator = allocator,
-            .point_cloud_store = try PointCloudStore.init(allocator),
-            .surface_mesh_store = try SurfaceMeshStore.init(allocator),
-            .rng = std.Random.DefaultPrng.init(@intCast(std.time.timestamp())),
+            .point_cloud_store = try .init(allocator),
+            .surface_mesh_store = try .init(allocator),
+            .rng = .init(@intCast(std.time.timestamp())),
         };
     }
 
@@ -119,6 +120,7 @@ var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
 var surface_mesh_selection: SurfaceMeshSelection = undefined;
 var surface_mesh_deformation: SurfaceMeshDeformation = undefined;
 var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
+var surface_mesh_sampling: SurfaceMeshSampling = undefined;
 var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
 var surface_mesh_procedural_texturing: SurfaceMeshProceduralTexturing = undefined;
 
@@ -151,6 +153,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     surface_mesh_selection = .init(&app_ctx);
     surface_mesh_deformation = .init(&app_ctx);
     surface_mesh_connectivity = .init(&app_ctx, &surface_mesh_curvature);
+    surface_mesh_sampling = .init(&app_ctx);
     surface_mesh_medial_axis = .init(&app_ctx);
     surface_mesh_procedural_texturing = .init(&app_ctx);
 
@@ -164,6 +167,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_selection.deinit();
     errdefer surface_mesh_deformation.deinit();
     errdefer surface_mesh_connectivity.deinit();
+    errdefer surface_mesh_sampling.deinit();
     errdefer surface_mesh_medial_axis.deinit();
     errdefer surface_mesh_procedural_texturing.deinit();
 
@@ -177,6 +181,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(app_ctx.allocator, &surface_mesh_selection.module);
     try modules.append(app_ctx.allocator, &surface_mesh_deformation.module);
     try modules.append(app_ctx.allocator, &surface_mesh_connectivity.module);
+    try modules.append(app_ctx.allocator, &surface_mesh_sampling.module);
     try modules.append(app_ctx.allocator, &surface_mesh_medial_axis.module);
     try modules.append(app_ctx.allocator, &surface_mesh_procedural_texturing.module);
     errdefer modules.deinit(app_ctx.allocator);
@@ -194,6 +199,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_selection.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_deformation.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_connectivity.module);
+    try app_ctx.surface_mesh_store.addListener(&surface_mesh_sampling.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_medial_axis.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_procedural_texturing.module);
 
@@ -462,6 +468,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
     surface_mesh_selection.deinit();
     surface_mesh_deformation.deinit();
     surface_mesh_connectivity.deinit();
+    surface_mesh_sampling.deinit();
     surface_mesh_medial_axis.deinit();
     surface_mesh_procedural_texturing.deinit();
 

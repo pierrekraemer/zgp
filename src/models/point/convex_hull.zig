@@ -9,7 +9,7 @@ const Vec3f = vec.Vec3f;
 
 const geometry_utils = @import("../../geometry/utils.zig");
 
-/// Given a point cloud, fills the given surface mesh with the convex hull of the point cloud.
+/// Given a PointCloud, fills the given SurfaceMesh with the convex hull of the point cloud.
 /// The given SurfaceMesh is supposed to be empty.
 pub fn generateConvexHull(
     app_ctx: *AppContext,

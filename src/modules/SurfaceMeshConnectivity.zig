@@ -173,18 +173,18 @@ fn generateConvexHull(
 
     const pc = try smc.app_ctx.point_cloud_store.createPointCloud(smc.app_ctx.surface_mesh_store.surfaceMeshName(sm).?);
     defer smc.app_ctx.point_cloud_store.destroyPointCloud(pc);
-    const pc_vertex_position = try pc.addData(Vec3f, "position");
+    const point_position = try pc.addData(Vec3f, "position");
     var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
     while (vertex_it.next()) |vertex| {
         const p = try pc.addPoint();
-        pc_vertex_position.valuePtr(p).* = vertex_position.valuePtr(vertex).*;
+        point_position.valuePtr(p).* = vertex_position.valuePtr(vertex).*;
     }
 
     const ch = try smc.app_ctx.surface_mesh_store.createSurfaceMesh("convex_hull");
     const ch_vertex_position = try ch.addData(.vertex, Vec3f, "position");
     smc.app_ctx.surface_mesh_store.setSurfaceMeshStdData(ch, .{ .vertex_position = ch_vertex_position });
 
-    try convex_hull.generateConvexHull(smc.app_ctx, pc, pc_vertex_position, ch, ch_vertex_position);
+    try convex_hull.generateConvexHull(smc.app_ctx, pc, point_position, ch, ch_vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(ch, .vertex, Vec3f, ch_vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(ch);
 
