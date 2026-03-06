@@ -414,7 +414,6 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
         if (sms.selected_model.modelType() != .surface_mesh) return;
         const sm = sms.selected_model.surface_mesh;
 
-        var buf: [64]u8 = undefined; // guess 64 chars is enough for cell stat info
         if (c.ImGui_BeginTable("CellStats", 3, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
             defer c.ImGui_EndTable();
 
@@ -424,15 +423,20 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
             c.ImGui_TableHeadersRow();
 
             inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
-                const cells = std.fmt.bufPrintZ(&buf, "{s}", .{@tagName(cell_type)}) catch "";
+                var buf_name: [32]u8 = undefined;
+                var buf_count: [16]u8 = undefined;
+                var buf_density: [16]u8 = undefined;
+
+                const cells = std.fmt.bufPrintZ(&buf_name, "{s}", .{@tagName(cell_type)}) catch "";
+                const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{sm.nbCells(cell_type)}) catch "";
+                const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{sm.dataContainer(cell_type).density() * 100}) catch "";
+
                 c.ImGui_TableNextRow();
                 _ = c.ImGui_TableNextColumn();
                 c.ImGui_Text(cells.ptr);
                 _ = c.ImGui_TableNextColumn();
-                const count = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(cell_type)}) catch "";
                 c.ImGui_Text(count.ptr);
                 _ = c.ImGui_TableNextColumn();
-                const density = std.fmt.bufPrintZ(&buf, "{d:.1}%", .{sm.dataContainer(cell_type).density() * 100}) catch "";
                 c.ImGui_Text(density.ptr);
             }
         }

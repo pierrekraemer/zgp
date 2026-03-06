@@ -341,6 +341,14 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
                 module.menuBar();
             }
         }
+
+        // FPS display (ImGui computed value) – right-aligned in the menu bar.
+        const fps = imgui_io.*.Framerate;
+        var fps_buf: [32]u8 = undefined;
+        const fps_str = std.fmt.bufPrintZ(&fps_buf, "FPS: {d:.1}", .{fps}) catch "FPS: ?";
+        const fps_text_width = c.ImGui_CalcTextSize(fps_str.ptr).x;
+        c.ImGui_SetCursorPosX(c.ImGui_GetWindowWidth() - fps_text_width - 8.0);
+        c.ImGui_TextUnformatted(fps_str.ptr);
     }
 
     c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowRounding, 0.0);
