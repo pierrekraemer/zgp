@@ -18,6 +18,8 @@ pub const c = @cImport({
     @cInclude("clibacc/bvh.h");
 });
 
+const SurfaceMesh = @import("models/surface/SurfaceMesh.zig");
+const PointCloud = @import("models/point/PointCloud.zig");
 const SurfaceMeshStore = @import("models/SurfaceMeshStore.zig");
 const PointCloudStore = @import("models/PointCloudStore.zig");
 
@@ -66,6 +68,7 @@ var cli_args: CLIArgs = undefined;
 /// Application Context:
 /// - allocator
 /// - PointCloud / SurfaceMesh / VolumeMesh stores
+/// - current selected model
 /// - random number generator
 /// - window
 /// - view
@@ -74,6 +77,7 @@ pub const AppContext = struct {
     allocator: std.mem.Allocator,
     point_cloud_store: PointCloudStore,
     surface_mesh_store: SurfaceMeshStore,
+    selected_model: ModelSelection = .none,
     rng: std.Random.DefaultPrng,
     window: Window = .{},
     view: View = .{},
@@ -88,6 +92,11 @@ pub const AppContext = struct {
         };
     }
 
+    pub fn wireUp(self: *AppContext) void {
+        self.point_cloud_store.selected_model = &self.selected_model;
+        self.surface_mesh_store.selected_model = &self.selected_model;
+    }
+
     pub fn deinit(self: *AppContext) void {
         self.surface_mesh_store.deinit();
         self.point_cloud_store.deinit();
@@ -96,10 +105,21 @@ pub const AppContext = struct {
         self.window.deinit();
     }
 
-    pub fn requestRedraw(ctx: *AppContext) void {
-        ctx.view.needs_redraw = true;
+    pub fn requestRedraw(self: *AppContext) void {
+        self.view.needs_redraw = true;
     }
 };
+
+pub const ModelSelection = union(enum) {
+    none,
+    surface_mesh: *SurfaceMesh,
+    point_cloud: *PointCloud,
+
+    pub fn modelType(self: ModelSelection) ModelType {
+        return std.meta.activeTag(self);
+    }
+};
+pub const ModelType = std.meta.Tag(ModelSelection);
 
 /// Main application context passed to modules
 var app_ctx: AppContext = undefined;
@@ -236,16 +256,20 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     return c.SDL_APP_CONTINUE;
 }
 
-/// Helper function to encapsulate module filtering logic
-fn shouldShowModule(module: *Module, ctx: *AppContext) bool {
+/// Helper function to encapsulate module filtering logic.
+/// Return true if:
+///  - the module does not declare any supported model type
+///  - the module declares supported model types and the currently selected model is of one of those types
+fn shouldCallOnModule(module: *Module, ctx: *AppContext) bool {
     // Fast path: if no models are exclusively supported, it's a global module
     if (!module.supported_models.point_cloud and !module.supported_models.surface_mesh) return true;
 
     // Check specific capabilities against currently selected models
-    if (module.supported_models.point_cloud and ctx.point_cloud_store.selected_point_cloud != null) return true;
-    if (module.supported_models.surface_mesh and ctx.surface_mesh_store.selected_surface_mesh != null) return true;
-
-    return false;
+    return switch (ctx.selected_model) {
+        .point_cloud => module.supported_models.point_cloud,
+        .surface_mesh => module.supported_models.surface_mesh,
+        .none => false,
+    };
 }
 
 fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
@@ -282,8 +306,9 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
         defer c.ImGui_EndPopup();
         for (modules.items) |module| {
-            if (!shouldShowModule(module, &app_ctx)) continue;
-            module.rightClickMenu();
+            if (shouldCallOnModule(module, &app_ctx)) {
+                module.rightClickMenu();
+            }
         }
         c.ImGui_Separator();
         if (c.ImGui_MenuItem("Quit")) {
@@ -312,8 +337,9 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         app_ctx.point_cloud_store.menuBar();
         app_ctx.surface_mesh_store.menuBar();
         for (modules.items) |module| {
-            if (!shouldShowModule(module, &app_ctx)) continue;
-            module.menuBar();
+            if (shouldCallOnModule(module, &app_ctx)) {
+                module.menuBar();
+            }
         }
     }
 
@@ -339,8 +365,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         app_ctx.point_cloud_store.leftPanel();
         app_ctx.surface_mesh_store.leftPanel();
         for (modules.items) |module| {
-            if (!shouldShowModule(module, &app_ctx)) continue;
-            if (module.vtable.leftPanel == null) continue; // check if the module has a uiPanel function
+            if (!shouldCallOnModule(module, &app_ctx)) continue;
+            if (module.vtable.leftPanel == null) continue; // check if the module has a leftPanel function
             c.ImGui_PushIDPtr(module);
             defer c.ImGui_PopID();
             c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
@@ -372,8 +398,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     {
         defer c.ImGui_End();
         for (modules.items) |module| {
-            if (!shouldShowModule(module, &app_ctx)) continue;
-            if (module.vtable.rightPanel == null) continue; // check if the module has a uiPanel function
+            if (!shouldCallOnModule(module, &app_ctx)) continue;
+            if (module.vtable.rightPanel == null) continue; // check if the module has a rightPanel function
             c.ImGui_PushIDPtr(module);
             defer c.ImGui_PopID();
             c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
@@ -439,7 +465,9 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
 
     // dispatch event to modules
     for (modules.items) |module| {
-        module.sdlEvent(event);
+        if (shouldCallOnModule(module, &app_ctx)) {
+            module.sdlEvent(event);
+        }
     }
 
     return c.SDL_APP_CONTINUE;
@@ -497,6 +525,7 @@ pub fn main() !u8 {
     };
 
     app_ctx = try .init(allocator);
+    app_ctx.wireUp();
     defer app_ctx.deinit();
 
     try app_ctx.window.init();

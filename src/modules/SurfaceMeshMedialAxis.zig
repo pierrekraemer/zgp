@@ -328,49 +328,48 @@ pub fn rightPanel(m: *Module) void {
     const smma: *SurfaceMeshMedialAxis = @alignCast(@fieldParentPtr("module", m));
     const sm_store = &smma.app_ctx.surface_mesh_store;
 
+    assert(smma.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = smma.app_ctx.selected_model.surface_mesh;
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (sm_store.selected_surface_mesh) |sm| {
-        const info = sm_store.surfaceMeshInfo(sm);
-        const mad = smma.surface_meshes_data.getPtr(sm).?;
-        const disabled =
-            info.std_datas.vertex_position == null or
-            info.std_datas.vertex_area == null or
-            info.std_datas.face_area == null or
-            info.std_datas.face_normal == null;
-        if (disabled) {
-            c.ImGui_BeginDisabled(true);
-        }
-        if (c.ImGui_ButtonEx(if (mad.initialized) "Reinitialize data" else "Initialize data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            _ = mad.init(
-                info.std_datas.vertex_position.?,
-                info.std_datas.vertex_area.?,
-                info.std_datas.face_area.?,
-                info.std_datas.face_normal.?,
-            ) catch |err| {
-                std.debug.print("Failed to initialize Medial Axis data for SurfaceMesh: {}\n", .{err});
+    const info = sm_store.surfaceMeshInfo(sm);
+    const mad = smma.surface_meshes_data.getPtr(sm).?;
+    const disabled =
+        info.std_datas.vertex_position == null or
+        info.std_datas.vertex_area == null or
+        info.std_datas.face_area == null or
+        info.std_datas.face_normal == null;
+    if (disabled) {
+        c.ImGui_BeginDisabled(true);
+    }
+    if (c.ImGui_ButtonEx(if (mad.initialized) "Reinitialize data" else "Initialize data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+        _ = mad.init(
+            info.std_datas.vertex_position.?,
+            info.std_datas.vertex_area.?,
+            info.std_datas.face_area.?,
+            info.std_datas.face_normal.?,
+        ) catch |err| {
+            std.debug.print("Failed to initialize Medial Axis data for SurfaceMesh: {}\n", .{err});
+        };
+    }
+    if (disabled) {
+        c.ImGui_EndDisabled();
+    }
+    if (mad.initialized) {
+        _ = c.ImGui_SliderFloatEx("", &mad.lambda, 0.0001, 1.0, "%.4f", c.ImGuiSliderFlags_Logarithmic);
+        if (c.ImGui_ButtonEx("Update spheres", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            mad.updateSpheres() catch |err| {
+                std.debug.print("Failed to update Medial Axis spheres for SurfaceMesh: {}\n", .{err});
             };
         }
-        if (disabled) {
-            c.ImGui_EndDisabled();
+        if (c.ImGui_ButtonEx("Split worse sphere", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            mad.splitWorseSphere() catch |err| {
+                std.debug.print("Failed to split worse Medial Axis sphere for SurfaceMesh: {}\n", .{err});
+            };
         }
-        if (mad.initialized) {
-            _ = c.ImGui_SliderFloatEx("", &mad.lambda, 0.0001, 1.0, "%.4f", c.ImGuiSliderFlags_Logarithmic);
-            if (c.ImGui_ButtonEx("Update spheres", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                mad.updateSpheres() catch |err| {
-                    std.debug.print("Failed to update Medial Axis spheres for SurfaceMesh: {}\n", .{err});
-                };
-            }
-            if (c.ImGui_ButtonEx("Split worse sphere", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                mad.splitWorseSphere() catch |err| {
-                    std.debug.print("Failed to split worse Medial Axis sphere for SurfaceMesh: {}\n", .{err});
-                };
-            }
-        }
-    } else {
-        c.ImGui_Text("No SurfaceMesh selected");
     }
 }

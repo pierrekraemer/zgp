@@ -97,9 +97,13 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
 /// Manage SDL events.
 pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
     const smpt: *SurfaceMeshProceduralTexturing = @alignCast(@fieldParentPtr("module", m));
-    _ = smpt;
     // const sm_store = &zgp.surface_mesh_store;
     // const view = &zgp.view;
+
+    assert(smpt.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = smpt.app_ctx.selected_model.surface_mesh;
+
+    _ = sm;
 
     switch (event.type) {
         c.SDL_EVENT_KEY_DOWN => {
@@ -127,31 +131,30 @@ pub fn rightPanel(m: *Module) void {
     const smpt: *SurfaceMeshProceduralTexturing = @alignCast(@fieldParentPtr("module", m));
     const sm_store = &smpt.app_ctx.surface_mesh_store;
 
+    assert(smpt.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = smpt.app_ctx.selected_model.surface_mesh;
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (sm_store.selected_surface_mesh) |sm| {
-        const info = sm_store.surfaceMeshInfo(sm);
-        const tnb_data = smpt.surface_meshes_data.getPtr(sm).?;
+    const info = sm_store.surfaceMeshInfo(sm);
+    const tnb_data = smpt.surface_meshes_data.getPtr(sm).?;
 
-        const disabled = info.std_datas.vertex_position == null;
-        if (disabled) {
-            c.ImGui_BeginDisabled(true);
-        }
-        if (c.ImGui_ButtonEx(if (tnb_data.initialized) "Reinitialize data" else "Initialize data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            _ = tnb_data.init(info.std_datas.vertex_position.?) catch |err| {
-                std.debug.print("Failed to initialize Procedural Texturing data for SurfaceMesh: {}\n", .{err});
-            };
-        }
-        if (disabled) {
-            c.ImGui_EndDisabled();
-        }
-        if (tnb_data.initialized) {
-            // parameters & buttons here
-        }
-    } else {
-        c.ImGui_Text("No SurfaceMesh selected");
+    const disabled = info.std_datas.vertex_position == null;
+    if (disabled) {
+        c.ImGui_BeginDisabled(true);
+    }
+    if (c.ImGui_ButtonEx(if (tnb_data.initialized) "Reinitialize data" else "Initialize data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+        _ = tnb_data.init(info.std_datas.vertex_position.?) catch |err| {
+            std.debug.print("Failed to initialize Procedural Texturing data for SurfaceMesh: {}\n", .{err});
+        };
+    }
+    if (disabled) {
+        c.ImGui_EndDisabled();
+    }
+    if (tnb_data.initialized) {
+        // parameters & buttons here
     }
 }

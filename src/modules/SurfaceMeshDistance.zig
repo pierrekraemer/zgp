@@ -1,6 +1,7 @@
 const SurfaceMeshDistance = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 
 const imgui_utils = @import("../ui/imgui.zig");
 const zgp_log = std.log.scoped(.zgp);
@@ -74,6 +75,9 @@ pub fn rightClickMenu(m: *Module) void {
     const smd: *SurfaceMeshDistance = @alignCast(@fieldParentPtr("module", m));
     const sm_store = &smd.app_ctx.surface_mesh_store;
 
+    assert(smd.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = smd.app_ctx.selected_model.surface_mesh;
+
     const UiData = struct {
         var diffusion_time: f32 = 1.0;
         // TODO: ensure that this data is associated to the selected SurfaceMesh
@@ -88,67 +92,63 @@ pub fn rightClickMenu(m: *Module) void {
     if (c.ImGui_BeginMenu(m.name.ptr)) {
         defer c.ImGui_EndMenu();
 
-        if (sm_store.selected_surface_mesh) |sm| {
-            const info = sm_store.surfaceMeshInfo(sm);
+        const info = sm_store.surfaceMeshInfo(sm);
 
-            if (c.ImGui_BeginMenu("Geodesic Distance")) {
-                defer c.ImGui_EndMenu();
-                c.ImGui_Text("Distance data (to write)");
-                c.ImGui_PushID("DistanceData");
-                switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, UiData.vertex_distance)) {
-                    .unchanged => {},
-                    .cleared => UiData.vertex_distance = null,
-                    .changed => |data| UiData.vertex_distance = data,
-                }
-                c.ImGui_PopID();
-                c.ImGui_Text("Diffusion time");
-                c.ImGui_PushID("Diffusion time");
-                _ = c.ImGui_SliderFloatEx("", &UiData.diffusion_time, 1.0, 100.0, "%.1f", c.ImGuiSliderFlags_Logarithmic);
-                c.ImGui_PopID();
-                const disabled =
-                    info.std_datas.halfedge_cotan_weight == null or
-                    info.std_datas.vertex_position == null or
-                    info.std_datas.vertex_area == null or
-                    info.std_datas.edge_length == null or
-                    info.std_datas.face_area == null or
-                    info.std_datas.face_normal == null or
-                    UiData.vertex_distance == null;
-                if (disabled) {
-                    c.ImGui_BeginDisabled(true);
-                }
-                if (c.ImGui_ButtonEx("Compute geodesic distance", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                    smd.computeVertexGeodesicDistancesFromSource(
-                        sm,
-                        info.vertex_set.cells.items,
-                        UiData.diffusion_time,
-                        info.std_datas.halfedge_cotan_weight.?,
-                        info.std_datas.vertex_position.?,
-                        info.std_datas.vertex_area.?,
-                        info.std_datas.edge_length.?,
-                        info.std_datas.face_area.?,
-                        info.std_datas.face_normal.?,
-                        UiData.vertex_distance.?,
-                    ) catch |err| {
-                        std.debug.print("Error computing geodesic distance: {}\n", .{err});
-                    };
-                }
-                imgui_utils.tooltip(
-                    \\ Read:
-                    \\ - std halfedge_cotan_weight
-                    \\ - std vertex_position
-                    \\ - std vertex_area
-                    \\ - std edge_length
-                    \\ - std face_area
-                    \\ - std face_normal
-                    \\ Write:
-                    \\ - given distance data
-                );
-                if (disabled) {
-                    c.ImGui_EndDisabled();
-                }
+        if (c.ImGui_BeginMenu("Geodesic Distance")) {
+            defer c.ImGui_EndMenu();
+            c.ImGui_Text("Distance data (to write)");
+            c.ImGui_PushID("DistanceData");
+            switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, UiData.vertex_distance)) {
+                .unchanged => {},
+                .cleared => UiData.vertex_distance = null,
+                .changed => |data| UiData.vertex_distance = data,
             }
-        } else {
-            c.ImGui_Text("No Surface Mesh selected");
+            c.ImGui_PopID();
+            c.ImGui_Text("Diffusion time");
+            c.ImGui_PushID("Diffusion time");
+            _ = c.ImGui_SliderFloatEx("", &UiData.diffusion_time, 1.0, 100.0, "%.1f", c.ImGuiSliderFlags_Logarithmic);
+            c.ImGui_PopID();
+            const disabled =
+                info.std_datas.halfedge_cotan_weight == null or
+                info.std_datas.vertex_position == null or
+                info.std_datas.vertex_area == null or
+                info.std_datas.edge_length == null or
+                info.std_datas.face_area == null or
+                info.std_datas.face_normal == null or
+                UiData.vertex_distance == null;
+            if (disabled) {
+                c.ImGui_BeginDisabled(true);
+            }
+            if (c.ImGui_ButtonEx("Compute geodesic distance", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                smd.computeVertexGeodesicDistancesFromSource(
+                    sm,
+                    info.vertex_set.cells.items,
+                    UiData.diffusion_time,
+                    info.std_datas.halfedge_cotan_weight.?,
+                    info.std_datas.vertex_position.?,
+                    info.std_datas.vertex_area.?,
+                    info.std_datas.edge_length.?,
+                    info.std_datas.face_area.?,
+                    info.std_datas.face_normal.?,
+                    UiData.vertex_distance.?,
+                ) catch |err| {
+                    std.debug.print("Error computing geodesic distance: {}\n", .{err});
+                };
+            }
+            imgui_utils.tooltip(
+                \\ Read:
+                \\ - std halfedge_cotan_weight
+                \\ - std vertex_position
+                \\ - std vertex_area
+                \\ - std edge_length
+                \\ - std face_area
+                \\ - std face_normal
+                \\ Write:
+                \\ - given distance data
+            );
+            if (disabled) {
+                c.ImGui_EndDisabled();
+            }
         }
     }
 }

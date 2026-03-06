@@ -111,7 +111,7 @@ pub fn surfaceMeshListBox(
         while (sm_it.next()) |entry| {
             const sm = entry.value_ptr.*;
             const name = entry.key_ptr.*;
-            const is_selected = sm_store.selected_surface_mesh == sm;
+            const is_selected = sm_store.selected_model.modelType() == .surface_mesh and sm_store.selected_model.surface_mesh == sm;
             if (c.ImGui_SelectableEx(name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) {
                     return .{ .changed = sm }; // only return if it was not previously selected
@@ -137,7 +137,7 @@ pub fn pointCloudListBox(
         while (pc_it.next()) |entry| {
             const pc = entry.value_ptr.*;
             const name = entry.key_ptr.*;
-            const is_selected = pc_store.selected_point_cloud == pc;
+            const is_selected = pc_store.selected_model.modelType() == .point_cloud and pc_store.selected_model.point_cloud == pc;
             if (c.ImGui_SelectableEx(name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 if (!is_selected) {
                     return .{ .changed = pc }; // only return if it was not previously selected

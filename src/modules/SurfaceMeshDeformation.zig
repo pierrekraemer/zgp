@@ -42,10 +42,13 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
     const sm_store = &smd.app_ctx.surface_mesh_store;
     const view = &smd.app_ctx.view;
 
+    assert(smd.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = smd.app_ctx.selected_model.surface_mesh;
+
     switch (event.type) {
         c.SDL_EVENT_KEY_DOWN => {
             switch (event.key.key) {
-                c.SDLK_D => if (sm_store.selected_surface_mesh) |sm| {
+                c.SDLK_D => {
                     const info = sm_store.surfaceMeshInfo(sm);
                     // compute and store the average depth of the selected vertices
                     // used to compute the world-space translation corresponding to mouse movement in the view when dragging
@@ -72,7 +75,6 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
         },
         c.SDL_EVENT_MOUSE_MOTION => {
             if (smd.dragging) {
-                const sm = sm_store.selected_surface_mesh.?;
                 const info = sm_store.surfaceMeshInfo(sm);
                 const p_now = view.viewToWorldZ(event.motion.x, event.motion.y, smd.drag_z);
                 const p_prev = view.viewToWorldZ(event.motion.x - event.motion.xrel, event.motion.y - event.motion.yrel, smd.drag_z);

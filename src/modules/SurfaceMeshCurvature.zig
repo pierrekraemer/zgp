@@ -1,6 +1,7 @@
 const SurfaceMeshCurvature = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 
 const imgui_utils = @import("../ui/imgui.zig");
 const zgp_log = std.log.scoped(.zgp);
@@ -97,6 +98,9 @@ pub fn rightClickMenu(m: *Module) void {
     const smc: *SurfaceMeshCurvature = @alignCast(@fieldParentPtr("module", m));
     const sm_store = &smc.app_ctx.surface_mesh_store;
 
+    assert(smc.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = smc.app_ctx.selected_model.surface_mesh;
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
@@ -105,100 +109,96 @@ pub fn rightClickMenu(m: *Module) void {
     if (c.ImGui_BeginMenu(m.name.ptr)) {
         defer c.ImGui_EndMenu();
 
-        if (sm_store.selected_surface_mesh) |sm| {
-            const info = sm_store.surfaceMeshInfo(sm);
-            var curvature_datas = smc.surface_meshes_curvature_datas.getPtr(sm).?;
+        const info = sm_store.surfaceMeshInfo(sm);
+        var curvature_datas = smc.surface_meshes_curvature_datas.getPtr(sm).?;
 
-            if (c.ImGui_BeginMenu("Curvature")) {
-                defer c.ImGui_EndMenu();
-                c.ImGui_Text("Min curvature");
-                c.ImGui_PushID("MinCurvature");
-                switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, curvature_datas.vertex_kmin)) {
-                    .unchanged => {},
-                    .cleared => curvature_datas.vertex_kmin = null,
-                    .changed => |data| curvature_datas.vertex_kmin = data,
-                }
-                c.ImGui_PopID();
-                c.ImGui_Text("Min curvature dir");
-                c.ImGui_PushID("MinCurvatureDir");
-                switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, curvature_datas.vertex_Kmin)) {
-                    .unchanged => {},
-                    .cleared => curvature_datas.vertex_Kmin = null,
-                    .changed => |data| curvature_datas.vertex_Kmin = data,
-                }
-                c.ImGui_PopID();
-                c.ImGui_Text("Max curvature");
-                c.ImGui_PushID("MaxCurvature");
-                switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, curvature_datas.vertex_kmax)) {
-                    .unchanged => {},
-                    .cleared => curvature_datas.vertex_kmax = null,
-                    .changed => |data| curvature_datas.vertex_kmax = data,
-                }
-                c.ImGui_PopID();
-                c.ImGui_Text("Max curvature dir");
-                c.ImGui_PushID("MaxCurvatureDir");
-                switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, curvature_datas.vertex_Kmax)) {
-                    .unchanged => {},
-                    .cleared => curvature_datas.vertex_Kmax = null,
-                    .changed => |data| curvature_datas.vertex_Kmax = data,
-                }
-                c.ImGui_PopID();
+        if (c.ImGui_BeginMenu("Curvature")) {
+            defer c.ImGui_EndMenu();
+            c.ImGui_Text("Min curvature");
+            c.ImGui_PushID("MinCurvature");
+            switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, curvature_datas.vertex_kmin)) {
+                .unchanged => {},
+                .cleared => curvature_datas.vertex_kmin = null,
+                .changed => |data| curvature_datas.vertex_kmin = data,
+            }
+            c.ImGui_PopID();
+            c.ImGui_Text("Min curvature dir");
+            c.ImGui_PushID("MinCurvatureDir");
+            switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, curvature_datas.vertex_Kmin)) {
+                .unchanged => {},
+                .cleared => curvature_datas.vertex_Kmin = null,
+                .changed => |data| curvature_datas.vertex_Kmin = data,
+            }
+            c.ImGui_PopID();
+            c.ImGui_Text("Max curvature");
+            c.ImGui_PushID("MaxCurvature");
+            switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, curvature_datas.vertex_kmax)) {
+                .unchanged => {},
+                .cleared => curvature_datas.vertex_kmax = null,
+                .changed => |data| curvature_datas.vertex_kmax = data,
+            }
+            c.ImGui_PopID();
+            c.ImGui_Text("Max curvature dir");
+            c.ImGui_PushID("MaxCurvatureDir");
+            switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, curvature_datas.vertex_Kmax)) {
+                .unchanged => {},
+                .cleared => curvature_datas.vertex_Kmax = null,
+                .changed => |data| curvature_datas.vertex_Kmax = data,
+            }
+            c.ImGui_PopID();
 
-                if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                    inline for (@typeInfo(curvature.SurfaceMeshCurvatureDatas).@"struct".fields) |*field| {
-                        if (@field(curvature_datas, field.name) == null) {
-                            const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
-                            if (maybe_data) |data| {
-                                @field(curvature_datas, field.name) = data;
-                            } else |err| {
-                                zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
-                            }
+            if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                inline for (@typeInfo(curvature.SurfaceMeshCurvatureDatas).@"struct".fields) |*field| {
+                    if (@field(curvature_datas, field.name) == null) {
+                        const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
+                        if (maybe_data) |data| {
+                            @field(curvature_datas, field.name) = data;
+                        } else |err| {
+                            zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
                         }
                     }
                 }
-
-                const disabled =
-                    info.std_datas.vertex_position == null or
-                    info.std_datas.vertex_normal == null or
-                    info.std_datas.edge_dihedral_angle == null or
-                    info.std_datas.edge_length == null or
-                    info.std_datas.face_area == null or
-                    curvature_datas.vertex_kmin == null or
-                    curvature_datas.vertex_Kmin == null or
-                    curvature_datas.vertex_kmax == null or
-                    curvature_datas.vertex_Kmax == null;
-                if (disabled) {
-                    c.ImGui_BeginDisabled(true);
-                }
-                if (c.ImGui_ButtonEx(c.ICON_FA_GEAR ++ " Compute curvatures", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                    smc.computeVertexCurvatures(
-                        sm,
-                        info.std_datas.vertex_position.?,
-                        info.std_datas.vertex_normal.?,
-                        info.std_datas.edge_dihedral_angle.?,
-                        info.std_datas.edge_length.?,
-                        info.std_datas.face_area.?,
-                        curvature_datas.*,
-                    ) catch |err| {
-                        std.debug.print("Error computing curvatures: {}\n", .{err});
-                    };
-                }
-                imgui_utils.tooltip(
-                    \\ Read:
-                    \\ - std vertex_position
-                    \\ - std vertex_normal
-                    \\ - std edge_dihedral_angle
-                    \\ - std edge_length
-                    \\ - std face_area
-                    \\ Write:
-                    \\ - given curvature data (kmin, Kmin, kmax, Kmax)
-                );
-                if (disabled) {
-                    c.ImGui_EndDisabled();
-                }
             }
-        } else {
-            c.ImGui_Text("No Surface Mesh selected");
+
+            const disabled =
+                info.std_datas.vertex_position == null or
+                info.std_datas.vertex_normal == null or
+                info.std_datas.edge_dihedral_angle == null or
+                info.std_datas.edge_length == null or
+                info.std_datas.face_area == null or
+                curvature_datas.vertex_kmin == null or
+                curvature_datas.vertex_Kmin == null or
+                curvature_datas.vertex_kmax == null or
+                curvature_datas.vertex_Kmax == null;
+            if (disabled) {
+                c.ImGui_BeginDisabled(true);
+            }
+            if (c.ImGui_ButtonEx(c.ICON_FA_GEAR ++ " Compute curvatures", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                smc.computeVertexCurvatures(
+                    sm,
+                    info.std_datas.vertex_position.?,
+                    info.std_datas.vertex_normal.?,
+                    info.std_datas.edge_dihedral_angle.?,
+                    info.std_datas.edge_length.?,
+                    info.std_datas.face_area.?,
+                    curvature_datas.*,
+                ) catch |err| {
+                    std.debug.print("Error computing curvatures: {}\n", .{err});
+                };
+            }
+            imgui_utils.tooltip(
+                \\ Read:
+                \\ - std vertex_position
+                \\ - std vertex_normal
+                \\ - std edge_dihedral_angle
+                \\ - std edge_length
+                \\ - std face_area
+                \\ Write:
+                \\ - given curvature data (kmin, Kmin, kmax, Kmax)
+            );
+            if (disabled) {
+                c.ImGui_EndDisabled();
+            }
         }
     }
 }

@@ -1,6 +1,7 @@
 const SurfaceMeshStdDatas = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 
 const zgp_log = std.log.scoped(.zgp);
 
@@ -49,6 +50,9 @@ pub fn leftPanel(m: *Module) void {
     const smsd: *SurfaceMeshStdDatas = @alignCast(@fieldParentPtr("module", m));
     const sm_store = &smsd.app_ctx.surface_mesh_store;
 
+    assert(smsd.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = smsd.app_ctx.selected_model.surface_mesh;
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
@@ -56,120 +60,116 @@ pub fn leftPanel(m: *Module) void {
 
     const button_width = c.ImGui_CalcTextSize("" ++ c.ICON_FA_DATABASE).x + style.*.ItemSpacing.x;
 
-    if (sm_store.selected_surface_mesh) |sm| {
-        var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name
-        const info = sm_store.surfaceMeshInfo(sm);
+    var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name
+    const info = sm_store.surfaceMeshInfo(sm);
 
-        inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
-            const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type), .{}) catch "";
-            c.ImGui_SeparatorText(cells.ptr);
-            inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
-                if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
-                c.ImGui_Text(field.name);
-                c.ImGui_SameLine();
-                // align 2 buttons to the right of the text
-                c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + c.ImGui_GetContentRegionAvail().x - 2 * button_width - style.*.ItemSpacing.x);
-                const data_selected = @field(info.std_datas, field.name) != null;
-                if (!data_selected) {
-                    c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 128, 128, 200));
-                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 128, 128, 255));
-                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 128, 128, 128));
-                }
-                c.ImGui_PushID(field.name);
-                defer c.ImGui_PopID();
-                if (c.ImGui_Button("" ++ c.ICON_FA_DATABASE)) {
-                    c.ImGui_OpenPopup("select_data_popup", c.ImGuiPopupFlags_NoReopen);
-                }
-                if (!data_selected) {
-                    c.ImGui_PopStyleColorEx(3);
-                }
-                if (c.ImGui_BeginPopup("select_data_popup", 0)) {
-                    defer c.ImGui_EndPopup();
-                    c.ImGui_PushID("select_data_combobox");
-                    defer c.ImGui_PopID();
-                    switch (imgui_utils.surfaceMeshCellDataComboBox(
-                        sm,
-                        @typeInfo(field.type).optional.child.CellType,
-                        @typeInfo(field.type).optional.child.DataType,
-                        @field(info.std_datas, field.name),
-                    )) {
-                        .unchanged => {},
-                        .cleared => {
-                            sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, null));
-                            smsd.app_ctx.requestRedraw();
-                        },
-                        .changed => |data| {
-                            sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
-                            smsd.app_ctx.requestRedraw();
-                        },
-                    }
-                }
-                const data_tag = @field(SurfaceMeshStdDataTag, field.name);
-                inline for (std_data_computations) |comp| {
-                    if (comp.computes == data_tag) {
-                        c.ImGui_SameLine();
-                        const computable, const upToDate = dataComputableAndUpToDate(sm_store, sm, data_tag);
-                        if (!computable) {
-                            c.ImGui_BeginDisabled(true);
-                        }
-                        if (!upToDate) {
-                            c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
-                            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
-                            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
-                        } else {
-                            c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 200, 128, 200));
-                            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 200, 128, 255));
-                            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 200, 128, 128));
-                        }
-                        if (c.ImGui_Button("" ++ c.ICON_FA_GEARS)) {
-                            if (computable) {
-                                comp.compute(smsd.app_ctx, sm);
-                            } else {
-                                zgp_log.err("No computation found for {s} data", .{field.name});
-                            }
-                        }
-                        c.ImGui_PopStyleColorEx(3);
-                        if (!computable) {
-                            c.ImGui_EndDisabled();
-                        }
-                        // TODO: generate tooltip from reads & computes
-                        // imgui_utils.tooltip(
-                        //     \\ Read:
-                        //     \\ - vertex_position
-                        //     \\ Write:
-                        //     \\ - corner_angle
-                        // );
-                    }
-                }
+    inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
+        const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type), .{}) catch "";
+        c.ImGui_SeparatorText(cells.ptr);
+        inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
+            if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
+            c.ImGui_Text(field.name);
+            c.ImGui_SameLine();
+            // align 2 buttons to the right of the text
+            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + c.ImGui_GetContentRegionAvail().x - 2 * button_width - style.*.ItemSpacing.x);
+            const data_selected = @field(info.std_datas, field.name) != null;
+            if (!data_selected) {
+                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 128, 128, 200));
+                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 128, 128, 255));
+                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 128, 128, 128));
             }
-        }
-
-        c.ImGui_Separator();
-
-        if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
-                if (@field(info.std_datas, field.name) == null) {
-                    const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
-                    if (maybe_data) |data| {
+            c.ImGui_PushID(field.name);
+            defer c.ImGui_PopID();
+            if (c.ImGui_Button("" ++ c.ICON_FA_DATABASE)) {
+                c.ImGui_OpenPopup("select_data_popup", c.ImGuiPopupFlags_NoReopen);
+            }
+            if (!data_selected) {
+                c.ImGui_PopStyleColorEx(3);
+            }
+            if (c.ImGui_BeginPopup("select_data_popup", 0)) {
+                defer c.ImGui_EndPopup();
+                c.ImGui_PushID("select_data_combobox");
+                defer c.ImGui_PopID();
+                switch (imgui_utils.surfaceMeshCellDataComboBox(
+                    sm,
+                    @typeInfo(field.type).optional.child.CellType,
+                    @typeInfo(field.type).optional.child.DataType,
+                    @field(info.std_datas, field.name),
+                )) {
+                    .unchanged => {},
+                    .cleared => {
+                        sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, null));
+                        smsd.app_ctx.requestRedraw();
+                    },
+                    .changed => |data| {
                         sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
                         smsd.app_ctx.requestRedraw();
-                    } else |err| {
-                        zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
-                    }
+                    },
                 }
             }
-        }
-
-        if (c.ImGui_ButtonEx(c.ICON_FA_GEAR ++ " Update outdated std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            const data_tag = @field(SurfaceMeshStdDataTag, field.name);
             inline for (std_data_computations) |comp| {
-                const computable, const upToDate = dataComputableAndUpToDate(sm_store, sm, comp.computes);
-                if (computable and !upToDate) {
-                    comp.compute(smsd.app_ctx, sm);
+                if (comp.computes == data_tag) {
+                    c.ImGui_SameLine();
+                    const computable, const upToDate = dataComputableAndUpToDate(sm_store, sm, data_tag);
+                    if (!computable) {
+                        c.ImGui_BeginDisabled(true);
+                    }
+                    if (!upToDate) {
+                        c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
+                        c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
+                        c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
+                    } else {
+                        c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 200, 128, 200));
+                        c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 200, 128, 255));
+                        c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 200, 128, 128));
+                    }
+                    if (c.ImGui_Button("" ++ c.ICON_FA_GEARS)) {
+                        if (computable) {
+                            comp.compute(smsd.app_ctx, sm);
+                        } else {
+                            zgp_log.err("No computation found for {s} data", .{field.name});
+                        }
+                    }
+                    c.ImGui_PopStyleColorEx(3);
+                    if (!computable) {
+                        c.ImGui_EndDisabled();
+                    }
+                    // TODO: generate tooltip from reads & computes
+                    // imgui_utils.tooltip(
+                    //     \\ Read:
+                    //     \\ - vertex_position
+                    //     \\ Write:
+                    //     \\ - corner_angle
+                    // );
                 }
             }
         }
-    } else {
-        c.ImGui_Text("No Surface Mesh selected");
+    }
+
+    c.ImGui_Separator();
+
+    if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+        inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
+            if (@field(info.std_datas, field.name) == null) {
+                const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
+                if (maybe_data) |data| {
+                    sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
+                    smsd.app_ctx.requestRedraw();
+                } else |err| {
+                    zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
+                }
+            }
+        }
+    }
+
+    if (c.ImGui_ButtonEx(c.ICON_FA_GEAR ++ " Update outdated std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+        inline for (std_data_computations) |comp| {
+            const computable, const upToDate = dataComputableAndUpToDate(sm_store, sm, comp.computes);
+            if (computable and !upToDate) {
+                comp.compute(smsd.app_ctx, sm);
+            }
+        }
     }
 }
 

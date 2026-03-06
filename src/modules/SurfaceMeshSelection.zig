@@ -1,8 +1,8 @@
 const SurfaceMeshSelection = @This();
 
 const std = @import("std");
-const gl = @import("gl");
 const assert = std.debug.assert;
+const gl = @import("gl");
 
 const zgp_log = std.log.scoped(.zgp);
 
@@ -141,7 +141,8 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     const sm_store = &sms.app_ctx.surface_mesh_store;
 
     // only draw selection for the currently selected SurfaceMesh
-    const sm = sm_store.selected_surface_mesh orelse return;
+    if (sms.app_ctx.selected_model.modelType() != .surface_mesh) return;
+    const sm = sms.app_ctx.selected_model.surface_mesh;
     const info = sm_store.surfaceMeshInfo(sm);
 
     const sd = sms.surface_meshes_data.getPtr(sm) orelse return;
@@ -225,12 +226,13 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
     const sm_store = &sms.app_ctx.surface_mesh_store;
     const view = &sms.app_ctx.view;
 
+    assert(sms.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = sms.app_ctx.selected_model.surface_mesh;
+
     switch (event.type) {
         c.SDL_EVENT_KEY_DOWN => {
             switch (event.key.key) {
-                c.SDLK_S => if (sm_store.selected_surface_mesh) |_| {
-                    sms.selecting = true;
-                },
+                c.SDLK_S => sms.selecting = true,
                 else => {},
             }
         },
@@ -250,7 +252,6 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
         },
         c.SDL_EVENT_MOUSE_MOTION => {
             if (sms.selecting) {
-                const sm = sm_store.selected_surface_mesh.?;
                 const info = sm_store.surfaceMeshInfo(sm);
                 if (info.bvh.bvh_ptr) |_| {
                     if (view.viewToWorldRayIfGeometry(event.motion.x, event.motion.y)) |ray| {
@@ -286,7 +287,6 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
             switch (event.button.button) {
                 c.SDL_BUTTON_LEFT => {
                     if (sms.selecting) {
-                        const sm = sm_store.selected_surface_mesh.?;
                         const info = sm_store.surfaceMeshInfo(sm);
                         // TODO: fallback to brute-force search if the BVH is not available
                         if (info.bvh.bvh_ptr) |_| {
@@ -356,115 +356,114 @@ pub fn rightPanel(m: *Module) void {
     const sms: *SurfaceMeshSelection = @alignCast(@fieldParentPtr("module", m));
     const sm_store = &sms.app_ctx.surface_mesh_store;
 
+    assert(sms.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = sms.app_ctx.selected_model.surface_mesh;
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (sm_store.selected_surface_mesh) |sm| {
-        const sd = sms.surface_meshes_data.getPtr(sm).?;
-        const info = sm_store.surfaceMeshInfo(sm);
+    const sd = sms.surface_meshes_data.getPtr(sm).?;
+    const info = sm_store.surfaceMeshInfo(sm);
 
-        c.ImGui_TextWrapped("Hold (shift+)'S' to (de)select cells");
-        if (info.bvh.bvh_ptr == null) {
-            c.ImGui_TextWrapped("A BVH must exist for the SurfaceMesh to select cells");
+    c.ImGui_TextWrapped("Hold (shift+)'S' to (de)select cells");
+    if (info.bvh.bvh_ptr == null) {
+        c.ImGui_TextWrapped("A BVH must exist for the SurfaceMesh to select cells");
+    }
+    c.ImGui_Separator();
+
+    var buf: [64]u8 = undefined;
+
+    inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
+        c.ImGui_PushID(@tagName(cell_type));
+        defer c.ImGui_PopID();
+        switch (cell_type) {
+            .vertex => {
+                const text = std.fmt.bufPrintZ(&buf, "Vertices | #selected: {d}", .{info.vertex_set.cells.items.len}) catch "";
+                c.ImGui_SeparatorText(text);
+                if (c.ImGui_RadioButton("Vertex", sms.selecting_cell_type == .vertex)) {
+                    sms.selecting_cell_type = .vertex;
+                }
+                c.ImGui_SameLine();
+                const disabled = info.vertex_set.cells.items.len == 0;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_Button(if (info.vertex_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
+                    info.vertex_set.clear();
+                    sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
+                    sms.app_ctx.requestRedraw();
+                }
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
+
+                c.ImGui_Text("Size");
+                c.ImGui_PushID("DrawSelectedVerticesSize");
+                if (c.ImGui_SliderFloatEx("", &sd.point_sphere_shader_parameters.sphere_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+                    sms.app_ctx.requestRedraw();
+                }
+                c.ImGui_PopID();
+                if (c.ImGui_ColorEdit3("Color##SelectedVerticesColorEdit", &sd.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    sms.app_ctx.requestRedraw();
+                }
+            },
+            .edge => {
+                const text = std.fmt.bufPrintZ(&buf, "Edges | #selected: {d}", .{info.edge_set.cells.items.len}) catch "";
+                c.ImGui_SeparatorText(text);
+                if (c.ImGui_RadioButton("Edge", sms.selecting_cell_type == .edge)) {
+                    sms.selecting_cell_type = .edge;
+                }
+                c.ImGui_SameLine();
+                const disabled = info.edge_set.cells.items.len == 0;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_Button(if (info.edge_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
+                    info.edge_set.clear();
+                    sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
+                    sms.app_ctx.requestRedraw();
+                }
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
+
+                c.ImGui_Text("Size");
+                c.ImGui_PushID("DrawSelectedEdgesSize");
+                if (c.ImGui_SliderFloatEx("", &sd.line_cylinder_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+                    sms.app_ctx.requestRedraw();
+                }
+                c.ImGui_PopID();
+                if (c.ImGui_ColorEdit3("Color##SelectedEdgesColorEdit", &sd.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    sms.app_ctx.requestRedraw();
+                }
+            },
+            .face => {
+                const text = std.fmt.bufPrintZ(&buf, "Faces | #selected: {d}", .{info.face_set.cells.items.len}) catch "";
+                c.ImGui_SeparatorText(text);
+                if (c.ImGui_RadioButton("Face", sms.selecting_cell_type == .face)) {
+                    sms.selecting_cell_type = .face;
+                }
+                c.ImGui_SameLine();
+                const disabled = info.face_set.cells.items.len == 0;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_Button(if (info.face_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
+                    info.face_set.clear();
+                    sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
+                    sms.app_ctx.requestRedraw();
+                }
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
+
+                if (c.ImGui_ColorEdit4("Global color##SelectedFacesColorEdit", &sd.tri_flat_shader_parameters.vertex_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    sms.app_ctx.requestRedraw();
+                }
+            },
+            else => {},
         }
-        c.ImGui_Separator();
-
-        var buf: [64]u8 = undefined;
-
-        inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
-            c.ImGui_PushID(@tagName(cell_type));
-            defer c.ImGui_PopID();
-            switch (cell_type) {
-                .vertex => {
-                    const text = std.fmt.bufPrintZ(&buf, "Vertices | #selected: {d}", .{info.vertex_set.cells.items.len}) catch "";
-                    c.ImGui_SeparatorText(text);
-                    if (c.ImGui_RadioButton("Vertex", sms.selecting_cell_type == .vertex)) {
-                        sms.selecting_cell_type = .vertex;
-                    }
-                    c.ImGui_SameLine();
-                    const disabled = info.vertex_set.cells.items.len == 0;
-                    if (disabled) {
-                        c.ImGui_BeginDisabled(true);
-                    }
-                    if (c.ImGui_Button(if (info.vertex_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
-                        info.vertex_set.clear();
-                        sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
-                        sms.app_ctx.requestRedraw();
-                    }
-                    if (disabled) {
-                        c.ImGui_EndDisabled();
-                    }
-
-                    c.ImGui_Text("Size");
-                    c.ImGui_PushID("DrawSelectedVerticesSize");
-                    if (c.ImGui_SliderFloatEx("", &sd.point_sphere_shader_parameters.sphere_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                        sms.app_ctx.requestRedraw();
-                    }
-                    c.ImGui_PopID();
-                    if (c.ImGui_ColorEdit3("Color##SelectedVerticesColorEdit", &sd.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
-                        sms.app_ctx.requestRedraw();
-                    }
-                },
-                .edge => {
-                    const text = std.fmt.bufPrintZ(&buf, "Edges | #selected: {d}", .{info.edge_set.cells.items.len}) catch "";
-                    c.ImGui_SeparatorText(text);
-                    if (c.ImGui_RadioButton("Edge", sms.selecting_cell_type == .edge)) {
-                        sms.selecting_cell_type = .edge;
-                    }
-                    c.ImGui_SameLine();
-                    const disabled = info.edge_set.cells.items.len == 0;
-                    if (disabled) {
-                        c.ImGui_BeginDisabled(true);
-                    }
-                    if (c.ImGui_Button(if (info.edge_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
-                        info.edge_set.clear();
-                        sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
-                        sms.app_ctx.requestRedraw();
-                    }
-                    if (disabled) {
-                        c.ImGui_EndDisabled();
-                    }
-
-                    c.ImGui_Text("Size");
-                    c.ImGui_PushID("DrawSelectedEdgesSize");
-                    if (c.ImGui_SliderFloatEx("", &sd.line_cylinder_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                        sms.app_ctx.requestRedraw();
-                    }
-                    c.ImGui_PopID();
-                    if (c.ImGui_ColorEdit3("Color##SelectedEdgesColorEdit", &sd.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
-                        sms.app_ctx.requestRedraw();
-                    }
-                },
-                .face => {
-                    const text = std.fmt.bufPrintZ(&buf, "Faces | #selected: {d}", .{info.face_set.cells.items.len}) catch "";
-                    c.ImGui_SeparatorText(text);
-                    if (c.ImGui_RadioButton("Face", sms.selecting_cell_type == .face)) {
-                        sms.selecting_cell_type = .face;
-                    }
-                    c.ImGui_SameLine();
-                    const disabled = info.face_set.cells.items.len == 0;
-                    if (disabled) {
-                        c.ImGui_BeginDisabled(true);
-                    }
-                    if (c.ImGui_Button(if (info.face_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
-                        info.face_set.clear();
-                        sm_store.surfaceMeshCellSetUpdated(sm, cell_type);
-                        sms.app_ctx.requestRedraw();
-                    }
-                    if (disabled) {
-                        c.ImGui_EndDisabled();
-                    }
-
-                    if (c.ImGui_ColorEdit4("Global color##SelectedFacesColorEdit", &sd.tri_flat_shader_parameters.vertex_color, c.ImGuiColorEditFlags_NoInputs)) {
-                        sms.app_ctx.requestRedraw();
-                    }
-                },
-                else => {},
-            }
-        }
-    } else {
-        c.ImGui_Text("No SurfaceMesh selected");
     }
 }

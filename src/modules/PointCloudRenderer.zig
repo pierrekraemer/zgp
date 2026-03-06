@@ -1,6 +1,7 @@
 const PointCloudRenderer = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 const gl = @import("gl");
 
 const c = @import("../main.zig").c;
@@ -310,107 +311,106 @@ pub fn draw(
 pub fn rightPanel(m: *Module) void {
     const pcr: *PointCloudRenderer = @alignCast(@fieldParentPtr("module", m));
 
+    assert(pcr.app_ctx.selected_model.modelType() == .point_cloud);
+    const pc = pcr.app_ctx.selected_model.point_cloud;
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (pcr.app_ctx.point_cloud_store.selected_point_cloud) |pc| {
-        const p = pcr.parameters.getPtr(pc).?;
-        if (c.ImGui_Checkbox("draw points", &p.draw_points)) {
-            pcr.app_ctx.requestRedraw();
+    const p = pcr.parameters.getPtr(pc).?;
+    if (c.ImGui_Checkbox("draw points", &p.draw_points)) {
+        pcr.app_ctx.requestRedraw();
+    }
+    if (p.draw_points) {
+        c.ImGui_Text("Size");
+        {
+            c.ImGui_BeginGroup();
+            defer c.ImGui_EndGroup();
+            if (c.ImGui_RadioButton("Global##DrawPointsRadiusGlobal", p.draw_points_radius_defined_on == .global)) {
+                p.draw_points_radius_defined_on = .global;
+                pcr.app_ctx.requestRedraw();
+            }
+            c.ImGui_SameLine();
+            if (c.ImGui_RadioButton("Per point##DrawPointsRadiusPerPoint", p.draw_points_radius_defined_on == .point)) {
+                p.draw_points_radius_defined_on = .point;
+                pcr.app_ctx.requestRedraw();
+            }
         }
-        if (p.draw_points) {
-            c.ImGui_Text("Size");
-            {
-                c.ImGui_BeginGroup();
-                defer c.ImGui_EndGroup();
-                if (c.ImGui_RadioButton("Global##DrawPointsRadiusGlobal", p.draw_points_radius_defined_on == .global)) {
-                    p.draw_points_radius_defined_on = .global;
+        switch (p.draw_points_radius_defined_on) {
+            .global => {
+                c.ImGui_PushID("DrawPointsSize");
+                if (c.ImGui_SliderFloatEx("", &p.point_sphere_shader_parameters.sphere_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+                    // sync value to other point sphere shaders
+                    p.point_sphere_color_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
+                    p.point_sphere_scalar_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
                     pcr.app_ctx.requestRedraw();
                 }
-                c.ImGui_SameLine();
-                if (c.ImGui_RadioButton("Per point##DrawPointsRadiusPerPoint", p.draw_points_radius_defined_on == .point)) {
-                    p.draw_points_radius_defined_on = .point;
-                    pcr.app_ctx.requestRedraw();
-                }
-            }
-            switch (p.draw_points_radius_defined_on) {
-                .global => {
-                    c.ImGui_PushID("DrawPointsSize");
-                    if (c.ImGui_SliderFloatEx("", &p.point_sphere_shader_parameters.sphere_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                        // sync value to other point sphere shaders
-                        p.point_sphere_color_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
-                        p.point_sphere_scalar_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
-                        pcr.app_ctx.requestRedraw();
-                    }
-                    c.ImGui_PopID();
-                },
-                .point => {},
-            }
+                c.ImGui_PopID();
+            },
+            .point => {},
+        }
 
-            c.ImGui_Text("Color");
-            {
-                c.ImGui_BeginGroup();
-                defer c.ImGui_EndGroup();
-                if (c.ImGui_RadioButton("Global##DrawPointsColorGlobal", p.draw_points_color.defined_on == .global)) {
-                    p.draw_points_color.defined_on = .global;
-                    pcr.app_ctx.requestRedraw();
-                }
-                c.ImGui_SameLine();
-                if (c.ImGui_RadioButton("Per point##DrawPointsColorPerPoint", p.draw_points_color.defined_on == .point)) {
-                    p.draw_points_color.defined_on = .point;
-                    pcr.app_ctx.requestRedraw();
-                }
+        c.ImGui_Text("Color");
+        {
+            c.ImGui_BeginGroup();
+            defer c.ImGui_EndGroup();
+            if (c.ImGui_RadioButton("Global##DrawPointsColorGlobal", p.draw_points_color.defined_on == .global)) {
+                p.draw_points_color.defined_on = .global;
+                pcr.app_ctx.requestRedraw();
             }
-            switch (p.draw_points_color.defined_on) {
-                .global => {
-                    if (c.ImGui_ColorEdit3("Global color##DrawPointsColorGlobalEdit", &p.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
-                        // sync value to other point sphere shaders
-                        p.point_sphere_radius_per_vertex_shader_parameters.sphere_color = p.point_sphere_shader_parameters.sphere_color;
-                        pcr.app_ctx.requestRedraw();
-                    }
-                },
-                .point => {
-                    {
-                        c.ImGui_BeginGroup();
-                        defer c.ImGui_EndGroup();
-                        if (c.ImGui_RadioButton("Scalar##DrawPointsColorPointScalar", p.draw_points_color.type == .scalar)) {
-                            p.draw_points_color.type = .scalar;
-                            pcr.app_ctx.requestRedraw();
-                        }
-                        c.ImGui_SameLine();
-                        if (c.ImGui_RadioButton("Vector##DrawPointsColorPointVector", p.draw_points_color.type == .vector)) {
-                            p.draw_points_color.type = .vector;
-                            pcr.app_ctx.requestRedraw();
-                        }
-                    }
-                    c.ImGui_PushID("DrawPointsColorPointData");
-                    switch (p.draw_points_color.type) {
-                        .scalar => switch (imgui_utils.pointCloudDataComboBox(
-                            pc,
-                            f32,
-                            p.draw_points_color.point_scalar_data,
-                        )) {
-                            .unchanged => {},
-                            .cleared => pcr.setPointCloudDrawPointsColorData(pc, f32, null),
-                            .changed => |data| pcr.setPointCloudDrawPointsColorData(pc, f32, data),
-                        },
-                        .vector => switch (imgui_utils.pointCloudDataComboBox(
-                            pc,
-                            Vec3f,
-                            p.draw_points_color.point_vector_data,
-                        )) {
-                            .unchanged => {},
-                            .cleared => pcr.setPointCloudDrawPointsColorData(pc, Vec3f, null),
-                            .changed => |data| pcr.setPointCloudDrawPointsColorData(pc, Vec3f, data),
-                        },
-                    }
-                    c.ImGui_PopID();
-                },
+            c.ImGui_SameLine();
+            if (c.ImGui_RadioButton("Per point##DrawPointsColorPerPoint", p.draw_points_color.defined_on == .point)) {
+                p.draw_points_color.defined_on = .point;
+                pcr.app_ctx.requestRedraw();
             }
         }
-    } else {
-        c.ImGui_Text("No Point Cloud selected");
+        switch (p.draw_points_color.defined_on) {
+            .global => {
+                if (c.ImGui_ColorEdit3("Global color##DrawPointsColorGlobalEdit", &p.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    // sync value to other point sphere shaders
+                    p.point_sphere_radius_per_vertex_shader_parameters.sphere_color = p.point_sphere_shader_parameters.sphere_color;
+                    pcr.app_ctx.requestRedraw();
+                }
+            },
+            .point => {
+                {
+                    c.ImGui_BeginGroup();
+                    defer c.ImGui_EndGroup();
+                    if (c.ImGui_RadioButton("Scalar##DrawPointsColorPointScalar", p.draw_points_color.type == .scalar)) {
+                        p.draw_points_color.type = .scalar;
+                        pcr.app_ctx.requestRedraw();
+                    }
+                    c.ImGui_SameLine();
+                    if (c.ImGui_RadioButton("Vector##DrawPointsColorPointVector", p.draw_points_color.type == .vector)) {
+                        p.draw_points_color.type = .vector;
+                        pcr.app_ctx.requestRedraw();
+                    }
+                }
+                c.ImGui_PushID("DrawPointsColorPointData");
+                switch (p.draw_points_color.type) {
+                    .scalar => switch (imgui_utils.pointCloudDataComboBox(
+                        pc,
+                        f32,
+                        p.draw_points_color.point_scalar_data,
+                    )) {
+                        .unchanged => {},
+                        .cleared => pcr.setPointCloudDrawPointsColorData(pc, f32, null),
+                        .changed => |data| pcr.setPointCloudDrawPointsColorData(pc, f32, data),
+                    },
+                    .vector => switch (imgui_utils.pointCloudDataComboBox(
+                        pc,
+                        Vec3f,
+                        p.draw_points_color.point_vector_data,
+                    )) {
+                        .unchanged => {},
+                        .cleared => pcr.setPointCloudDrawPointsColorData(pc, Vec3f, null),
+                        .changed => |data| pcr.setPointCloudDrawPointsColorData(pc, Vec3f, data),
+                    },
+                }
+                c.ImGui_PopID();
+            },
+        }
     }
 }

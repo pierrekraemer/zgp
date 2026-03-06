@@ -1,6 +1,7 @@
 const SurfaceMeshRenderer = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 const gl = @import("gl");
 
 const c = @import("../main.zig").c;
@@ -467,218 +468,216 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
 /// Show a UI panel to control the SurfaceMeshRendererParameters of the selected SurfaceMesh.
 pub fn rightPanel(m: *Module) void {
     const smr: *SurfaceMeshRenderer = @alignCast(@fieldParentPtr("module", m));
-    const sm_store = &smr.app_ctx.surface_mesh_store;
+
+    assert(smr.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = smr.app_ctx.selected_model.surface_mesh;
 
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    if (sm_store.selected_surface_mesh) |sm| {
-        const p = smr.parameters.getPtr(sm).?;
+    const p = smr.parameters.getPtr(sm).?;
 
-        c.ImGui_SeparatorText("Vertices");
-        if (c.ImGui_Checkbox("draw vertices", &p.draw_vertices)) {
+    c.ImGui_SeparatorText("Vertices");
+    if (c.ImGui_Checkbox("draw vertices", &p.draw_vertices)) {
+        smr.app_ctx.requestRedraw();
+    }
+    if (p.draw_vertices) {
+        c.ImGui_Text("Size");
+        c.ImGui_PushID("DrawVerticesSize");
+        if (c.ImGui_SliderFloatEx("", &p.point_sphere_shader_parameters.sphere_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+            // sync value to other point sphere shaders
+            p.point_sphere_scalar_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
+            p.point_sphere_color_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
             smr.app_ctx.requestRedraw();
         }
-        if (p.draw_vertices) {
-            c.ImGui_Text("Size");
-            c.ImGui_PushID("DrawVerticesSize");
-            if (c.ImGui_SliderFloatEx("", &p.point_sphere_shader_parameters.sphere_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                // sync value to other point sphere shaders
-                p.point_sphere_scalar_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
-                p.point_sphere_color_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
+        c.ImGui_PopID();
+        c.ImGui_Text("Color");
+        {
+            c.ImGui_BeginGroup();
+            defer c.ImGui_EndGroup();
+            if (c.ImGui_RadioButton("Global##DrawVerticesColorGlobal", p.draw_vertices_color.defined_on == .global)) {
+                p.draw_vertices_color.defined_on = .global;
                 smr.app_ctx.requestRedraw();
             }
-            c.ImGui_PopID();
-            c.ImGui_Text("Color");
-            {
-                c.ImGui_BeginGroup();
-                defer c.ImGui_EndGroup();
-                if (c.ImGui_RadioButton("Global##DrawVerticesColorGlobal", p.draw_vertices_color.defined_on == .global)) {
-                    p.draw_vertices_color.defined_on = .global;
-                    smr.app_ctx.requestRedraw();
-                }
-                c.ImGui_SameLine();
-                if (c.ImGui_RadioButton("Per vertex##DrawVerticesColorPerVertex", p.draw_vertices_color.defined_on == .vertex)) {
-                    p.draw_vertices_color.defined_on = .vertex;
-                    smr.app_ctx.requestRedraw();
-                }
+            c.ImGui_SameLine();
+            if (c.ImGui_RadioButton("Per vertex##DrawVerticesColorPerVertex", p.draw_vertices_color.defined_on == .vertex)) {
+                p.draw_vertices_color.defined_on = .vertex;
+                smr.app_ctx.requestRedraw();
             }
-            switch (p.draw_vertices_color.defined_on) {
-                .global => {
-                    if (c.ImGui_ColorEdit3("Global color##DrawVerticesColorGlobalEdit", &p.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
+        }
+        switch (p.draw_vertices_color.defined_on) {
+            .global => {
+                if (c.ImGui_ColorEdit3("Global color##DrawVerticesColorGlobalEdit", &p.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    smr.app_ctx.requestRedraw();
+                }
+            },
+            .vertex => {
+                {
+                    c.ImGui_BeginGroup();
+                    defer c.ImGui_EndGroup();
+                    if (c.ImGui_RadioButton("Scalar##DrawVerticesColorVertexScalar", p.draw_vertices_color.type == .scalar)) {
+                        p.draw_vertices_color.type = .scalar;
                         smr.app_ctx.requestRedraw();
                     }
-                },
-                .vertex => {
-                    {
-                        c.ImGui_BeginGroup();
-                        defer c.ImGui_EndGroup();
-                        if (c.ImGui_RadioButton("Scalar##DrawVerticesColorVertexScalar", p.draw_vertices_color.type == .scalar)) {
-                            p.draw_vertices_color.type = .scalar;
-                            smr.app_ctx.requestRedraw();
-                        }
-                        c.ImGui_SameLine();
-                        if (c.ImGui_RadioButton("Vector##DrawVerticesColorVertexVector", p.draw_vertices_color.type == .vector)) {
-                            p.draw_vertices_color.type = .vector;
-                            smr.app_ctx.requestRedraw();
-                        }
-                    }
-                    c.ImGui_PushID("DrawVerticesColorVertexData");
-                    switch (p.draw_vertices_color.type) {
-                        .scalar => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, p.draw_vertices_color.vertex_scalar_data)) {
-                            .unchanged => {},
-                            .cleared => smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, f32, null),
-                            .changed => |data| smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, f32, data),
-                        },
-                        .vector => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, p.draw_vertices_color.vertex_vector_data)) {
-                            .unchanged => {},
-                            .cleared => smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, Vec3f, null),
-                            .changed => |data| smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, Vec3f, data),
-                        },
-                    }
-                    c.ImGui_PopID();
-                },
-                else => unreachable,
-            }
-        }
-
-        c.ImGui_SeparatorText("Edges");
-        if (c.ImGui_Checkbox("draw edges", &p.draw_edges)) {
-            smr.app_ctx.requestRedraw();
-        }
-        if (p.draw_edges) {
-            c.ImGui_Text("Width");
-            c.ImGui_PushID("DrawEdgesWidth");
-            if (c.ImGui_SliderFloatEx("", &p.line_cylinder_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                smr.app_ctx.requestRedraw();
-            }
-            c.ImGui_PopID();
-            if (c.ImGui_ColorEdit4("Global color##DrawEdgesColorGlobalEdit", &p.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
-                smr.app_ctx.requestRedraw();
-            }
-        }
-
-        c.ImGui_SeparatorText("Faces");
-        if (c.ImGui_Checkbox("draw faces", &p.draw_faces)) {
-            smr.app_ctx.requestRedraw();
-        }
-        if (p.draw_faces) {
-            c.ImGui_Text("Color");
-            {
-                c.ImGui_BeginGroup();
-                defer c.ImGui_EndGroup();
-                if (c.ImGui_RadioButton("Global##DrawFacesColorGlobal", p.draw_faces_color.defined_on == .global)) {
-                    p.draw_faces_color.defined_on = .global;
-                    smr.app_ctx.requestRedraw();
-                }
-                c.ImGui_SameLine();
-                if (c.ImGui_RadioButton("Per vertex##DrawFacesColorPerVertex", p.draw_faces_color.defined_on == .vertex)) {
-                    p.draw_faces_color.defined_on = .vertex;
-                    smr.app_ctx.requestRedraw();
-                }
-                c.ImGui_SameLine();
-                if (c.ImGui_RadioButton("Per face##DrawFacesColorPerFace", p.draw_faces_color.defined_on == .face)) {
-                    p.draw_faces_color.defined_on = .face;
-                    smr.app_ctx.requestRedraw();
-                }
-            }
-            switch (p.draw_faces_color.defined_on) {
-                .global => {
-                    if (c.ImGui_ColorEdit4("Global color##DrawFacesColorGlobalEdit", &p.tri_flat_shader_parameters.vertex_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    c.ImGui_SameLine();
+                    if (c.ImGui_RadioButton("Vector##DrawVerticesColorVertexVector", p.draw_vertices_color.type == .vector)) {
+                        p.draw_vertices_color.type = .vector;
                         smr.app_ctx.requestRedraw();
                     }
-                },
-                .vertex => {
-                    {
-                        c.ImGui_BeginGroup();
-                        defer c.ImGui_EndGroup();
-                        if (c.ImGui_RadioButton("Scalar##DrawFacesColorVertexScalar", p.draw_faces_color.type == .scalar)) {
-                            p.draw_faces_color.type = .scalar;
-                            smr.app_ctx.requestRedraw();
-                        }
-                        c.ImGui_SameLine();
-                        if (c.ImGui_RadioButton("Vector##DrawFacesColorVertexVector", p.draw_faces_color.type == .vector)) {
-                            p.draw_faces_color.type = .vector;
-                            smr.app_ctx.requestRedraw();
-                        }
-                    }
-                    c.ImGui_PushID("DrawFacesColorVertexData");
-                    switch (p.draw_faces_color.type) {
-                        .scalar => {
-                            switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, p.draw_faces_color.vertex_scalar_data)) {
-                                .unchanged => {},
-                                .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, f32, null),
-                                .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, f32, data),
-                            }
-                            if (c.ImGui_Checkbox("Show isolines", &p.tri_flat_scalar_per_vertex_shader_parameters.show_isolines)) {
-                                smr.app_ctx.requestRedraw();
-                            }
-                            c.ImGui_Text("Nb isolines");
-                            c.ImGui_PushID("NbIsolines");
-                            if (c.ImGui_SliderInt("", &p.tri_flat_scalar_per_vertex_shader_parameters.nb_isolines, 1, 100)) {
-                                smr.app_ctx.requestRedraw();
-                            }
-                            c.ImGui_PopID();
-                        },
-                        .vector => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, p.draw_faces_color.vertex_vector_data)) {
-                            .unchanged => {},
-                            .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec3f, null),
-                            .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec3f, data),
-                        },
-                    }
-                    c.ImGui_PopID();
-                },
-                .face => {
-                    {
-                        c.ImGui_BeginGroup();
-                        defer c.ImGui_EndGroup();
-                        if (c.ImGui_RadioButton("Scalar##DrawFacesColorFaceScalar", p.draw_faces_color.type == .scalar)) {
-                            p.draw_faces_color.type = .scalar;
-                            smr.app_ctx.requestRedraw();
-                        }
-                        c.ImGui_SameLine();
-                        if (c.ImGui_RadioButton("Vector##DrawFacesColorFaceVector", p.draw_faces_color.type == .vector)) {
-                            p.draw_faces_color.type = .vector;
-                            smr.app_ctx.requestRedraw();
-                        }
-                    }
-                    c.ImGui_PushID("DrawFacesColorFaceData");
-                    switch (p.draw_faces_color.type) {
-                        .scalar => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .face, f32, p.draw_faces_color.face_scalar_data)) {
-                            .unchanged => {},
-                            .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .face, f32, null),
-                            .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .face, f32, data),
-                        },
-                        .vector => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .face, Vec3f, p.draw_faces_color.face_vector_data)) {
-                            .unchanged => {},
-                            .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .face, Vec3f, null),
-                            .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .face, Vec3f, data),
-                        },
-                    }
-                    c.ImGui_PopID();
-                },
-                else => unreachable,
-            }
+                }
+                c.ImGui_PushID("DrawVerticesColorVertexData");
+                switch (p.draw_vertices_color.type) {
+                    .scalar => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, p.draw_vertices_color.vertex_scalar_data)) {
+                        .unchanged => {},
+                        .cleared => smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, f32, null),
+                        .changed => |data| smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, f32, data),
+                    },
+                    .vector => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, p.draw_vertices_color.vertex_vector_data)) {
+                        .unchanged => {},
+                        .cleared => smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, Vec3f, null),
+                        .changed => |data| smr.setSurfaceMeshDrawVerticesColorData(sm, .vertex, Vec3f, data),
+                    },
+                }
+                c.ImGui_PopID();
+            },
+            else => unreachable,
         }
+    }
 
-        c.ImGui_SeparatorText("Boundaries");
-        if (c.ImGui_Checkbox("draw boundaries", &p.draw_boundaries)) {
+    c.ImGui_SeparatorText("Edges");
+    if (c.ImGui_Checkbox("draw edges", &p.draw_edges)) {
+        smr.app_ctx.requestRedraw();
+    }
+    if (p.draw_edges) {
+        c.ImGui_Text("Width");
+        c.ImGui_PushID("DrawEdgesWidth");
+        if (c.ImGui_SliderFloatEx("", &p.line_cylinder_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
             smr.app_ctx.requestRedraw();
         }
-        if (p.draw_boundaries) {
-            c.ImGui_Text("Width");
-            c.ImGui_PushID("DrawBoundariesWidth");
-            if (c.ImGui_SliderFloatEx("", &p.boundary_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+        c.ImGui_PopID();
+        if (c.ImGui_ColorEdit4("Global color##DrawEdgesColorGlobalEdit", &p.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
+            smr.app_ctx.requestRedraw();
+        }
+    }
+
+    c.ImGui_SeparatorText("Faces");
+    if (c.ImGui_Checkbox("draw faces", &p.draw_faces)) {
+        smr.app_ctx.requestRedraw();
+    }
+    if (p.draw_faces) {
+        c.ImGui_Text("Color");
+        {
+            c.ImGui_BeginGroup();
+            defer c.ImGui_EndGroup();
+            if (c.ImGui_RadioButton("Global##DrawFacesColorGlobal", p.draw_faces_color.defined_on == .global)) {
+                p.draw_faces_color.defined_on = .global;
                 smr.app_ctx.requestRedraw();
             }
-            c.ImGui_PopID();
-            if (c.ImGui_ColorEdit4("Global color##DrawBoundariesColorGlobalEdit", &p.boundary_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
+            c.ImGui_SameLine();
+            if (c.ImGui_RadioButton("Per vertex##DrawFacesColorPerVertex", p.draw_faces_color.defined_on == .vertex)) {
+                p.draw_faces_color.defined_on = .vertex;
+                smr.app_ctx.requestRedraw();
+            }
+            c.ImGui_SameLine();
+            if (c.ImGui_RadioButton("Per face##DrawFacesColorPerFace", p.draw_faces_color.defined_on == .face)) {
+                p.draw_faces_color.defined_on = .face;
                 smr.app_ctx.requestRedraw();
             }
         }
-    } else {
-        c.ImGui_Text("No Surface Mesh selected");
+        switch (p.draw_faces_color.defined_on) {
+            .global => {
+                if (c.ImGui_ColorEdit4("Global color##DrawFacesColorGlobalEdit", &p.tri_flat_shader_parameters.vertex_color, c.ImGuiColorEditFlags_NoInputs)) {
+                    smr.app_ctx.requestRedraw();
+                }
+            },
+            .vertex => {
+                {
+                    c.ImGui_BeginGroup();
+                    defer c.ImGui_EndGroup();
+                    if (c.ImGui_RadioButton("Scalar##DrawFacesColorVertexScalar", p.draw_faces_color.type == .scalar)) {
+                        p.draw_faces_color.type = .scalar;
+                        smr.app_ctx.requestRedraw();
+                    }
+                    c.ImGui_SameLine();
+                    if (c.ImGui_RadioButton("Vector##DrawFacesColorVertexVector", p.draw_faces_color.type == .vector)) {
+                        p.draw_faces_color.type = .vector;
+                        smr.app_ctx.requestRedraw();
+                    }
+                }
+                c.ImGui_PushID("DrawFacesColorVertexData");
+                switch (p.draw_faces_color.type) {
+                    .scalar => {
+                        switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, f32, p.draw_faces_color.vertex_scalar_data)) {
+                            .unchanged => {},
+                            .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, f32, null),
+                            .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, f32, data),
+                        }
+                        if (c.ImGui_Checkbox("Show isolines", &p.tri_flat_scalar_per_vertex_shader_parameters.show_isolines)) {
+                            smr.app_ctx.requestRedraw();
+                        }
+                        c.ImGui_Text("Nb isolines");
+                        c.ImGui_PushID("NbIsolines");
+                        if (c.ImGui_SliderInt("", &p.tri_flat_scalar_per_vertex_shader_parameters.nb_isolines, 1, 100)) {
+                            smr.app_ctx.requestRedraw();
+                        }
+                        c.ImGui_PopID();
+                    },
+                    .vector => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, p.draw_faces_color.vertex_vector_data)) {
+                        .unchanged => {},
+                        .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec3f, null),
+                        .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec3f, data),
+                    },
+                }
+                c.ImGui_PopID();
+            },
+            .face => {
+                {
+                    c.ImGui_BeginGroup();
+                    defer c.ImGui_EndGroup();
+                    if (c.ImGui_RadioButton("Scalar##DrawFacesColorFaceScalar", p.draw_faces_color.type == .scalar)) {
+                        p.draw_faces_color.type = .scalar;
+                        smr.app_ctx.requestRedraw();
+                    }
+                    c.ImGui_SameLine();
+                    if (c.ImGui_RadioButton("Vector##DrawFacesColorFaceVector", p.draw_faces_color.type == .vector)) {
+                        p.draw_faces_color.type = .vector;
+                        smr.app_ctx.requestRedraw();
+                    }
+                }
+                c.ImGui_PushID("DrawFacesColorFaceData");
+                switch (p.draw_faces_color.type) {
+                    .scalar => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .face, f32, p.draw_faces_color.face_scalar_data)) {
+                        .unchanged => {},
+                        .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .face, f32, null),
+                        .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .face, f32, data),
+                    },
+                    .vector => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .face, Vec3f, p.draw_faces_color.face_vector_data)) {
+                        .unchanged => {},
+                        .cleared => smr.setSurfaceMeshDrawFacesColorData(sm, .face, Vec3f, null),
+                        .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .face, Vec3f, data),
+                    },
+                }
+                c.ImGui_PopID();
+            },
+            else => unreachable,
+        }
+    }
+
+    c.ImGui_SeparatorText("Boundaries");
+    if (c.ImGui_Checkbox("draw boundaries", &p.draw_boundaries)) {
+        smr.app_ctx.requestRedraw();
+    }
+    if (p.draw_boundaries) {
+        c.ImGui_Text("Width");
+        c.ImGui_PushID("DrawBoundariesWidth");
+        if (c.ImGui_SliderFloatEx("", &p.boundary_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
+            smr.app_ctx.requestRedraw();
+        }
+        c.ImGui_PopID();
+        if (c.ImGui_ColorEdit4("Global color##DrawBoundariesColorGlobalEdit", &p.boundary_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
+            smr.app_ctx.requestRedraw();
+        }
     }
 }

@@ -12,6 +12,7 @@ const imgui_utils = @import("../ui/imgui.zig");
 const types_utils = @import("../utils/types.zig");
 
 const Module = @import("../modules/Module.zig");
+const ModelSelection = @import("../main.zig").ModelSelection;
 const SurfaceMesh = @import("surface/SurfaceMesh.zig");
 
 const Data = @import("../utils/Data.zig").Data;
@@ -105,7 +106,7 @@ listeners: std.ArrayList(*Module),
 
 surface_meshes: std.StringHashMap(*SurfaceMesh),
 surface_meshes_info: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshInfo),
-selected_surface_mesh: ?*SurfaceMesh = null,
+selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 
 data_vbo: std.AutoHashMap(*const DataGen, VBO),
 data_last_update: std.AutoHashMap(*const DataGen, std.time.Instant),
@@ -194,8 +195,13 @@ pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
         module.surfaceMeshDestroyed(sm);
     }
 
-    if (sms.selected_surface_mesh == sm) {
-        sms.selected_surface_mesh = null;
+    switch (sms.selected_model.*) {
+        .surface_mesh => |selected_sm| {
+            if (selected_sm == sm) {
+                sms.selected_model.* = .none;
+            }
+        },
+        else => {},
     }
     _ = sms.surface_meshes.remove(name);
     sms.allocator.free(name); // free the name
@@ -401,132 +407,131 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
             style.*.FontSizeBase * nb_surface_meshes_f + style.*.ItemSpacing.y * nb_surface_meshes_f,
         )) {
             .unchanged => {},
-            .cleared => sms.selected_surface_mesh = null,
-            .changed => |new_sm| sms.selected_surface_mesh = new_sm,
+            .cleared => sms.selected_model.* = .none,
+            .changed => |new_sm| sms.selected_model.* = .{ .surface_mesh = new_sm },
         }
 
-        if (sms.selected_surface_mesh) |sm| {
-            var buf: [64]u8 = undefined; // guess 64 chars is enough for cell stat info
-            if (c.ImGui_BeginTable("CellStats", 3, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
-                defer c.ImGui_EndTable();
+        if (sms.selected_model.modelType() != .surface_mesh) return;
+        const sm = sms.selected_model.surface_mesh;
 
-                c.ImGui_TableSetupColumn("CellType", c.ImGuiTableColumnFlags_WidthStretch);
-                c.ImGui_TableSetupColumn("Count", c.ImGuiTableColumnFlags_WidthFixed);
-                c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
-                c.ImGui_TableHeadersRow();
+        var buf: [64]u8 = undefined; // guess 64 chars is enough for cell stat info
+        if (c.ImGui_BeginTable("CellStats", 3, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
+            defer c.ImGui_EndTable();
 
-                inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
-                    const cells = std.fmt.bufPrintZ(&buf, "{s}", .{@tagName(cell_type)}) catch "";
-                    c.ImGui_TableNextRow();
-                    _ = c.ImGui_TableNextColumn();
-                    c.ImGui_Text(cells.ptr);
-                    _ = c.ImGui_TableNextColumn();
-                    const count = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(cell_type)}) catch "";
-                    c.ImGui_Text(count.ptr);
-                    _ = c.ImGui_TableNextColumn();
-                    const density = std.fmt.bufPrintZ(&buf, "{d:.1}%", .{sm.dataContainer(cell_type).density() * 100}) catch "";
-                    c.ImGui_Text(density.ptr);
-                }
+            c.ImGui_TableSetupColumn("CellType", c.ImGuiTableColumnFlags_WidthStretch);
+            c.ImGui_TableSetupColumn("Count", c.ImGuiTableColumnFlags_WidthFixed);
+            c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
+            c.ImGui_TableHeadersRow();
+
+            inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
+                const cells = std.fmt.bufPrintZ(&buf, "{s}", .{@tagName(cell_type)}) catch "";
+                c.ImGui_TableNextRow();
+                _ = c.ImGui_TableNextColumn();
+                c.ImGui_Text(cells.ptr);
+                _ = c.ImGui_TableNextColumn();
+                const count = std.fmt.bufPrintZ(&buf, "{d}", .{sm.nbCells(cell_type)}) catch "";
+                c.ImGui_Text(count.ptr);
+                _ = c.ImGui_TableNextColumn();
+                const density = std.fmt.bufPrintZ(&buf, "{d:.1}%", .{sm.dataContainer(cell_type).density() * 100}) catch "";
+                c.ImGui_Text(density.ptr);
             }
+        }
 
-            if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
+        if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
+        }
+        if (c.ImGui_BeginPopupModal("Create Cell Data", 0, c.ImGuiWindowFlags_AlwaysAutoResize)) {
+            defer c.ImGui_EndPopup();
+            c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+            defer c.ImGui_PopItemWidth();
+            c.ImGui_Text("Cell type:");
+            c.ImGui_PushID("cell type");
+            if (imgui_utils.surfaceMeshCellTypeComboBox(UiData.selected_surface_mesh_cell_type)) |cell_type| {
+                UiData.selected_surface_mesh_cell_type = cell_type;
             }
-            if (c.ImGui_BeginPopupModal("Create Cell Data", 0, c.ImGuiWindowFlags_AlwaysAutoResize)) {
-                defer c.ImGui_EndPopup();
-                c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
-                defer c.ImGui_PopItemWidth();
-                c.ImGui_Text("Cell type:");
-                c.ImGui_PushID("cell type");
-                if (imgui_utils.surfaceMeshCellTypeComboBox(UiData.selected_surface_mesh_cell_type)) |cell_type| {
-                    UiData.selected_surface_mesh_cell_type = cell_type;
-                }
-                c.ImGui_PopID();
-                c.ImGui_Text("Data type:");
-                c.ImGui_PushID("data type");
-                if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
-                    defer c.ImGui_EndCombo();
-                    inline for (@typeInfo(CreateDataTypesTag).@"enum".fields) |*data_type| {
-                        const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
-                        if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                            if (!is_selected) {
-                                UiData.selected_data_type = @enumFromInt(data_type.value);
-                            }
-                        }
-                        if (is_selected) {
-                            c.ImGui_SetItemDefaultFocus();
+            c.ImGui_PopID();
+            c.ImGui_Text("Data type:");
+            c.ImGui_PushID("data type");
+            if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
+                defer c.ImGui_EndCombo();
+                inline for (@typeInfo(CreateDataTypesTag).@"enum".fields) |*data_type| {
+                    const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
+                    if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                        if (!is_selected) {
+                            UiData.selected_data_type = @enumFromInt(data_type.value);
                         }
                     }
-                }
-                c.ImGui_PopID();
-                c.ImGui_Text("Name:");
-                _ = c.ImGui_InputText("##Name", &UiData.data_name_buf, UiData.data_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
-                if (c.ImGui_ButtonEx("Close", c.ImVec2{ .x = 0.5 * c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                    UiData.data_name_buf[0] = 0;
-                    c.ImGui_CloseCurrentPopup();
-                }
-                c.ImGui_SameLine();
-                if (c.ImGui_ButtonEx("Create", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                    switch (UiData.selected_surface_mesh_cell_type) {
-                        inline else => |cell_type| {
-                            switch (UiData.selected_data_type) {
-                                inline else => |data_type| {
-                                    _ = sm.addData(cell_type, @FieldType(CreateDataTypes, @tagName(data_type)), &UiData.data_name_buf) catch |err| {
-                                        zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ &UiData.data_name_buf, @tagName(cell_type), @tagName(data_type), err });
-                                    };
-                                    UiData.data_name_buf[0] = 0;
-                                },
-                            }
-                        },
+                    if (is_selected) {
+                        c.ImGui_SetItemDefaultFocus();
                     }
                 }
             }
-
-            {
-                const info = sms.surface_meshes_info.getPtr(sm).?;
-
-                var bvh_computable = true;
-                if (info.std_datas.vertex_position == null) {
-                    bvh_computable = false;
-                }
-                var bvh_upToDate = true;
-                if (!bvh_computable or info.bvh_last_update == null or info.bvh_last_update.?.order(sms.dataLastUpdate(info.std_datas.vertex_position.?.gen()).?) == .lt) {
-                    bvh_upToDate = false;
-                }
-                if (!bvh_computable) {
-                    c.ImGui_BeginDisabled(true);
-                }
-                if (!bvh_upToDate) {
-                    c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
-                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
-                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
-                } else {
-                    c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 200, 128, 200));
-                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 200, 128, 255));
-                    c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 200, 128, 128));
-                }
-                if (c.ImGui_ButtonEx(c.ICON_FA_SITEMAP ++ " Update BVH", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                    info.bvh.deinit();
-                    info.bvh = bvh.TrianglesBVH.init(sm, info.std_datas.vertex_position.?) catch |err| blk: {
-                        zgp_log.err("Failed to build BVH: {}", .{err});
-                        break :blk .{};
-                    };
-                    if (info.bvh.bvh_ptr) |_| {
-                        const now = std.time.Instant.now();
-                        if (now) |t| {
-                            info.bvh_last_update = t;
-                        } else |err| {
-                            zgp_log.err("Failed to get current time: {}", .{err});
+            c.ImGui_PopID();
+            c.ImGui_Text("Name:");
+            _ = c.ImGui_InputText("##Name", &UiData.data_name_buf, UiData.data_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
+            if (c.ImGui_ButtonEx("Close", c.ImVec2{ .x = 0.5 * c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                UiData.data_name_buf[0] = 0;
+                c.ImGui_CloseCurrentPopup();
+            }
+            c.ImGui_SameLine();
+            if (c.ImGui_ButtonEx("Create", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                switch (UiData.selected_surface_mesh_cell_type) {
+                    inline else => |cell_type| {
+                        switch (UiData.selected_data_type) {
+                            inline else => |data_type| {
+                                _ = sm.addData(cell_type, @FieldType(CreateDataTypes, @tagName(data_type)), &UiData.data_name_buf) catch |err| {
+                                    zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ &UiData.data_name_buf, @tagName(cell_type), @tagName(data_type), err });
+                                };
+                                UiData.data_name_buf[0] = 0;
+                            },
                         }
-                    }
-                }
-                c.ImGui_PopStyleColorEx(3);
-                if (!bvh_computable) {
-                    c.ImGui_EndDisabled();
+                    },
                 }
             }
-        } else {
-            c.ImGui_Text("No Surface Mesh selected");
+        }
+
+        {
+            const info = sms.surface_meshes_info.getPtr(sm).?;
+
+            var bvh_computable = true;
+            if (info.std_datas.vertex_position == null) {
+                bvh_computable = false;
+            }
+            var bvh_upToDate = true;
+            if (!bvh_computable or info.bvh_last_update == null or info.bvh_last_update.?.order(sms.dataLastUpdate(info.std_datas.vertex_position.?.gen()).?) == .lt) {
+                bvh_upToDate = false;
+            }
+            if (!bvh_computable) {
+                c.ImGui_BeginDisabled(true);
+            }
+            if (!bvh_upToDate) {
+                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
+                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
+                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
+            } else {
+                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 200, 128, 200));
+                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 200, 128, 255));
+                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 200, 128, 128));
+            }
+            if (c.ImGui_ButtonEx(c.ICON_FA_SITEMAP ++ " Update BVH", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                info.bvh.deinit();
+                info.bvh = bvh.TrianglesBVH.init(sm, info.std_datas.vertex_position.?) catch |err| blk: {
+                    zgp_log.err("Failed to build BVH: {}", .{err});
+                    break :blk .{};
+                };
+                if (info.bvh.bvh_ptr) |_| {
+                    const now = std.time.Instant.now();
+                    if (now) |t| {
+                        info.bvh_last_update = t;
+                    } else |err| {
+                        zgp_log.err("Failed to get current time: {}", .{err});
+                    }
+                }
+            }
+            c.ImGui_PopStyleColorEx(3);
+            if (!bvh_computable) {
+                c.ImGui_EndDisabled();
+            }
         }
     } else {
         c.ImGui_PopStyleColorEx(3);

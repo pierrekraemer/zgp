@@ -1,6 +1,7 @@
 const SurfaceMeshSampling = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 
 const imgui_utils = @import("../ui/imgui.zig");
 const zgp_log = std.log.scoped(.zgp);
@@ -62,6 +63,9 @@ pub fn rightClickMenu(m: *Module) void {
     const sms: *SurfaceMeshSampling = @alignCast(@fieldParentPtr("module", m));
     const sm_store = &sms.app_ctx.surface_mesh_store;
 
+    assert(sms.app_ctx.selected_model.modelType() == .surface_mesh);
+    const sm = sms.app_ctx.selected_model.surface_mesh;
+
     const UiData = struct {
         var sampling_density: f32 = 1.0;
     };
@@ -74,35 +78,31 @@ pub fn rightClickMenu(m: *Module) void {
     if (c.ImGui_BeginMenu(m.name.ptr)) {
         defer c.ImGui_EndMenu();
 
-        if (sm_store.selected_surface_mesh) |sm| {
-            const info = sm_store.surfaceMeshInfo(sm);
+        const info = sm_store.surfaceMeshInfo(sm);
 
-            if (c.ImGui_BeginMenu("Uniform sampling")) {
-                defer c.ImGui_EndMenu();
-                c.ImGui_Text("Sampling density");
-                c.ImGui_PushID("Sampling density");
-                _ = c.ImGui_SliderFloatEx("", &UiData.sampling_density, 1.0, 100.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
-                c.ImGui_PopID();
-                const disabled = info.std_datas.vertex_position == null or info.std_datas.face_area == null;
-                if (disabled) {
-                    c.ImGui_BeginDisabled(true);
-                }
-                if (c.ImGui_ButtonEx("Sample", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                    sms.uniformSampling(
-                        sm,
-                        info.std_datas.vertex_position.?,
-                        info.std_datas.face_area.?,
-                        UiData.sampling_density,
-                    ) catch |err| {
-                        std.debug.print("Error sampling: {}\n", .{err});
-                    };
-                }
-                if (disabled) {
-                    c.ImGui_EndDisabled();
-                }
+        if (c.ImGui_BeginMenu("Uniform sampling")) {
+            defer c.ImGui_EndMenu();
+            c.ImGui_Text("Sampling density");
+            c.ImGui_PushID("Sampling density");
+            _ = c.ImGui_SliderFloatEx("", &UiData.sampling_density, 1.0, 100.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
+            c.ImGui_PopID();
+            const disabled = info.std_datas.vertex_position == null or info.std_datas.face_area == null;
+            if (disabled) {
+                c.ImGui_BeginDisabled(true);
             }
-        } else {
-            c.ImGui_Text("No Surface Mesh selected");
+            if (c.ImGui_ButtonEx("Sample", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                sms.uniformSampling(
+                    sm,
+                    info.std_datas.vertex_position.?,
+                    info.std_datas.face_area.?,
+                    UiData.sampling_density,
+                ) catch |err| {
+                    std.debug.print("Error sampling: {}\n", .{err});
+                };
+            }
+            if (disabled) {
+                c.ImGui_EndDisabled();
+            }
         }
     }
 }

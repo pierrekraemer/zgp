@@ -1,6 +1,7 @@
 const PointCloudStdDatas = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 
 const zgp_log = std.log.scoped(.zgp);
 
@@ -41,6 +42,9 @@ pub fn leftPanel(m: *Module) void {
     const pcsd: *PointCloudStdDatas = @alignCast(@fieldParentPtr("module", m));
     const pc_store = &pcsd.app_ctx.point_cloud_store;
 
+    assert(pcsd.app_ctx.selected_model.modelType() == .point_cloud);
+    const pc = pcsd.app_ctx.selected_model.point_cloud;
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
@@ -48,69 +52,65 @@ pub fn leftPanel(m: *Module) void {
 
     const button_width = c.ImGui_CalcTextSize("" ++ c.ICON_FA_DATABASE).x + style.*.ItemSpacing.x;
 
-    if (pc_store.selected_point_cloud) |pc| {
-        var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name
-        const info = pc_store.point_clouds_info.getPtr(pc).?;
-        const cells = std.fmt.bufPrintZ(&buf, "Points", .{}) catch "";
-        c.ImGui_SeparatorText(cells.ptr);
-        inline for (@typeInfo(PointCloudStdData).@"union".fields) |*field| {
-            c.ImGui_Text(field.name);
-            c.ImGui_SameLine();
-            // align 2 buttons to the right of the text
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + c.ImGui_GetContentRegionAvail().x - 2 * button_width - style.*.ItemSpacing.x);
-            const data_selected = @field(info.std_datas, field.name) != null;
-            if (!data_selected) {
-                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 128, 128, 200));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 128, 128, 255));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 128, 128, 128));
-            }
-            c.ImGui_PushID(field.name);
+    var buf: [64]u8 = undefined; // guess 64 chars is enough for cell name
+    const info = pc_store.point_clouds_info.getPtr(pc).?;
+    const cells = std.fmt.bufPrintZ(&buf, "Points", .{}) catch "";
+    c.ImGui_SeparatorText(cells.ptr);
+    inline for (@typeInfo(PointCloudStdData).@"union".fields) |*field| {
+        c.ImGui_Text(field.name);
+        c.ImGui_SameLine();
+        // align 2 buttons to the right of the text
+        c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + c.ImGui_GetContentRegionAvail().x - 2 * button_width - style.*.ItemSpacing.x);
+        const data_selected = @field(info.std_datas, field.name) != null;
+        if (!data_selected) {
+            c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 128, 128, 200));
+            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 128, 128, 255));
+            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 128, 128, 128));
+        }
+        c.ImGui_PushID(field.name);
+        defer c.ImGui_PopID();
+        if (c.ImGui_Button("" ++ c.ICON_FA_DATABASE)) {
+            c.ImGui_OpenPopup("select_data_popup", c.ImGuiPopupFlags_NoReopen);
+        }
+        if (!data_selected) {
+            c.ImGui_PopStyleColorEx(3);
+        }
+        if (c.ImGui_BeginPopup("select_data_popup", 0)) {
+            defer c.ImGui_EndPopup();
+            c.ImGui_PushID("select_data_combobox");
             defer c.ImGui_PopID();
-            if (c.ImGui_Button("" ++ c.ICON_FA_DATABASE)) {
-                c.ImGui_OpenPopup("select_data_popup", c.ImGuiPopupFlags_NoReopen);
+            switch (imgui_utils.pointCloudDataComboBox(
+                pc,
+                @typeInfo(field.type).optional.child.DataType,
+                @field(info.std_datas, field.name),
+            )) {
+                .unchanged => {},
+                .cleared => {
+                    pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, null));
+                    pcsd.app_ctx.requestRedraw();
+                },
+                .changed => |data| {
+                    pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
+                    pcsd.app_ctx.requestRedraw();
+                },
             }
-            if (!data_selected) {
-                c.ImGui_PopStyleColorEx(3);
-            }
-            if (c.ImGui_BeginPopup("select_data_popup", 0)) {
-                defer c.ImGui_EndPopup();
-                c.ImGui_PushID("select_data_combobox");
-                defer c.ImGui_PopID();
-                switch (imgui_utils.pointCloudDataComboBox(
-                    pc,
-                    @typeInfo(field.type).optional.child.DataType,
-                    @field(info.std_datas, field.name),
-                )) {
-                    .unchanged => {},
-                    .cleared => {
-                        pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, null));
-                        pcsd.app_ctx.requestRedraw();
-                    },
-                    .changed => |data| {
-                        pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
-                        pcsd.app_ctx.requestRedraw();
-                    },
+        }
+    }
+
+    c.ImGui_Separator();
+
+    if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+        inline for (@typeInfo(PointCloudStdData).@"union".fields) |*field| {
+            if (@field(info.std_datas, field.name) == null) {
+                const maybe_data = pc.addData(@typeInfo(field.type).optional.child.DataType, field.name);
+                if (maybe_data) |data| {
+                    pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
+                    pcsd.app_ctx.requestRedraw();
+                } else |err| {
+                    zgp_log.err("Error adding {s} ({s}) data: {}", .{ field.name, @typeName(@typeInfo(field.type).optional.child.DataType), err });
                 }
             }
         }
-
-        c.ImGui_Separator();
-
-        if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            inline for (@typeInfo(PointCloudStdData).@"union".fields) |*field| {
-                if (@field(info.std_datas, field.name) == null) {
-                    const maybe_data = pc.addData(@typeInfo(field.type).optional.child.DataType, field.name);
-                    if (maybe_data) |data| {
-                        pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field.name, data));
-                        pcsd.app_ctx.requestRedraw();
-                    } else |err| {
-                        zgp_log.err("Error adding {s} ({s}) data: {}", .{ field.name, @typeName(@typeInfo(field.type).optional.child.DataType), err });
-                    }
-                }
-            }
-        }
-    } else {
-        c.ImGui_Text("No Point Cloud selected");
     }
 }
 
