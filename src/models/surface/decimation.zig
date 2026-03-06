@@ -4,6 +4,7 @@ const PriorityQueue = @import("../../utils/PriorityQueue.zig").PriorityQueue;
 
 const zgp_log = std.log.scoped(.zgp);
 
+const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -101,18 +102,19 @@ fn updateEdgeInQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
 /// Decimate the given SurfaceMesh using the QEM edge collapse approach.
 /// (see qem.zig for details on the quadrics computation)
 pub fn decimateQEM(
+    app_ctx: *AppContext,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
     nb_vertices_to_remove: u32,
 ) !void {
-    try subdivision.triangulateFaces(sm);
+    try subdivision.triangulateFaces(app_ctx, sm);
 
     var edge_queue_index = try sm.addData(.edge, ?usize, "__edge_queue_index");
     defer sm.removeData(.edge, edge_queue_index.gen());
     edge_queue_index.data.fill(null);
 
-    var queue: EdgeQueue = EdgeQueue.init(sm.allocator, .{
+    var queue: EdgeQueue = EdgeQueue.init(app_ctx.allocator, .{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_qem = vertex_qem,

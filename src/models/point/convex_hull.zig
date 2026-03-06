@@ -276,13 +276,13 @@ fn buildHorizon(
         point,
     ) == .over);
 
-    var horizon_darts_marker = try SurfaceMesh.DartMarker.init(sm);
-    defer horizon_darts_marker.deinit();
+    // var horizon_darts_marker = try SurfaceMesh.DartMarker.init(sm);
+    // defer horizon_darts_marker.deinit();
 
     try visible_faces.append(allocator, face);
     var visible_faces_marker = try SurfaceMesh.CellMarker(.face).init(sm);
     defer visible_faces_marker.deinit();
-    visible_faces_marker.valuePtr(face).* = true;
+    visible_faces_marker.mark(face);
 
     var i: usize = 0;
     while (i < visible_faces.items.len) : (i += 1) {
@@ -291,7 +291,7 @@ fn buildHorizon(
         while (dart_it.next()) |d| {
             // iterate over the adjacent faces of f
             const d2 = sm.phi2(d);
-            if (visible_faces_marker.value(.{ .face = d2 })) {
+            if (visible_faces_marker.isMarked(.{ .face = d2 })) {
                 continue;
             }
             if (geometry_utils.planeOrientation(
@@ -302,10 +302,10 @@ fn buildHorizon(
             ) == .over) {
                 const af: SurfaceMesh.Cell = .{ .face = d2 };
                 try visible_faces.append(allocator, af);
-                visible_faces_marker.valuePtr(af).* = true;
+                visible_faces_marker.mark(af);
             } else {
                 try horizon_darts.append(allocator, d2);
-                horizon_darts_marker.valuePtr(d2).* = true;
+                // horizon_darts_marker.mark(d2);
             }
         }
     }

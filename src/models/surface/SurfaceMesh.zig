@@ -83,6 +83,8 @@ dart_edge_index: *Data(u32) = undefined, // index of the edge the dart belongs t
 dart_face_index: *Data(u32) = undefined, // index of the face the dart belongs to
 dart_boundary_marker: *Data(bool) = undefined, // true if the dart is a boundary dart (i.e. belongs to a boundary face)
 
+nb_boundary_darts: u32 = 0, // number of boundary darts; only updated upon calls to SurfaceMeshStore.surfaceMeshConnectivityUpdated
+
 pub fn init(allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !SurfaceMesh {
     var sm: SurfaceMesh = .{
         .allocator = allocator,
@@ -235,11 +237,16 @@ pub const DartMarker = struct {
         dm.surface_mesh.dart_data.releaseMarker(dm.marker);
     }
 
-    pub fn value(dm: DartMarker, d: Dart) bool {
-        return dm.marker.value(d);
+    pub fn mark(dm: *DartMarker, d: Dart) void {
+        assert(!dm.isMarked(d));
+        dm.marker.valuePtr(d).* = true;
     }
-    pub fn valuePtr(dm: DartMarker, d: Dart) *bool {
-        return dm.marker.valuePtr(d);
+    pub fn unmark(dm: *DartMarker, d: Dart) void {
+        assert(dm.isMarked(d));
+        dm.marker.valuePtr(d).* = false;
+    }
+    pub fn isMarked(dm: *DartMarker, d: Dart) bool {
+        return dm.marker.value(d);
     }
     pub fn reset(dm: *DartMarker) void {
         dm.marker.fill(false);
@@ -277,13 +284,19 @@ pub fn CellMarker(comptime cell_type: CellType) type {
             }
         }
 
-        pub fn value(self: Self, c: Cell) bool {
+        pub fn mark(self: *Self, c: Cell) void {
+            assert(c.cellType() == cell_type);
+            assert(!self.isMarked(c));
+            self.marker.valuePtr(self.surface_mesh.cellIndex(c)).* = true;
+        }
+        pub fn unmark(self: *Self, c: Cell) void {
+            assert(c.cellType() == cell_type);
+            assert(self.isMarked(c));
+            self.marker.valuePtr(self.surface_mesh.cellIndex(c)).* = false;
+        }
+        pub fn isMarked(self: *Self, c: Cell) bool {
             assert(c.cellType() == cell_type);
             return self.marker.value(self.surface_mesh.cellIndex(c));
-        }
-        pub fn valuePtr(self: Self, c: Cell) *bool {
-            assert(c.cellType() == cell_type);
-            return self.marker.valuePtr(self.surface_mesh.cellIndex(c));
         }
         pub fn reset(self: *Self) void {
             self.marker.fill(false);
@@ -330,12 +343,12 @@ pub fn CellIterator(comptime cell_type: CellType) type {
             const cell = @unionInit(Cell, @tagName(cell_type), self.current_dart);
             var dart_it = self.surface_mesh.cellDartIterator(cell);
             while (dart_it.next()) |d| {
-                self.marker.?.valuePtr(d).* = true;
+                self.marker.?.mark(d);
             }
             // prepare current_dart for next iteration
             defer {
                 while (true) : ({
-                    if (self.current_dart == self.surface_mesh.dart_data.lastIndex() or !self.marker.?.value(self.current_dart))
+                    if (self.current_dart == self.surface_mesh.dart_data.lastIndex() or !self.marker.?.isMarked(self.current_dart))
                         break;
                 }) {
                     self.current_dart = if (cell_type == .boundary) self.surface_mesh.nextBoundaryDart(self.current_dart) else self.surface_mesh.nextNonBoundaryDart(self.current_dart);
@@ -488,12 +501,12 @@ pub fn CellSet(comptime cell_type: CellType) type {
 
         pub fn contains(self: *Self, c: Cell) bool {
             assert(c.cellType() == cell_type);
-            return self.marker.value(c);
+            return self.marker.isMarked(c);
         }
         pub fn add(self: *Self, c: Cell) !void {
             assert(c.cellType() == cell_type);
             if (!self.contains(c)) {
-                self.marker.valuePtr(c).* = true;
+                self.marker.mark(c);
                 try self.cells.append(self.surface_mesh.allocator, c);
                 try self.indices.append(self.surface_mesh.allocator, self.surface_mesh.cellIndex(c));
             }
@@ -501,7 +514,7 @@ pub fn CellSet(comptime cell_type: CellType) type {
         pub fn remove(self: *Self, c: Cell) void {
             assert(c.cellType() == cell_type);
             const c_index = self.surface_mesh.cellIndex(c);
-            self.marker.valuePtr(c).* = false;
+            self.marker.unmark(c);
             for (self.indices.items, 0..) |index, i| {
                 if (index == c_index) {
                     _ = self.cells.swapRemove(i);
@@ -611,22 +624,22 @@ pub fn removeData(sm: *SurfaceMesh, comptime cell_type: CellType, attribute_gen:
     dc.removeData(attribute_gen);
 }
 
-/// Creates a new index for the given cell type.
+/// Gets a new index for the given cell type.
 /// Only vertices, edges and faces need indices (halfedges & corners are indexed by their unique dart index).
 /// The new index is not associated to any dart of the mesh.
 /// This function is only intended for use in SurfaceMesh creation process (import, ...) as the new index is not
 /// in use until it is associated to the darts of a cell of the mesh (see setCellIndex).
-pub fn newDataIndex(sm: *SurfaceMesh, cell_type: CellType) !u32 {
+pub fn getDataIndex(sm: *SurfaceMesh, cell_type: CellType) !u32 {
     return switch (cell_type) {
-        .vertex => sm.vertex_data.newIndex(),
-        .edge => sm.edge_data.newIndex(),
-        .face => sm.face_data.newIndex(),
+        .vertex => sm.vertex_data.getIndex(),
+        .edge => sm.edge_data.getIndex(),
+        .face => sm.face_data.getIndex(),
         else => unreachable,
     };
 }
 
 fn addDart(sm: *SurfaceMesh) !Dart {
-    const d = try sm.dart_data.newIndex();
+    const d = try sm.dart_data.getIndex();
     sm.dart_phi1.valuePtr(d).* = d;
     sm.dart_phi_1.valuePtr(d).* = d;
     sm.dart_phi2.valuePtr(d).* = d;
@@ -650,7 +663,7 @@ fn removeDart(sm: *SurfaceMesh, d: Dart) void {
     if (face_index != invalid_index) {
         sm.face_data.unrefIndex(face_index);
     }
-    sm.dart_data.freeIndex(d);
+    sm.dart_data.releaseIndex(d);
 }
 
 pub fn phi1(sm: *const SurfaceMesh, dart: Dart) Dart {
@@ -785,7 +798,7 @@ pub fn indexCells(sm: *SurfaceMesh, comptime cell_type: CellType) !void {
     defer it.deinit();
     while (it.next()) |cell| {
         if (sm.cellIndex(cell) == invalid_index) {
-            const index = try sm.newDataIndex(cell_type);
+            const index = try sm.getDataIndex(cell_type);
             sm.setCellIndex(cell, index);
         }
     }
@@ -804,15 +817,7 @@ pub fn nbCells(sm: *SurfaceMesh, comptime cell_type: CellType) u32 {
             return dc.nbElements();
         },
         .halfedge, .corner => {
-            var count: u32 = 0;
-            var it = try CellIterator(cell_type).init(sm);
-            defer it.deinit();
-            while (it.next()) |cell| {
-                if (!sm.isBoundaryDart(cell.dart())) {
-                    count += 1;
-                }
-            }
-            return count;
+            return sm.dart_data.nbElements() - sm.nb_boundary_darts;
         },
         .boundary => {
             var count: u32 = 0;
@@ -1016,30 +1021,30 @@ pub fn addPyramid(sm: *SurfaceMesh, baseSize: u32) !Cell {
     while (dart_it.next()) |d| {
         {
             // base vertices
-            const index = try sm.newDataIndex(.vertex);
+            const index = try sm.getDataIndex(.vertex);
             sm.setCellIndex(.{ .vertex = d }, index);
         }
         {
             // base & umbrella edges
-            const b_index = try sm.newDataIndex(.edge);
+            const b_index = try sm.getDataIndex(.edge);
             sm.setCellIndex(.{ .edge = d }, b_index);
-            const u_index = try sm.newDataIndex(.edge);
+            const u_index = try sm.getDataIndex(.edge);
             sm.setCellIndex(.{ .edge = sm.phi1(sm.phi2(d)) }, u_index);
         }
         {
             // umbrella faces
-            const index = try sm.newDataIndex(.face);
+            const index = try sm.getDataIndex(.face);
             sm.setCellIndex(.{ .face = sm.phi2(d) }, index);
         }
     }
     {
         // tip vertex
-        const index = try sm.newDataIndex(.vertex);
+        const index = try sm.getDataIndex(.vertex);
         sm.setCellIndex(.{ .vertex = sm.phi_1(first.dart()) }, index);
     }
     {
         // base face
-        const index = try sm.newDataIndex(.face);
+        const index = try sm.getDataIndex(.face);
         sm.setCellIndex(base, index);
     }
 
@@ -1120,7 +1125,7 @@ pub fn closeHoleWithUmbrella(sm: *SurfaceMesh, d: Dart) !Cell {
 
     // set the indices for the cells
     const cv_dart = sm.phi_1(f_first.dart()); // central vertex dart
-    const cv_index = try sm.newDataIndex(.vertex); // new index for central vertex
+    const cv_index = try sm.getDataIndex(.vertex); // new index for central vertex
     var dart_it = sm.cellDartIterator(.{ .vertex = cv_dart }); // turn around central vertex
     while (dart_it.next()) |dart| {
         sm.setDartCellIndex(dart, .vertex, cv_index);
@@ -1135,12 +1140,12 @@ pub fn closeHoleWithUmbrella(sm: *SurfaceMesh, d: Dart) !Cell {
             // hole & umbrella edges
             const h_index = sm.dartCellIndex(sm.phi2(d1), .edge);
             sm.setDartCellIndex(d1, .edge, h_index);
-            const u_index = try sm.newDataIndex(.edge);
+            const u_index = try sm.getDataIndex(.edge);
             sm.setCellIndex(.{ .edge = dart }, u_index);
         }
         {
             // umbrella faces
-            const u_index = try sm.newDataIndex(.face);
+            const u_index = try sm.getDataIndex(.face);
             sm.setCellIndex(.{ .face = dart }, u_index);
         }
     }
@@ -1194,7 +1199,7 @@ pub fn cutEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
 
     {
         // Vertex indices.
-        const index = try sm.newDataIndex(.vertex);
+        const index = try sm.getDataIndex(.vertex);
         sm.setDartCellIndex(d1, .vertex, index);
         sm.setDartCellIndex(dd1, .vertex, index);
     }
@@ -1203,7 +1208,7 @@ pub fn cutEdge(sm: *SurfaceMesh, edge: Cell) !Cell {
         // The edge of d keeps the index of the original edge.
         sm.setDartCellIndex(dd1, .edge, sm.dartCellIndex(d, .edge));
         // The edge of dd gets a new index.
-        const index = try sm.newDataIndex(.edge);
+        const index = try sm.getDataIndex(.edge);
         sm.setDartCellIndex(dd, .edge, index);
         sm.setDartCellIndex(d1, .edge, index);
     }
@@ -1405,14 +1410,14 @@ pub fn cutFace(sm: *SurfaceMesh, d1: Dart, d2: Dart) !Cell {
     }
     {
         // Edge indices.
-        const index = try sm.newDataIndex(.edge);
+        const index = try sm.getDataIndex(.edge);
         sm.setDartCellIndex(d_1, .edge, index);
         sm.setDartCellIndex(d_2, .edge, index);
     }
     {
         // Face indices.
         sm.setDartCellIndex(d_2, .face, sm.dartCellIndex(d1, .face));
-        const index = try sm.newDataIndex(.face);
+        const index = try sm.getDataIndex(.face);
         sm.setCellIndex(.{ .face = d2 }, index);
     }
 

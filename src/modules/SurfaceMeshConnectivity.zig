@@ -51,7 +51,7 @@ fn cutAllEdges(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
-    try subdivision.cutAllEdges(sm, vertex_position);
+    try subdivision.cutAllEdges(smc.app_ctx, sm, vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
     smc.app_ctx.requestRedraw();
@@ -61,7 +61,7 @@ fn triangulateFaces(
     smc: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
 ) !void {
-    try subdivision.triangulateFaces(sm);
+    try subdivision.triangulateFaces(smc.app_ctx, sm);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
     smc.app_ctx.requestRedraw();
 }
@@ -152,6 +152,7 @@ fn decimate(
         vertex_qem,
     );
     try decimation.decimateQEM(
+        smc.app_ctx,
         sm,
         vertex_position,
         vertex_qem,

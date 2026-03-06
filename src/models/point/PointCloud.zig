@@ -96,11 +96,11 @@ pub fn nbPoints(pc: *const PointCloud) u32 {
 }
 
 pub fn addPoint(pc: *PointCloud) !Point {
-    return pc.point_data.newIndex();
+    return pc.point_data.getIndex();
 }
 
 pub fn removePoint(pc: *PointCloud, p: Point) void {
-    pc.point_data.freeIndex(p);
+    pc.point_data.releaseIndex(p);
 }
 
 pub fn pointIndex(_: *const PointCloud, p: Point) u32 {

@@ -225,6 +225,7 @@ pub fn surfaceMeshDataUpdated(
         vbo.fillFrom(T, data.data);
     }
 
+    // update the last known data update time
     const now = std.time.Instant.now();
     if (now) |t| {
         sms.data_last_update.put(data.gen(), t) catch |err| {
@@ -234,6 +235,7 @@ pub fn surfaceMeshDataUpdated(
         zgp_log.err("Failed to get current time: {}", .{err});
     }
 
+    // dispatch call to listeners
     for (sms.listeners.items) |module| {
         module.surfaceMeshDataUpdated(sm, cell_type, data.gen());
     }
@@ -253,6 +255,17 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
 
     const info = sms.surface_meshes_info.getPtr(sm).?;
 
+    // update the cached number of boundary darts in the SurfaceMesh
+    var nb_boundary_darts: u32 = 0;
+    var dart_it = sm.dartIterator();
+    while (dart_it.next()) |d| {
+        if (sm.isBoundaryDart(d)) {
+            nb_boundary_darts += 1;
+        }
+    }
+    sm.nb_boundary_darts = nb_boundary_darts;
+
+    // update the different primitives IBO
     info.points_ibo.fillFromSurfaceMesh(sm, .vertex, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill points IBO for SurfaceMesh: {}", .{err});
         return;
@@ -270,6 +283,7 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
         return;
     };
 
+    // update the cells sets
     info.vertex_set.update() catch |err| {
         zgp_log.err("Failed to update vertex set for SurfaceMesh: {}", .{err});
         return;
@@ -286,6 +300,7 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
     };
     sms.surfaceMeshCellSetUpdated(sm, .face);
 
+    // dispatch call to listeners
     for (sms.listeners.items) |module| {
         module.surfaceMeshConnectivityUpdated(sm);
     }
@@ -297,6 +312,8 @@ pub fn surfaceMeshCellSetUpdated(
     cell_type: SurfaceMesh.CellType,
 ) void {
     const info = sms.surface_meshes_info.getPtr(sm).?;
+
+    // update the IBOs of the corresponding cell set
     switch (cell_type) {
         .vertex => {
             info.vertex_set_ibo.fillFromCellSlice(sm, info.vertex_set.cells.items, sms.allocator) catch |err| {
@@ -319,6 +336,7 @@ pub fn surfaceMeshCellSetUpdated(
         else => unreachable,
     }
 
+    // dispatch call to listeners
     for (sms.listeners.items) |module| {
         module.surfaceMeshCellSetUpdated(sm, cell_type);
     }
@@ -371,6 +389,7 @@ pub fn setSurfaceMeshStdData(
         },
     }
 
+    // dispatch call to listeners
     for (sms.listeners.items) |module| {
         module.surfaceMeshStdDataChanged(sm, data);
     }
@@ -701,7 +720,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
     defer darts_array_lists_arena.deinit();
 
     for (import_data.vertices_position.items) |pos| {
-        const vertex_index = try sm.newDataIndex(.vertex);
+        const vertex_index = try sm.getDataIndex(.vertex);
         vertex_position.data.valuePtr(vertex_index).* = pos;
         darts_of_vertex.data.valuePtr(vertex_index).* = .empty;
     }

@@ -475,23 +475,23 @@ pub fn removeData(vm: *VolumeMesh, comptime cell_type: CellType, attribute_gen: 
     }
 }
 
-/// Creates a new index for the given cell type.
+/// Gets a new index for the given cell type.
 /// Only vertices, edges, faces and volumes need indices (halfedges & corners are indexed by their unique dart index).
 /// The new index is not associated to any dart of the mesh.
 /// This function is only intended for use in VolumeMesh creation process (import, ...) as the new index is not
 /// in use until it is associated to the darts of a cell of the mesh (see setCellIndex).
-pub fn newDataIndex(vm: *VolumeMesh, cell_type: CellType) !u32 {
+pub fn getDataIndex(vm: *VolumeMesh, cell_type: CellType) !u32 {
     return switch (cell_type) {
-        .vertex => vm.vertex_data.newIndex(),
-        .edge => vm.edge_data.newIndex(),
-        .face => vm.face_data.newIndex(),
-        .volume => vm.volume_data.newIndex(),
+        .vertex => vm.vertex_data.getIndex(),
+        .edge => vm.edge_data.getIndex(),
+        .face => vm.face_data.getIndex(),
+        .volume => vm.volume_data.getIndex(),
         else => unreachable,
     };
 }
 
 fn addDart(vm: *VolumeMesh) !Dart {
-    const d = try vm.dart_data.newIndex();
+    const d = try vm.dart_data.getIndex();
     vm.dart_phi1.valuePtr(d).* = d;
     vm.dart_phi_1.valuePtr(d).* = d;
     vm.dart_phi2.valuePtr(d).* = d;
@@ -521,7 +521,7 @@ fn removeDart(vm: *VolumeMesh, d: Dart) void {
     if (volume_index != invalid_index) {
         vm.volume_data.unrefIndex(volume_index);
     }
-    vm.dart_data.freeIndex(d);
+    vm.dart_data.releaseIndex(d);
 }
 
 pub fn phi1(vm: *const VolumeMesh, dart: Dart) Dart {
@@ -663,7 +663,7 @@ pub fn indexCells(vm: *VolumeMesh, comptime cell_type: CellType) !void {
     defer it.deinit();
     while (it.next()) |cell| {
         if (vm.cellIndex(cell) == invalid_index) {
-            const index = try vm.newDataIndex(cell_type);
+            const index = try vm.getDataIndex(cell_type);
             vm.setCellIndex(cell, index);
         }
     }

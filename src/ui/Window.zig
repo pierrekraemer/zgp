@@ -81,6 +81,7 @@ pub fn init(w: *Window) !void {
     try errify(c.SDL_GL_MakeCurrent(w.sdl_window, w.gl_context));
     errdefer errify(c.SDL_GL_MakeCurrent(w.sdl_window, null)) catch {};
 
+    // try errify(c.SDL_GL_SetSwapInterval(0));
     try errify(c.SDL_GL_SetSwapInterval(1));
 
     if (!w.gl_procs.init(c.SDL_GL_GetProcAddress)) return error.GlInitFailed;
