@@ -297,7 +297,6 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
         if (pcs.selected_model.modelType() != .point_cloud) return;
         const pc = pcs.selected_model.point_cloud;
 
-        var buf: [64]u8 = undefined; // guess 64 chars is enough for cell counts
         if (c.ImGui_BeginTable("CellStats", 3, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
             defer c.ImGui_EndTable();
 
@@ -306,14 +305,18 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
             c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
             c.ImGui_TableHeadersRow();
 
+            var buf_count: [16]u8 = undefined;
+            var buf_density: [16]u8 = undefined;
+
+            const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{pc.nbPoints()}) catch "";
+            const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{pc.point_data.density() * 100}) catch "";
+
             c.ImGui_TableNextRow();
             _ = c.ImGui_TableNextColumn();
             c.ImGui_Text("Points");
             _ = c.ImGui_TableNextColumn();
-            const count = std.fmt.bufPrintZ(&buf, "{d}", .{pc.nbPoints()}) catch "";
             c.ImGui_Text(count.ptr);
             _ = c.ImGui_TableNextColumn();
-            const density = std.fmt.bufPrintZ(&buf, "{d:.1}%", .{pc.point_data.density() * 100}) catch "";
             c.ImGui_Text(density.ptr);
         }
 
