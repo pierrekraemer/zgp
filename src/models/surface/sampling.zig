@@ -20,29 +20,35 @@ pub fn samplePointsOnSurface(
     face_area: SurfaceMesh.CellData(.face, f32),
     pc: *PointCloud,
     point_position: PointCloud.CellData(Vec3f),
-    sampling_density: f32,
+    point_surface_point: PointCloud.CellData(SurfacePoint),
+    nb_points: usize,
 ) !void {
-    _ = face_area;
-    _ = sampling_density;
-    var r = app_ctx.rng.random();
+    // ensure the inactive indices in the face_area data count
+    // for 0 proportion in the subsequent weightedIndex call
+    face_area.data.fillInactive(0.0);
+    // store a face Cell in the face data container
+    // so that an index in the face_area data can be mapped to a face Cell
+    var faces = try sm.addData(.face, SurfaceMesh.Cell, "face");
+    defer sm.removeData(.face, faces.gen());
     var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
-    defer face_it.deinit();
     while (face_it.next()) |f| {
-        // const area = face_area.value(f);
-        // const nb_points: usize = @intFromFloat(area * sampling_density);
-        // for (0..nb_points) |_| {
+        faces.valuePtr(f).* = f;
+    }
+    var r = app_ctx.rng.random();
+    for (0..nb_points) |_| {
+        const p = try pc.addPoint();
         const r1 = r.float(f32);
         const r2 = r.float(f32);
-        const bcoords: Vec3f = .{ 1.0 - @sqrt(r1), @sqrt(r1) * (1.0 - r2), @sqrt(r1) * r2 };
+        const sqrt_r1 = @sqrt(r1);
+        const bcoords: Vec3f = .{ 1.0 - sqrt_r1, sqrt_r1 * (1.0 - r2), sqrt_r1 * r2 };
+        const face_index: u32 = @intCast(r.weightedIndex(f32, face_area.data.data.items));
         const sp: SurfacePoint = .{
             .surface_mesh = sm,
             .type = .{
-                .face = .{ .cell = f, .bcoords = bcoords },
+                .face = .{ .cell = faces.valueByIndex(face_index), .bcoords = bcoords },
             },
         };
-        const pos = sp.interpolate(Vec3f, vertex_position);
-        const p = try pc.addPoint();
-        point_position.valuePtr(p).* = pos;
-        // }
+        point_surface_point.valuePtr(p).* = sp;
+        point_position.valuePtr(p).* = sp.interpolate(Vec3f, vertex_position);
     }
 }

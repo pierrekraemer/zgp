@@ -96,6 +96,14 @@ pub fn Data(comptime T: type) type {
             }
         }
 
+        pub fn fillInactive(self: *Self, val: T) void {
+            for (self.data.items, 0..) |*element, index| {
+                if (!self.data_gen.container.isActiveIndexAssumeSize(@intCast(index))) {
+                    element.* = val;
+                }
+            }
+        }
+
         pub fn minValue(
             self: *Self,
             context: anytype,
@@ -469,7 +477,7 @@ pub const DataContainer = struct {
     pub fn firstIndex(dc: *const DataContainer) u32 {
         var index: u32 = 0;
         return while (index < dc.size) : (index += 1) {
-            if (dc.isActiveIndex(index)) {
+            if (dc.isActiveIndexAssumeSize(index)) {
                 break index;
             }
         } else dc.size;
@@ -478,7 +486,7 @@ pub const DataContainer = struct {
     pub fn nextIndex(dc: *const DataContainer, index: u32) u32 {
         var next: u32 = index + 1;
         return while (next < dc.size) : (next += 1) {
-            if (dc.isActiveIndex(next)) {
+            if (dc.isActiveIndexAssumeSize(next)) {
                 break next;
             }
         } else dc.size;
@@ -490,6 +498,10 @@ pub const DataContainer = struct {
     }
 
     pub fn isActiveIndex(dc: *const DataContainer, index: u32) bool {
-        return index < dc.size and dc.is_active.valuePtr(index).*;
+        return index < dc.size and dc.is_active.value(index);
+    }
+
+    pub fn isActiveIndexAssumeSize(dc: *const DataContainer, index: u32) bool {
+        return dc.is_active.value(index);
     }
 };

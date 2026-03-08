@@ -11,6 +11,7 @@ const c = @import("../main.zig").c;
 const AppContext = @import("../main.zig").AppContext;
 const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
+const SurfacePoint = @import("../models//surface/SurfacePoint.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -39,16 +40,18 @@ fn uniformSampling(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
-    sampling_density: f32,
+    nb_points: usize,
 ) !void {
     var timer = try std.time.Timer.start();
 
     const pc = try sms.app_ctx.point_cloud_store.createPointCloud(sms.app_ctx.surface_mesh_store.surfaceMeshName(sm).?);
     const point_position = try pc.addData(Vec3f, "position");
+    const point_surface_point = try pc.addData(SurfacePoint, "surface_point");
     sms.app_ctx.point_cloud_store.setPointCloudStdData(pc, .{ .position = point_position });
 
-    try sampling.samplePointsOnSurface(sms.app_ctx, sm, vertex_position, face_area, pc, point_position, sampling_density);
+    try sampling.samplePointsOnSurface(sms.app_ctx, sm, vertex_position, face_area, pc, point_position, point_surface_point, nb_points);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(pc, Vec3f, point_position);
+    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(pc, SurfacePoint, point_surface_point);
     sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(pc);
 
     const elapsed: f64 = @floatFromInt(timer.read());
@@ -67,7 +70,7 @@ pub fn rightClickMenu(m: *Module) void {
     const sm = sms.app_ctx.selected_model.surface_mesh;
 
     const UiData = struct {
-        var sampling_density: f32 = 1.0;
+        var nb_points: usize = 1000;
     };
 
     const style = c.ImGui_GetStyle();
@@ -82,9 +85,9 @@ pub fn rightClickMenu(m: *Module) void {
 
         if (c.ImGui_BeginMenu("Uniform sampling")) {
             defer c.ImGui_EndMenu();
-            c.ImGui_Text("Sampling density");
-            c.ImGui_PushID("Sampling density");
-            _ = c.ImGui_SliderFloatEx("", &UiData.sampling_density, 1.0, 100.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
+            c.ImGui_Text("Number of points");
+            c.ImGui_PushID("Number of points");
+            _ = c.ImGui_InputInt("", @ptrCast(&UiData.nb_points));
             c.ImGui_PopID();
             const disabled = info.std_datas.vertex_position == null or info.std_datas.face_area == null;
             if (disabled) {
@@ -95,7 +98,7 @@ pub fn rightClickMenu(m: *Module) void {
                     sm,
                     info.std_datas.vertex_position.?,
                     info.std_datas.face_area.?,
-                    UiData.sampling_density,
+                    UiData.nb_points,
                 ) catch |err| {
                     std.debug.print("Error sampling: {}\n", .{err});
                 };

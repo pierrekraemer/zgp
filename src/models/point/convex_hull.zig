@@ -47,7 +47,7 @@ pub fn generateConvexHull(
     const extreme_points: [6]Vec3f = geometry_utils.extremePoints(point_position.data);
 
     // find 2 most distant extreme points
-    var max_dist = geometry_utils.epsilon;
+    var max_dist: f32 = 0.0;
     var selected_points_index: [2]u32 = undefined;
     for (0..6) |i| {
         for (i + 1..6) |j| {
@@ -58,12 +58,12 @@ pub fn generateConvexHull(
             }
         }
     }
-    if (max_dist == geometry_utils.epsilon or selected_points_index[0] == selected_points_index[1]) {
+    if (max_dist == 0.0 or selected_points_index[0] == selected_points_index[1]) {
         return error.NotEnoughPoints;
     }
 
     // find the most distant point to the line between the 2 chosen extreme points
-    max_dist = geometry_utils.epsilon * geometry_utils.epsilon;
+    max_dist = 0.0;
     var most_distant_index: u32 = 0;
     for (0..6) |i| {
         if (i == selected_points_index[0] or i == selected_points_index[1]) {
@@ -79,7 +79,7 @@ pub fn generateConvexHull(
             most_distant_index = @intCast(i);
         }
     }
-    if (max_dist == geometry_utils.epsilon * geometry_utils.epsilon) {
+    if (max_dist == 0.0) {
         return error.NotEnoughPoints;
     }
 
@@ -92,7 +92,7 @@ pub fn generateConvexHull(
 
     // next step is to find the 4th vertex of the tetrahedron
     // we naturally choose the point farthest away from the triangle plane
-    max_dist = geometry_utils.epsilon;
+    max_dist = 0.0;
     most_distant_index = 0;
     for (0..6) |i| {
         if (i == selected_points_index[0] or i == selected_points_index[1] or i == most_distant_index) {
@@ -109,7 +109,7 @@ pub fn generateConvexHull(
             most_distant_index = @intCast(i);
         }
     }
-    if (max_dist == geometry_utils.epsilon) {
+    if (max_dist == 0.0) {
         return error.NotEnoughPoints;
     }
 
@@ -155,7 +155,7 @@ pub fn generateConvexHull(
                 vertex_position.value(.{ .vertex = sm.phi_1(f.dart()) }),
                 point_position.value(p),
             );
-            if (dist > geometry_utils.epsilon) {
+            if (dist > 0.0) {
                 try face_points_on_positive_side.valuePtr(f).append(app_ctx.allocator, p);
                 if (dist > face_most_distant_point_dist.value(f)) {
                     face_most_distant_point_dist.valuePtr(f).* = dist;
@@ -233,7 +233,7 @@ pub fn generateConvexHull(
                     vertex_position.value(.{ .vertex = sm.phi_1(d) }),
                     point_position.value(p),
                 );
-                if (dist > geometry_utils.epsilon) {
+                if (dist > 0.0) {
                     try face_points_on_positive_side.valuePtr(uf).append(app_ctx.allocator, p);
                     if (dist > face_most_distant_point_dist.value(uf)) {
                         face_most_distant_point_dist.valuePtr(uf).* = dist;
@@ -268,14 +268,6 @@ fn buildHorizon(
     var horizon_darts: std.ArrayList(SurfaceMesh.Dart) = .empty;
     var visible_faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
 
-    // ensure face is visible from the point
-    assert(geometry_utils.planeOrientation(
-        vertex_position.value(.{ .vertex = face.dart() }),
-        vertex_position.value(.{ .vertex = sm.phi1(face.dart()) }),
-        vertex_position.value(.{ .vertex = sm.phi_1(face.dart()) }),
-        point,
-    ) == .over);
-
     // var horizon_darts_marker = try SurfaceMesh.DartMarker.init(sm);
     // defer horizon_darts_marker.deinit();
 
@@ -294,12 +286,13 @@ fn buildHorizon(
             if (visible_faces_marker.isMarked(.{ .face = d2 })) {
                 continue;
             }
-            if (geometry_utils.planeOrientation(
+            const dist = geometry_utils.signedDistancePlanePoint(
                 vertex_position.value(.{ .vertex = d2 }),
                 vertex_position.value(.{ .vertex = sm.phi1(d2) }),
                 vertex_position.value(.{ .vertex = sm.phi_1(d2) }),
                 point,
-            ) == .over) {
+            );
+            if (dist > 0.0) {
                 const af: SurfaceMesh.Cell = .{ .face = d2 };
                 try visible_faces.append(allocator, af);
                 visible_faces_marker.mark(af);
