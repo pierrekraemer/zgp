@@ -118,8 +118,7 @@ pub fn clearRetainingCapacity(sm: *SurfaceMesh) void {
     sm.face_data.clearRetainingCapacity();
 }
 
-/// DartIterator iterates over all the darts of the SurfaceMesh.
-/// (including boundary darts)
+/// DartIterator iterates over all the darts of the SurfaceMesh (including boundary darts).
 const DartIterator = struct {
     surface_mesh: *const SurfaceMesh,
     current_dart: Dart,
@@ -136,6 +135,7 @@ const DartIterator = struct {
     }
 };
 
+// Returns a DartIterator that iterates over all the darts of the SurfaceMesh (including boundary darts).
 pub fn dartIterator(sm: *const SurfaceMesh) DartIterator {
     return .{
         .surface_mesh = sm,
@@ -173,12 +173,23 @@ const CellDartIterator = struct {
     }
 };
 
+// Returns a CellDartIterator that iterates over all the darts of the given cell.
 pub fn cellDartIterator(sm: *const SurfaceMesh, cell: Cell) CellDartIterator {
     return .{
         .surface_mesh = sm,
         .cell = cell,
         .current_dart = cell.dart(),
     };
+}
+
+// Returns the first dart of the cell that is not marked as a boundary dart.
+// The only case in which an invalid index can be returned is when called on a cell that is
+// entirely composed of boundary darts, i.e. boundary face, boundary halfedge, boundary corner
+pub fn cellNonBoundaryDart(sm: *const SurfaceMesh, cell: Cell) Dart {
+    var dart_it = sm.cellDartIterator(cell);
+    return while (dart_it.next()) |d| {
+        if (!sm.dart_boundary_marker.value(d)) break d;
+    } else invalid_index;
 }
 
 // Returns true if the given dart belongs to the given cell, false otherwise.

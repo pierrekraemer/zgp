@@ -305,6 +305,19 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     }
     if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
         defer c.ImGui_EndPopup();
+        switch (app_ctx.selected_model) {
+            .point_cloud => {
+                c.ImGui_TextDisabled("Point Cloud:");
+                c.ImGui_SameLine();
+                c.ImGui_TextDisabled(app_ctx.point_cloud_store.pointCloudName(app_ctx.selected_model.point_cloud).?);
+            },
+            .surface_mesh => {
+                c.ImGui_TextDisabled("Surface Mesh:");
+                c.ImGui_SameLine();
+                c.ImGui_TextDisabled(app_ctx.surface_mesh_store.surfaceMeshName(app_ctx.selected_model.surface_mesh).?);
+            },
+            .none => c.ImGui_TextDisabled("No selected model"),
+        }
         for (modules.items) |module| {
             if (shouldCallOnModule(module, &app_ctx)) {
                 module.rightClickMenu();
@@ -405,6 +418,19 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
     {
         defer c.ImGui_End();
+        switch (app_ctx.selected_model) {
+            .point_cloud => {
+                c.ImGui_TextDisabled("Point Cloud:");
+                c.ImGui_SameLine();
+                c.ImGui_TextDisabled(app_ctx.point_cloud_store.pointCloudName(app_ctx.selected_model.point_cloud).?);
+            },
+            .surface_mesh => {
+                c.ImGui_TextDisabled("Surface Mesh:");
+                c.ImGui_SameLine();
+                c.ImGui_TextDisabled(app_ctx.surface_mesh_store.surfaceMeshName(app_ctx.selected_model.surface_mesh).?);
+            },
+            .none => c.ImGui_TextDisabled("No selected model"),
+        }
         for (modules.items) |module| {
             if (!shouldCallOnModule(module, &app_ctx)) continue;
             if (module.vtable.rightPanel == null) continue; // check if the module has a rightPanel function

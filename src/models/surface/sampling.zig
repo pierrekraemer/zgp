@@ -49,6 +49,6 @@ pub fn samplePointsOnSurface(
             },
         };
         point_surface_point.valuePtr(p).* = sp;
-        point_position.valuePtr(p).* = sp.interpolate(Vec3f, vertex_position);
+        point_position.valuePtr(p).* = sp.readData(Vec3f, .vertex, vertex_position);
     }
 }
