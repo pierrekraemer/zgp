@@ -15,6 +15,7 @@ const SurfacePoint = @import("../models//surface/SurfacePoint.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
+const bvh = @import("../geometry/bvh.zig");
 
 const sampling = @import("../models/surface/sampling.zig");
 
@@ -44,12 +45,40 @@ fn uniformSampling(
 ) !void {
     var timer = try std.time.Timer.start();
 
+    // TODO: the name of the created PointCloud should be given from the UI
     const pc = try sms.app_ctx.point_cloud_store.createPointCloud(sms.app_ctx.surface_mesh_store.surfaceMeshName(sm).?);
     const point_position = try pc.addData(Vec3f, "position");
     const point_surface_point = try pc.addData(SurfacePoint, "surface_point");
     sms.app_ctx.point_cloud_store.setPointCloudStdData(pc, .{ .position = point_position });
 
-    try sampling.samplePointsOnSurface(sms.app_ctx, sm, vertex_position, face_area, pc, point_position, point_surface_point, nb_points);
+    try sampling.uniformlySamplePointsOnSurface(sms.app_ctx, sm, vertex_position, face_area, pc, point_position, point_surface_point, nb_points);
+    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(pc, Vec3f, point_position);
+    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(pc, SurfacePoint, point_surface_point);
+    sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(pc);
+
+    const elapsed: f64 = @floatFromInt(timer.read());
+    zgp_log.info("Uniform sampling computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+
+    sms.app_ctx.requestRedraw();
+}
+
+fn poissonDiskSampling(
+    sms: *SurfaceMeshSampling,
+    sm: *SurfaceMesh,
+    sm_bvh: bvh.TrianglesBVH,
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    min_distance: f32,
+) !void {
+    var timer = try std.time.Timer.start();
+
+    // TODO: the name of the created PointCloud should be given from the UI
+    const pc = try sms.app_ctx.point_cloud_store.createPointCloud(sms.app_ctx.surface_mesh_store.surfaceMeshName(sm).?);
+    const point_position = try pc.addData(Vec3f, "position");
+    const point_surface_point = try pc.addData(SurfacePoint, "surface_point");
+    sms.app_ctx.point_cloud_store.setPointCloudStdData(pc, .{ .position = point_position });
+
+    try sampling.poissonDiskSamplePointsOnSurface(sms.app_ctx, sm, sm_bvh, vertex_position, face_normal, pc, point_position, point_surface_point, min_distance);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(pc, Vec3f, point_position);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(pc, SurfacePoint, point_surface_point);
     sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(pc);
@@ -71,6 +100,7 @@ pub fn rightClickMenu(m: *Module) void {
 
     const UiData = struct {
         var nb_points: usize = 1000;
+        var min_distance: f32 = 0.01;
     };
 
     const style = c.ImGui_GetStyle();
@@ -99,6 +129,35 @@ pub fn rightClickMenu(m: *Module) void {
                     info.std_datas.vertex_position.?,
                     info.std_datas.face_area.?,
                     UiData.nb_points,
+                ) catch |err| {
+                    std.debug.print("Error sampling: {}\n", .{err});
+                };
+            }
+            if (disabled) {
+                c.ImGui_EndDisabled();
+            }
+        }
+
+        if (c.ImGui_BeginMenu("Poisson disk sampling")) {
+            defer c.ImGui_EndMenu();
+            c.ImGui_Text("Minimum distance");
+            c.ImGui_PushID("Minimum distance");
+            _ = c.ImGui_InputFloat("", @ptrCast(&UiData.min_distance));
+            c.ImGui_PopID();
+            const disabled =
+                info.bvh.bvh_ptr == null or
+                info.std_datas.vertex_position == null or
+                info.std_datas.face_normal == null;
+            if (disabled) {
+                c.ImGui_BeginDisabled(true);
+            }
+            if (c.ImGui_ButtonEx("Sample", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                sms.poissonDiskSampling(
+                    sm,
+                    info.bvh,
+                    info.std_datas.vertex_position.?,
+                    info.std_datas.face_normal.?,
+                    UiData.min_distance,
                 ) catch |err| {
                     std.debug.print("Error sampling: {}\n", .{err});
                 };

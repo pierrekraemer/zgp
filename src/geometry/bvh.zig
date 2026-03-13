@@ -4,6 +4,7 @@ const zgp = @import("../main.zig");
 const c = zgp.c;
 
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
+const SurfacePoint = @import("../models/surface/SurfacePoint.zig");
 
 const vec = @import("vec.zig");
 const Vec3f = vec.Vec3f;
@@ -144,7 +145,28 @@ pub const TrianglesBVH = struct {
 
     pub fn closestPoint(tbvh: TrianglesBVH, point: Vec3f) Vec3f {
         var closest: Vec3f = undefined;
-        c.closestPoint(tbvh.bvh_ptr, &point, &closest);
+        var triIndex: Index = undefined;
+        var bcoords: Vec3f = undefined;
+        c.closestPoint(tbvh.bvh_ptr, &point, &closest, &triIndex, &bcoords);
         return closest;
+    }
+
+    pub fn closestPointWithSurfacePoint(tbvh: TrianglesBVH, point: Vec3f) struct { Vec3f, SurfacePoint } {
+        var closest: Vec3f = undefined;
+        var triIndex: Index = undefined;
+        var bcoords: Vec3f = undefined;
+        c.closestPoint(tbvh.bvh_ptr, &point, &closest, &triIndex, &bcoords);
+        return .{
+            closest,
+            .{
+                .surface_mesh = tbvh.surface_mesh.?,
+                .type = .{
+                    .face = .{
+                        .cell = tbvh.surface_mesh_faces.items[triIndex],
+                        .bcoords = bcoords,
+                    },
+                },
+            },
+        };
     }
 };

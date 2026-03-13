@@ -23,8 +23,8 @@
         },
         .clibacc = .{
             // .path = "../clibacc",
-            .url = "git+https://github.com/pierrekraemer/clibacc.git#17c50be8cd2620cc5abe1ea8d2366d7df519c045",
-            .hash = "clibacc-0.0.0-HMOW8SewAAAtaRzDzYQbvj2FGkzxlZEK9PGRrASum_Rt",
+            .url = "git+https://github.com/pierrekraemer/clibacc.git#62754a213995fda2b927caeac1958d84876dcad0",
+            .hash = "clibacc-0.0.0-HMOW8ZevAAAPEoQqbPkFBI0VL8o4S4yB5X7ZT2Ewwz0-",
         },
     },
     .paths = .{

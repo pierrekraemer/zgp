@@ -58,6 +58,7 @@ const zgp_log = std.log.scoped(.zgp);
 // TODO: use a lib like:
 // https://github.com/joegm/flags
 // https://github.com/Hejsil/zig-clap
+// https://github.com/zig-utils/zig-cli
 const CLIArgs = @import("utils/CLIArgs.zig");
 var cli_args: CLIArgs = undefined;
 
@@ -130,6 +131,7 @@ var modules: std.ArrayList(*Module) = .empty;
 
 /// ZGP modules
 /// TODO: could be declared in a config file and loaded at runtime
+/// https://github.com/zig-utils/zig-config
 var point_cloud_std_datas: PointCloudStdDatas = undefined;
 var surface_mesh_std_datas: SurfaceMeshStdDatas = undefined;
 var point_cloud_renderer: PointCloudRenderer = undefined;
