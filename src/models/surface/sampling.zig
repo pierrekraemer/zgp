@@ -77,10 +77,11 @@ pub fn poissonDiskSamplePointsOnSurface(
     var active_points: std.ArrayList(SurfacePoint) = try .initCapacity(app_ctx.allocator, 1024);
     defer active_points.deinit(app_ctx.allocator);
 
-    var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
+    // initialize a first point
     {
+        var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
         const f = face_it.next().?; // get the first face of the SurfaceMesh
-        const sp: SurfacePoint = .{ // and init a SurfacePoint at its center
+        const sp: SurfacePoint = .{ // and create a SurfacePoint at its center
             .surface_mesh = sm,
             .type = .{
                 .face = .{ .cell = f, .bcoords = .{ 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0 } },
@@ -91,6 +92,7 @@ pub fn poissonDiskSamplePointsOnSurface(
         const pos = sp.readData(Vec3f, .vertex, vertex_position);
         point_position.valuePtr(p).* = pos;
         try active_points.append(app_ctx.allocator, sp); // add the SurfacePoint to the active list
+        // compute the grid coordinates of the point with respect to the center of the bounding box
         const pos_grid_coord = vec.divScalar3f(vec.sub3f(pos, center), grid_unit_size);
         const grid_idx: [3]i32 = .{
             @intFromFloat(pos_grid_coord[0]),
@@ -102,9 +104,11 @@ pub fn poissonDiskSamplePointsOnSurface(
 
     var r = app_ctx.rng.random();
     while (active_points.items.len > 0) {
+        // pick a random active point
         const idx = r.intRangeLessThan(u32, 0, @intCast(active_points.items.len));
         const sp = active_points.items[idx];
         const f = sp.type.face.cell; // active point are face SurfacePoints
+        // compute the tangent basis of the face
         const f_basis_X: Vec3f = vec.normalized3f(vec.sub3f(
             vertex_position.value(.{ .vertex = f.dart() }),
             vertex_position.value(.{ .vertex = sm.phi1(f.dart()) }),
@@ -112,31 +116,42 @@ pub fn poissonDiskSamplePointsOnSurface(
         const f_basis_Y: Vec3f = vec.normalized3f(vec.cross3f(face_normal.value(f), f_basis_X));
         const pos = sp.readData(Vec3f, .vertex, vertex_position);
         var new_point_added = false;
-        // 30 attempts to find a valid candidate point around the current point
-        for (0..30) |_| {
+        // 25 attempts to find a valid candidate point around the current point
+        for (0..25) |_| {
+            // sample a random angle and distance
             const angle = r.float(f32) * std.math.pi * 2.0;
             const dist = r.float(f32) * min_distance + min_distance;
+            // compute the candidate point in the tangent space of the face
             const candidate_pos_tangent = vec.add3f(pos, vec.add3f(
                 vec.mulScalar3f(f_basis_X, dist * @cos(angle)),
                 vec.mulScalar3f(f_basis_Y, dist * @sin(angle)),
             ));
+            // project it to its closest point (with its SurfacePoint) on the surface
             const candidate_pos, const candidate_sp = sm_bvh.closestPointWithSurfacePoint(candidate_pos_tangent);
+            // compute the grid coordinates of the candidate point
             const candidate_pos_grid_coord = vec.divScalar3f(vec.sub3f(candidate_pos, center), grid_unit_size);
+            // check if the candidate point is valid
+            const candidate_pos_grid_idx: [3]i32 = .{
+                @intFromFloat(candidate_pos_grid_coord[0]),
+                @intFromFloat(candidate_pos_grid_coord[1]),
+                @intFromFloat(candidate_pos_grid_coord[2]),
+            };
+            if (grid.get(candidate_pos_grid_idx)) |_| {
+                continue; // if the grid cell of the candidate point is already occupied, it is not valid
+            }
             var candidate_is_valid = true;
+            // check if the neighboring grid cells
             for (0..3) |x| blk: {
                 for (0..3) |y| {
                     for (0..3) |z| {
-                        const dx: i32 = @as(i32, @intCast(x)) - 1;
-                        const dy: i32 = @as(i32, @intCast(y)) - 1;
-                        const dz: i32 = @as(i32, @intCast(z)) - 1;
                         const grid_idx: [3]i32 = .{
-                            @as(i32, @intFromFloat(candidate_pos_grid_coord[0])) + dx,
-                            @as(i32, @intFromFloat(candidate_pos_grid_coord[1])) + dy,
-                            @as(i32, @intFromFloat(candidate_pos_grid_coord[2])) + dz,
+                            @as(i32, @intFromFloat(candidate_pos_grid_coord[0])) + @as(i32, @intCast(x)) - 1,
+                            @as(i32, @intFromFloat(candidate_pos_grid_coord[1])) + @as(i32, @intCast(y)) - 1,
+                            @as(i32, @intFromFloat(candidate_pos_grid_coord[2])) + @as(i32, @intCast(z)) - 1,
                         };
-                        if (grid.get(grid_idx)) |p| {
-                            if (vec.norm3f(vec.sub3f(candidate_pos, p)) < min_distance) {
-                                candidate_is_valid = false;
+                        if (grid.get(grid_idx)) |p| { // if it is occupied
+                            if (vec.norm3f(vec.sub3f(candidate_pos, p)) < min_distance) { // and its content is too close to the candidate point
+                                candidate_is_valid = false; // it is not valid
                                 break :blk;
                             }
                         }

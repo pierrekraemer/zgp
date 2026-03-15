@@ -516,14 +516,14 @@ pub fn CellSet(comptime cell_type: CellType) type {
         }
         pub fn add(self: *Self, c: Cell) !void {
             assert(c.cellType() == cell_type);
-            if (!self.contains(c)) {
-                self.marker.mark(c);
-                try self.cells.append(self.surface_mesh.allocator, c);
-                try self.indices.append(self.surface_mesh.allocator, self.surface_mesh.cellIndex(c));
-            }
+            if (self.contains(c)) return;
+            self.marker.mark(c);
+            try self.cells.append(self.surface_mesh.allocator, c);
+            try self.indices.append(self.surface_mesh.allocator, self.surface_mesh.cellIndex(c));
         }
         pub fn remove(self: *Self, c: Cell) void {
             assert(c.cellType() == cell_type);
+            if (!self.contains(c)) return;
             const c_index = self.surface_mesh.cellIndex(c);
             self.marker.unmark(c);
             for (self.indices.items, 0..) |index, i| {
