@@ -83,7 +83,7 @@ pub const Parameters = struct {
     model_view_matrix: [16]f32 = undefined,
     projection_matrix: [16]f32 = undefined,
     ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
-    light_position: [3]f32 = .{ -100, 0, 100 },
+    light_position: [3]f32 = .{ -10, 0, 100 },
     min_value: f32 = 0.0,
     max_value: f32 = 1.0,
 

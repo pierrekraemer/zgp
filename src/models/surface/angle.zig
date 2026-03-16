@@ -57,6 +57,8 @@ pub fn computeCornerAngles(
         .corner_angle = corner_angle,
     });
 
+    // single-threaded version for the record
+
     // _ = app_ctx;
     // var corner_it = try SurfaceMesh.CellIterator(.corner).init(sm);
     // defer corner_it.deinit();

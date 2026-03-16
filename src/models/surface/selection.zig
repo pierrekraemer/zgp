@@ -8,7 +8,7 @@ const Vec3f = vec.Vec3f;
 
 fn includeVertex(
     sm: *const SurfaceMesh,
-    dm: SurfaceMesh.DartMarker,
+    dm: *SurfaceMesh.DartMarker,
     v: SurfaceMesh.Cell,
     vertex_buffer: *std.ArrayList(SurfaceMesh.Cell),
     edge_buffer: *std.ArrayList(SurfaceMesh.Cell),
@@ -17,9 +17,9 @@ fn includeVertex(
     try vertex_buffer.append(sm.allocator, v);
     var dart_it = sm.cellDartIterator(v);
     while (dart_it.next()) |d| {
-        dm.valuePtr(d).* = true;
+        dm.mark(d);
         // if all darts of the edge are now marked, include edge in result
-        if (dm.value(d) and dm.value(sm.phi2(d))) {
+        if (dm.isMarked(d) and dm.isMarked(sm.phi2(d))) {
             try edge_buffer.append(sm.allocator, .{ .edge = d });
         }
         // if all darts of the face are now marked, include face in result
@@ -27,7 +27,7 @@ fn includeVertex(
         const face: SurfaceMesh.Cell = .{ .face = d };
         var face_dart_it = sm.cellDartIterator(face);
         while (face_dart_it.next()) |fd| {
-            if (!dm.value(fd)) {
+            if (!dm.isMarked(fd)) {
                 face_in = false;
                 break;
             }
@@ -59,7 +59,7 @@ pub fn cellsWithinSphereAroundVertex(
     var dm = try SurfaceMesh.DartMarker.init(sm);
     defer dm.deinit();
 
-    try includeVertex(sm, dm, vertex, vertex_buffer, edge_buffer, face_buffer);
+    try includeVertex(sm, &dm, vertex, vertex_buffer, edge_buffer, face_buffer);
 
     var i: u32 = 0;
     while (i < vertex_buffer.items.len) : (i += 1) {
@@ -67,13 +67,13 @@ pub fn cellsWithinSphereAroundVertex(
         var dart_it = sm.cellDartIterator(v);
         while (dart_it.next()) |d| {
             const d2 = sm.phi2(d);
-            if (dm.value(d2)) {
+            if (dm.isMarked(d2)) {
                 continue;
             }
             const nv: SurfaceMesh.Cell = .{ .vertex = d2 };
             const nvp = vertex_position.value(nv);
             if (vec.squaredNorm3f(vec.sub3f(nvp, vp)) < radius * radius) {
-                try includeVertex(sm, dm, nv, vertex_buffer, edge_buffer, face_buffer);
+                try includeVertex(sm, &dm, nv, vertex_buffer, edge_buffer, face_buffer);
             }
         }
     }

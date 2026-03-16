@@ -21,8 +21,12 @@ const IBO = @import("../rendering/IBO.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
+const Vec4f = vec.Vec4f;
 const mat = @import("../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
+
+const color = @import("../utils/color.zig");
+const selection = @import("../models/surface/selection.zig");
 
 const SelectionData = struct {
     point_sphere_shader_parameters: PointSphere.Parameters,
@@ -52,6 +56,16 @@ const SelectionData = struct {
     }
 };
 
+const SelectionMode = enum {
+    single,
+    within_sphere,
+};
+
+const SelectionAction = enum {
+    add,
+    remove,
+};
+
 app_ctx: *AppContext,
 module: Module = .{
     .name = "Surface Mesh Selection",
@@ -67,6 +81,8 @@ module: Module = .{
 },
 surface_meshes_data: std.AutoHashMap(*SurfaceMesh, SelectionData),
 
+selection_mode: SelectionMode = .single,
+selection_radius: f32 = 0.05,
 selecting: bool = false,
 selecting_cell_type: SurfaceMesh.CellType = .vertex,
 hovered_cell: ?SurfaceMesh.Cell = null,
@@ -173,13 +189,31 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
 
     // draw currently hovered cell
     if (sms.selecting and sms.hovered_cell != null) {
+        const modState = c.SDL_GetModState();
+        const action: SelectionAction = if (modState & c.SDL_KMOD_SHIFT != 0) .remove else .add;
         const cell_type = sms.hovered_cell.?.cellType();
         switch (cell_type) {
             .vertex => {
                 const sphere_radius_backup = sd.point_sphere_shader_parameters.sphere_radius;
-                sd.point_sphere_shader_parameters.sphere_radius *= 1.1;
+                switch (sms.selection_mode) {
+                    .single => sd.point_sphere_shader_parameters.sphere_radius *= 1.1,
+                    .within_sphere => sd.point_sphere_shader_parameters.sphere_radius = sms.selection_radius,
+                }
                 const sphere_color_backup = sd.point_sphere_shader_parameters.sphere_color;
-                sd.point_sphere_shader_parameters.sphere_color = .{ sphere_color_backup[0], sphere_color_backup[1], sphere_color_backup[2], 0.5 };
+                const sphere_color_basis = switch (sms.selecting_cell_type) {
+                    .vertex => sd.point_sphere_shader_parameters.sphere_color,
+                    .edge => sd.line_cylinder_shader_parameters.cylinder_color,
+                    .face => sd.tri_flat_shader_parameters.vertex_color,
+                    else => unreachable,
+                };
+                const sphere_color: Vec4f = switch (action) {
+                    .add => .{ sphere_color_basis[0], sphere_color_basis[1], sphere_color_basis[2], 0.5 },
+                    .remove => blk: {
+                        const opposite_color = color.perceptualOppositeRGB(.{ sphere_color_basis[0], sphere_color_basis[1], sphere_color_basis[2] });
+                        break :blk .{ opposite_color[0], opposite_color[1], opposite_color[2], 0.8 };
+                    },
+                };
+                sd.point_sphere_shader_parameters.sphere_color = sphere_color;
                 sd.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
                 sd.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
                 gl.Enable(gl.BLEND);
@@ -193,7 +227,14 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
                 const cylinder_radius_backup = sd.line_cylinder_shader_parameters.cylinder_radius;
                 sd.line_cylinder_shader_parameters.cylinder_radius *= 1.1;
                 const cylinder_color_backup = sd.line_cylinder_shader_parameters.cylinder_color;
-                sd.line_cylinder_shader_parameters.cylinder_color = .{ cylinder_color_backup[0], cylinder_color_backup[1], cylinder_color_backup[2], 0.5 };
+                const cylinder_color: Vec4f = switch (action) {
+                    .add => .{ cylinder_color_backup[0], cylinder_color_backup[1], cylinder_color_backup[2], 0.5 },
+                    .remove => blk: {
+                        const opposite_color = color.perceptualOppositeRGB(.{ cylinder_color_backup[0], cylinder_color_backup[1], cylinder_color_backup[2] });
+                        break :blk .{ opposite_color[0], opposite_color[1], opposite_color[2], 0.8 };
+                    },
+                };
+                sd.line_cylinder_shader_parameters.cylinder_color = cylinder_color;
                 sd.line_cylinder_shader_parameters.model_view_matrix = @bitCast(view_matrix);
                 sd.line_cylinder_shader_parameters.projection_matrix = @bitCast(projection_matrix);
                 gl.Enable(gl.BLEND);
@@ -205,7 +246,14 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
             },
             .face => {
                 const vertex_color_backup = sd.tri_flat_shader_parameters.vertex_color;
-                sd.tri_flat_shader_parameters.vertex_color = vec.mulScalar4f(vertex_color_backup, 0.5);
+                const vertex_color: Vec4f = switch (action) {
+                    .add => vec.mulScalar4f(vertex_color_backup, 0.75),
+                    .remove => blk: {
+                        const opposite_color = color.perceptualOppositeRGB(.{ vertex_color_backup[0], vertex_color_backup[1], vertex_color_backup[2] });
+                        break :blk .{ opposite_color[0], opposite_color[1], opposite_color[2], 0.75 };
+                    },
+                };
+                sd.tri_flat_shader_parameters.vertex_color = vertex_color;
                 sd.tri_flat_shader_parameters.model_view_matrix = @bitCast(view_matrix);
                 sd.tri_flat_shader_parameters.projection_matrix = @bitCast(projection_matrix);
                 gl.Enable(gl.POLYGON_OFFSET_FILL);
@@ -232,7 +280,11 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
     switch (event.type) {
         c.SDL_EVENT_KEY_DOWN => {
             switch (event.key.key) {
-                c.SDLK_S => sms.selecting = true,
+                c.SDLK_S => {
+                    sms.selecting = true;
+                    sms.app_ctx.requestRedraw();
+                },
+                c.SDLK_LSHIFT, c.SDLK_RSHIFT => sms.app_ctx.requestRedraw(),
                 else => {},
             }
         },
@@ -253,24 +305,39 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
         c.SDL_EVENT_MOUSE_MOTION => {
             if (sms.selecting) {
                 const info = sm_store.surfaceMeshInfo(sm);
+                // TODO: fallback to brute-force search if the BVH is not available
                 if (info.bvh.bvh_ptr) |_| {
                     if (view.viewToWorldRayIfGeometry(event.motion.x, event.motion.y)) |ray| {
-                        switch (sms.selecting_cell_type) {
-                            .vertex => {
-                                sms.hovered_cell = info.bvh.intersectedVertex(ray);
+                        switch (sms.selection_mode) {
+                            .single => {
+                                switch (sms.selecting_cell_type) {
+                                    .vertex => {
+                                        sms.hovered_cell = info.bvh.intersectedVertex(ray);
+                                    },
+                                    .edge => {
+                                        sms.hovered_cell = info.bvh.intersectedEdge(ray);
+                                    },
+                                    .face => {
+                                        sms.hovered_cell = info.bvh.intersectedTriangle(ray);
+                                    },
+                                    else => unreachable,
+                                }
                             },
-                            .edge => {
-                                sms.hovered_cell = info.bvh.intersectedEdge(ray);
+                            .within_sphere => {
+                                sms.hovered_cell = info.bvh.intersectedVertex(ray); // within sphere selection is always centered on a vertex
                             },
-                            .face => {
-                                sms.hovered_cell = info.bvh.intersectedTriangle(ray);
-                            },
-                            else => unreachable,
                         }
-                        sms.hovered_cell_ibo.fillFromCellSlice(sm, &[_]SurfaceMesh.Cell{sms.hovered_cell.?}, sms.app_ctx.allocator) catch |err| {
-                            std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
-                            return;
-                        };
+                        if (sms.hovered_cell) |cell| {
+                            sms.hovered_cell_ibo.fillFromCellSlice(sm, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
+                                std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
+                                return;
+                            };
+                        } else {
+                            sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{}) catch |err| {
+                                std.debug.print("Failed to clear selecting cell IBO: {}\n", .{err});
+                                return;
+                            };
+                        }
                     } else {
                         // no cell is currently hovered, clear the selecting cell
                         sms.hovered_cell = null;
@@ -288,57 +355,128 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                 c.SDL_BUTTON_LEFT => {
                     if (sms.selecting) {
                         const info = sm_store.surfaceMeshInfo(sm);
-                        // TODO: fallback to brute-force search if the BVH is not available
-                        if (info.bvh.bvh_ptr) |_| {
-                            if (view.viewToWorldRayIfGeometry(event.button.x, event.button.y)) |ray| {
-                                switch (sms.selecting_cell_type) {
-                                    .vertex => {
-                                        if (info.bvh.intersectedVertex(ray)) |v| {
-                                            const modState = c.SDL_GetModState();
-                                            if ((modState & c.SDL_KMOD_SHIFT) != 0) {
-                                                info.vertex_set.remove(v);
-                                            } else {
-                                                info.vertex_set.add(v) catch |err| {
-                                                    std.debug.print("Failed to add vertex to vertex_set: {}\n", .{err});
-                                                    return;
-                                                };
+                        if (sms.hovered_cell) |cell| {
+                            const modState = c.SDL_GetModState();
+                            const action: SelectionAction = if (modState & c.SDL_KMOD_SHIFT != 0) .remove else .add;
+                            switch (sms.selection_mode) {
+                                .single => {
+                                    switch (sms.selecting_cell_type) {
+                                        .vertex => {
+                                            switch (action) {
+                                                .add => {
+                                                    info.vertex_set.add(cell) catch |err| {
+                                                        std.debug.print("Failed to add vertex to vertex_set: {}\n", .{err});
+                                                        return;
+                                                    };
+                                                },
+                                                .remove => info.vertex_set.remove(cell),
                                             }
                                             sm_store.surfaceMeshCellSetUpdated(sm, .vertex);
                                             sms.app_ctx.requestRedraw();
-                                        }
-                                    },
-                                    .edge => {
-                                        if (info.bvh.intersectedEdge(ray)) |e| {
-                                            const modState = c.SDL_GetModState();
-                                            if ((modState & c.SDL_KMOD_SHIFT) != 0) {
-                                                info.edge_set.remove(e);
-                                            } else {
-                                                info.edge_set.add(e) catch |err| {
-                                                    std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
-                                                    return;
-                                                };
+                                        },
+                                        .edge => {
+                                            switch (action) {
+                                                .add => {
+                                                    info.edge_set.add(cell) catch |err| {
+                                                        std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
+                                                        return;
+                                                    };
+                                                },
+                                                .remove => info.edge_set.remove(cell),
                                             }
                                             sm_store.surfaceMeshCellSetUpdated(sm, .edge);
                                             sms.app_ctx.requestRedraw();
-                                        }
-                                    },
-                                    .face => {
-                                        if (info.bvh.intersectedTriangle(ray)) |f| {
-                                            const modState = c.SDL_GetModState();
-                                            if ((modState & c.SDL_KMOD_SHIFT) != 0) {
-                                                info.face_set.remove(f);
-                                            } else {
-                                                info.face_set.add(f) catch |err| {
-                                                    std.debug.print("Failed to add face to face_set: {}\n", .{err});
-                                                    return;
-                                                };
+                                        },
+                                        .face => {
+                                            switch (action) {
+                                                .add => {
+                                                    info.face_set.add(cell) catch |err| {
+                                                        std.debug.print("Failed to add face to face_set: {}\n", .{err});
+                                                        return;
+                                                    };
+                                                },
+                                                .remove => info.face_set.remove(cell),
                                             }
                                             sm_store.surfaceMeshCellSetUpdated(sm, .face);
                                             sms.app_ctx.requestRedraw();
+                                        },
+                                        else => unreachable,
+                                    }
+                                },
+                                .within_sphere => {
+                                    if (info.std_datas.vertex_position) |vertex_position| {
+                                        var vertices: std.ArrayList(SurfaceMesh.Cell) = .empty;
+                                        defer vertices.deinit(sm.allocator);
+                                        var edges: std.ArrayList(SurfaceMesh.Cell) = .empty;
+                                        defer edges.deinit(sm.allocator);
+                                        var faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
+                                        defer faces.deinit(sm.allocator);
+                                        selection.cellsWithinSphereAroundVertex(sm, cell, sms.selection_radius, vertex_position, &vertices, &edges, &faces) catch |err| {
+                                            std.debug.print("Failed to select cells within sphere: {}\\n", .{err});
+                                            return;
+                                        };
+                                        switch (sms.selecting_cell_type) {
+                                            .vertex => {
+                                                switch (action) {
+                                                    .add => {
+                                                        for (vertices.items) |v| {
+                                                            info.vertex_set.add(v) catch |err| {
+                                                                std.debug.print("Failed to add vertex to vertex_set: {}\n", .{err});
+                                                                return;
+                                                            };
+                                                        }
+                                                    },
+                                                    .remove => {
+                                                        for (vertices.items) |v| {
+                                                            info.vertex_set.remove(v);
+                                                        }
+                                                    },
+                                                }
+                                                sm_store.surfaceMeshCellSetUpdated(sm, .vertex);
+                                                sms.app_ctx.requestRedraw();
+                                            },
+                                            .edge => {
+                                                switch (action) {
+                                                    .add => {
+                                                        for (edges.items) |e| {
+                                                            info.edge_set.add(e) catch |err| {
+                                                                std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
+                                                                return;
+                                                            };
+                                                        }
+                                                    },
+                                                    .remove => {
+                                                        for (edges.items) |e| {
+                                                            info.edge_set.remove(e);
+                                                        }
+                                                    },
+                                                }
+                                                sm_store.surfaceMeshCellSetUpdated(sm, .edge);
+                                                sms.app_ctx.requestRedraw();
+                                            },
+                                            .face => {
+                                                switch (action) {
+                                                    .add => {
+                                                        for (faces.items) |f| {
+                                                            info.face_set.add(f) catch |err| {
+                                                                std.debug.print("Failed to add face to face_set: {}\n", .{err});
+                                                                return;
+                                                            };
+                                                        }
+                                                    },
+                                                    .remove => {
+                                                        for (faces.items) |f| {
+                                                            info.face_set.remove(f);
+                                                        }
+                                                    },
+                                                }
+                                                sm_store.surfaceMeshCellSetUpdated(sm, .face);
+                                                sms.app_ctx.requestRedraw();
+                                            },
+                                            else => unreachable,
                                         }
-                                    },
-                                    else => {},
-                                }
+                                    }
+                                },
                             }
                         }
                     }
@@ -371,7 +509,15 @@ pub fn rightPanel(m: *Module) void {
     if (info.bvh.bvh_ptr == null) {
         c.ImGui_TextWrapped("A BVH must exist for the SurfaceMesh to select cells");
     }
-    c.ImGui_Separator();
+
+    c.ImGui_SeparatorText("Selection mode");
+    if (c.ImGui_RadioButton("Single", sms.selection_mode == .single)) {
+        sms.selection_mode = .single;
+    }
+    c.ImGui_SameLine();
+    if (c.ImGui_RadioButton("Within Sphere", sms.selection_mode == .within_sphere)) {
+        sms.selection_mode = .within_sphere;
+    }
 
     var buf: [64]u8 = undefined;
 

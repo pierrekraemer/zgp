@@ -67,13 +67,8 @@ pub fn computeFaceAreas(
     });
 
     // single-threaded version for the record
-    // (task closure is not actually needed here)
 
-    // const task: Task = .{
-    //     .surface_mesh = sm,
-    //     .vertex_position = vertex_position,
-    //     .face_area = face_area,
-    // };
+    // _ = app_ctx;
     // var it = try SurfaceMesh.CellIterator(.face).init(sm);
     // defer it.deinit();
     // while (it.next()) |face| {
