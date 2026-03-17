@@ -58,8 +58,8 @@ pub fn updateViewMatrix(c: *Camera) void {
 
 pub fn updateProjectionMatrix(c: *Camera) void {
     c.projection_matrix = switch (c.projection_type) {
-        .perspective => mat.perspective(c.field_of_view, c.aspect_ratio, 0.01, 3.0),
-        .orthographic => mat.orthographic(c.aspect_ratio * -c.view_matrix[3][2], -c.view_matrix[3][2], 0.01, 3.0),
+        .perspective => mat.perspective(c.field_of_view, c.aspect_ratio, 0.01, 5.0),
+        .orthographic => mat.orthographic(c.aspect_ratio * -c.view_matrix[3][2], -c.view_matrix[3][2], 0.01, 5.0),
     };
 }
 

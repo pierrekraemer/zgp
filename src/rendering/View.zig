@@ -23,6 +23,7 @@ const Camera = @import("Camera.zig");
 const FBO = @import("FBO.zig");
 const Texture2D = @import("Texture2D.zig");
 const FullscreenTexture = @import("shaders/fullscreen_texture/FullscreenTexture.zig");
+const InfiniteGrid = @import("shaders/infinite_grid/InfiniteGrid.zig");
 
 camera: Camera = undefined,
 
@@ -34,13 +35,15 @@ screen_depth_tex: Texture2D = undefined,
 
 fbo: FBO = undefined,
 fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = undefined,
+infinite_grid_parameters: InfiniteGrid.Parameters = undefined,
 
 background_color: Vec4f = .{ 0.48, 0.48, 0.48, 1 },
+show_grid: bool = true,
 
 needs_redraw: bool = true,
 
 pub fn init(view: *View) void {
-    view.camera = Camera.init(
+    view.camera = .init(
         .{ 0.0, 0.0, 2.0 },
         .{ 0.0, 0.0, -1.0 },
         .{ 0.0, 1.0, 0.0 },
@@ -68,11 +71,13 @@ pub fn init(view: *View) void {
         gl_log.err("Framebuffer not complete: {d}", .{status});
     }
 
-    view.fullscreen_texture_shader_parameters = FullscreenTexture.Parameters.init();
+    view.fullscreen_texture_shader_parameters = .init();
     view.fullscreen_texture_shader_parameters.setTexture(view.screen_color_tex);
+    view.infinite_grid_parameters = .init();
 }
 
 pub fn deinit(view: *View) void {
+    view.infinite_grid_parameters.deinit();
     view.fullscreen_texture_shader_parameters.deinit();
     view.fbo.deinit();
     view.screen_depth_tex.deinit();
@@ -101,7 +106,13 @@ pub fn draw(view: *View, modules: []*Module) void {
         for (modules) |module| {
             module.draw(view.camera.view_matrix, view.camera.projection_matrix);
         }
+        if (view.show_grid) {
+            gl.DepthMask(gl.FALSE);
+            view.infinite_grid_parameters.draw(view.camera.view_matrix, view.camera.projection_matrix);
+            gl.DepthMask(gl.TRUE);
+        }
         gl.Disable(gl.DEPTH_TEST);
+
         view.needs_redraw = false;
     }
     gl.Clear(gl.COLOR_BUFFER_BIT);
@@ -113,6 +124,10 @@ pub fn menuBar(view: *View) void {
     if (c.ImGui_BeginMenu("Camera")) {
         defer c.ImGui_EndMenu();
         if (c.ImGui_ColorEdit3("Background color", &view.background_color, c.ImGuiColorEditFlags_NoInputs)) {
+            view.needs_redraw = true;
+        }
+        if (c.ImGui_MenuItemEx("Show grid", null, view.show_grid, true)) {
+            view.show_grid = !view.show_grid;
             view.needs_redraw = true;
         }
         c.ImGui_Separator();
