@@ -42,11 +42,11 @@ fn uniformSampling(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
     nb_points: usize,
+    pointcloud_name: []const u8,
 ) !void {
     var timer = try std.time.Timer.start();
 
-    // TODO: the name of the created PointCloud should be given from the UI
-    const pc = try sms.app_ctx.point_cloud_store.createPointCloud(sms.app_ctx.surface_mesh_store.surfaceMeshName(sm).?);
+    const pc = try sms.app_ctx.point_cloud_store.createPointCloud(pointcloud_name);
     const point_position = try pc.addData(Vec3f, "position");
     const point_surface_point = try pc.addData(SurfacePoint, "surface_point");
     sms.app_ctx.point_cloud_store.setPointCloudStdData(pc, .{ .position = point_position });
@@ -69,11 +69,11 @@ fn poissonDiskSampling(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     min_distance: f32,
+    pointcloud_name: []const u8,
 ) !void {
     var timer = try std.time.Timer.start();
 
-    // TODO: the name of the created PointCloud should be given from the UI
-    const pc = try sms.app_ctx.point_cloud_store.createPointCloud(sms.app_ctx.surface_mesh_store.surfaceMeshName(sm).?);
+    const pc = try sms.app_ctx.point_cloud_store.createPointCloud(pointcloud_name);
     const point_position = try pc.addData(Vec3f, "position");
     const point_surface_point = try pc.addData(SurfacePoint, "surface_point");
     sms.app_ctx.point_cloud_store.setPointCloudStdData(pc, .{ .position = point_position });
@@ -84,7 +84,7 @@ fn poissonDiskSampling(
     sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(pc);
 
     const elapsed: f64 = @floatFromInt(timer.read());
-    zgp_log.info("Uniform sampling computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+    zgp_log.info("Poisson disk sampling computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 
     sms.app_ctx.requestRedraw();
 }
@@ -100,7 +100,8 @@ pub fn rightClickMenu(m: *Module) void {
 
     const UiData = struct {
         var nb_points: usize = 1000;
-        var min_distance: f32 = 0.01;
+        var min_distance: f32 = 0.02;
+        var pointcloud_name_buf: [32]u8 = @splat(0);
     };
 
     const style = c.ImGui_GetStyle();
@@ -119,7 +120,13 @@ pub fn rightClickMenu(m: *Module) void {
             c.ImGui_PushID("Number of points");
             _ = c.ImGui_InputInt("", @ptrCast(&UiData.nb_points));
             c.ImGui_PopID();
-            const disabled = info.std_datas.vertex_position == null or info.std_datas.face_area == null;
+            c.ImGui_Text("PointCloud name:");
+            _ = c.ImGui_InputText("##Name", &UiData.pointcloud_name_buf, UiData.pointcloud_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
+            const pointcloud_name = std.mem.sliceTo(&UiData.pointcloud_name_buf, 0);
+            const disabled =
+                info.std_datas.vertex_position == null or
+                info.std_datas.face_area == null or
+                pointcloud_name.len == 0;
             if (disabled) {
                 c.ImGui_BeginDisabled(true);
             }
@@ -129,9 +136,11 @@ pub fn rightClickMenu(m: *Module) void {
                     info.std_datas.vertex_position.?,
                     info.std_datas.face_area.?,
                     UiData.nb_points,
+                    pointcloud_name,
                 ) catch |err| {
                     std.debug.print("Error sampling: {}\n", .{err});
                 };
+                UiData.pointcloud_name_buf = @splat(0);
             }
             if (disabled) {
                 c.ImGui_EndDisabled();
@@ -144,10 +153,14 @@ pub fn rightClickMenu(m: *Module) void {
             c.ImGui_PushID("Minimum distance");
             _ = c.ImGui_InputFloat("", @ptrCast(&UiData.min_distance));
             c.ImGui_PopID();
+            c.ImGui_Text("PointCloud name:");
+            _ = c.ImGui_InputText("##Name", &UiData.pointcloud_name_buf, UiData.pointcloud_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
+            const pointcloud_name = std.mem.sliceTo(&UiData.pointcloud_name_buf, 0);
             const disabled =
                 info.bvh.bvh_ptr == null or
                 info.std_datas.vertex_position == null or
-                info.std_datas.face_normal == null;
+                info.std_datas.face_normal == null or
+                pointcloud_name.len == 0;
             if (disabled) {
                 c.ImGui_BeginDisabled(true);
             }
@@ -158,9 +171,11 @@ pub fn rightClickMenu(m: *Module) void {
                     info.std_datas.vertex_position.?,
                     info.std_datas.face_normal.?,
                     UiData.min_distance,
+                    pointcloud_name,
                 ) catch |err| {
                     std.debug.print("Error sampling: {}\n", .{err});
                 };
+                UiData.pointcloud_name_buf = @splat(0);
             }
             if (disabled) {
                 c.ImGui_EndDisabled();

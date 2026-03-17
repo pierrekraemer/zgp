@@ -170,10 +170,13 @@ fn generateConvexHull(
     smc: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    convex_hull_name: []const u8,
 ) !void {
     var timer = try std.time.Timer.start();
 
-    const pc = try smc.app_ctx.point_cloud_store.createPointCloud(smc.app_ctx.surface_mesh_store.surfaceMeshName(sm).?);
+    var pc_name_buf: [256]u8 = undefined;
+    const pc_name = try std.fmt.bufPrint(&pc_name_buf, "{s}__convex_hull_tmp__", .{smc.app_ctx.surface_mesh_store.surfaceMeshName(sm).?});
+    const pc = try smc.app_ctx.point_cloud_store.createPointCloud(pc_name);
     defer smc.app_ctx.point_cloud_store.destroyPointCloud(pc);
     const point_position = try pc.addData(Vec3f, "position");
     var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
@@ -182,7 +185,7 @@ fn generateConvexHull(
         point_position.valuePtr(p).* = vertex_position.valuePtr(vertex).*;
     }
 
-    const ch = try smc.app_ctx.surface_mesh_store.createSurfaceMesh("convex_hull");
+    const ch = try smc.app_ctx.surface_mesh_store.createSurfaceMesh(convex_hull_name);
     const ch_vertex_position = try ch.addData(.vertex, Vec3f, "position");
     smc.app_ctx.surface_mesh_store.setSurfaceMeshStdData(ch, .{ .vertex_position = ch_vertex_position });
 
@@ -209,6 +212,7 @@ pub fn rightClickMenu(m: *Module) void {
         var edge_length_factor: f32 = 1.0;
         var percent_vertices_to_keep: i32 = 75;
         var adaptive_remeshing: bool = false;
+        var convex_hull_name_buf: [32]u8 = @splat(0);
     };
 
     const style = c.ImGui_GetStyle();
@@ -371,12 +375,17 @@ pub fn rightClickMenu(m: *Module) void {
 
         if (c.ImGui_BeginMenu("Convex hull")) {
             defer c.ImGui_EndMenu();
-            const disabled = info.std_datas.vertex_position == null;
+            c.ImGui_Text("Convex hull name:");
+            _ = c.ImGui_InputText("##Name", &UiData.convex_hull_name_buf, UiData.convex_hull_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
+            const convex_hull_name = std.mem.sliceTo(&UiData.convex_hull_name_buf, 0);
+            const disabled =
+                info.std_datas.vertex_position == null or
+                convex_hull_name.len == 0;
             if (disabled) {
                 c.ImGui_BeginDisabled(true);
             }
             if (c.ImGui_ButtonEx("Generate convex hull", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                smc.generateConvexHull(sm, info.std_datas.vertex_position.?) catch |err| {
+                smc.generateConvexHull(sm, info.std_datas.vertex_position.?, convex_hull_name) catch |err| {
                     std.debug.print("Error generating convex hull: {}\n", .{err});
                 };
             }

@@ -75,7 +75,7 @@ const MedialAxisData = struct {
         mad.vertex_sphere_error.?.data.fill(0.0);
         if (!mad.initialized) {
             var buf: [64]u8 = undefined;
-            const pc_name = std.fmt.bufPrintZ(&buf, "{s}_ma_spheres", .{mad.app_ctx.surface_mesh_store.surfaceMeshName(mad.surface_mesh).?}) catch "__ma_spheres";
+            const pc_name = std.fmt.bufPrint(&buf, "{s}_ma_spheres", .{mad.app_ctx.surface_mesh_store.surfaceMeshName(mad.surface_mesh).?}) catch "__ma_spheres";
             mad.spheres = try mad.app_ctx.point_cloud_store.createPointCloud(pc_name);
             mad.sphere_center = try mad.spheres.?.addData(Vec3f, "center");
             mad.sphere_radius = try mad.spheres.?.addData(f32, "radius");

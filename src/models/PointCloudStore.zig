@@ -347,17 +347,18 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
             c.ImGui_Text("Name:");
             _ = c.ImGui_InputText("##Name", &UiData.data_name_buf, UiData.data_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
             if (c.ImGui_ButtonEx("Close", c.ImVec2{ .x = 0.5 * c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                UiData.data_name_buf[0] = 0;
+                UiData.data_name_buf = @splat(0);
                 c.ImGui_CloseCurrentPopup();
             }
             c.ImGui_SameLine();
             if (c.ImGui_ButtonEx("Create", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 switch (UiData.selected_data_type) {
                     inline else => |data_type| {
-                        _ = pc.addData(@FieldType(CreateDataTypes, @tagName(data_type)), &UiData.data_name_buf) catch |err| {
-                            zgp_log.err("Error adding {s} ({s}) data: {}", .{ &UiData.data_name_buf, @tagName(data_type), err });
+                        const data_name = std.mem.sliceTo(&UiData.data_name_buf, 0);
+                        _ = pc.addData(@FieldType(CreateDataTypes, @tagName(data_type)), data_name) catch |err| {
+                            zgp_log.err("Error adding {s} ({s}) data: {}", .{ data_name, @tagName(data_type), err });
                         };
-                        UiData.data_name_buf[0] = 0;
+                        UiData.data_name_buf = @splat(0);
                     },
                 }
                 c.ImGui_CloseCurrentPopup();
