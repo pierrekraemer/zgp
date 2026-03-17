@@ -48,7 +48,7 @@ const VTable = struct {
     draw: ?*const fn (m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void = null,
 
     // Window events
-    sdlEvent: ?*const fn (m: *Module, event: *const c.SDL_Event) void = null,
+    sdlEvent: ?*const fn (m: *Module, event: *const c.SDL_Event) bool = null, // returns true if the event was handled and should not be processed by other modules
 };
 
 pub inline fn pointCloudCreated(m: *Module, pc: *PointCloud) void {
@@ -103,6 +103,6 @@ pub inline fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) voi
     if (m.vtable.draw) |func| func(m, view_matrix, projection_matrix);
 }
 
-pub inline fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
-    if (m.vtable.sdlEvent) |func| func(m, event);
+pub inline fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
+    return if (m.vtable.sdlEvent) |func| func(m, event) else false;
 }

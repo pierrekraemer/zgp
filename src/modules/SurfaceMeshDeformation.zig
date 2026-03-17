@@ -37,7 +37,7 @@ pub fn deinit(_: *SurfaceMeshDeformation) void {}
 
 /// Part of the Module interface.
 /// Manage SDL events.
-pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
+pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
     const smd: *SurfaceMeshDeformation = @alignCast(@fieldParentPtr("module", m));
     const sm_store = &smd.app_ctx.surface_mesh_store;
     const view = &smd.app_ctx.view;
@@ -45,8 +45,8 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
     assert(smd.app_ctx.selected_model.modelType() == .surface_mesh);
     const sm = smd.app_ctx.selected_model.surface_mesh;
 
-    switch (event.type) {
-        c.SDL_EVENT_KEY_DOWN => {
+    return switch (event.type) {
+        c.SDL_EVENT_KEY_DOWN => blk: {
             switch (event.key.key) {
                 c.SDLK_D => {
                     const info = sm_store.surfaceMeshInfo(sm);
@@ -66,14 +66,16 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                 },
                 else => {},
             }
+            break :blk false;
         },
-        c.SDL_EVENT_KEY_UP => {
+        c.SDL_EVENT_KEY_UP => blk: {
             switch (event.key.key) {
                 c.SDLK_D => smd.dragging = false,
                 else => {},
             }
+            break :blk false;
         },
-        c.SDL_EVENT_MOUSE_MOTION => {
+        c.SDL_EVENT_MOUSE_MOTION => blk: {
             if (smd.dragging) {
                 const info = sm_store.surfaceMeshInfo(sm);
                 const p_now = view.viewToWorldZ(event.motion.x, event.motion.y, smd.drag_z);
@@ -86,9 +88,11 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                     }
                     sm_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, info.std_datas.vertex_position.?);
                     smd.app_ctx.requestRedraw();
+                    break :blk true;
                 }
             }
+            break :blk false;
         },
-        else => {},
-    }
+        else => false,
+    };
 }

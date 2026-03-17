@@ -95,7 +95,7 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
 
 /// Part of the Module interface.
 /// Manage SDL events.
-pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
+pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
     const smpt: *SurfaceMeshProceduralTexturing = @alignCast(@fieldParentPtr("module", m));
     // const sm_store = &zgp.surface_mesh_store;
     // const view = &zgp.view;
@@ -123,6 +123,8 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
         },
         else => {},
     }
+
+    return false;
 }
 
 /// Part of the Module interface.

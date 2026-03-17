@@ -496,15 +496,17 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
         return c.SDL_APP_CONTINUE;
     }
 
-    // dispatch event to view
-    app_ctx.view.sdlEvent(event);
-
     // dispatch event to modules
     for (modules.items) |module| {
         if (shouldCallOnModule(module, &app_ctx)) {
-            module.sdlEvent(event);
+            if (module.sdlEvent(event)) { // if the module handled the event,
+                return c.SDL_APP_CONTINUE; // do not pass it further
+            }
         }
     }
+
+    // dispatch event to view
+    app_ctx.view.sdlEvent(event);
 
     return c.SDL_APP_CONTINUE;
 }

@@ -269,7 +269,7 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
 
 /// Part of the Module interface.
 /// Manage SDL events.
-pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
+pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
     const sms: *SurfaceMeshSelection = @alignCast(@fieldParentPtr("module", m));
     const sm_store = &sms.app_ctx.surface_mesh_store;
     const view = &sms.app_ctx.view;
@@ -277,18 +277,22 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
     assert(sms.app_ctx.selected_model.modelType() == .surface_mesh);
     const sm = sms.app_ctx.selected_model.surface_mesh;
 
-    switch (event.type) {
-        c.SDL_EVENT_KEY_DOWN => {
+    return sw: switch (event.type) {
+        c.SDL_EVENT_KEY_DOWN => blk: {
             switch (event.key.key) {
                 c.SDLK_S => {
+                    const was_selecting = sms.selecting;
                     sms.selecting = true;
-                    sms.app_ctx.requestRedraw();
+                    if (!was_selecting) {
+                        continue :sw c.SDL_EVENT_MOUSE_MOTION; // trigger mouse motion to update hovered cell
+                    }
                 },
-                c.SDLK_LSHIFT, c.SDLK_RSHIFT => sms.app_ctx.requestRedraw(),
+                c.SDLK_LSHIFT, c.SDLK_RSHIFT => sms.app_ctx.requestRedraw(), // shift toggles between add and remove
                 else => {},
             }
+            break :blk false;
         },
-        c.SDL_EVENT_KEY_UP => {
+        c.SDL_EVENT_KEY_UP => blk: {
             switch (event.key.key) {
                 c.SDLK_S => {
                     sms.selecting = false;
@@ -299,15 +303,20 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                     };
                     sms.app_ctx.requestRedraw();
                 },
+                c.SDLK_LSHIFT, c.SDLK_RSHIFT => sms.app_ctx.requestRedraw(), // shift toggles between add and remove
                 else => {},
             }
+            break :blk false;
         },
-        c.SDL_EVENT_MOUSE_MOTION => {
+        c.SDL_EVENT_MOUSE_MOTION => blk: {
             if (sms.selecting) {
                 const info = sm_store.surfaceMeshInfo(sm);
                 // TODO: fallback to brute-force search if the BVH is not available
                 if (info.bvh.bvh_ptr) |_| {
-                    if (view.viewToWorldRayIfGeometry(event.motion.x, event.motion.y)) |ray| {
+                    var mouse_x: f32 = 0;
+                    var mouse_y: f32 = 0;
+                    _ = c.SDL_GetMouseState(&mouse_x, &mouse_y);
+                    if (view.viewToWorldRayIfGeometry(mouse_x, mouse_y)) |ray| {
                         switch (sms.selection_mode) {
                             .single => {
                                 switch (sms.selecting_cell_type) {
@@ -330,12 +339,12 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                         if (sms.hovered_cell) |cell| {
                             sms.hovered_cell_ibo.fillFromCellSlice(sm, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
                                 std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
-                                return;
+                                break :blk false;
                             };
                         } else {
                             sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{}) catch |err| {
                                 std.debug.print("Failed to clear selecting cell IBO: {}\n", .{err});
-                                return;
+                                break :blk false;
                             };
                         }
                     } else {
@@ -343,14 +352,16 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                         sms.hovered_cell = null;
                         sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{}) catch |err| {
                             std.debug.print("Failed to clear selecting cell IBO: {}\n", .{err});
-                            return;
+                            break :blk false;
                         };
                     }
                     sms.app_ctx.requestRedraw();
+                    break :blk true;
                 }
             }
+            break :blk false;
         },
-        c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
+        c.SDL_EVENT_MOUSE_BUTTON_DOWN => blk: {
             switch (event.button.button) {
                 c.SDL_BUTTON_LEFT => {
                     if (sms.selecting) {
@@ -366,7 +377,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                                 .add => {
                                                     info.vertex_set.add(cell) catch |err| {
                                                         std.debug.print("Failed to add vertex to vertex_set: {}\n", .{err});
-                                                        return;
+                                                        break :blk false;
                                                     };
                                                 },
                                                 .remove => info.vertex_set.remove(cell),
@@ -379,7 +390,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                                 .add => {
                                                     info.edge_set.add(cell) catch |err| {
                                                         std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
-                                                        return;
+                                                        break :blk false;
                                                     };
                                                 },
                                                 .remove => info.edge_set.remove(cell),
@@ -392,7 +403,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                                 .add => {
                                                     info.face_set.add(cell) catch |err| {
                                                         std.debug.print("Failed to add face to face_set: {}\n", .{err});
-                                                        return;
+                                                        break :blk false;
                                                     };
                                                 },
                                                 .remove => info.face_set.remove(cell),
@@ -413,7 +424,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                         defer faces.deinit(sm.allocator);
                                         selection.cellsWithinSphereAroundVertex(sm, cell, sms.selection_radius, vertex_position, &vertices, &edges, &faces) catch |err| {
                                             std.debug.print("Failed to select cells within sphere: {}\\n", .{err});
-                                            return;
+                                            break :blk false;
                                         };
                                         switch (sms.selecting_cell_type) {
                                             .vertex => {
@@ -422,7 +433,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                                         for (vertices.items) |v| {
                                                             info.vertex_set.add(v) catch |err| {
                                                                 std.debug.print("Failed to add vertex to vertex_set: {}\n", .{err});
-                                                                return;
+                                                                break :blk false;
                                                             };
                                                         }
                                                     },
@@ -441,7 +452,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                                         for (edges.items) |e| {
                                                             info.edge_set.add(e) catch |err| {
                                                                 std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
-                                                                return;
+                                                                break :blk false;
                                                             };
                                                         }
                                                     },
@@ -460,7 +471,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                                         for (faces.items) |f| {
                                                             info.face_set.add(f) catch |err| {
                                                                 std.debug.print("Failed to add face to face_set: {}\n", .{err});
-                                                                return;
+                                                                break :blk false;
                                                             };
                                                         }
                                                     },
@@ -479,13 +490,23 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) void {
                                 },
                             }
                         }
+                        break :blk true;
                     }
                 },
                 else => {},
             }
+            break :blk false;
         },
-        else => {},
-    }
+        c.SDL_EVENT_MOUSE_WHEEL => blk: {
+            if (sms.selecting and sms.selection_mode == .within_sphere) {
+                sms.selection_radius += event.wheel.y * 0.001;
+                sms.app_ctx.requestRedraw();
+                break :blk true;
+            }
+            break :blk false;
+        },
+        else => false,
+    };
 }
 
 /// Part of the Module interface.
