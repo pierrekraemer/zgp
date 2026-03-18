@@ -107,8 +107,7 @@ pub fn init(app_ctx: *AppContext) PointCloudRenderer {
 pub fn deinit(pcr: *PointCloudRenderer) void {
     var p_it = pcr.parameters.iterator();
     while (p_it.next()) |entry| {
-        var p = entry.value_ptr.*;
-        p.deinit();
+        entry.value_ptr.deinit();
     }
     pcr.parameters.deinit();
 }

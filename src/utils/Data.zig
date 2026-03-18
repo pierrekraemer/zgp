@@ -413,6 +413,7 @@ pub const DataContainer = struct {
     pub fn getIndex(dc: *DataContainer) !u32 {
         const index = if (dc.nb_inactive_indices > 0) blk: {
             const index = dc.first_inactive_index;
+            assert(!dc.is_active.value(index));
             dc.first_inactive_index = dc.nb_refs.value(index);
             dc.nb_inactive_indices -= 1;
             for (dc.markers.items) |marker| {
@@ -432,7 +433,6 @@ pub const DataContainer = struct {
             }
             break :blk index;
         };
-        assert(!dc.is_active.value(index));
         dc.is_active.valuePtr(index).* = true; // index returned by newIndex is active
         dc.nb_refs.valuePtr(index).* = 0; // but has no reference yet
         return index;

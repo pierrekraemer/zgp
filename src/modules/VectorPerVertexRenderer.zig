@@ -65,8 +65,7 @@ pub fn init(app_ctx: *AppContext) VectorPerVertexRenderer {
 pub fn deinit(vpvr: *VectorPerVertexRenderer) void {
     var p_it = vpvr.parameters.iterator();
     while (p_it.next()) |entry| {
-        var p = entry.value_ptr.*;
-        p.deinit();
+        entry.value_ptr.deinit();
     }
     vpvr.parameters.deinit();
 }

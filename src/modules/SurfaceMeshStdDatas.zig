@@ -66,7 +66,7 @@ pub fn leftPanel(m: *Module) void {
     inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
         const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type), .{}) catch "";
         c.ImGui_SeparatorText(cells.ptr);
-        inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
+        inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |field| {
             if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
             c.ImGui_Text(field.name);
             c.ImGui_SameLine();

@@ -87,6 +87,13 @@ pub fn getData(pc: *PointCloud, comptime T: type, name: []const u8) ?CellData(T)
     return if (pc.point_data.getData(T, name)) |d| .{ .point_cloud = pc, .data = d } else null;
 }
 
+pub fn getOrAddData(pc: *PointCloud, comptime T: type, name: []const u8) !CellData(T) {
+    return .{
+        .point_cloud = pc,
+        .data = try pc.point_data.getOrAddData(T, name),
+    };
+}
+
 pub fn removeData(pc: *PointCloud, data_gen: *DataGen) void {
     pc.point_data.removeData(data_gen);
 }

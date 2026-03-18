@@ -79,43 +79,49 @@ pub fn readData(sp: *const SurfacePoint, comptime T: type, comptime cell_type: S
 }
 
 fn interpolate2(a: anytype, b: @TypeOf(a), t: f32) @TypeOf(a) {
-    const t_info = @typeInfo(@TypeOf(a));
-    switch (t_info) {
-        .int, .float => return a * (1.0 - t) + b * t,
-        .array => {
+    const T = @TypeOf(a);
+    const t_info = @typeInfo(T);
+    return switch (t_info) {
+        .int => @as(T, @intFromFloat(@as(f32, @floatFromInt(a)) * (1.0 - t) + @as(f32, @floatFromInt(b)) * t)),
+        .float => a * (1.0 - t) + b * t,
+        .array => blk: {
             const t_info_array_child = @typeInfo(t_info.array.child);
-            if (t_info_array_child != .int and t_info_array_child != .float) {
+            // if (t_info_array_child != .int and t_info_array_child != .float) {
+            if (t_info_array_child != .float) {
                 @compileError("interpolate2 only supports float, int, or array of float/int types");
             }
-            switch (t_info.array.len) {
-                1 => return .{a[0] * (1.0 - t) + b[0] * t},
-                2 => return vec.add2f(vec.mulScalar2f(a, 1.0 - t), vec.mulScalar2f(b, t)),
-                3 => return vec.add3f(vec.mulScalar3f(a, 1.0 - t), vec.mulScalar3f(b, t)),
-                4 => return vec.add4f(vec.mulScalar4f(a, 1.0 - t), vec.mulScalar4f(b, t)),
+            break :blk switch (t_info.array.len) {
+                1 => .{a[0] * (1.0 - t) + b[0] * t},
+                2 => vec.add2f(vec.mulScalar2f(a, 1.0 - t), vec.mulScalar2f(b, t)),
+                3 => vec.add3f(vec.mulScalar3f(a, 1.0 - t), vec.mulScalar3f(b, t)),
+                4 => vec.add4f(vec.mulScalar4f(a, 1.0 - t), vec.mulScalar4f(b, t)),
                 else => @compileError("interpolate2 only supports float, int, or array of float/int types"),
-            }
+            };
         },
         else => @compileError("interpolate2 only supports float, int, or array of float/int types"),
-    }
+    };
 }
 
 fn interpolate3(a: anytype, b: @TypeOf(a), c: @TypeOf(a), t0: f32, t1: f32, t2: f32) @TypeOf(a) {
-    const t_info = @typeInfo(@TypeOf(a));
-    switch (t_info) {
-        .int, .float => return a * t0 + b * t1 + c * t2,
-        .array => {
+    const T = @TypeOf(a);
+    const t_info = @typeInfo(T);
+    return switch (t_info) {
+        .int => @as(T, @intFromFloat(@as(f32, @floatFromInt(a)) * t0 + @as(f32, @floatFromInt(b)) * t1 + @as(f32, @floatFromInt(c)) * t2)),
+        .float => a * t0 + b * t1 + c * t2,
+        .array => blk: {
             const t_info_array_child = @typeInfo(t_info.array.child);
-            if (t_info_array_child != .int and t_info_array_child != .float) {
+            // if (t_info_array_child != .int and t_info_array_child != .float) {
+            if (t_info_array_child != .float) {
                 @compileError("interpolate3 only supports float, int, or array of float/int types");
             }
-            switch (t_info.array.len) {
-                1 => return .{a[0] * t0 + b[0] * t1 + c[0] * t2},
-                2 => return vec.add2f(vec.mulScalar2f(a, t0), vec.add2f(vec.mulScalar2f(b, t1), vec.mulScalar2f(c, t2))),
-                3 => return vec.add3f(vec.mulScalar3f(a, t0), vec.add3f(vec.mulScalar3f(b, t1), vec.mulScalar3f(c, t2))),
-                4 => return vec.add4f(vec.mulScalar4f(a, t0), vec.add4f(vec.mulScalar4f(b, t1), vec.mulScalar4f(c, t2))),
+            break :blk switch (t_info.array.len) {
+                1 => .{a[0] * t0 + b[0] * t1 + c[0] * t2},
+                2 => vec.add2f(vec.mulScalar2f(a, t0), vec.add2f(vec.mulScalar2f(b, t1), vec.mulScalar2f(c, t2))),
+                3 => vec.add3f(vec.mulScalar3f(a, t0), vec.add3f(vec.mulScalar3f(b, t1), vec.mulScalar3f(c, t2))),
+                4 => vec.add4f(vec.mulScalar4f(a, t0), vec.add4f(vec.mulScalar4f(b, t1), vec.mulScalar4f(c, t2))),
                 else => @compileError("interpolate3 only supports float, int, or array of float/int types"),
-            }
+            };
         },
         else => @compileError("interpolate3 only supports float, int, or array of float/int types"),
-    }
+    };
 }

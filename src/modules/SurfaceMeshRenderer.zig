@@ -129,8 +129,7 @@ pub fn init(app_ctx: *AppContext) SurfaceMeshRenderer {
 pub fn deinit(smr: *SurfaceMeshRenderer) void {
     var p_it = smr.parameters.iterator();
     while (p_it.next()) |entry| {
-        var p = entry.value_ptr.*;
-        p.deinit();
+        entry.value_ptr.deinit();
     }
     smr.parameters.deinit();
 }

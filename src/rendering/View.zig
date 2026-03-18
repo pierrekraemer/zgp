@@ -44,8 +44,7 @@ needs_redraw: bool = true,
 
 pub fn init(view: *View) void {
     view.camera = .init(
-        .{ 0.0, 0.0, 2.0 },
-        .{ 0.0, 0.0, -1.0 },
+        .{ 0.0, 0.5, 2.0 },
         .{ 0.0, 1.0, 0.0 },
         .{ 0.0, 0.0, 0.0 },
         1.0,
@@ -154,7 +153,7 @@ pub fn menuBar(view: *View) void {
 
 pub fn sdlEvent(view: *View, event: *const c.SDL_Event) void {
     switch (event.type) {
-        c.SDL_EVENT_MOUSE_BUTTON_UP => {
+        c.SDL_EVENT_MOUSE_BUTTON_DOWN => {
             switch (event.button.button) {
                 c.SDL_BUTTON_LEFT => {
                     const modState = c.SDL_GetModState();

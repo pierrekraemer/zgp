@@ -17,7 +17,7 @@ const CameraProjectionType = enum {
 };
 
 position: Vec3f,
-look_dir: Vec3f,
+look_dir: Vec3f = .{ 0.0, 0.0, -1.0 },
 up_dir: Vec3f,
 pivot_position: Vec3f,
 
@@ -31,7 +31,6 @@ projection_matrix: Mat4f = undefined,
 
 pub fn init(
     position: Vec3f,
-    look_dir: Vec3f,
     up_dir: Vec3f,
     pivot_position: Vec3f,
     aspect_ratio: f32,
@@ -40,15 +39,14 @@ pub fn init(
 ) Camera {
     var c: Camera = .{
         .position = position,
-        .look_dir = look_dir,
         .up_dir = up_dir,
         .pivot_position = pivot_position,
         .aspect_ratio = aspect_ratio,
         .field_of_view = field_of_view,
         .projection_type = projection_type,
     };
-    c.updateViewMatrix();
     c.updateProjectionMatrix();
+    c.lookAtPivotPosition();
     return c;
 }
 

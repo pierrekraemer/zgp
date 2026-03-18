@@ -323,7 +323,7 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
 }
 
 /// Part of the Module interface.
-/// Describe the right-click menu interface.
+/// Show a UI panel to control the medial axis data of the selected SurfaceMesh.
 pub fn rightPanel(m: *Module) void {
     const smma: *SurfaceMeshMedialAxis = @alignCast(@fieldParentPtr("module", m));
     const sm_store = &smma.app_ctx.surface_mesh_store;

@@ -477,7 +477,7 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
             c.ImGui_PushID("data type");
             if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
                 defer c.ImGui_EndCombo();
-                inline for (@typeInfo(CreateDataTypesTag).@"enum".fields) |*data_type| {
+                inline for (@typeInfo(CreateDataTypesTag).@"enum".fields) |data_type| {
                     const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
                     if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                         if (!is_selected) {
