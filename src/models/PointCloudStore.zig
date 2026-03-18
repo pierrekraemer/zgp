@@ -15,8 +15,8 @@ const Module = @import("../modules/Module.zig");
 const ModelSelection = @import("../main.zig").ModelSelection;
 const PointCloud = @import("point/PointCloud.zig");
 
-const Data = @import("../utils/Data.zig").Data;
-const DataGen = @import("../utils/Data.zig").DataGen;
+const Data = @import("../utils/data.zig").Data;
+const DataGen = @import("../utils/data.zig").DataGen;
 const BufferPool = @import("../utils/BufferPool.zig").BufferPool;
 
 const VBO = @import("../rendering/VBO.zig");

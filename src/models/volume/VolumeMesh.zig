@@ -25,7 +25,7 @@ const assert = std.debug.assert;
 
 const zgp_log = std.log.scoped(.zgp);
 
-const data = @import("../../utils/Data.zig");
+const data = @import("../../utils/data.zig");
 const DataContainer = data.DataContainer;
 const DataGen = data.DataGen;
 const Data = data.Data;

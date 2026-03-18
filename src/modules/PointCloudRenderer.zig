@@ -13,7 +13,7 @@ const AppContext = @import("../main.zig").AppContext;
 const Module = @import("Module.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
 const PointCloudStdData = @import("../models/PointCloudStore.zig").PointCloudStdData;
-const DataGen = @import("../utils/Data.zig").DataGen;
+const DataGen = @import("../utils/data.zig").DataGen;
 
 const PointSphere = @import("../rendering/shaders/point_sphere/PointSphere.zig");
 const PointSphereColorPerVertex = @import("../rendering/shaders/point_sphere_color_per_vertex/PointSphereColorPerVertex.zig");

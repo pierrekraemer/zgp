@@ -3,7 +3,7 @@ const VBO = @This();
 const std = @import("std");
 const gl = @import("gl");
 
-const Data = @import("../utils/Data.zig").Data;
+const Data = @import("../utils/data.zig").Data;
 
 index: c_uint = 0,
 

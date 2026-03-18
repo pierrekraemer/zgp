@@ -1,6 +1,6 @@
 const std = @import("std");
 
-const Data = @import("../utils/Data.zig").Data;
+const Data = @import("../utils/data.zig").Data;
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;

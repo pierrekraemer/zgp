@@ -2,7 +2,7 @@ const Module = @This();
 
 const c = @import("../main.zig").c;
 
-const DataGen = @import("../utils/Data.zig").DataGen;
+const DataGen = @import("../utils/data.zig").DataGen;
 
 const mat = @import("../geometry/mat.zig");
 const Mat4f = mat.Mat4f;

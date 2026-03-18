@@ -14,8 +14,8 @@ const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfacePoint = @import("../models/surface/SurfacePoint.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
 
-const Data = @import("../utils/Data.zig").Data;
-const DataGen = @import("../utils/Data.zig").DataGen;
+const Data = @import("../utils/data.zig").Data;
+const DataGen = @import("../utils/data.zig").DataGen;
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;

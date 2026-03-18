@@ -8,7 +8,7 @@ const PointCloud = @import("../models/point/PointCloud.zig");
 const SurfaceMeshStore = @import("../models/SurfaceMeshStore.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 
-const Data = @import("../utils/Data.zig").Data;
+const Data = @import("../utils/data.zig").Data;
 
 pub fn init(sdl_window: *c.SDL_Window, gl_context: c.SDL_GLContext) void {
     _ = c.CIMGUI_CHECKVERSION();
