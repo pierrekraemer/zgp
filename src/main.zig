@@ -520,9 +520,11 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
 
     imgui.deinit();
 
-    // clear the list of modules before deinitializing them
+    // clear the list of modules and store listeners before deinitializing modules
     // to avoid potential inter-dependencies issues
     modules.clearRetainingCapacity();
+    app_ctx.surface_mesh_store.listeners.clearRetainingCapacity();
+    app_ctx.point_cloud_store.listeners.clearRetainingCapacity();
 
     point_cloud_std_datas.deinit();
     surface_mesh_std_datas.deinit();

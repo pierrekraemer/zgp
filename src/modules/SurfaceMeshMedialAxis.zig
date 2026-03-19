@@ -13,15 +13,11 @@ const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
 
-const eigen = @import("../geometry/eigen.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
-const Vec4d = vec.Vec4d;
-const mat = @import("../geometry/mat.zig");
-const Mat4d = mat.Mat4d;
+const SQEM = @import("../geometry/SQEM.zig");
 
 const sqem = @import("../models/surface/sqem.zig");
-const SQEM = sqem.SQEM;
 
 const MedialAxisData = struct {
     app_ctx: *AppContext,
@@ -29,6 +25,7 @@ const MedialAxisData = struct {
     surface_mesh: *SurfaceMesh,
     vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
     vertex_area: ?SurfaceMesh.CellData(.vertex, f32) = null,
+    vertex_tangent_basis: ?SurfaceMesh.CellData(.vertex, [2]Vec3f) = null,
     vertex_sqem: ?SurfaceMesh.CellData(.vertex, SQEM) = null,
     vertex_sphere: ?SurfaceMesh.CellData(.vertex, ?PointCloud.Point) = null,
     vertex_sphere_error: ?SurfaceMesh.CellData(.vertex, f32) = null,
@@ -44,17 +41,17 @@ const MedialAxisData = struct {
     sphere_error: ?PointCloud.CellData(f32) = null,
     initialized: bool = false,
 
-    lambda: f32 = 0.02, // weight for the euclidean distance in the metric
-
     pub fn init(
         mad: *MedialAxisData,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_area: SurfaceMesh.CellData(.vertex, f32),
+        vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
         face_area: SurfaceMesh.CellData(.face, f32),
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
     ) !void {
         mad.vertex_position = vertex_position;
         mad.vertex_area = vertex_area;
+        mad.vertex_tangent_basis = vertex_tangent_basis;
         mad.face_area = face_area;
         mad.face_normal = face_normal;
         if (!mad.initialized) {
@@ -67,6 +64,8 @@ const MedialAxisData = struct {
             mad.app_ctx,
             mad.surface_mesh,
             vertex_position,
+            vertex_area,
+            vertex_tangent_basis,
             face_area,
             face_normal,
             mad.vertex_sqem.?,
@@ -85,6 +84,10 @@ const MedialAxisData = struct {
             mad.app_ctx.point_cloud_store.setPointCloudStdData(mad.spheres.?, .{ .position = mad.sphere_center.? });
             mad.app_ctx.point_cloud_store.setPointCloudStdData(mad.spheres.?, .{ .radius = mad.sphere_radius.? });
         } else {
+            var it = mad.sphere_cluster.?.data.iterator();
+            while (it.next()) |*cluster| {
+                cluster.*.deinit(mad.app_ctx.allocator); // do not forget to deinit ArrayLists in sphere_cluster data
+            }
             mad.spheres.?.clearRetainingCapacity();
         }
         const s1 = try mad.spheres.?.addPoint(); // create the first sphere
@@ -133,18 +136,13 @@ const MedialAxisData = struct {
         var v_it = try SurfaceMesh.CellIterator(.vertex).init(mad.surface_mesh);
         defer v_it.deinit();
         while (v_it.next()) |v| {
-            const vp = mad.vertex_position.?.value(v);
-            const va = mad.vertex_area.?.value(v);
             var min_distance = std.math.floatMax(f32);
             var min_sphere: PointCloud.Point = undefined;
             var s_it = mad.spheres.?.pointIterator();
             while (s_it.next()) |s| {
                 const sc = mad.sphere_center.?.value(s);
                 const sr = mad.sphere_radius.?.value(s);
-                const dist_sqem = mad.vertex_sqem.?.valuePtr(v).eval(.{ sc[0], sc[1], sc[2], sr });
-                const dist_euclidean = vec.norm3f(vec.sub3f(vp, sc)) - sr;
-                const squared_dist_euclidean = dist_euclidean * dist_euclidean * va; // weighted by vertex area
-                const dist = dist_sqem + mad.lambda * squared_dist_euclidean;
+                const dist = mad.vertex_sqem.?.valuePtr(v).eval(.{ sc[0], sc[1], sc[2], sr });
                 if (dist < min_distance) {
                     min_distance = dist;
                     min_sphere = s;
@@ -180,48 +178,15 @@ const MedialAxisData = struct {
         var s_it = mad.spheres.?.pointIterator();
         while (s_it.next()) |s| {
             const cluster = mad.sphere_cluster.?.valuePtr(s);
-            const sc = mad.sphere_center.?.value(s);
-            const sr = mad.sphere_radius.?.value(s);
-            var optimized_center: Vec3f = .{ sc[0], sc[1], sc[2] };
-            var optimized_radius = sr;
-            for (0..10) |_| {
-                var JtJ = mat.zero4d;
-                var Jtb = vec.zero4d;
-                for (cluster.items) |v| {
-                    const vp = mad.vertex_position.?.value(v);
-                    var lhs: Vec4d = vec.zero4d;
-                    var rhs: f64 = 0.0;
-                    // SQEM term
-                    var dart_it = mad.surface_mesh.cellDartIterator(v);
-                    while (dart_it.next()) |d| {
-                        if (!mad.surface_mesh.isBoundaryDart(d)) {
-                            const face: SurfaceMesh.Cell = .{ .face = d };
-                            const n = mad.face_normal.?.value(face);
-                            const a = mad.face_area.?.value(face) / 3.0;
-                            lhs = vec.add4d(lhs, vec.mulScalar4d(Vec4d{ -n[0], -n[1], -n[2], -1.0 }, @floatCast(a)));
-                            rhs += @floatCast(-1.0 * (vec.dot3f(vec.sub3f(vp, optimized_center), n) - optimized_radius) * a);
-                        }
-                    }
-                    JtJ = mat.add4d(JtJ, mat.outerProduct4d(lhs, lhs));
-                    Jtb = vec.add4d(Jtb, vec.mulScalar4d(lhs, rhs));
-                    // Euclidean term
-                    const d = vec.sub3f(vp, optimized_center);
-                    const l = vec.norm3f(d);
-                    const a = std.math.sqrt(mad.vertex_area.?.value(v));
-                    lhs = vec.mulScalar4d(Vec4d{ -(d[0] / l), -(d[1] / l), -(d[2] / l), -1.0 }, a * mad.lambda);
-                    rhs = @floatCast(-(l - optimized_radius) * a * mad.lambda);
-                    JtJ = mat.add4d(JtJ, mat.outerProduct4d(lhs, lhs));
-                    Jtb = vec.add4d(Jtb, vec.mulScalar4d(lhs, rhs));
-                }
-                const x = eigen.solveSymmetricLinearSystem4d(JtJ, Jtb);
-                optimized_center = vec.add3f(optimized_center, .{ @floatCast(x[0]), @floatCast(x[1]), @floatCast(x[2]) });
-                optimized_radius += @floatCast(x[3]);
-                if (vec.norm4d(x) < 1e-6) {
-                    break;
-                }
+            var cluster_sqem: SQEM = .zero;
+            for (cluster.items) |v| {
+                cluster_sqem.add(mad.vertex_sqem.?.valuePtr(v));
             }
-            mad.sphere_center.?.valuePtr(s).* = optimized_center;
-            mad.sphere_radius.?.valuePtr(s).* = optimized_radius;
+            const optimized_sphere = cluster_sqem.optimalSphere();
+            if (optimized_sphere) |opt_s| {
+                mad.sphere_center.?.valuePtr(s).* = .{ opt_s[0], opt_s[1], opt_s[2] };
+                mad.sphere_radius.?.valuePtr(s).* = opt_s[3];
+            }
         }
 
         try mad.computeClusters();
@@ -341,6 +306,7 @@ pub fn rightPanel(m: *Module) void {
     const disabled =
         info.std_datas.vertex_position == null or
         info.std_datas.vertex_area == null or
+        info.std_datas.vertex_tangent_basis == null or
         info.std_datas.face_area == null or
         info.std_datas.face_normal == null;
     if (disabled) {
@@ -350,6 +316,7 @@ pub fn rightPanel(m: *Module) void {
         _ = mad.init(
             info.std_datas.vertex_position.?,
             info.std_datas.vertex_area.?,
+            info.std_datas.vertex_tangent_basis.?,
             info.std_datas.face_area.?,
             info.std_datas.face_normal.?,
         ) catch |err| {
@@ -360,7 +327,6 @@ pub fn rightPanel(m: *Module) void {
         c.ImGui_EndDisabled();
     }
     if (mad.initialized) {
-        _ = c.ImGui_SliderFloatEx("", &mad.lambda, 0.0001, 1.0, "%.4f", c.ImGuiSliderFlags_Logarithmic);
         if (c.ImGui_ButtonEx("Update spheres", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
             mad.updateSpheres() catch |err| {
                 std.debug.print("Failed to update Medial Axis spheres for SurfaceMesh: {}\n", .{err});
