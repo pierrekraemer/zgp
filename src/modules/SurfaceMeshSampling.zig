@@ -53,7 +53,7 @@ const SamplingData = struct {
         sd.initialized = false;
     }
 
-    fn readDataFromSurfaceMesh(
+    fn pushDataToPointCloud(
         sd: *SamplingData,
         comptime T: type,
         comptime cell_type: SurfaceMesh.CellType,
@@ -77,7 +77,6 @@ module: Module = .{
     .vtable = &.{
         .surfaceMeshCreated = surfaceMeshCreated,
         .surfaceMeshDestroyed = surfaceMeshDestroyed,
-        .rightClickMenu = rightClickMenu,
         .rightPanel = rightPanel,
     },
 },
@@ -161,110 +160,10 @@ fn poissonDiskSampling(
 }
 
 /// Part of the Module interface.
-/// Describe the right-click menu interface.
-pub fn rightClickMenu(m: *Module) void {
-    const sms: *SurfaceMeshSampling = @alignCast(@fieldParentPtr("module", m));
-    const sm_store = &sms.app_ctx.surface_mesh_store;
-
-    assert(sms.app_ctx.selected_model.modelType() == .surface_mesh);
-    const sm = sms.app_ctx.selected_model.surface_mesh;
-
-    const UiData = struct {
-        var nb_points: usize = 1000;
-        var min_distance: f32 = 0.02;
-        var pointcloud_name_buf: [32]u8 = @splat(0);
-    };
-
-    const style = c.ImGui_GetStyle();
-
-    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
-    defer c.ImGui_PopItemWidth();
-
-    if (c.ImGui_BeginMenu(m.name.ptr)) {
-        defer c.ImGui_EndMenu();
-
-        const info = sm_store.surfaceMeshInfo(sm);
-        const sd = sms.surface_meshes_data.getPtr(sm).?;
-
-        if (c.ImGui_BeginMenu("Uniform sampling")) {
-            defer c.ImGui_EndMenu();
-            c.ImGui_Text("Number of points");
-            c.ImGui_PushID("Number of points");
-            _ = c.ImGui_InputInt("", @ptrCast(&UiData.nb_points));
-            c.ImGui_PopID();
-            if (!sd.initialized) {
-                c.ImGui_Text("PointCloud name:");
-                _ = c.ImGui_InputText("##Name", &UiData.pointcloud_name_buf, UiData.pointcloud_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
-            }
-            const pointcloud_name = if (!sd.initialized) std.mem.sliceTo(&UiData.pointcloud_name_buf, 0) else "_"; // only used when not initialized
-            const disabled =
-                info.std_datas.vertex_position == null or
-                info.std_datas.face_area == null or
-                pointcloud_name.len == 0;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (c.ImGui_ButtonEx("Sample", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                sms.uniformSampling(
-                    sm,
-                    info.std_datas.vertex_position.?,
-                    info.std_datas.face_area.?,
-                    UiData.nb_points,
-                    pointcloud_name,
-                ) catch |err| {
-                    std.debug.print("Error sampling: {}\n", .{err});
-                };
-                UiData.pointcloud_name_buf = @splat(0);
-            }
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-        }
-
-        if (c.ImGui_BeginMenu("Poisson disk sampling")) {
-            defer c.ImGui_EndMenu();
-            c.ImGui_Text("Minimum distance");
-            c.ImGui_PushID("Minimum distance");
-            _ = c.ImGui_InputFloat("", @ptrCast(&UiData.min_distance));
-            c.ImGui_PopID();
-            if (!sd.initialized) {
-                c.ImGui_Text("PointCloud name:");
-                _ = c.ImGui_InputText("##Name", &UiData.pointcloud_name_buf, UiData.pointcloud_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
-            }
-            const pointcloud_name = if (!sd.initialized) std.mem.sliceTo(&UiData.pointcloud_name_buf, 0) else "_"; // only used when not initialized
-            const disabled =
-                info.bvh.bvh_ptr == null or
-                info.std_datas.vertex_position == null or
-                info.std_datas.face_normal == null or
-                pointcloud_name.len == 0;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (c.ImGui_ButtonEx("Sample", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                sms.poissonDiskSampling(
-                    sm,
-                    info.bvh,
-                    info.std_datas.vertex_position.?,
-                    info.std_datas.face_normal.?,
-                    UiData.min_distance,
-                    pointcloud_name,
-                ) catch |err| {
-                    std.debug.print("Error sampling: {}\n", .{err});
-                };
-                UiData.pointcloud_name_buf = @splat(0);
-            }
-            if (disabled) {
-                c.ImGui_EndDisabled();
-            }
-        }
-    }
-}
-
-/// Part of the Module interface.
-/// Show a UI panel to control the sampling data of the selected SurfaceMesh.
+/// Show a UI panel to control the sampling of the selected SurfaceMesh.
 pub fn rightPanel(m: *Module) void {
     const sms: *SurfaceMeshSampling = @alignCast(@fieldParentPtr("module", m));
-    // const sm_store = &sms.app_ctx.surface_mesh_store;
+    const sm_store = &sms.app_ctx.surface_mesh_store;
 
     assert(sms.app_ctx.selected_model.modelType() == .surface_mesh);
     const sm = sms.app_ctx.selected_model.surface_mesh;
@@ -272,14 +171,109 @@ pub fn rightPanel(m: *Module) void {
     const DataTypes = union(enum) { u32: u32, f32: f32, Vec3f: Vec3f };
     const DataTypesTag = std.meta.Tag(DataTypes);
     const UiData = struct {
+        var nb_points: usize = 1000;
+        var min_distance: f32 = 0.02;
+        var pointcloud_name_buf: [32]u8 = @splat(0);
         var selected_surface_mesh_cell_type: SurfaceMesh.CellType = .vertex;
         var selected_data_type: DataTypesTag = .Vec3f;
         var selected_data_gen: ?*DataGen = null;
         var data_name_buf: [32]u8 = @splat(0);
     };
 
+    const style = c.ImGui_GetStyle();
+
+    c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+    defer c.ImGui_PopItemWidth();
+
+    const info = sm_store.surfaceMeshInfo(sm);
     const sd = sms.surface_meshes_data.getPtr(sm).?;
+
+    if (!sd.initialized) {
+        c.ImGui_Text("PointCloud name:");
+        _ = c.ImGui_InputText("##Name", &UiData.pointcloud_name_buf, UiData.pointcloud_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
+    }
+    const pointcloud_name = if (!sd.initialized) std.mem.sliceTo(&UiData.pointcloud_name_buf, 0) else "_"; // only used when not initialized
+
+    {
+        c.ImGui_SeparatorText("Uniform sampling");
+        c.ImGui_Text("Number of points");
+        c.ImGui_PushID("Number of points");
+        _ = c.ImGui_InputInt("", @ptrCast(&UiData.nb_points));
+        c.ImGui_PopID();
+        const disabled =
+            info.std_datas.vertex_position == null or
+            info.std_datas.face_area == null or
+            pointcloud_name.len == 0;
+        if (disabled) {
+            c.ImGui_BeginDisabled(true);
+        }
+        if (c.ImGui_ButtonEx("Uniform sampling", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            sms.uniformSampling(
+                sm,
+                info.std_datas.vertex_position.?,
+                info.std_datas.face_area.?,
+                UiData.nb_points,
+                pointcloud_name,
+            ) catch |err| {
+                std.debug.print("Error during uniform sampling: {}\n", .{err});
+            };
+            UiData.pointcloud_name_buf = @splat(0);
+        }
+        if (disabled) {
+            imgui_utils.tooltip(
+                \\ Requires:
+                \\ - an already sampled PointCloud or a name
+                \\ Following data should be available:
+                \\ - std vertex_position
+                \\ - std face_area
+            );
+            c.ImGui_EndDisabled();
+        }
+    }
+
+    {
+        c.ImGui_SeparatorText("Poisson disk sampling");
+        c.ImGui_Text("Minimum distance");
+        c.ImGui_PushID("Minimum distance");
+        _ = c.ImGui_InputFloat("", @ptrCast(&UiData.min_distance));
+        c.ImGui_PopID();
+        const disabled =
+            info.bvh.bvh_ptr == null or
+            info.std_datas.vertex_position == null or
+            info.std_datas.face_normal == null or
+            pointcloud_name.len == 0;
+        if (disabled) {
+            c.ImGui_BeginDisabled(true);
+        }
+        if (c.ImGui_ButtonEx("Poisson disk sampling", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            sms.poissonDiskSampling(
+                sm,
+                info.bvh,
+                info.std_datas.vertex_position.?,
+                info.std_datas.face_normal.?,
+                UiData.min_distance,
+                pointcloud_name,
+            ) catch |err| {
+                std.debug.print("Error during Poisson disk sampling: {}\n", .{err});
+            };
+            UiData.pointcloud_name_buf = @splat(0);
+        }
+        if (disabled) {
+            imgui_utils.tooltip(
+                \\ Requires:
+                \\ - an already sampled PointCloud or a name
+                \\ - a BVH
+                \\ Following data should be available:
+                \\ - std vertex_position
+                \\ - std face_normal
+            );
+            c.ImGui_EndDisabled();
+        }
+    }
+
     if (sd.initialized) {
+        c.ImGui_SeparatorText("Push data SurfaceMesh -> PointCloud");
+
         c.ImGui_Text("Cell type:");
         c.ImGui_PushID("cell type");
         if (c.ImGui_BeginCombo("", @tagName(UiData.selected_surface_mesh_cell_type), 0)) {
@@ -314,6 +308,7 @@ pub fn rightPanel(m: *Module) void {
             }
         }
         c.ImGui_PopID();
+        c.ImGui_Text("Source data:");
         inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
             if (UiData.selected_surface_mesh_cell_type == cell_type) {
                 inline for (@typeInfo(DataTypesTag).@"enum".fields) |data_type| {
@@ -328,21 +323,29 @@ pub fn rightPanel(m: *Module) void {
                         } else null;
                         switch (imgui_utils.surfaceMeshCellDataComboBox(sm, cell_type, @FieldType(DataTypes, data_type.name), selected_cell_data)) {
                             .unchanged => {},
-                            .cleared => {},
-                            .changed => |data| {
-                                UiData.selected_data_gen = &data.data.data_gen;
-                            },
+                            .cleared => UiData.selected_data_gen = null,
+                            .changed => |data| UiData.selected_data_gen = &data.data.data_gen,
                         }
-                        if (c.ImGui_Button("Read data")) {
-                            sd.readDataFromSurfaceMesh(T, cell_type, selected_cell_data.?) catch |err| {
-                                std.debug.print("Error reading SurfacePoint data: {}\n", .{err});
+                        const disabled = selected_cell_data == null;
+                        if (disabled) {
+                            c.ImGui_BeginDisabled(true);
+                        }
+                        if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Push data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                            sd.pushDataToPointCloud(T, cell_type, selected_cell_data.?) catch |err| {
+                                std.debug.print("Error pushing data from SurfaceMesh to PointCloud: {}\n", .{err});
                             };
+                        }
+                        if (disabled) {
+                            imgui_utils.tooltip(
+                                \\ Requires:
+                                \\ - an already sampled PointCloud
+                                \\ - a selected source data
+                            );
+                            c.ImGui_EndDisabled();
                         }
                     }
                 }
             }
         }
-    } else {
-        c.ImGui_TextWrapped("No sampling data available. Use the right-click menu to create samples on this SurfaceMesh.");
     }
 }

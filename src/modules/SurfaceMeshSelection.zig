@@ -525,9 +525,14 @@ pub fn rightPanel(m: *Module) void {
     const sd = sms.surface_meshes_data.getPtr(sm).?;
     const info = sm_store.surfaceMeshInfo(sm);
 
-    c.ImGui_TextWrapped("Hold (shift+)'S' to (de)select cells");
     if (info.bvh.bvh_ptr == null) {
-        c.ImGui_TextWrapped("A BVH must exist for the SurfaceMesh to select cells");
+        c.ImGui_TextWrapped("A BVH must exist on the SurfaceMesh to select cells");
+    } else {
+        c.ImGui_TextWrapped(
+            \\ Hold:
+            \\ - 'S' to select cells
+            \\ - 'Shift+S' to deselect cells
+        );
     }
 
     c.ImGui_SeparatorText("Selection mode");

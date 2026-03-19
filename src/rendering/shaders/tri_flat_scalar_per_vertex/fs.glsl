@@ -3,7 +3,7 @@ precision highp int;
 
 uniform vec4 u_ambiant_color;
 uniform vec3 u_light_position;
-uniform bool u_show_isolines;
+uniform bool u_draw_isolines;
 uniform int u_nb_isolines;
 
 in vec3 v_position;
@@ -22,7 +22,7 @@ void main() {
   if (!gl_FrontFacing) {
     f_color *= 0.5;
   }
-  if (u_show_isolines)
+  if (u_draw_isolines)
   {
     float s = v_value * float(u_nb_isolines);
     if (s - floor(s) < 0.05)

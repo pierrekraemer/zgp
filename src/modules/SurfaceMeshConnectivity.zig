@@ -236,12 +236,11 @@ pub fn rightClickMenu(m: *Module) void {
                     std.debug.print("Error cutting all edges: {}\n", .{err});
                 };
             }
-            // imgui_utils.tooltip(
-            //     \\ Read:
-            //     \\ - std vertex_position
-            //     \\ Update connectivity
-            // );
             if (disabled) {
+                imgui_utils.tooltip(
+                    \\ Following data should be available:
+                    \\ - std vertex_position
+                );
                 c.ImGui_EndDisabled();
             }
         }
@@ -253,7 +252,6 @@ pub fn rightClickMenu(m: *Module) void {
                     std.debug.print("Error triangulating faces: {}\n", .{err});
                 };
             }
-            imgui_utils.tooltip("Update connectivity");
         }
 
         if (c.ImGui_BeginMenu("Decimate (QEM)")) {
@@ -286,18 +284,15 @@ pub fn rightClickMenu(m: *Module) void {
                     };
                 }
             }
-            // imgui_utils.tooltip(
-            //     \\ Read:
-            //     \\ - std vertex_position
-            //     \\ - std vertex_area
-            //     \\ - std vertex_tangent_basis
-            //     \\ - std face_area
-            //     \\ - std face_normal
-            //     \\ Write:
-            //     \\ - std vertex_position
-            //     \\ Update connectivity
-            // );
             if (disabled) {
+                imgui_utils.tooltip(
+                    \\ Following data should be available:
+                    \\ - std vertex_position
+                    \\ - std vertex_area
+                    \\ - std vertex_tangent_basis
+                    \\ - std face_area
+                    \\ - std face_normal
+                );
                 c.ImGui_EndDisabled();
             }
         }
@@ -347,28 +342,18 @@ pub fn rightClickMenu(m: *Module) void {
                     std.debug.print("Error remeshing: {}\n", .{err});
                 };
             }
-            // imgui_utils.tooltip(
-            //     \\ Read:
-            //     \\ - std vertex_position
-            //     \\ - std corner_angle
-            //     \\ - std face_area
-            //     \\ - std face_normal
-            //     \\ - std edge_length
-            //     \\ - std edge_dihedral_angle
-            //     \\ - std vertex_area
-            //     \\ - std vertex_normal
-            //     \\ Write:
-            //     \\ - std vertex_position
-            //     \\ - std corner_angle
-            //     \\ - std face_area
-            //     \\ - std face_normal
-            //     \\ - std edge_length
-            //     \\ - std edge_dihedral_angle
-            //     \\ - std vertex_area
-            //     \\ - std vertex_normal
-            //     \\ Update connectivity
-            // );
             if (disabled) {
+                imgui_utils.tooltip(
+                    \\ Following data should be available:
+                    \\ - std vertex_position
+                    \\ - std corner_angle
+                    \\ - std face_area
+                    \\ - std face_normal
+                    \\ - std edge_length
+                    \\ - std edge_dihedral_angle
+                    \\ - std vertex_area
+                    \\ - std vertex_normal
+                );
                 c.ImGui_EndDisabled();
             }
         }
@@ -390,6 +375,12 @@ pub fn rightClickMenu(m: *Module) void {
                 };
             }
             if (disabled) {
+                imgui_utils.tooltip(
+                    \\ Requires:
+                    \\ - a name for the convex hull
+                    \\ Following data should be available:
+                    \\ - std vertex_position
+                );
                 c.ImGui_EndDisabled();
             }
         }

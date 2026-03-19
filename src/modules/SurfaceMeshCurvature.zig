@@ -147,7 +147,7 @@ pub fn rightClickMenu(m: *Module) void {
             }
             c.ImGui_PopID();
 
-            if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create curvature datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 inline for (@typeInfo(curvature.SurfaceMeshCurvatureDatas).@"struct".fields) |*field| {
                     if (@field(curvature_datas, field.name) == null) {
                         const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
@@ -187,14 +187,13 @@ pub fn rightClickMenu(m: *Module) void {
                 };
             }
             imgui_utils.tooltip(
-                \\ Read:
+                \\ Following data should be available:
                 \\ - std vertex_position
                 \\ - std vertex_normal
                 \\ - std edge_dihedral_angle
                 \\ - std edge_length
                 \\ - std face_area
-                \\ Write:
-                \\ - given curvature data (kmin, Kmin, kmax, Kmax)
+                \\ - selected curvature data (kmin, Kmin, kmax, Kmax)
             );
             if (disabled) {
                 c.ImGui_EndDisabled();

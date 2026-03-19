@@ -80,7 +80,6 @@ pub fn rightClickMenu(m: *Module) void {
 
     const UiData = struct {
         var diffusion_time: f32 = 1.0;
-        // TODO: ensure that this data is associated to the selected SurfaceMesh
         var vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null;
     };
 
@@ -104,11 +103,25 @@ pub fn rightClickMenu(m: *Module) void {
                 .changed => |data| UiData.vertex_distance = data,
             }
             c.ImGui_PopID();
+
+            if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create distance data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                if (UiData.vertex_distance == null) {
+                    const maybe_data = sm.addData(.vertex, f32, "distance");
+                    if (maybe_data) |data| {
+                        UiData.vertex_distance = data;
+                    } else |err| {
+                        zgp_log.err("Error adding distance data: {}", .{err});
+                    }
+                }
+            }
+
             c.ImGui_Text("Diffusion time");
             c.ImGui_PushID("Diffusion time");
             _ = c.ImGui_SliderFloatEx("", &UiData.diffusion_time, 1.0, 100.0, "%.1f", c.ImGuiSliderFlags_Logarithmic);
             c.ImGui_PopID();
+
             const disabled =
+                info.vertex_set.cells.items.len == 0 or
                 info.std_datas.halfedge_cotan_weight == null or
                 info.std_datas.vertex_position == null or
                 info.std_datas.vertex_area == null or
@@ -135,18 +148,19 @@ pub fn rightClickMenu(m: *Module) void {
                     std.debug.print("Error computing geodesic distance: {}\n", .{err});
                 };
             }
-            imgui_utils.tooltip(
-                \\ Read:
-                \\ - std halfedge_cotan_weight
-                \\ - std vertex_position
-                \\ - std vertex_area
-                \\ - std edge_length
-                \\ - std face_area
-                \\ - std face_normal
-                \\ Write:
-                \\ - given distance data
-            );
             if (disabled) {
+                imgui_utils.tooltip(
+                    \\ Requires:
+                    \\ - at least 1 selected vertex.
+                    \\ Following data should be available:
+                    \\ - std halfedge_cotan_weight
+                    \\ - std vertex_position
+                    \\ - std vertex_area
+                    \\ - std edge_length
+                    \\ - std face_area
+                    \\ - std face_normal
+                    \\ - selected vertex distance data
+                );
                 c.ImGui_EndDisabled();
             }
         }

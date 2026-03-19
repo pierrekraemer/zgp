@@ -44,7 +44,7 @@ needs_redraw: bool = true,
 
 pub fn init(view: *View) void {
     view.camera = .init(
-        .{ 0.0, 0.5, 2.0 },
+        .{ -0.5, 0.5, 2.0 },
         .{ 0.0, 1.0, 0.0 },
         .{ 0.0, 0.0, 0.0 },
         1.0,
@@ -133,20 +133,24 @@ pub fn menuBar(view: *View) void {
         if (c.ImGui_MenuItemEx("Perspective", null, view.camera.projection_type == .perspective, true)) {
             view.camera.projection_type = .perspective;
             view.camera.updateProjectionMatrix();
+            view.needs_redraw = true;
         }
         if (c.ImGui_MenuItemEx("Orthographic", null, view.camera.projection_type == .orthographic, true)) {
             view.camera.projection_type = .orthographic;
             view.camera.updateProjectionMatrix();
+            view.needs_redraw = true;
         }
         c.ImGui_Separator();
         if (c.ImGui_Button("Pivot around world origin")) {
             view.camera.pivot_position = .{ 0.0, 0.0, 0.0 };
             view.camera.look_dir = vec.normalized3f(vec.sub3f(view.camera.pivot_position, view.camera.position));
             view.camera.updateViewMatrix();
+            view.needs_redraw = true;
         }
         if (c.ImGui_Button("Look at pivot point")) {
             view.camera.look_dir = vec.normalized3f(vec.sub3f(view.camera.pivot_position, view.camera.position));
             view.camera.updateViewMatrix();
+            view.needs_redraw = true;
         }
     }
 }

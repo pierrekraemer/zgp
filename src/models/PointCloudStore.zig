@@ -364,6 +364,16 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
                 c.ImGui_CloseCurrentPopup();
             }
         }
+
+        {
+            c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
+            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
+            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
+            if (c.ImGui_ButtonEx(c.ICON_FA_TRASH ++ " Delete", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                pcs.destroyPointCloud(pc);
+            }
+            c.ImGui_PopStyleColorEx(3);
+        }
     } else {
         c.ImGui_PopStyleColorEx(3);
     }
