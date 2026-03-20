@@ -212,6 +212,8 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
 
     try app_ctx.point_cloud_store.addListener(&point_cloud_std_datas.module);
     try app_ctx.point_cloud_store.addListener(&point_cloud_renderer.module);
+    try app_ctx.point_cloud_store.addListener(&vector_per_vertex_renderer.module);
+    try app_ctx.point_cloud_store.addListener(&surface_mesh_sampling.module);
 
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_std_datas.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_renderer.module);

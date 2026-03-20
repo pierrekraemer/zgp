@@ -46,10 +46,12 @@ const SamplingData = struct {
         sd.initialized = true;
     }
 
+    // do not destroy the PointCloud here
+    // this function is only called after having being notified of the PointCloud destruction
     fn deinit(sd: *SamplingData) void {
-        if (sd.initialized) {
-            sd.app_ctx.point_cloud_store.destroyPointCloud(sd.samples.?);
-        }
+        sd.samples = null;
+        sd.position = null;
+        sd.surface_point = null;
         sd.initialized = false;
     }
 
@@ -75,6 +77,7 @@ module: Module = .{
     .name = "Surface Mesh Sampling",
     .supported_models = .{ .surface_mesh = true },
     .vtable = &.{
+        .pointCloudDestroyed = pointCloudDestroyed,
         .surfaceMeshCreated = surfaceMeshCreated,
         .surfaceMeshDestroyed = surfaceMeshDestroyed,
         .rightPanel = rightPanel,
@@ -91,6 +94,19 @@ pub fn init(app_ctx: *AppContext) SurfaceMeshSampling {
 
 pub fn deinit(sms: *SurfaceMeshSampling) void {
     sms.surface_meshes_data.deinit();
+}
+
+/// Part of the Module interface.
+/// Deinit the SamplingData associated to the destroyed PointCloud.
+pub fn pointCloudDestroyed(m: *Module, point_cloud: *PointCloud) void {
+    const sms: *SurfaceMeshSampling = @alignCast(@fieldParentPtr("module", m));
+    var it = sms.surface_meshes_data.iterator();
+    while (it.next()) |entry| {
+        if (entry.value_ptr.samples == point_cloud) {
+            entry.value_ptr.deinit();
+            break;
+        }
+    }
 }
 
 /// Part of the Module interface.

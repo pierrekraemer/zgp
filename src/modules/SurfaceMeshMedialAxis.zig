@@ -175,25 +175,45 @@ const MedialAxisData = struct {
 
     pub fn updateSpheres(mad: *MedialAxisData) !void {
         assert(mad.initialized);
+
+        var previous_error: f32 = 0.0;
+        var nb_iterations: usize = 0;
+        const max_iterations: usize = 100;
         var s_it = mad.spheres.?.pointIterator();
-        while (s_it.next()) |s| {
-            const cluster = mad.sphere_cluster.?.valuePtr(s);
-            var cluster_sqem: SQEM = .zero;
-            for (cluster.items) |v| {
-                cluster_sqem.add(mad.vertex_sqem.?.valuePtr(v));
+
+        while (nb_iterations < max_iterations) {
+            s_it.reset();
+            while (s_it.next()) |s| {
+                const cluster = mad.sphere_cluster.?.valuePtr(s);
+                var cluster_sqem: SQEM = .zero;
+                for (cluster.items) |v| {
+                    cluster_sqem.add(mad.vertex_sqem.?.valuePtr(v));
+                }
+                const optimized_sphere = cluster_sqem.optimalSphere();
+                if (optimized_sphere) |opt_s| {
+                    mad.sphere_center.?.valuePtr(s).* = .{ opt_s[0], opt_s[1], opt_s[2] };
+                    mad.sphere_radius.?.valuePtr(s).* = opt_s[3];
+                }
             }
-            const optimized_sphere = cluster_sqem.optimalSphere();
-            if (optimized_sphere) |opt_s| {
-                mad.sphere_center.?.valuePtr(s).* = .{ opt_s[0], opt_s[1], opt_s[2] };
-                mad.sphere_radius.?.valuePtr(s).* = opt_s[3];
+
+            try mad.computeClusters();
+
+            nb_iterations += 1;
+
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, Vec3f, mad.sphere_center.?);
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, f32, mad.sphere_radius.?);
+            mad.app_ctx.requestRedraw();
+
+            var current_error: f32 = 0.0;
+            s_it.reset();
+            while (s_it.next()) |s| {
+                current_error += mad.sphere_error.?.value(s);
             }
+            if (@abs(current_error - previous_error) < 1e-7) {
+                break;
+            }
+            previous_error = current_error;
         }
-
-        try mad.computeClusters();
-
-        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, Vec3f, mad.sphere_center.?);
-        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, f32, mad.sphere_radius.?);
-        mad.app_ctx.requestRedraw();
     }
 
     pub fn splitWorseSphere(mad: *MedialAxisData) !void {
