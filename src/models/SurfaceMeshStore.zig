@@ -1,6 +1,7 @@
 const SurfaceMeshStore = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 const builtin = @import("builtin");
 
 const c = @import("../main.zig").c;
@@ -398,6 +399,8 @@ pub fn setSurfaceMeshStdData(
 pub fn menuBar(_: *SurfaceMeshStore) void {}
 
 pub fn leftPanel(sms: *SurfaceMeshStore) void {
+    assert(sms.selected_model.modelType() == .surface_mesh);
+
     const CreateDataTypes = union(enum) { bool: bool, u32: u32, f32: f32, Vec3f: Vec3f };
     const CreateDataTypesTag = std.meta.Tag(CreateDataTypes);
     const UiData = struct {
@@ -406,168 +409,145 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
         var data_name_buf: [32]u8 = @splat(0);
     };
 
-    c.ImGui_PushIDPtr(sms); // push a unique ID for this panel
-    defer c.ImGui_PopID();
-
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
 
-    c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
-    c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
-    c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
-    if (c.ImGui_CollapsingHeader("Surface Meshes", c.ImGuiTreeNodeFlags_DefaultOpen)) {
-        c.ImGui_PopStyleColorEx(3);
+    const sm = sms.selected_model.surface_mesh;
 
-        const nb_surface_meshes_f = @as(f32, @floatFromInt(sms.surface_meshes.count() + 1));
-        switch (imgui_utils.surfaceMeshListBox(
-            sms,
-            style.*.FontSizeBase * nb_surface_meshes_f + style.*.ItemSpacing.y * nb_surface_meshes_f,
-        )) {
-            .unchanged => {},
-            .cleared => sms.selected_model.* = .none,
-            .changed => |new_sm| sms.selected_model.* = .{ .surface_mesh = new_sm },
+    if (c.ImGui_BeginTable("CellStats", 3, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
+        defer c.ImGui_EndTable();
+
+        c.ImGui_TableSetupColumn("CellType", c.ImGuiTableColumnFlags_WidthStretch);
+        c.ImGui_TableSetupColumn("Count", c.ImGuiTableColumnFlags_WidthFixed);
+        c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
+        c.ImGui_TableHeadersRow();
+
+        inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
+            var buf_name: [32]u8 = undefined;
+            var buf_count: [16]u8 = undefined;
+            var buf_density: [16]u8 = undefined;
+
+            const cells = std.fmt.bufPrintZ(&buf_name, "{s}", .{@tagName(cell_type)}) catch "";
+            const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{sm.nbCells(cell_type)}) catch "";
+            const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{sm.dataContainer(cell_type).density() * 100}) catch "";
+
+            c.ImGui_TableNextRow();
+            _ = c.ImGui_TableNextColumn();
+            c.ImGui_Text(cells.ptr);
+            _ = c.ImGui_TableNextColumn();
+            c.ImGui_Text(count.ptr);
+            _ = c.ImGui_TableNextColumn();
+            c.ImGui_Text(density.ptr);
         }
+    }
 
-        if (sms.selected_model.modelType() != .surface_mesh) return;
-        const sm = sms.selected_model.surface_mesh;
-
-        if (c.ImGui_BeginTable("CellStats", 3, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
-            defer c.ImGui_EndTable();
-
-            c.ImGui_TableSetupColumn("CellType", c.ImGuiTableColumnFlags_WidthStretch);
-            c.ImGui_TableSetupColumn("Count", c.ImGuiTableColumnFlags_WidthFixed);
-            c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
-            c.ImGui_TableHeadersRow();
-
-            inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
-                var buf_name: [32]u8 = undefined;
-                var buf_count: [16]u8 = undefined;
-                var buf_density: [16]u8 = undefined;
-
-                const cells = std.fmt.bufPrintZ(&buf_name, "{s}", .{@tagName(cell_type)}) catch "";
-                const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{sm.nbCells(cell_type)}) catch "";
-                const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{sm.dataContainer(cell_type).density() * 100}) catch "";
-
-                c.ImGui_TableNextRow();
-                _ = c.ImGui_TableNextColumn();
-                c.ImGui_Text(cells.ptr);
-                _ = c.ImGui_TableNextColumn();
-                c.ImGui_Text(count.ptr);
-                _ = c.ImGui_TableNextColumn();
-                c.ImGui_Text(density.ptr);
-            }
+    if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+        c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
+    }
+    if (c.ImGui_BeginPopupModal("Create Cell Data", 0, c.ImGuiWindowFlags_AlwaysAutoResize)) {
+        defer c.ImGui_EndPopup();
+        c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+        defer c.ImGui_PopItemWidth();
+        c.ImGui_Text("Cell type:");
+        c.ImGui_PushID("cell type");
+        if (imgui_utils.surfaceMeshCellTypeComboBox(UiData.selected_surface_mesh_cell_type)) |cell_type| {
+            UiData.selected_surface_mesh_cell_type = cell_type;
         }
-
-        if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
-        }
-        if (c.ImGui_BeginPopupModal("Create Cell Data", 0, c.ImGuiWindowFlags_AlwaysAutoResize)) {
-            defer c.ImGui_EndPopup();
-            c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
-            defer c.ImGui_PopItemWidth();
-            c.ImGui_Text("Cell type:");
-            c.ImGui_PushID("cell type");
-            if (imgui_utils.surfaceMeshCellTypeComboBox(UiData.selected_surface_mesh_cell_type)) |cell_type| {
-                UiData.selected_surface_mesh_cell_type = cell_type;
-            }
-            c.ImGui_PopID();
-            c.ImGui_Text("Data type:");
-            c.ImGui_PushID("data type");
-            if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
-                defer c.ImGui_EndCombo();
-                inline for (@typeInfo(CreateDataTypesTag).@"enum".fields) |data_type| {
-                    const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
-                    if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                        if (!is_selected) {
-                            UiData.selected_data_type = @enumFromInt(data_type.value);
-                        }
-                    }
-                    if (is_selected) {
-                        c.ImGui_SetItemDefaultFocus();
+        c.ImGui_PopID();
+        c.ImGui_Text("Data type:");
+        c.ImGui_PushID("data type");
+        if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
+            defer c.ImGui_EndCombo();
+            inline for (@typeInfo(CreateDataTypesTag).@"enum".fields) |data_type| {
+                const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
+                if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                    if (!is_selected) {
+                        UiData.selected_data_type = @enumFromInt(data_type.value);
                     }
                 }
-            }
-            c.ImGui_PopID();
-            c.ImGui_Text("Name:");
-            _ = c.ImGui_InputText("##Name", &UiData.data_name_buf, UiData.data_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
-            if (c.ImGui_ButtonEx("Close", c.ImVec2{ .x = 0.5 * c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                UiData.data_name_buf = @splat(0);
-                c.ImGui_CloseCurrentPopup();
-            }
-            c.ImGui_SameLine();
-            if (c.ImGui_ButtonEx("Create", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                switch (UiData.selected_surface_mesh_cell_type) {
-                    inline else => |cell_type| {
-                        switch (UiData.selected_data_type) {
-                            inline else => |data_type| {
-                                const data_name = std.mem.sliceTo(&UiData.data_name_buf, 0);
-                                _ = sm.addData(cell_type, @FieldType(CreateDataTypes, @tagName(data_type)), data_name) catch |err| {
-                                    zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ data_name, @tagName(cell_type), @tagName(data_type), err });
-                                };
-                                UiData.data_name_buf = @splat(0);
-                            },
-                        }
-                    },
+                if (is_selected) {
+                    c.ImGui_SetItemDefaultFocus();
                 }
             }
         }
-
-        {
-            const info = sms.surface_meshes_info.getPtr(sm).?;
-
-            var bvh_computable = true;
-            if (info.std_datas.vertex_position == null) {
-                bvh_computable = false;
-            }
-            var bvh_upToDate = true;
-            if (!bvh_computable or info.bvh_last_update == null or info.bvh_last_update.?.order(sms.dataLastUpdate(info.std_datas.vertex_position.?.gen()).?) == .lt) {
-                bvh_upToDate = false;
-            }
-            if (!bvh_computable) {
-                c.ImGui_BeginDisabled(true);
-            }
-            if (!bvh_upToDate) {
-                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
-            } else {
-                c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 200, 128, 200));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 200, 128, 255));
-                c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 200, 128, 128));
-            }
-            if (c.ImGui_ButtonEx(c.ICON_FA_SITEMAP ++ " Update BVH", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                info.bvh.deinit();
-                info.bvh = bvh.TrianglesBVH.init(sm, info.std_datas.vertex_position.?) catch |err| blk: {
-                    zgp_log.err("Failed to build BVH: {}", .{err});
-                    break :blk .{};
-                };
-                if (info.bvh.bvh_ptr) |_| {
-                    const now = std.time.Instant.now();
-                    if (now) |t| {
-                        info.bvh_last_update = t;
-                    } else |err| {
-                        zgp_log.err("Failed to get current time: {}", .{err});
+        c.ImGui_PopID();
+        c.ImGui_Text("Name:");
+        _ = c.ImGui_InputText("##Name", &UiData.data_name_buf, UiData.data_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
+        if (c.ImGui_ButtonEx("Close", c.ImVec2{ .x = 0.5 * c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            UiData.data_name_buf = @splat(0);
+            c.ImGui_CloseCurrentPopup();
+        }
+        c.ImGui_SameLine();
+        if (c.ImGui_ButtonEx("Create", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            switch (UiData.selected_surface_mesh_cell_type) {
+                inline else => |cell_type| {
+                    switch (UiData.selected_data_type) {
+                        inline else => |data_type| {
+                            const data_name = std.mem.sliceTo(&UiData.data_name_buf, 0);
+                            _ = sm.addData(cell_type, @FieldType(CreateDataTypes, @tagName(data_type)), data_name) catch |err| {
+                                zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ data_name, @tagName(cell_type), @tagName(data_type), err });
+                            };
+                            UiData.data_name_buf = @splat(0);
+                        },
                     }
-                }
-            }
-            c.ImGui_PopStyleColorEx(3);
-            if (!bvh_computable) {
-                c.ImGui_EndDisabled();
+                },
             }
         }
+    }
 
-        {
+    {
+        const info = sms.surface_meshes_info.getPtr(sm).?;
+
+        var bvh_computable = true;
+        if (info.std_datas.vertex_position == null) {
+            bvh_computable = false;
+        }
+        var bvh_upToDate = true;
+        if (!bvh_computable or info.bvh_last_update == null or info.bvh_last_update.?.order(sms.dataLastUpdate(info.std_datas.vertex_position.?.gen()).?) == .lt) {
+            bvh_upToDate = false;
+        }
+        if (!bvh_computable) {
+            c.ImGui_BeginDisabled(true);
+        }
+        if (!bvh_upToDate) {
             c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
             c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
             c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
-            if (c.ImGui_ButtonEx(c.ICON_FA_TRASH ++ " Delete", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                sms.destroySurfaceMesh(sm);
-            }
-            c.ImGui_PopStyleColorEx(3);
+        } else {
+            c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 200, 128, 200));
+            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 200, 128, 255));
+            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 200, 128, 128));
         }
-    } else {
+        if (c.ImGui_ButtonEx(c.ICON_FA_SITEMAP ++ " Update BVH", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            info.bvh.deinit();
+            info.bvh = bvh.TrianglesBVH.init(sm, info.std_datas.vertex_position.?) catch |err| blk: {
+                zgp_log.err("Failed to build BVH: {}", .{err});
+                break :blk .{};
+            };
+            if (info.bvh.bvh_ptr) |_| {
+                const now = std.time.Instant.now();
+                if (now) |t| {
+                    info.bvh_last_update = t;
+                } else |err| {
+                    zgp_log.err("Failed to get current time: {}", .{err});
+                }
+            }
+        }
+        c.ImGui_PopStyleColorEx(3);
+        if (!bvh_computable) {
+            c.ImGui_EndDisabled();
+        }
+    }
+
+    {
+        c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
+        c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
+        c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
+        if (c.ImGui_ButtonEx(c.ICON_FA_TRASH ++ " Delete", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            sms.destroySurfaceMesh(sm);
+        }
         c.ImGui_PopStyleColorEx(3);
     }
 }

@@ -279,6 +279,8 @@ fn shouldCallOnModule(module: *Module, ctx: *AppContext) bool {
 fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     _ = appstate;
 
+    const style = c.ImGui_GetStyle();
+
     gl.ClearColor(
         app_ctx.view.background_color[0],
         app_ctx.view.background_color[1],
@@ -387,22 +389,57 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
     {
         defer c.ImGui_End();
-        app_ctx.point_cloud_store.leftPanel();
-        app_ctx.surface_mesh_store.leftPanel();
+
+        {
+            c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
+            defer c.ImGui_PopItemWidth();
+
+            c.ImGui_SeparatorText("Point Clouds");
+            const nb_point_clouds_f = @as(f32, @floatFromInt(app_ctx.point_cloud_store.point_clouds.count() + 1));
+            switch (imgui.pointCloudListBox(
+                &app_ctx.point_cloud_store,
+                style.*.FontSizeBase * nb_point_clouds_f + style.*.ItemSpacing.y * nb_point_clouds_f,
+            )) {
+                .unchanged => {},
+                .cleared => app_ctx.selected_model = .none,
+                .changed => |new_pc| app_ctx.selected_model = .{ .point_cloud = new_pc },
+            }
+
+            c.ImGui_SeparatorText("Surface Meshes");
+            const nb_surface_meshes_f = @as(f32, @floatFromInt(app_ctx.surface_mesh_store.surface_meshes.count() + 1));
+            switch (imgui.surfaceMeshListBox(
+                &app_ctx.surface_mesh_store,
+                style.*.FontSizeBase * nb_surface_meshes_f + style.*.ItemSpacing.y * nb_surface_meshes_f,
+            )) {
+                .unchanged => {},
+                .cleared => app_ctx.selected_model = .none,
+                .changed => |new_sm| app_ctx.selected_model = .{ .surface_mesh = new_sm },
+            }
+        }
+
+        c.ImGui_Separator();
+
+        switch (app_ctx.selected_model) {
+            .point_cloud => {
+                c.ImGui_PushIDPtr(&app_ctx.point_cloud_store);
+                app_ctx.point_cloud_store.leftPanel();
+                c.ImGui_PopID();
+            },
+            .surface_mesh => {
+                c.ImGui_PushIDPtr(&app_ctx.surface_mesh_store);
+                app_ctx.surface_mesh_store.leftPanel();
+                c.ImGui_PopID();
+            },
+            .none => {},
+        }
+
+        c.ImGui_Separator();
+
         for (modules.items) |module| {
             if (!shouldCallOnModule(module, &app_ctx)) continue;
-            if (module.vtable.leftPanel == null) continue; // check if the module has a leftPanel function
             c.ImGui_PushIDPtr(module);
-            defer c.ImGui_PopID();
-            c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
-            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
-            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
-            if (c.ImGui_CollapsingHeader(module.name.ptr, c.ImGuiTreeNodeFlags_DefaultOpen)) {
-                c.ImGui_PopStyleColorEx(3);
-                module.leftPanel();
-            } else {
-                c.ImGui_PopStyleColorEx(3);
-            }
+            module.leftPanel();
+            c.ImGui_PopID();
         }
     }
 
