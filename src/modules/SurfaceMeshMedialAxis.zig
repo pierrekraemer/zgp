@@ -110,10 +110,10 @@ const MedialAxisData = struct {
 
     pub fn deinit(mad: *MedialAxisData) void {
         if (mad.initialized) {
-            mad.surface_mesh.removeData(.vertex, mad.vertex_sqem.?.gen());
-            mad.surface_mesh.removeData(.vertex, mad.vertex_sphere.?.gen());
-            mad.surface_mesh.removeData(.vertex, mad.vertex_sphere_error.?.gen());
-            mad.surface_mesh.removeData(.vertex, mad.vertex_sphere_color.?.gen());
+            mad.surface_mesh.removeData(.vertex, SQEM, mad.vertex_sqem.?);
+            mad.surface_mesh.removeData(.vertex, ?PointCloud.Point, mad.vertex_sphere.?);
+            mad.surface_mesh.removeData(.vertex, f32, mad.vertex_sphere_error.?);
+            mad.surface_mesh.removeData(.vertex, Vec3f, mad.vertex_sphere_color.?);
             var it = mad.sphere_cluster.?.data.iterator();
             while (it.next()) |*cluster| {
                 cluster.*.deinit(mad.app_ctx.allocator); // do not forget to deinit ArrayLists in sphere_cluster data
@@ -133,7 +133,7 @@ const MedialAxisData = struct {
             mad.sphere_error.?.valuePtr(s).* = 0.0;
         }
         // compute new clusters
-        var v_it = try SurfaceMesh.CellIterator(.vertex).init(mad.surface_mesh);
+        var v_it: SurfaceMesh.CellIterator = try .init(mad.surface_mesh, .vertex);
         defer v_it.deinit();
         while (v_it.next()) |v| {
             var min_distance = std.math.floatMax(f32);

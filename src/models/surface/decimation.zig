@@ -111,7 +111,7 @@ pub fn decimateQEM(
     try subdivision.triangulateFaces(app_ctx, sm);
 
     var edge_queue_index = try sm.addData(.edge, ?usize, "__edge_queue_index");
-    defer sm.removeData(.edge, edge_queue_index.gen());
+    defer sm.removeData(.edge, ?usize, edge_queue_index);
     edge_queue_index.data.fill(null);
 
     var queue: EdgeQueue = EdgeQueue.init(app_ctx.allocator, .{
@@ -123,7 +123,7 @@ pub fn decimateQEM(
     defer queue.deinit();
 
     // init queue with collapsible edges
-    var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
+    var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
     defer edge_it.deinit();
     while (edge_it.next()) |edge| {
         if (sm.canCollapseEdge(edge)) {

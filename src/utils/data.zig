@@ -281,8 +281,7 @@ pub const DataContainer = struct {
         while (it.next()) |entry| {
             const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addData)
             dc.allocator.free(name); // free the name
-            const data_gen = entry.value_ptr.*;
-            data_gen.deinit(); // Data(T) destroy is called in Data(T) deinit
+            entry.value_ptr.*.deinit(); // Data(T) destroy is called in DataGen deinit
         }
         for (dc.markers.items) |marker| {
             marker.data_gen.deinit();
@@ -317,6 +316,7 @@ pub const DataContainer = struct {
         const data = try dc.allocator.create(Data(T));
         errdefer dc.allocator.destroy(data);
         data.* = .init(owned_name, dc);
+        errdefer data.data_gen.deinit();
         try data.data_gen.ensureSize(dc.size);
         try dc.datas.put(owned_name, &data.data_gen);
         return data;

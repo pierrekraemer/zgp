@@ -33,14 +33,14 @@ const TnBData = struct {
 
     pub fn deinit(tbd: *TnBData) void {
         if (tbd.initialized) {
-            tbd.surface_mesh.removeData(.vertex, tbd.vertex_ref_edge.?.gen());
+            tbd.surface_mesh.removeData(.vertex, SurfaceMesh.Cell, tbd.vertex_ref_edge.?);
             tbd.initialized = false;
         }
     }
 
     fn computeVertexRefEdges(tbd: *TnBData) !void {
         assert(tbd.initialized);
-        var v_it = try SurfaceMesh.CellIterator(.vertex).init(tbd.surface_mesh);
+        var v_it: SurfaceMesh.CellIterator = try .init(tbd.surface_mesh, .vertex);
         defer v_it.deinit();
         while (v_it.next()) |v| {
             tbd.vertex_ref_edge.?.valuePtr(v).* = .{ .edge = v.dart() };

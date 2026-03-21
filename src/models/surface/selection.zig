@@ -56,7 +56,7 @@ pub fn cellsWithinSphereAroundVertex(
 
     const vp = vertex_position.value(vertex);
 
-    var dm = try SurfaceMesh.DartMarker.init(sm);
+    var dm: SurfaceMesh.DartMarker = try .init(sm);
     defer dm.deinit();
 
     try includeVertex(sm, &dm, vertex, vertex_buffer, edge_buffer, face_buffer);

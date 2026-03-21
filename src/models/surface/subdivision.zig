@@ -13,9 +13,9 @@ pub fn triangulateFaces(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
 ) !void {
-    var face_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(app_ctx.allocator, 1024);
+    var face_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(app_ctx.allocator, sm.nbCells(.face));
     defer face_buffer.deinit(app_ctx.allocator);
-    var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
+    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
     defer face_it.deinit();
     while (face_it.next()) |f| {
         if (sm.codegree(f) > 3) {
@@ -43,9 +43,9 @@ pub fn cutAllEdges(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
-    var edge_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(app_ctx.allocator, 1024);
+    var edge_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(app_ctx.allocator, sm.nbCells(.edge));
     defer edge_buffer.deinit(app_ctx.allocator);
-    var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
+    var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
     defer edge_it.deinit();
     while (edge_it.next()) |e| {
         try edge_buffer.append(app_ctx.allocator, e);

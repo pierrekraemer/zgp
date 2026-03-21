@@ -36,7 +36,7 @@ const VTable = struct {
     surfaceMeshConnectivityUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh) void = null,
     surfaceMeshStdDataChanged: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) void = null,
     surfaceMeshDataUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void = null,
-    surfaceMeshCellSetUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType) void = null,
+    surfaceMeshCellSetUpdated: ?*const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_set: *const SurfaceMesh.CellSet) void = null,
 
     // UI events
     leftPanel: ?*const fn (m: *Module) void = null,
@@ -82,8 +82,8 @@ pub inline fn surfaceMeshStdDataChanged(m: *Module, sm: *SurfaceMesh, data: Surf
 pub inline fn surfaceMeshDataUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void {
     if (m.vtable.surfaceMeshDataUpdated) |func| func(m, sm, cell_type, data_gen);
 }
-pub inline fn surfaceMeshCellSetUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType) void {
-    if (m.vtable.surfaceMeshCellSetUpdated) |func| func(m, sm, cell_type);
+pub inline fn surfaceMeshCellSetUpdated(m: *Module, sm: *SurfaceMesh, cell_set: *const SurfaceMesh.CellSet) void {
+    if (m.vtable.surfaceMeshCellSetUpdated) |func| func(m, sm, cell_set);
 }
 
 pub inline fn leftPanel(m: *Module) void {

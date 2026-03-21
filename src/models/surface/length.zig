@@ -31,7 +31,7 @@ pub fn computeEdgeLengths(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     edge_length: SurfaceMesh.CellData(.edge, f32),
 ) !void {
-    var it = try SurfaceMesh.CellIterator(.edge).init(sm);
+    var it: SurfaceMesh.CellIterator = try .init(sm, .edge);
     defer it.deinit();
     while (it.next()) |edge| {
         edge_length.valuePtr(edge).* = edgeLength(

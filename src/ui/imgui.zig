@@ -169,18 +169,48 @@ pub fn surfaceMeshCellDataComboBox(
             c.ImGui_SetItemDefaultFocus();
         }
 
-        var data_container = switch (cell_type) {
-            .halfedge, .corner => surface_mesh.dart_data,
-            .vertex => surface_mesh.vertex_data,
-            .edge => surface_mesh.edge_data,
-            .face => surface_mesh.face_data,
-            else => unreachable,
-        };
+        var data_container = surface_mesh.dataContainer(cell_type);
         var data_it = data_container.typedIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 return .{ .changed = .{ .surface_mesh = surface_mesh, .data = data } };
+            }
+            if (is_selected) {
+                c.ImGui_SetItemDefaultFocus();
+            }
+        }
+    }
+    return .unchanged;
+}
+
+pub fn surfaceMeshCellSetComboBox(
+    surface_mesh: *SurfaceMesh,
+    cell_type: SurfaceMesh.CellType,
+    selected_cell_set: ?*SurfaceMesh.CellSet,
+) SelectionResult(*SurfaceMesh.CellSet) {
+    if (c.ImGui_BeginCombo("", if (selected_cell_set) |cell_set| cell_set.name.ptr else "-- none --", 0)) {
+        defer c.ImGui_EndCombo();
+        const is_none_selected = selected_cell_set == null;
+        if (c.ImGui_SelectableEx("-- none --", is_none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+            return .cleared;
+        }
+        if (is_none_selected) {
+            c.ImGui_SetItemDefaultFocus();
+        }
+
+        const cell_sets = switch (cell_type) {
+            .vertex => &surface_mesh.vertex_sets,
+            .edge => &surface_mesh.edge_sets,
+            .face => &surface_mesh.face_sets,
+            else => unreachable,
+        };
+        var cell_set_it = cell_sets.iterator();
+        while (cell_set_it.next()) |entry| {
+            const cell_set = entry.value_ptr.*;
+            const is_selected = if (selected_cell_set) |scs| scs == cell_set else false;
+            if (c.ImGui_SelectableEx(cell_set.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                return .{ .changed = cell_set };
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();

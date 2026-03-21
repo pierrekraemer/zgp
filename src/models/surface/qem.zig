@@ -81,7 +81,7 @@ pub fn computeVertexQEMs(
     vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
 ) !void {
     vertex_qem.data.fill(mat.zero4f);
-    var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
+    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
     defer face_it.deinit();
     while (face_it.next()) |face| {
         const n = face_normal.value(face);
@@ -101,7 +101,7 @@ pub fn computeVertexQEMs(
         }
     }
     const line_quadric_epsilon = 1e-4;
-    var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
+    var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
     defer vertex_it.deinit();
     while (vertex_it.next()) |vertex| {
         const p = vertex_position.value(vertex);

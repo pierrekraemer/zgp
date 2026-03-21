@@ -57,7 +57,7 @@ pub fn computeHalfedgeCotanWeights(
         }
     };
 
-    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.halfedge).init(sm);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .halfedge);
     defer pctr.deinit();
     try pctr.run(app_ctx, Task{
         .surface_mesh = sm,

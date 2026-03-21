@@ -61,7 +61,7 @@ pub fn computeFaceNormals(
         }
     };
 
-    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.face).init(sm);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .face);
     defer pctr.deinit();
     try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
@@ -109,7 +109,7 @@ pub fn computeVertexNormals(
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
     vertex_normal.data.fill(vec.zero3f);
-    var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
+    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
     defer face_it.deinit();
     while (face_it.next()) |face| {
         const n = face_normal.value(face);
@@ -148,7 +148,7 @@ pub fn computeVertexNormals(
     //     }
     // };
 
-    // var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
+    // var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
     // defer pctr.deinit();
     // try pctr.run(app_ctx, Task{
     //     .surface_mesh = sm,

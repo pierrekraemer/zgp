@@ -162,7 +162,7 @@ pub fn computeVertexCurvatures(
         }
     };
 
-    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
     defer pctr.deinit();
     try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
@@ -205,7 +205,7 @@ pub fn computeVertexGaussianCurvatures(
     corner_angle: SurfaceMesh.CellData(.corner, f32),
     vertex_gaussian_curvature: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
-    var it = try SurfaceMesh.CellIterator(.vertex).init(sm);
+    var it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
     defer it.deinit();
     while (it.next()) |vertex| {
         vertex_gaussian_curvature.valuePtr(vertex).* = vertexGaussianCurvature(

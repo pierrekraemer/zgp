@@ -49,7 +49,7 @@ pub fn computeCornerAngles(
         }
     };
 
-    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.corner).init(sm);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .corner);
     defer pctr.deinit();
     try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
@@ -124,7 +124,7 @@ pub fn computeEdgeDihedralAngles(
         }
     };
 
-    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.edge).init(sm);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .edge);
     defer pctr.deinit();
     try pctr.run(app_ctx, Task{
         .surface_mesh = sm,

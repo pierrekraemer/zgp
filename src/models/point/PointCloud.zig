@@ -2,6 +2,7 @@
 const PointCloud = @This();
 
 const std = @import("std");
+const assert = std.debug.assert;
 
 const data = @import("../../utils/data.zig");
 const DataContainer = data.DataContainer;
@@ -94,8 +95,9 @@ pub fn getOrAddData(pc: *PointCloud, comptime T: type, name: []const u8) !CellDa
     };
 }
 
-pub fn removeData(pc: *PointCloud, data_gen: *DataGen) void {
-    pc.point_data.removeData(data_gen);
+pub fn removeData(pc: *PointCloud, comptime T: type, cellData: CellData(T)) void {
+    assert(cellData.point_cloud == pc);
+    pc.point_data.removeData(&cellData.data.data_gen);
 }
 
 pub fn nbPoints(pc: *const PointCloud) u32 {

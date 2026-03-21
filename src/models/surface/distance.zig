@@ -27,12 +27,12 @@ pub fn computeVertexGeodesicDistancesFromSource(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     vertex_distance: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
-    var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
+    var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
     defer vertex_it.deinit();
 
     // index vertices with consecutive indices (for matrix assembly)
     var vertex_index = try sm.addData(.vertex, u32, "__vertex_index");
-    defer sm.removeData(.vertex, vertex_index.gen());
+    defer sm.removeData(.vertex, u32, vertex_index);
     var nb_vertices: u32 = 0;
     while (vertex_it.next()) |v| : (nb_vertices += 1) {
         vertex_index.valuePtr(v).* = nb_vertices;
@@ -45,7 +45,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
     const nb_edges = sm.nbCells(.edge);
     var triplets = try std.ArrayList(SparseMatrix.Triplet).initCapacity(sm.allocator, 4 * nb_edges);
     defer triplets.deinit(sm.allocator);
-    var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
+    var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
     defer edge_it.deinit();
     while (edge_it.next()) |edge| {
         const d = edge.dart();
@@ -102,7 +102,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
 
     // store heat_t in a vertex data (f64)
     var vertex_heat = try sm.addData(.vertex, f64, "__vertex_heat");
-    defer sm.removeData(.vertex, vertex_heat.gen());
+    defer sm.removeData(.vertex, f64, vertex_heat);
     vertex_it.reset();
     while (vertex_it.next()) |v| {
         const idx = vertex_index.value(v);
@@ -111,7 +111,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
 
     // compute the gradient of heat_t on each face
     var face_heat_grad = try sm.addData(.face, Vec3d, "__face_heat_grad");
-    defer sm.removeData(.face, face_heat_grad.gen());
+    defer sm.removeData(.face, Vec3d, face_heat_grad);
     try gradient.computeScalarFieldFaceGradients(
         app_ctx,
         sm,
@@ -133,7 +133,7 @@ pub fn computeVertexGeodesicDistancesFromSource(
 
     // compute the divergence of the face gradients at each vertex
     var vertex_heat_grad_div = try sm.addData(.vertex, f64, "__vertex_heat_grad_div");
-    defer sm.removeData(.vertex, vertex_heat_grad_div.gen());
+    defer sm.removeData(.vertex, f64, vertex_heat_grad_div);
     try gradient.computeVectorFieldVertexDivergences(
         app_ctx,
         sm,

@@ -193,7 +193,6 @@ pub fn rightPanel(m: *Module) void {
         var selected_surface_mesh_cell_type: SurfaceMesh.CellType = .vertex;
         var selected_data_type: DataTypesTag = .Vec3f;
         var selected_data_gen: ?*DataGen = null;
-        var data_name_buf: [32]u8 = @splat(0);
     };
 
     const style = c.ImGui_GetStyle();

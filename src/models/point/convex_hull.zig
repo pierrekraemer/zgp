@@ -131,19 +131,19 @@ pub fn generateConvexHull(
         while (it.next()) |list| {
             list.deinit(app_ctx.allocator);
         }
-        sm.removeData(.face, face_points_on_positive_side.gen());
+        sm.removeData(.face, std.ArrayList(u32), face_points_on_positive_side);
     }
     var face_most_distant_point_dist = try sm.addData(.face, f32, "most_distant_point_dist");
-    defer sm.removeData(.face, face_most_distant_point_dist.gen());
+    defer sm.removeData(.face, f32, face_most_distant_point_dist);
     var face_most_distant_point_index = try sm.addData(.face, u32, "most_distant_point_index");
-    defer sm.removeData(.face, face_most_distant_point_index.gen());
+    defer sm.removeData(.face, u32, face_most_distant_point_index);
 
     face_points_on_positive_side.data.fill(.empty);
     face_most_distant_point_dist.data.fill(0.0);
     face_most_distant_point_index.data.fill(0);
 
     // register points outside the initial tetrahedron in the faces
-    var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
+    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
     defer face_it.deinit();
     var point_it = pc.pointIterator();
     while (point_it.next()) |p| {
@@ -203,13 +203,6 @@ pub fn generateConvexHull(
         const v = try sm.closeHoleWithUmbrella(horizon_darts.items[0]);
         vertex_position.valuePtr(v).* = active_point;
 
-        // std.debug.print("Deleted faces: {d}\n", .{visible_faces.items.len});
-        // std.debug.print("Horizon halfedges: {d}\n", .{horizon_darts.items.len});
-        // std.debug.print("Umbrella degree: {d}\n", .{sm.degree(v)});
-        // if (!try sm.checkIntegrity()) {
-        //     return error.IntegrityCheckFailed;
-        // }
-
         // clear the face datas for the new umbrella faces
         var dart_it = sm.cellDartIterator(v);
         while (dart_it.next()) |d| {
@@ -268,11 +261,8 @@ fn buildHorizon(
     var horizon_darts: std.ArrayList(SurfaceMesh.Dart) = .empty;
     var visible_faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
 
-    // var horizon_darts_marker = try SurfaceMesh.DartMarker.init(sm);
-    // defer horizon_darts_marker.deinit();
-
     try visible_faces.append(allocator, face);
-    var visible_faces_marker = try SurfaceMesh.CellMarker(.face).init(sm);
+    var visible_faces_marker: SurfaceMesh.CellMarker = try .init(sm, .face);
     defer visible_faces_marker.deinit();
     visible_faces_marker.mark(face);
 
@@ -298,30 +288,9 @@ fn buildHorizon(
                 visible_faces_marker.mark(af);
             } else {
                 try horizon_darts.append(allocator, d2);
-                // horizon_darts_marker.mark(d2);
             }
         }
     }
-
-    // // check that the horizon halfedges form a cycle, starting from the first horizon halfedge
-    // var count: u32 = 1;
-    // const d_first = horizon_darts.items[0];
-    // var d_current = d_first;
-    // out: while (true) {
-    //     while (true) {
-    //         d_current = sm.phi1(d_current);
-    //         if (d_current == d_first) {
-    //             // we are back to the starting dart, so we can stop
-    //             break :out;
-    //         }
-    //         if (horizon_darts_marker.value(d_current)) {
-    //             break;
-    //         }
-    //         d_current = sm.phi2(d_current);
-    //     }
-    //     count += 1;
-    // }
-    // assert(count == horizon_darts.items.len);
 
     return .{ horizon_darts, visible_faces };
 }

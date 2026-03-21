@@ -30,8 +30,9 @@ pub fn uniformlySamplePointsOnSurface(
     // store a face Cell in the face data container
     // so that an index in the face_area data can be mapped to a face Cell
     var faces = try sm.addData(.face, SurfaceMesh.Cell, "face");
-    defer sm.removeData(.face, faces.gen());
-    var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
+    defer sm.removeData(.face, SurfaceMesh.Cell, faces);
+    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
+    defer face_it.deinit();
     while (face_it.next()) |f| {
         faces.valuePtr(f).* = f;
     }
@@ -79,7 +80,8 @@ pub fn poissonDiskSamplePointsOnSurface(
 
     // initialize a first point
     {
-        var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
+        var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
+        defer face_it.deinit();
         const f = face_it.next().?; // get the first face of the SurfaceMesh
         const sp: SurfacePoint = .{ // and create a SurfacePoint at its center
             .surface_mesh = sm,

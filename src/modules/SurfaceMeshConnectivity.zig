@@ -10,6 +10,7 @@ const c = @import("../main.zig").c;
 
 const AppContext = @import("../main.zig").AppContext;
 const Module = @import("Module.zig");
+const PointCloud = @import("../models/point/PointCloud.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfaceMeshCurvature = @import("./SurfaceMeshCurvature.zig");
 
@@ -139,8 +140,8 @@ fn decimate(
 ) !void {
     var timer = try std.time.Timer.start();
 
-    var vertex_qem = try sm.addData(.vertex, Mat4f, "__vertex_qem");
-    defer sm.removeData(.vertex, vertex_qem.gen());
+    const vertex_qem = try sm.addData(.vertex, Mat4f, "__vertex_qem");
+    defer sm.removeData(.vertex, Mat4f, vertex_qem);
     try qem.computeVertexQEMs(
         smc.app_ctx,
         sm,
@@ -174,12 +175,11 @@ fn generateConvexHull(
 ) !void {
     var timer = try std.time.Timer.start();
 
-    var pc_name_buf: [256]u8 = undefined;
-    const pc_name = try std.fmt.bufPrint(&pc_name_buf, "{s}__convex_hull_tmp__", .{smc.app_ctx.surface_mesh_store.surfaceMeshName(sm).?});
-    const pc = try smc.app_ctx.point_cloud_store.createPointCloud(pc_name);
-    defer smc.app_ctx.point_cloud_store.destroyPointCloud(pc);
+    var pc: PointCloud = try .init(smc.app_ctx.allocator);
+    defer pc.deinit();
     const point_position = try pc.addData(Vec3f, "position");
-    var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
+    var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
+    defer vertex_it.deinit();
     while (vertex_it.next()) |vertex| {
         const p = try pc.addPoint();
         point_position.valuePtr(p).* = vertex_position.valuePtr(vertex).*;
@@ -189,7 +189,7 @@ fn generateConvexHull(
     const ch_vertex_position = try ch.addData(.vertex, Vec3f, "position");
     smc.app_ctx.surface_mesh_store.setSurfaceMeshStdData(ch, .{ .vertex_position = ch_vertex_position });
 
-    try convex_hull.generateConvexHull(smc.app_ctx, pc, point_position, ch, ch_vertex_position);
+    try convex_hull.generateConvexHull(smc.app_ctx, &pc, point_position, ch, ch_vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(ch, .vertex, Vec3f, ch_vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(ch);
 

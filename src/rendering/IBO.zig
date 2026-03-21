@@ -47,7 +47,7 @@ pub fn deinit(i: *IBO) void {
     }
 }
 
-pub fn fillFromIndexSlice(i: *IBO, indices: []const u32, cell_indices: []const u32) !void {
+pub fn fillFromIndexSlice(i: *IBO, indices: []const u32, cell_indices: []const u32) void {
     i.nb_indices = indices.len;
     gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, i.index);
     gl.BufferData(
@@ -67,9 +67,11 @@ pub fn fillFromIndexSlice(i: *IBO, indices: []const u32, cell_indices: []const u
     gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
 }
 
+// TODO: SurfaceMesh & PointCloud types should not really be here
+
 pub fn fillFromCellSlice(i: *IBO, sm: *SurfaceMesh, cells: []const SurfaceMesh.Cell, allocator: std.mem.Allocator) !void {
     if (cells.len == 0) {
-        try i.fillFromIndexSlice(&.{}, &.{});
+        i.fillFromIndexSlice(&.{}, &.{});
         return;
     }
     const cell_type = cells[0].cellType();
@@ -138,7 +140,7 @@ pub fn fillFromCellSlice(i: *IBO, sm: *SurfaceMesh, cells: []const SurfaceMesh.C
         },
         else => unreachable,
     }
-    try i.fillFromIndexSlice(indices.items, cell_indices.items);
+    i.fillFromIndexSlice(indices.items, cell_indices.items);
 }
 
 pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: SurfaceMesh.CellType, allocator: std.mem.Allocator) !void {
@@ -147,7 +149,7 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
         else => sm.nbCells(cell_type),
     };
     if (nb_cells == 0) {
-        try i.fillFromIndexSlice(&.{}, &.{});
+        i.fillFromIndexSlice(&.{}, &.{});
         return;
     }
     var indices = try std.ArrayList(u32).initCapacity(allocator, switch (cell_type) {
@@ -163,7 +165,7 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
     switch (cell_type) {
         .vertex => {
             i.primitive = .points;
-            var v_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
+            var v_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
             defer v_it.deinit();
             while (v_it.next()) |v| {
                 try indices.append(allocator, sm.cellIndex(v));
@@ -171,7 +173,7 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
         },
         .edge => {
             i.primitive = .lines;
-            var e_it = try SurfaceMesh.CellIterator(.edge).init(sm);
+            var e_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
             defer e_it.deinit();
             while (e_it.next()) |e| {
                 const d = e.dart();
@@ -184,7 +186,7 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
         },
         .face => {
             i.primitive = .triangles;
-            var f_it = try SurfaceMesh.CellIterator(.face).init(sm);
+            var f_it: SurfaceMesh.CellIterator = try .init(sm, .face);
             defer f_it.deinit();
             while (f_it.next()) |f| {
                 // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
@@ -209,7 +211,7 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
         },
         .boundary => {
             i.primitive = .lines;
-            var b_it = try SurfaceMesh.CellIterator(.boundary).init(sm);
+            var b_it: SurfaceMesh.CellIterator = try .init(sm, .boundary);
             defer b_it.deinit();
             while (b_it.next()) |b| {
                 var dart_it = sm.cellDartIterator(b);
@@ -223,7 +225,7 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
         },
         else => unreachable,
     }
-    try i.fillFromIndexSlice(indices.items, cell_indices.items);
+    i.fillFromIndexSlice(indices.items, cell_indices.items);
 }
 
 pub fn fillFromPointCloud(i: *IBO, pc: *PointCloud, allocator: std.mem.Allocator) !void {
@@ -234,5 +236,5 @@ pub fn fillFromPointCloud(i: *IBO, pc: *PointCloud, allocator: std.mem.Allocator
         try indices.append(allocator, p);
     }
     i.primitive = .points;
-    try i.fillFromIndexSlice(indices.items, &.{});
+    i.fillFromIndexSlice(indices.items, &.{});
 }

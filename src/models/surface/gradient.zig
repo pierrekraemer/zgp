@@ -76,7 +76,7 @@ pub fn computeScalarFieldFaceGradients(
         }
     };
 
-    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.face).init(sm);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .face);
     defer pctr.deinit();
     try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
@@ -153,7 +153,7 @@ pub fn computeVectorFieldVertexDivergences(
         }
     };
 
-    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
     defer pctr.deinit();
     try pctr.run(app_ctx, Task{
         .surface_mesh = sm,

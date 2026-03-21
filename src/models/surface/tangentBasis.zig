@@ -56,7 +56,7 @@ pub fn computeVertexTangentBases(
         }
     };
 
-    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.vertex).init(sm);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
     defer pctr.deinit();
     try pctr.run(app_ctx, Task{
         .surface_mesh = sm,

@@ -35,7 +35,7 @@ pub const TrianglesBVH = struct {
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     ) !TrianglesBVH {
         var vertex_index = try sm.addData(.vertex, u32, "__vertex_index");
-        defer sm.removeData(.vertex, vertex_index.gen());
+        defer sm.removeData(.vertex, u32, vertex_index);
 
         var surface_mesh_faces = try std.ArrayList(SurfaceMesh.Cell).initCapacity(sm.allocator, sm.nbCells(.face));
 
@@ -44,7 +44,7 @@ pub const TrianglesBVH = struct {
         var position_array = try std.ArrayList(Vec3f).initCapacity(sm.allocator, sm.nbCells(.vertex));
         defer position_array.deinit(sm.allocator);
 
-        var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
+        var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
         defer vertex_it.deinit();
         var nb_vertices: u32 = 0;
         while (vertex_it.next()) |v| : (nb_vertices += 1) {
@@ -53,7 +53,7 @@ pub const TrianglesBVH = struct {
         }
 
         // TODO: this code makes the assumption that the mesh is made of triangle faces
-        var face_it = try SurfaceMesh.CellIterator(.face).init(sm);
+        var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
         defer face_it.deinit();
         while (face_it.next()) |f| {
             try surface_mesh_faces.append(sm.allocator, f);

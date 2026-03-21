@@ -67,17 +67,17 @@ pub fn pliantRemeshing(
     var mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
     const length_goal = mean_edge_length * edge_length_factor;
 
-    var edge_it = try SurfaceMesh.CellIterator(.edge).init(sm);
+    var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
     defer edge_it.deinit();
-    var vertex_it = try SurfaceMesh.CellIterator(.vertex).init(sm);
+    var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
     defer vertex_it.deinit();
 
     // detect features
-    var feature_edge = try SurfaceMesh.CellMarker(.edge).init(sm);
+    var feature_edge: SurfaceMesh.CellMarker = try .init(sm, .edge);
     defer feature_edge.deinit();
-    var feature_vertex = try SurfaceMesh.CellMarker(.vertex).init(sm);
+    var feature_vertex: SurfaceMesh.CellMarker = try .init(sm, .vertex);
     defer feature_vertex.deinit();
-    var feature_corner = try SurfaceMesh.CellMarker(.vertex).init(sm);
+    var feature_corner: SurfaceMesh.CellMarker = try .init(sm, .vertex);
     defer feature_corner.deinit();
     const angle_threshold: f32 = 60.0 * (std.math.pi / 180.0);
     while (edge_it.next()) |edge| {
@@ -110,7 +110,7 @@ pub fn pliantRemeshing(
 
     // sizing field for adaptive remeshing
     var vertex_sizing_field = try sm.addData(.vertex, f32, "__vertex_sizing_field");
-    defer sm.removeData(.vertex, vertex_sizing_field.gen());
+    defer sm.removeData(.vertex, f32, vertex_sizing_field);
 
     var vertex_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(app_ctx.allocator, 1024);
     defer vertex_buffer.deinit(app_ctx.allocator);

@@ -46,10 +46,9 @@ pub const SurfaceMeshStdData = types_utils.UnionFromStruct(SurfaceMeshStdDatas);
 pub const SurfaceMeshStdDataTag = std.meta.Tag(SurfaceMeshStdData);
 
 /// This struct holds information related to a SurfaceMesh, including:
-/// - its standard datas,
-/// - its BVH,
-/// - the cell sets,
-/// - the IBOs (for rendering).
+/// - standard datas,
+/// - BVH,
+/// - primitve IBOs (for rendering).
 /// The SurfaceMeshInfo associated with a SurfaceMesh is accessible via the surfaceMeshInfo function.
 const SurfaceMeshInfo = struct {
     std_datas: SurfaceMeshStdDatas = .{},
@@ -62,41 +61,20 @@ const SurfaceMeshInfo = struct {
     triangles_ibo: IBO,
     boundaries_ibo: IBO,
 
-    // TODO: manage multiple sets per cell type
-    vertex_set: SurfaceMesh.CellSet(.vertex),
-    edge_set: SurfaceMesh.CellSet(.edge),
-    face_set: SurfaceMesh.CellSet(.face),
-
-    vertex_set_ibo: IBO,
-    edge_set_ibo: IBO,
-    face_set_ibo: IBO,
-
-    pub fn init(surface_mesh: *SurfaceMesh) !SurfaceMeshInfo {
+    pub fn init() SurfaceMeshInfo {
         return .{
             .points_ibo = .init(),
             .lines_ibo = .init(),
             .triangles_ibo = .init(),
             .boundaries_ibo = .init(),
-            .vertex_set = try .init(surface_mesh),
-            .edge_set = try .init(surface_mesh),
-            .face_set = try .init(surface_mesh),
-            .vertex_set_ibo = .init(),
-            .edge_set_ibo = .init(),
-            .face_set_ibo = .init(),
         };
     }
-    pub fn deinit(self: *SurfaceMeshInfo) void {
-        self.bvh.deinit();
-        self.points_ibo.deinit();
-        self.lines_ibo.deinit();
-        self.triangles_ibo.deinit();
-        self.boundaries_ibo.deinit();
-        self.vertex_set.deinit();
-        self.edge_set.deinit();
-        self.face_set.deinit();
-        self.vertex_set_ibo.deinit();
-        self.edge_set_ibo.deinit();
-        self.face_set_ibo.deinit();
+    pub fn deinit(smi: *SurfaceMeshInfo) void {
+        smi.bvh.deinit();
+        smi.points_ibo.deinit();
+        smi.lines_ibo.deinit();
+        smi.triangles_ibo.deinit();
+        smi.boundaries_ibo.deinit();
     }
 };
 
@@ -109,7 +87,16 @@ surface_meshes: std.StringHashMap(*SurfaceMesh),
 surface_meshes_info: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshInfo),
 selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 
+// each DataGen can be associated with a VBO
+// once a VBO has been requested for a Data (in dataVBO) it is stored in this map
+// and updated upon calls to surfaceMeshDataUpdated
 data_vbo: std.AutoHashMap(*const DataGen, VBO),
+// each CellSet can be associated with an IBO
+// once an IBO has been requested for a CellSet (in cellSetIBO) it is stored in this map
+// and updated upon calls to surfaceMeshCellSetUpdated
+cell_set_ibo: std.AutoHashMap(*const SurfaceMesh.CellSet, IBO),
+// stores the last update time for each DataGen
+// updated upon calls to surfaceMeshDataUpdated
 data_last_update: std.AutoHashMap(*const DataGen, std.time.Instant),
 
 cell_buffer_pool: BufferPool(SurfaceMesh.Cell),
@@ -121,16 +108,18 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMeshStore {
         .surface_meshes = .init(allocator),
         .surface_meshes_info = .init(allocator),
         .data_vbo = .init(allocator),
+        .cell_set_ibo = .init(allocator),
         .data_last_update = .init(allocator),
         .cell_buffer_pool = try .init(allocator, 1024, 64, 32),
     };
 }
 
 pub fn deinit(sms: *SurfaceMeshStore) void {
+    sms.listeners.deinit(sms.allocator);
+
     var sm_info_it = sms.surface_meshes_info.iterator();
     while (sm_info_it.next()) |entry| {
-        var info = entry.value_ptr.*;
-        info.deinit();
+        entry.value_ptr.deinit();
     }
     sms.surface_meshes_info.deinit();
 
@@ -146,15 +135,18 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
 
     var vbo_it = sms.data_vbo.iterator();
     while (vbo_it.next()) |entry| {
-        var vbo = entry.value_ptr.*;
-        vbo.deinit();
+        entry.value_ptr.deinit();
     }
     sms.data_vbo.deinit();
+    var cell_set_ibo_it = sms.cell_set_ibo.iterator();
+    while (cell_set_ibo_it.next()) |entry| {
+        entry.value_ptr.deinit();
+    }
+    sms.cell_set_ibo.deinit();
+
     sms.data_last_update.deinit();
 
     sms.cell_buffer_pool.deinit();
-
-    sms.listeners.deinit(sms.allocator);
 }
 
 pub fn addListener(sms: *SurfaceMeshStore, module: *Module) !void {
@@ -168,13 +160,13 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     }
     var sm = try sms.allocator.create(SurfaceMesh);
     errdefer sms.allocator.destroy(sm);
-    sm.* = try SurfaceMesh.init(sms.allocator, &sms.cell_buffer_pool);
+    sm.* = try .init(sms.allocator, &sms.cell_buffer_pool);
     errdefer sm.deinit();
     const owned_name = try sms.allocator.dupeZ(u8, name);
     errdefer sms.allocator.free(owned_name);
     try sms.surface_meshes.put(owned_name, sm);
     errdefer _ = sms.surface_meshes.remove(owned_name);
-    var info = try SurfaceMeshInfo.init(sm);
+    var info: SurfaceMeshInfo = .init();
     errdefer info.deinit();
     try sms.surface_meshes_info.put(sm, info);
     errdefer _ = sms.surface_meshes_info.remove(sm);
@@ -285,21 +277,27 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
     };
 
     // update the cells sets
-    info.vertex_set.update() catch |err| {
-        zgp_log.err("Failed to update vertex set for SurfaceMesh: {}", .{err});
-        return;
-    };
-    sms.surfaceMeshCellSetUpdated(sm, .vertex);
-    info.edge_set.update() catch |err| {
-        zgp_log.err("Failed to update edge set for SurfaceMesh: {}", .{err});
-        return;
-    };
-    sms.surfaceMeshCellSetUpdated(sm, .edge);
-    info.face_set.update() catch |err| {
-        zgp_log.err("Failed to update face set for SurfaceMesh: {}", .{err});
-        return;
-    };
-    sms.surfaceMeshCellSetUpdated(sm, .face);
+    var vertex_sets_it = sm.vertex_sets.iterator();
+    while (vertex_sets_it.next()) |entry| {
+        entry.value_ptr.*.update() catch |err| {
+            zgp_log.err("Failed to update vertex set for SurfaceMesh: {}", .{err});
+        };
+        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr.*);
+    }
+    var edge_sets_it = sm.edge_sets.iterator();
+    while (edge_sets_it.next()) |entry| {
+        entry.value_ptr.*.update() catch |err| {
+            zgp_log.err("Failed to update edge set for SurfaceMesh: {}", .{err});
+        };
+        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr.*);
+    }
+    var face_sets_it = sm.face_sets.iterator();
+    while (face_sets_it.next()) |entry| {
+        entry.value_ptr.*.update() catch |err| {
+            zgp_log.err("Failed to update face set for SurfaceMesh: {}", .{err});
+        };
+        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr.*);
+    }
 
     // dispatch call to listeners
     for (sms.listeners.items) |module| {
@@ -310,36 +308,20 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
 pub fn surfaceMeshCellSetUpdated(
     sms: *SurfaceMeshStore,
     sm: *SurfaceMesh,
-    cell_type: SurfaceMesh.CellType,
+    cell_set: *const SurfaceMesh.CellSet,
 ) void {
-    const info = sms.surface_meshes_info.getPtr(sm).?;
-
-    // update the IBOs of the corresponding cell set
-    switch (cell_type) {
-        .vertex => {
-            info.vertex_set_ibo.fillFromCellSlice(sm, info.vertex_set.cells.items, sms.allocator) catch |err| {
-                zgp_log.err("Failed to fill vertex set IBO for SurfaceMesh: {}", .{err});
-                return;
-            };
-        },
-        .edge => {
-            info.edge_set_ibo.fillFromCellSlice(sm, info.edge_set.cells.items, sms.allocator) catch |err| {
-                zgp_log.err("Failed to fill edge set IBO for SurfaceMesh: {}", .{err});
-                return;
-            };
-        },
-        .face => {
-            info.face_set_ibo.fillFromCellSlice(sm, info.face_set.cells.items, sms.allocator) catch |err| {
-                zgp_log.err("Failed to fill face set IBO for SurfaceMesh: {}", .{err});
-                return;
-            };
-        },
-        else => unreachable,
+    // if it exists, update the IBO with the data
+    const maybe_ibo = sms.cell_set_ibo.getPtr(cell_set);
+    if (maybe_ibo) |ibo| {
+        ibo.fillFromCellSlice(sm, cell_set.cells.items, sms.allocator) catch |err| {
+            zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
+            return;
+        };
     }
 
     // dispatch call to listeners
     for (sms.listeners.items) |module| {
-        module.surfaceMeshCellSetUpdated(sm, cell_type);
+        module.surfaceMeshCellSetUpdated(sm, cell_set);
     }
 }
 
@@ -355,9 +337,24 @@ pub fn dataVBO(
     };
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
-        vbo.value_ptr.*.fillFrom(T, data.data); // on VBO creation, fill it with the data
+        vbo.value_ptr.fillFrom(T, data.data); // on VBO creation, fill it with the data
     }
     return vbo.value_ptr.*;
+}
+
+pub fn cellSetIBO(sms: *SurfaceMeshStore, cell_set: *const SurfaceMesh.CellSet) IBO {
+    const ibo = sms.cell_set_ibo.getOrPut(cell_set) catch |err| {
+        zgp_log.err("Failed to get or add IBO in the registry: {}", .{err});
+        return IBO.init(); // return a dummy IBO
+    };
+    if (!ibo.found_existing) {
+        ibo.value_ptr.* = IBO.init();
+        ibo.value_ptr.fillFromCellSlice(cell_set.surface_mesh, cell_set.cells.items, sms.allocator) catch |err| {
+            zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
+            return IBO.init(); // return a dummy IBO
+        };
+    }
+    return ibo.value_ptr.*;
 }
 
 pub fn dataLastUpdate(sms: *SurfaceMeshStore, data_gen: *const DataGen) ?std.time.Instant {
@@ -706,7 +703,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
 
     const vertex_position = try sm.addData(.vertex, Vec3f, "position");
     const darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
-    defer sm.removeData(.vertex, darts_of_vertex.gen());
+    defer sm.removeData(.vertex, std.ArrayList(SurfaceMesh.Dart), darts_of_vertex);
     var darts_array_lists_arena = std.heap.ArenaAllocator.init(sms.allocator);
     defer darts_array_lists_arena.deinit();
 

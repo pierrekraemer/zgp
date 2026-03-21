@@ -58,7 +58,7 @@ pub fn computeFaceAreas(
         }
     };
 
-    var pctr = try SurfaceMesh.ParallelCellTaskRunner(.face).init(sm);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .face);
     defer pctr.deinit();
     try pctr.run(app_ctx, Task{
         .surface_mesh = sm,
@@ -69,7 +69,7 @@ pub fn computeFaceAreas(
     // single-threaded version for the record
 
     // _ = app_ctx;
-    // var it = try SurfaceMesh.CellIterator(.face).init(sm);
+    // var it: SurfaceMesh.CellIterator = try .init(sm, .face);
     // defer it.deinit();
     // while (it.next()) |face| {
     //     task.run(face);
@@ -108,7 +108,7 @@ pub fn computeVertexAreas(
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
     vertex_area.data.fill(0.0);
-    var it = try SurfaceMesh.CellIterator(.face).init(sm);
+    var it: SurfaceMesh.CellIterator = try .init(sm, .face);
     defer it.deinit();
     while (it.next()) |face| {
         const cd: f32 = @floatFromInt(sm.codegree(face));
