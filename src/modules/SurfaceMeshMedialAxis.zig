@@ -15,18 +15,24 @@ const PointCloud = @import("../models/point/PointCloud.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
+const Vec4f = vec.Vec4f;
+const bvh = @import("../geometry/bvh.zig");
 const SQEM = @import("../geometry/SQEM.zig");
 
+const medialAxis = @import("../models/surface/medialAxis.zig");
 const sqem = @import("../models/surface/sqem.zig");
 
 const MedialAxisData = struct {
     app_ctx: *AppContext,
 
     surface_mesh: *SurfaceMesh,
+    sm_bvh: bvh.TrianglesBVH = .{},
     vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
+    vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
     vertex_area: ?SurfaceMesh.CellData(.vertex, f32) = null,
     vertex_tangent_basis: ?SurfaceMesh.CellData(.vertex, [2]Vec3f) = null,
     vertex_sqem: ?SurfaceMesh.CellData(.vertex, SQEM) = null,
+    vertex_shrinking_ball: ?SurfaceMesh.CellData(.vertex, ?Vec4f) = null,
     vertex_sphere: ?SurfaceMesh.CellData(.vertex, ?PointCloud.Point) = null,
     vertex_sphere_error: ?SurfaceMesh.CellData(.vertex, f32) = null,
     vertex_sphere_color: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
@@ -39,23 +45,33 @@ const MedialAxisData = struct {
     sphere_color: ?PointCloud.CellData(Vec3f) = null,
     sphere_cluster: ?PointCloud.CellData(std.ArrayList(SurfaceMesh.Cell)) = null,
     sphere_error: ?PointCloud.CellData(f32) = null,
+
+    shrinking_balls: ?*PointCloud = null,
+    shrinking_ball_center: ?PointCloud.CellData(Vec3f) = null,
+    shrinking_ball_radius: ?PointCloud.CellData(f32) = null,
+
     initialized: bool = false,
 
     pub fn init(
         mad: *MedialAxisData,
+        sm_bvh: bvh.TrianglesBVH,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_area: SurfaceMesh.CellData(.vertex, f32),
         vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
         face_area: SurfaceMesh.CellData(.face, f32),
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
     ) !void {
+        mad.sm_bvh = sm_bvh;
         mad.vertex_position = vertex_position;
+        mad.vertex_normal = vertex_normal;
         mad.vertex_area = vertex_area;
         mad.vertex_tangent_basis = vertex_tangent_basis;
         mad.face_area = face_area;
         mad.face_normal = face_normal;
         if (!mad.initialized) {
             mad.vertex_sqem = try mad.surface_mesh.addData(.vertex, SQEM, "__vertex_sqem");
+            mad.vertex_shrinking_ball = try mad.surface_mesh.addData(.vertex, ?Vec4f, "__vertex_shrinking_ball");
             mad.vertex_sphere = try mad.surface_mesh.addData(.vertex, ?PointCloud.Point, "__vertex_sphere");
             mad.vertex_sphere_error = try mad.surface_mesh.addData(.vertex, f32, "__vertex_sphere_error");
             mad.vertex_sphere_color = try mad.surface_mesh.addData(.vertex, Vec3f, "__vertex_sphere_color");
@@ -70,10 +86,12 @@ const MedialAxisData = struct {
             face_normal,
             mad.vertex_sqem.?,
         );
+        mad.vertex_shrinking_ball.?.data.fill(null);
         mad.vertex_sphere.?.data.fill(null);
         mad.vertex_sphere_error.?.data.fill(0.0);
         if (!mad.initialized) {
             var buf: [64]u8 = undefined;
+
             const pc_name = std.fmt.bufPrint(&buf, "{s}_ma_spheres", .{mad.app_ctx.surface_mesh_store.surfaceMeshName(mad.surface_mesh).?}) catch "__ma_spheres";
             mad.spheres = try mad.app_ctx.point_cloud_store.createPointCloud(pc_name);
             mad.sphere_center = try mad.spheres.?.addData(Vec3f, "center");
@@ -83,12 +101,21 @@ const MedialAxisData = struct {
             mad.sphere_error = try mad.spheres.?.addData(f32, "error");
             mad.app_ctx.point_cloud_store.setPointCloudStdData(mad.spheres.?, .{ .position = mad.sphere_center.? });
             mad.app_ctx.point_cloud_store.setPointCloudStdData(mad.spheres.?, .{ .radius = mad.sphere_radius.? });
+
+            const sb_pc_name = std.fmt.bufPrint(&buf, "{s}_shrinking_balls", .{mad.app_ctx.surface_mesh_store.surfaceMeshName(mad.surface_mesh).?}) catch "__shrinking_balls";
+            mad.shrinking_balls = try mad.app_ctx.point_cloud_store.createPointCloud(sb_pc_name);
+            mad.shrinking_ball_center = try mad.shrinking_balls.?.addData(Vec3f, "center");
+            mad.shrinking_ball_radius = try mad.shrinking_balls.?.addData(f32, "radius");
+            mad.app_ctx.point_cloud_store.setPointCloudStdData(mad.shrinking_balls.?, .{ .position = mad.shrinking_ball_center.? });
+            mad.app_ctx.point_cloud_store.setPointCloudStdData(mad.shrinking_balls.?, .{ .radius = mad.shrinking_ball_radius.? });
         } else {
             var it = mad.sphere_cluster.?.data.iterator();
             while (it.next()) |*cluster| {
                 cluster.*.deinit(mad.app_ctx.allocator); // do not forget to deinit ArrayLists in sphere_cluster data
             }
             mad.spheres.?.clearRetainingCapacity();
+
+            mad.shrinking_balls.?.clearRetainingCapacity();
         }
         const s1 = try mad.spheres.?.addPoint(); // create the first sphere
         mad.sphere_center.?.valuePtr(s1).* = .{ 0.0, 0.0, 0.0 };
@@ -105,6 +132,31 @@ const MedialAxisData = struct {
         mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, Vec3f, mad.sphere_center.?);
         mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, f32, mad.sphere_radius.?);
         mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres.?, Vec3f, mad.sphere_color.?);
+        mad.app_ctx.requestRedraw();
+
+        // TODO: make this parallel!
+        var v_it: SurfaceMesh.CellIterator = try .init(mad.surface_mesh, .vertex);
+        defer v_it.deinit();
+        while (v_it.next()) |v| {
+            if (medialAxis.shrinkingBall(
+                sm_bvh,
+                mad.vertex_position.?,
+                vec.add3f(
+                    mad.vertex_position.?.value(v),
+                    vec.mulScalar3f(mad.vertex_normal.?.value(v), -1e-4), // TODO: use a better offset?
+                ),
+                mad.vertex_normal.?.value(v),
+            )) |ball| {
+                const sb = try mad.shrinking_balls.?.addPoint();
+                mad.shrinking_ball_center.?.valuePtr(sb).* = .{ ball[0], ball[1], ball[2] };
+                mad.shrinking_ball_radius.?.valuePtr(sb).* = ball[3];
+                mad.vertex_shrinking_ball.?.valuePtr(v).* = ball;
+            }
+        }
+
+        mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.shrinking_balls.?);
+        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.shrinking_balls.?, Vec3f, mad.shrinking_ball_center.?);
+        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.shrinking_balls.?, f32, mad.shrinking_ball_radius.?);
         mad.app_ctx.requestRedraw();
     }
 
@@ -238,12 +290,19 @@ const MedialAxisData = struct {
             }
         }
         const s = try mad.spheres.?.addPoint();
+        const sb = mad.vertex_shrinking_ball.?.value(worst_vertex);
+        if (sb) |ball| {
+            mad.sphere_center.?.valuePtr(s).* = .{ ball[0], ball[1], ball[2] };
+            mad.sphere_radius.?.valuePtr(s).* = ball[3];
+        } else {
+            const n = mad.vertex_normal.?.value(worst_vertex);
+            mad.sphere_center.?.valuePtr(s).* = vec.add3f(
+                mad.vertex_position.?.value(worst_vertex),
+                vec.mulScalar3f(n, -0.01),
+            );
+            mad.sphere_radius.?.valuePtr(s).* = 0.01;
+        }
         var r = mad.app_ctx.rng.random();
-        mad.sphere_center.?.valuePtr(s).* = vec.add3f(
-            mad.vertex_position.?.value(worst_vertex),
-            .{ 0.01 * r.float(f32), 0.01 * r.float(f32), 0.01 * r.float(f32) },
-        );
-        mad.sphere_radius.?.valuePtr(s).* = 0.01;
         mad.sphere_color.?.valuePtr(s).* = .{ 0.5 + 0.5 * r.float(f32), 0.5 + 0.5 * r.float(f32), 0.5 + 0.5 * r.float(f32) };
         mad.sphere_cluster.?.valuePtr(s).* = .empty;
         mad.sphere_error.?.valuePtr(s).* = 0.0;
@@ -324,7 +383,9 @@ pub fn rightPanel(m: *Module) void {
     const info = sm_store.surfaceMeshInfo(sm);
     const mad = smma.surface_meshes_data.getPtr(sm).?;
     const disabled =
+        info.bvh.bvh_ptr == null or
         info.std_datas.vertex_position == null or
+        info.std_datas.vertex_normal == null or
         info.std_datas.vertex_area == null or
         info.std_datas.vertex_tangent_basis == null or
         info.std_datas.face_area == null or
@@ -334,7 +395,9 @@ pub fn rightPanel(m: *Module) void {
     }
     if (c.ImGui_ButtonEx(if (mad.initialized) "Reinitialize data" else "Initialize data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
         _ = mad.init(
+            info.bvh,
             info.std_datas.vertex_position.?,
+            info.std_datas.vertex_normal.?,
             info.std_datas.vertex_area.?,
             info.std_datas.vertex_tangent_basis.?,
             info.std_datas.face_area.?,

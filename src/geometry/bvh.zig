@@ -143,6 +143,21 @@ pub const TrianglesBVH = struct {
         return null;
     }
 
+    pub fn intersectedSurfacePoint(tbvh: TrianglesBVH, ray: Ray) ?SurfacePoint {
+        if (tbvh.intersect(ray)) |h| {
+            return SurfacePoint{
+                .surface_mesh = tbvh.surface_mesh.?,
+                .type = .{
+                    .face = .{
+                        .cell = tbvh.surface_mesh_faces.items[h.triIndex],
+                        .bcoords = h.bcoords,
+                    },
+                },
+            };
+        }
+        return null;
+    }
+
     pub fn closestPoint(tbvh: TrianglesBVH, point: Vec3f) Vec3f {
         var closest: Vec3f = undefined;
         var triIndex: Index = undefined;
