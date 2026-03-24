@@ -312,7 +312,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
             if (sms.selecting) {
                 const info = sm_store.surfaceMeshInfo(sm);
                 // TODO: fallback to brute-force search if the BVH is not available
-                if (info.bvh.bvh_ptr) |_| {
+                if (info.bvh.initialized) {
                     var mouse_x: f32 = 0;
                     var mouse_y: f32 = 0;
                     _ = c.SDL_GetMouseState(&mouse_x, &mouse_y);
@@ -456,7 +456,7 @@ pub fn rightPanel(m: *Module) void {
     const sd = sms.surface_meshes_data.getPtr(sm).?;
     const info = sm_store.surfaceMeshInfo(sm);
 
-    if (info.bvh.bvh_ptr == null) {
+    if (!info.bvh.initialized) {
         c.ImGui_TextWrapped("A BVH must exist on the SurfaceMesh to select cells");
     } else {
         c.ImGui_TextWrapped(

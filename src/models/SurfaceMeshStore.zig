@@ -523,9 +523,8 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
                 zgp_log.err("Failed to build BVH: {}", .{err});
                 break :blk .{};
             };
-            if (info.bvh.bvh_ptr) |_| {
-                const now = std.time.Instant.now();
-                if (now) |t| {
+            if (info.bvh.initialized) {
+                if (std.time.Instant.now()) |t| {
                     info.bvh_last_update = t;
                 } else |err| {
                     zgp_log.err("Failed to get current time: {}", .{err});

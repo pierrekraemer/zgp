@@ -17,6 +17,7 @@ pub fn vertexSQEM(
     vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    line_quadric_epsilon: f32,
 ) SQEM {
     assert(vertex.cellType() == .vertex);
     var vsq = SQEM.zero;
@@ -30,7 +31,6 @@ pub fn vertexSQEM(
             vsq.add(&fsq);
         }
     }
-    const line_quadric_epsilon = 1e-4;
     const tb = vertex_tangent_basis.value(vertex);
     const reg1: SQEM = .initCenterPlaneDistance(p, tb[0], line_quadric_epsilon * vertex_area.value(vertex));
     const reg2: SQEM = .initCenterPlaneDistance(p, tb[1], line_quadric_epsilon * vertex_area.value(vertex));
@@ -49,6 +49,7 @@ pub fn computeVertexSQEMs(
     vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    line_quadric_epsilon: f32,
     vertex_sqem: SurfaceMesh.CellData(.vertex, SQEM),
 ) !void {
     // vertex_sqem.data.fill(SQEM.zero);
@@ -73,6 +74,7 @@ pub fn computeVertexSQEMs(
         vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
         face_area: SurfaceMesh.CellData(.face, f32),
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
+        line_quadric_epsilon: f32,
         vertex_sqem: SurfaceMesh.CellData(.vertex, SQEM),
 
         pub inline fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
@@ -84,6 +86,7 @@ pub fn computeVertexSQEMs(
                 t.vertex_tangent_basis,
                 t.face_area,
                 t.face_normal,
+                t.line_quadric_epsilon,
             );
         }
     };
@@ -97,6 +100,7 @@ pub fn computeVertexSQEMs(
         .vertex_tangent_basis = vertex_tangent_basis,
         .face_area = face_area,
         .face_normal = face_normal,
+        .line_quadric_epsilon = line_quadric_epsilon,
         .vertex_sqem = vertex_sqem,
     });
 }

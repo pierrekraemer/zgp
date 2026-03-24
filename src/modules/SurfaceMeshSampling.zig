@@ -253,7 +253,7 @@ pub fn rightPanel(m: *Module) void {
         _ = c.ImGui_InputFloat("", @ptrCast(&UiData.min_distance));
         c.ImGui_PopID();
         const disabled =
-            info.bvh.bvh_ptr == null or
+            !info.bvh.initialized or
             info.std_datas.vertex_position == null or
             info.std_datas.face_normal == null or
             pointcloud_name.len == 0;

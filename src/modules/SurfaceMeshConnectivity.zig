@@ -305,7 +305,7 @@ pub fn rightClickMenu(m: *Module) void {
             c.ImGui_PopID();
             _ = c.ImGui_Checkbox("Curvature adaptive", &UiData.adaptive_remeshing);
             var disabled =
-                info.bvh.bvh_ptr == null or
+                !info.bvh.initialized or
                 info.std_datas.vertex_position == null or
                 info.std_datas.corner_angle == null or
                 info.std_datas.face_area == null or
