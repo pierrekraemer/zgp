@@ -38,7 +38,7 @@ pub fn shrinkingBall(
         };
         const c_next = vec.sub3f(p, vec.mulScalar3f(n, r_next));
         const sep_angle = geometry_utils.angle(vec.sub3f(p, c_next), vec.sub3f(q_next, c_next));
-        if (j > 0 and sep_angle < 20.0 * std.math.pi / 180.0) { // TODO: use a better angle?
+        if (j > 0 and sep_angle < 45.0 * std.math.pi / 180.0) { // TODO: use a configurable angle threshold?
             break;
         }
         r = r_next;

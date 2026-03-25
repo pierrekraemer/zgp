@@ -26,32 +26,32 @@ const sampling = @import("../models/surface/sampling.zig");
 const SamplingData = struct {
     app_ctx: *AppContext,
 
-    samples: ?*PointCloud = null,
-    position: ?PointCloud.CellData(Vec3f) = null,
-    surface_point: ?PointCloud.CellData(SurfacePoint) = null,
+    samples: *PointCloud = undefined,
+    position: PointCloud.CellData(Vec3f) = undefined,
+    surface_point: PointCloud.CellData(SurfacePoint) = undefined,
     initialized: bool = false,
 
     fn init(sd: *SamplingData, pointcloud_name: []const u8) !void {
         if (!sd.initialized) {
             sd.samples = try sd.app_ctx.point_cloud_store.createPointCloud(pointcloud_name);
-            sd.surface_point = try sd.samples.?.addData(SurfacePoint, "surface_point");
-            sd.position = try sd.samples.?.addData(Vec3f, "position");
-            sd.app_ctx.point_cloud_store.setPointCloudStdData(sd.samples.?, .{ .position = sd.position.? });
+            sd.surface_point = try sd.samples.addData(SurfacePoint, "surface_point");
+            sd.position = try sd.samples.addData(Vec3f, "position");
+            sd.app_ctx.point_cloud_store.setPointCloudStdData(sd.samples, .{ .position = sd.position });
         } else {
-            sd.samples.?.clearRetainingCapacity();
+            sd.samples.clearRetainingCapacity();
         }
-        sd.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples.?);
-        sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples.?, Vec3f, sd.position.?);
-        sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples.?, SurfacePoint, sd.surface_point.?);
+        sd.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples);
+        sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, Vec3f, sd.position);
+        sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, SurfacePoint, sd.surface_point);
         sd.initialized = true;
     }
 
     // do not destroy the PointCloud here
     // this function is only called after having being notified of the PointCloud destruction
     fn deinit(sd: *SamplingData) void {
-        sd.samples = null;
-        sd.position = null;
-        sd.surface_point = null;
+        sd.samples = undefined;
+        sd.position = undefined;
+        sd.surface_point = undefined;
         sd.initialized = false;
     }
 
@@ -62,12 +62,12 @@ const SamplingData = struct {
         src_data: SurfaceMesh.CellData(cell_type, T),
     ) !void {
         if (!sd.initialized) return;
-        const dst_data = try sd.samples.?.getOrAddData(T, src_data.name());
-        var point_it = sd.samples.?.pointIterator();
+        const dst_data = try sd.samples.getOrAddData(T, src_data.name());
+        var point_it = sd.samples.pointIterator();
         while (point_it.next()) |point| {
-            dst_data.valuePtr(point).* = sd.surface_point.?.value(point).readData(T, cell_type, src_data);
+            dst_data.valuePtr(point).* = sd.surface_point.value(point).readData(T, cell_type, src_data);
         }
-        sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples.?, T, dst_data);
+        sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, T, dst_data);
         sd.app_ctx.requestRedraw();
     }
 };
@@ -120,9 +120,14 @@ pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
 }
 
 /// Part of the Module interface.
-/// Remove the SamplingData associated to the destroyed SurfaceMesh.
+/// Remove the SamplingData associated to the destroyed SurfaceMesh
+/// and remove the associated SurfacePoint data from the PointCloud (if it exists).
 pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
     const sms: *SurfaceMeshSampling = @alignCast(@fieldParentPtr("module", m));
+    const sd = sms.surface_meshes_data.getPtr(surface_mesh).?;
+    if (sd.initialized) {
+        sd.samples.removeData(SurfacePoint, sd.surface_point); // the SurfacePoint data is no longer valid after the SurfaceMesh is destroyed
+    }
     _ = sms.surface_meshes_data.remove(surface_mesh);
 }
 
@@ -139,10 +144,10 @@ fn uniformSampling(
     const sd = sms.surface_meshes_data.getPtr(sm).?;
     try sd.init(pointcloud_name);
 
-    try sampling.uniformlySamplePointsOnSurface(sms.app_ctx, sm, vertex_position, face_area, sd.samples.?, sd.position.?, sd.surface_point.?, nb_points);
-    sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples.?);
-    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples.?, Vec3f, sd.position.?);
-    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples.?, SurfacePoint, sd.surface_point.?);
+    try sampling.uniformlySamplePointsOnSurface(sms.app_ctx, sm, vertex_position, face_area, sd.samples, sd.position, sd.surface_point, nb_points);
+    sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples);
+    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, Vec3f, sd.position);
+    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, SurfacePoint, sd.surface_point);
 
     sms.app_ctx.requestRedraw();
 
@@ -164,10 +169,10 @@ fn poissonDiskSampling(
     const sd = sms.surface_meshes_data.getPtr(sm).?;
     try sd.init(pointcloud_name);
 
-    try sampling.poissonDiskSamplePointsOnSurface(sms.app_ctx, sm, sm_bvh, vertex_position, face_normal, sd.samples.?, sd.position.?, sd.surface_point.?, min_distance);
-    sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples.?);
-    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples.?, Vec3f, sd.position.?);
-    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples.?, SurfacePoint, sd.surface_point.?);
+    try sampling.poissonDiskSamplePointsOnSurface(sms.app_ctx, sm, sm_bvh, vertex_position, face_normal, sd.samples, sd.position, sd.surface_point, min_distance);
+    sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples);
+    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, Vec3f, sd.position);
+    sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, SurfacePoint, sd.surface_point);
 
     sms.app_ctx.requestRedraw();
 

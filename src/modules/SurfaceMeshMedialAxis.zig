@@ -104,7 +104,7 @@ const MedialAxisData = struct {
         try sqem.computeVertexSQEMs(
             mad.app_ctx,
             mad.surface_mesh,
-            vertex_position,
+            mad.vertex_position,
             vertex_area,
             vertex_tangent_basis,
             face_area,
@@ -174,6 +174,29 @@ const MedialAxisData = struct {
             mad.app_ctx.point_cloud_store.destroyPointCloud(mad.shrinking_balls);
             mad.initialized = false;
         }
+    }
+
+    fn recomputeSQEMs(
+        mad: *MedialAxisData,
+        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        vertex_area: SurfaceMesh.CellData(.vertex, f32),
+        vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
+        face_area: SurfaceMesh.CellData(.face, f32),
+        face_normal: SurfaceMesh.CellData(.face, Vec3f),
+        line_quadric_epsilon: f32,
+    ) !void {
+        try sqem.computeVertexSQEMs(
+            mad.app_ctx,
+            mad.surface_mesh,
+            vertex_position,
+            vertex_area,
+            vertex_tangent_basis,
+            face_area,
+            face_normal,
+            line_quadric_epsilon,
+            mad.vertex_sqem,
+        );
+        try mad.updateSpheres();
     }
 
     fn computeClusters(mad: *MedialAxisData) !void {
@@ -401,7 +424,7 @@ pub fn rightPanel(m: *Module) void {
     if (disabled) {
         c.ImGui_BeginDisabled(true);
     }
-    if (c.ImGui_ButtonEx(if (mad.initialized) "Reinitialize data" else "Initialize data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+    if (c.ImGui_ButtonEx(if (mad.initialized) "Reinitialize all data" else "Initialize data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
         _ = mad.init(
             info.bvh,
             info.std_datas.vertex_position.?,
@@ -414,6 +437,20 @@ pub fn rightPanel(m: *Module) void {
         ) catch |err| {
             std.debug.print("Failed to initialize Medial Axis data for SurfaceMesh: {}\n", .{err});
         };
+    }
+    if (mad.initialized) {
+        if (c.ImGui_ButtonEx("Recompute SQEMs", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            mad.recomputeSQEMs(
+                info.std_datas.vertex_position.?,
+                info.std_datas.vertex_area.?,
+                info.std_datas.vertex_tangent_basis.?,
+                info.std_datas.face_area.?,
+                info.std_datas.face_normal.?,
+                UiData.line_quadric_epsilon,
+            ) catch |err| {
+                std.debug.print("Failed to recompute Medial Axis SQEMs for SurfaceMesh: {}\n", .{err});
+            };
+        }
     }
     if (disabled) {
         c.ImGui_EndDisabled();
