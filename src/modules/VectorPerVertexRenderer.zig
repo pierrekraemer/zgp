@@ -24,6 +24,8 @@ const Vec3f = vec.Vec3f;
 const mat = @import("../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
 
+// TODO: implement IncidenceGraph support
+
 const VertexVectorData = union(enum) {
     surface_mesh: ?SurfaceMesh.CellData(.vertex, Vec3f),
     point_cloud: ?PointCloud.CellData(Vec3f),
@@ -262,6 +264,9 @@ pub fn rightPanel(m: *Module) void {
                 .changed => |data| vpvr.setPointCloudVectorData(pc, data),
             }
         },
+        .incidence_graph => |_| {
+            // TODO
+        },
         .none => {},
     }
     c.ImGui_PopID();
@@ -269,6 +274,7 @@ pub fn rightPanel(m: *Module) void {
     const p = switch (vpvr.app_ctx.selected_model) {
         .surface_mesh => |sm| vpvr.surface_mesh_parameters.getPtr(sm).?,
         .point_cloud => |pc| vpvr.point_cloud_parameters.getPtr(pc).?,
+        .incidence_graph => unreachable, // TODO
         .none => unreachable,
     };
 

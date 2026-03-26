@@ -313,7 +313,7 @@ pub fn surfaceMeshCellSetUpdated(
     // if it exists, update the IBO with the data
     const maybe_ibo = sms.cell_set_ibo.getPtr(cell_set);
     if (maybe_ibo) |ibo| {
-        ibo.fillFromCellSlice(sm, cell_set.cells.items, sms.allocator) catch |err| {
+        ibo.fillFromSurfaceMeshCellSlice(sm, cell_set.cells.items, sms.allocator) catch |err| {
             zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
             return;
         };
@@ -349,7 +349,7 @@ pub fn cellSetIBO(sms: *SurfaceMeshStore, cell_set: *const SurfaceMesh.CellSet) 
     };
     if (!ibo.found_existing) {
         ibo.value_ptr.* = IBO.init();
-        ibo.value_ptr.fillFromCellSlice(cell_set.surface_mesh, cell_set.cells.items, sms.allocator) catch |err| {
+        ibo.value_ptr.fillFromSurfaceMeshCellSlice(cell_set.surface_mesh, cell_set.cells.items, sms.allocator) catch |err| {
             zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
             return IBO.init(); // return a dummy IBO
         };

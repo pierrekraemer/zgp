@@ -34,8 +34,8 @@ pub const PointCloudStdDatas = struct {
     // color: ?PointCloud.CellData(Vec3f) = null,
 };
 
-/// This tagged union is generated from the PointCloudStdDatas struct and allows to easily provide a single
-/// data entry to the setPointCloudStdData function (in PointCloudStore)
+/// This tagged union is generated from the PointCloudStdDatas struct and allows to
+/// easily provide a single data entry to the setPointCloudStdData function
 pub const PointCloudStdData = types_utils.UnionFromStruct(PointCloudStdDatas);
 pub const PointCloudStdDataTag = std.meta.Tag(PointCloudStdData);
 
@@ -344,7 +344,6 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
                     UiData.data_name_buf = @splat(0);
                 },
             }
-            c.ImGui_CloseCurrentPopup();
         }
     }
 

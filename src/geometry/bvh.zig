@@ -74,19 +74,19 @@ pub const TrianglesBVH = struct {
         ) orelse return error.FailedToCreateBVH;
 
         return .{
+            .initialized = true,
             .bvh_ptr = bvh_ptr,
             .surface_mesh = sm,
             .vertex_position = vertex_position,
             .surface_mesh_faces = surface_mesh_faces,
-            .initialized = true,
         };
     }
 
     pub fn deinit(tbvh: *TrianglesBVH) void {
         if (tbvh.initialized) {
             c.destroyTrianglesBVH(tbvh.bvh_ptr);
+            tbvh.surface_mesh_faces.deinit(tbvh.surface_mesh.allocator);
         }
-        tbvh.surface_mesh_faces.deinit(tbvh.surface_mesh.allocator);
         tbvh.initialized = false;
     }
 

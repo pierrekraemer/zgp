@@ -337,7 +337,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                             },
                         }
                         if (sms.hovered_cell) |cell| {
-                            sms.hovered_cell_ibo.fillFromCellSlice(sm, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
+                            sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
                                 std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
                                 break :blk false;
                             };

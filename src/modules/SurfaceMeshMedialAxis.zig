@@ -12,6 +12,7 @@ const AppContext = @import("../main.zig").AppContext;
 const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
+const IncidenceGraph = @import("../models/incidenceGraph/IncidenceGraph.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
@@ -40,10 +41,14 @@ const MedialAxisData = struct {
     sphere_color: PointCloud.CellData(Vec3f) = undefined,
     sphere_cluster: PointCloud.CellData(std.ArrayList(SurfaceMesh.Cell)) = undefined,
     sphere_error: PointCloud.CellData(f32) = undefined,
+    sphere_neighbor_spheres: PointCloud.CellData(std.AutoArrayHashMap(PointCloud.Point, void)) = undefined,
 
     shrinking_balls: *PointCloud = undefined,
     shrinking_ball_center: PointCloud.CellData(Vec3f) = undefined,
     shrinking_ball_radius: PointCloud.CellData(f32) = undefined,
+
+    skeleton: *IncidenceGraph = undefined,
+    skeleton_vertex_position: IncidenceGraph.CellData(.vertex, Vec3f) = undefined,
 
     initialized: bool = false,
 
@@ -79,6 +84,7 @@ const MedialAxisData = struct {
             mad.sphere_color = try mad.spheres.addData(Vec3f, "color");
             mad.sphere_cluster = try mad.spheres.addData(std.ArrayList(SurfaceMesh.Cell), "cluster");
             mad.sphere_error = try mad.spheres.addData(f32, "error");
+            mad.sphere_neighbor_spheres = try mad.spheres.addData(std.AutoArrayHashMap(PointCloud.Point, void), "neighbor_spheres");
             mad.app_ctx.point_cloud_store.setPointCloudStdData(mad.spheres, .{ .position = mad.sphere_center });
             mad.app_ctx.point_cloud_store.setPointCloudStdData(mad.spheres, .{ .radius = mad.sphere_radius });
 
@@ -89,6 +95,14 @@ const MedialAxisData = struct {
             mad.shrinking_ball_radius = try mad.shrinking_balls.addData(f32, "radius");
             mad.app_ctx.point_cloud_store.setPointCloudStdData(mad.shrinking_balls, .{ .position = mad.shrinking_ball_center });
             mad.app_ctx.point_cloud_store.setPointCloudStdData(mad.shrinking_balls, .{ .radius = mad.shrinking_ball_radius });
+
+            // create skeleton IncidenceGraph & data
+            const sk_name = std.fmt.bufPrint(&buf, "{s}_skeleton", .{mad.app_ctx.surface_mesh_store.surfaceMeshName(mad.surface_mesh).?}) catch "__skeleton";
+            mad.skeleton = try mad.app_ctx.incidence_graph_store.createIncidenceGraph(sk_name);
+            mad.skeleton_vertex_position = try mad.skeleton.addData(.vertex, Vec3f, "position");
+            mad.app_ctx.incidence_graph_store.setIncidenceGraphStdData(mad.skeleton, .{ .vertex_position = mad.skeleton_vertex_position });
+
+            mad.initialized = true;
         } else {
             // clear medial spheres
             var it = mad.sphere_cluster.data.iterator();
@@ -125,8 +139,15 @@ const MedialAxisData = struct {
         mad.sphere_color.valuePtr(s1).* = .{ 0.5 + 0.5 * r.float(f32), 0.5 + 0.5 * r.float(f32), 0.5 + 0.5 * r.float(f32) };
         mad.sphere_cluster.valuePtr(s1).* = .empty;
         mad.sphere_error.valuePtr(s1).* = 0.0;
+        mad.sphere_neighbor_spheres.valuePtr(s1).* = .init(mad.app_ctx.allocator);
         // and compute the cluster
         try mad.computeClusters();
+
+        mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres);
+        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.sphere_center);
+        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.sphere_radius);
+        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.sphere_color);
+        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.sphere_error);
 
         // compute vertex shrinking balls
         try medialAxis.computeVertexShrinkingBalls(
@@ -146,17 +167,12 @@ const MedialAxisData = struct {
             }
         }
 
-        mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres);
-        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.sphere_center);
-        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.sphere_radius);
-        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.sphere_color);
-        mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.sphere_error);
-
         mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.shrinking_balls);
         mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.shrinking_balls, Vec3f, mad.shrinking_ball_center);
         mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.shrinking_balls, f32, mad.shrinking_ball_radius);
 
-        mad.initialized = true;
+        try mad.updateSkeleton();
+
         mad.app_ctx.requestRedraw();
     }
 
@@ -166,9 +182,11 @@ const MedialAxisData = struct {
             mad.surface_mesh.removeData(.vertex, ?PointCloud.Point, mad.vertex_sphere);
             mad.surface_mesh.removeData(.vertex, f32, mad.vertex_sphere_error);
             mad.surface_mesh.removeData(.vertex, Vec3f, mad.vertex_sphere_color);
-            var it = mad.sphere_cluster.data.iterator();
-            while (it.next()) |*cluster| {
-                cluster.*.deinit(mad.app_ctx.allocator); // do not forget to deinit ArrayLists in sphere_cluster data
+            // do not forget to deinit ArrayLists in sphere_cluster data & ArrayHashMaps in sphere_neighbor_spheres data
+            var s_it = mad.spheres.pointIterator();
+            while (s_it.next()) |s| {
+                mad.sphere_cluster.valuePtr(s).deinit(mad.app_ctx.allocator);
+                mad.sphere_neighbor_spheres.valuePtr(s).deinit();
             }
             mad.app_ctx.point_cloud_store.destroyPointCloud(mad.spheres);
             mad.app_ctx.point_cloud_store.destroyPointCloud(mad.shrinking_balls);
@@ -237,7 +255,9 @@ const MedialAxisData = struct {
                 for (mad.sphere_cluster.valuePtr(s).items) |v| {
                     mad.vertex_sphere.valuePtr(v).* = null;
                 }
+                // do not forget to deinit ArrayList in sphere_cluster data & ArrayHashMap in sphere_neighbor_spheres data
                 mad.sphere_cluster.valuePtr(s).deinit(mad.app_ctx.allocator);
+                mad.sphere_neighbor_spheres.valuePtr(s).deinit();
                 mad.spheres.removePoint(s); // it is safe to remove the point while iterating
             }
         }
@@ -290,6 +310,8 @@ const MedialAxisData = struct {
             }
             previous_error = current_error;
         }
+
+        try mad.updateSkeleton();
     }
 
     pub fn splitWorseSphere(mad: *MedialAxisData) !void {
@@ -330,13 +352,55 @@ const MedialAxisData = struct {
         mad.sphere_color.valuePtr(s).* = .{ 0.5 + 0.5 * r.float(f32), 0.5 + 0.5 * r.float(f32), 0.5 + 0.5 * r.float(f32) };
         mad.sphere_cluster.valuePtr(s).* = .empty;
         mad.sphere_error.valuePtr(s).* = 0.0;
+        mad.sphere_neighbor_spheres.valuePtr(s).* = .init(mad.app_ctx.allocator);
 
         try mad.computeClusters();
+        try mad.updateSkeleton();
 
         mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres);
         mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.sphere_center);
         mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.sphere_radius);
         mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.sphere_color);
+        mad.app_ctx.requestRedraw();
+    }
+
+    pub fn updateSkeleton(mad: *MedialAxisData) !void {
+        assert(mad.initialized);
+
+        var s_it = mad.spheres.pointIterator();
+        while (s_it.next()) |s| {
+            mad.sphere_neighbor_spheres.valuePtr(s).clearRetainingCapacity();
+        }
+
+        var e_it: SurfaceMesh.CellIterator = try .init(mad.surface_mesh, .edge);
+        defer e_it.deinit();
+        while (e_it.next()) |e| {
+            const s1 = mad.vertex_sphere.value(.{ .vertex = e.dart() });
+            const s2 = mad.vertex_sphere.value(.{ .vertex = mad.surface_mesh.phi1(e.dart()) });
+            if (s1 != null and s2 != null and s1.? != s2.?) {
+                try mad.sphere_neighbor_spheres.valuePtr(s1.?).put(s2.?, {});
+                try mad.sphere_neighbor_spheres.valuePtr(s2.?).put(s1.?, {});
+            }
+        }
+
+        var sphere_skeleton_vertex = try mad.spheres.addData(IncidenceGraph.Cell, "__sphere_skeleton_vertex");
+        defer mad.spheres.removeData(IncidenceGraph.Cell, sphere_skeleton_vertex);
+        mad.skeleton.clearRetainingCapacity();
+        s_it.reset();
+        while (s_it.next()) |s| {
+            const v = try mad.skeleton.addVertex();
+            sphere_skeleton_vertex.valuePtr(s).* = v;
+            mad.skeleton_vertex_position.valuePtr(v).* = mad.sphere_center.value(s);
+            for (mad.sphere_neighbor_spheres.value(s).keys()) |neighbor| {
+                if (neighbor < s) {
+                    const neighbor_v = sphere_skeleton_vertex.value(neighbor);
+                    _ = try mad.skeleton.addEdge(v, neighbor_v);
+                }
+            }
+        }
+
+        mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
+        mad.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(mad.skeleton, .vertex, Vec3f, mad.skeleton_vertex_position);
         mad.app_ctx.requestRedraw();
     }
 };

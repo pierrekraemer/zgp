@@ -143,6 +143,18 @@ pub fn deinit(sm: *SurfaceMesh) void {
 }
 
 pub fn clearRetainingCapacity(sm: *SurfaceMesh) void {
+    var vertex_sets_it = sm.vertex_sets.iterator();
+    while (vertex_sets_it.next()) |entry| {
+        entry.value_ptr.*.clear();
+    }
+    var edge_sets_it = sm.edge_sets.iterator();
+    while (edge_sets_it.next()) |entry| {
+        entry.value_ptr.*.clear();
+    }
+    var face_sets_it = sm.face_sets.iterator();
+    while (face_sets_it.next()) |entry| {
+        entry.value_ptr.*.clear();
+    }
     sm.dart_data.clearRetainingCapacity();
     sm.vertex_data.clearRetainingCapacity();
     sm.edge_data.clearRetainingCapacity();
@@ -586,7 +598,7 @@ pub const CellSet = struct {
 
 /// A CellData is a handle to a data array of type `T` associated with cells of the given CellType.
 /// It provides functions to access the data associated with a given cell or its index.
-pub fn CellData(cell_type: CellType, comptime T: type) type {
+pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
     return struct {
         const Self = @This();
         pub const CellType = cell_type;
@@ -621,7 +633,7 @@ pub fn CellData(cell_type: CellType, comptime T: type) type {
     };
 }
 
-/// Returns the data container associated with the given cell type.
+/// Returns the data container associated with the given CellType.
 pub fn dataContainer(sm: *const SurfaceMesh, cell_type: CellType) *DataContainer {
     return switch (cell_type) {
         .halfedge, .corner => sm.dart_data,
@@ -637,14 +649,14 @@ pub fn dataContainer(sm: *const SurfaceMesh, cell_type: CellType) *DataContainer
 pub fn addData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
     return .{
         .surface_mesh = sm,
-        .data = try dataContainer(sm, cell_type).addData(T, name),
+        .data = try sm.dataContainer(cell_type).addData(T, name),
     };
 }
 
 /// Returns a handle to the data array of the type `T` associated with cells of the given CellType
 /// if it exists with the given name, otherwise returns null.
 pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) ?CellData(cell_type, T) {
-    if (dataContainer(sm, cell_type).getData(T, name)) |d| {
+    if (sm.dataContainer(cell_type).getData(T, name)) |d| {
         return .{
             .surface_mesh = sm,
             .data = d,
@@ -658,14 +670,14 @@ pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T:
 pub fn getOrAddData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
     return .{
         .surface_mesh = sm,
-        .data = try dataContainer(sm, cell_type).getOrAddData(T, name),
+        .data = try sm.dataContainer(cell_type).getOrAddData(T, name),
     };
 }
 
 /// Removes the data array of the type `T` associated with cells of the given CellType.
 pub fn removeData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, cellData: CellData(cell_type, T)) void {
     assert(cellData.surface_mesh == sm);
-    dataContainer(sm, cell_type).removeData(&cellData.data.data_gen);
+    sm.dataContainer(cell_type).removeData(&cellData.data.data_gen);
 }
 
 /// Gets a new index for the given cell type.
@@ -821,7 +833,7 @@ pub fn setDartCellIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u
         .face => sm.dart_face_index,
         else => unreachable,
     };
-    var data_container = dataContainer(sm, cell_type);
+    var data_container = sm.dataContainer(cell_type);
     const old_index: u32 = index_data.value(d);
     if (index != invalid_index) {
         data_container.refIndex(index);
@@ -897,7 +909,7 @@ pub fn indexCells(sm: *SurfaceMesh, cell_type: CellType) !void {
 /// For boundary faces, as there is no index and no data container, an explicit traversal is also needed).
 pub fn nbCells(sm: *SurfaceMesh, cell_type: CellType) u32 {
     return switch (cell_type) {
-        .vertex, .edge, .face => dataContainer(sm, cell_type).nbElements(),
+        .vertex, .edge, .face => sm.dataContainer(cell_type).nbElements(),
         .halfedge, .corner => sm.dart_data.nbElements() - sm.nb_boundary_darts,
         .boundary => unreachable,
         // .boundary => blk: {
