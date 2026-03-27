@@ -105,14 +105,17 @@ const MedialAxisData = struct {
             mad.initialized = true;
         } else {
             // clear medial spheres
-            var it = mad.sphere_cluster.data.iterator();
-            while (it.next()) |*cluster| {
-                cluster.*.deinit(mad.app_ctx.allocator); // do not forget to deinit ArrayLists in sphere_cluster data
+            // do not forget to deinit ArrayLists in sphere_cluster data & ArrayHashMaps in sphere_neighbor_spheres data
+            var s_it = mad.spheres.pointIterator();
+            while (s_it.next()) |s| {
+                mad.sphere_cluster.valuePtr(s).deinit(mad.app_ctx.allocator);
+                mad.sphere_neighbor_spheres.valuePtr(s).deinit();
             }
             mad.spheres.clearRetainingCapacity();
-
             // clear shrinking balls
             mad.shrinking_balls.clearRetainingCapacity();
+            // clear skeleton
+            mad.skeleton.clearRetainingCapacity();
         }
 
         try sqem.computeVertexSQEMs(
@@ -188,8 +191,10 @@ const MedialAxisData = struct {
                 mad.sphere_cluster.valuePtr(s).deinit(mad.app_ctx.allocator);
                 mad.sphere_neighbor_spheres.valuePtr(s).deinit();
             }
-            mad.app_ctx.point_cloud_store.destroyPointCloud(mad.spheres);
-            mad.app_ctx.point_cloud_store.destroyPointCloud(mad.shrinking_balls);
+            // forget about the PointCloud and IncidenceGraph, but let them live on
+            mad.spheres = undefined;
+            mad.shrinking_balls = undefined;
+            mad.skeleton = undefined;
             mad.initialized = false;
         }
     }
@@ -385,16 +390,43 @@ const MedialAxisData = struct {
 
         var sphere_skeleton_vertex = try mad.spheres.addData(IncidenceGraph.Cell, "__sphere_skeleton_vertex");
         defer mad.spheres.removeData(IncidenceGraph.Cell, sphere_skeleton_vertex);
+        var skeleton_edges: std.AutoHashMap([2]IncidenceGraph.Cell, IncidenceGraph.Cell) = .init(mad.app_ctx.allocator);
+        defer skeleton_edges.deinit();
+
         mad.skeleton.clearRetainingCapacity();
         s_it.reset();
         while (s_it.next()) |s| {
             const v = try mad.skeleton.addVertex();
             sphere_skeleton_vertex.valuePtr(s).* = v;
             mad.skeleton_vertex_position.valuePtr(v).* = mad.sphere_center.value(s);
-            for (mad.sphere_neighbor_spheres.value(s).keys()) |neighbor| {
-                if (neighbor < s) {
-                    const neighbor_v = sphere_skeleton_vertex.value(neighbor);
-                    _ = try mad.skeleton.addEdge(v, neighbor_v);
+            const s_neighbors = mad.sphere_neighbor_spheres.valuePtr(s);
+            for (s_neighbors.keys()) |sn| {
+                if (sn < s) {
+                    const sn_v = sphere_skeleton_vertex.value(sn);
+                    const e = try mad.skeleton.addEdge(v, sn_v);
+                    // store edge with canonical ordering of vertices (smaller index first)
+                    try skeleton_edges.put(.{ if (v.index() < sn_v.index()) v else sn_v, if (v.index() < sn_v.index()) sn_v else v }, e);
+                }
+            }
+        }
+        s_it.reset();
+        while (s_it.next()) |s| {
+            const s_neighbors = mad.sphere_neighbor_spheres.valuePtr(s);
+            for (s_neighbors.keys()) |sn| {
+                if (s < sn) continue;
+                const sn_neighbors = mad.sphere_neighbor_spheres.valuePtr(sn);
+                for (sn_neighbors.keys()) |snn| {
+                    if (sn < s and snn < sn and s_neighbors.contains(snn)) {
+                        const v1 = sphere_skeleton_vertex.value(s);
+                        const v2 = sphere_skeleton_vertex.value(sn);
+                        const v3 = sphere_skeleton_vertex.value(snn);
+                        const edges: [3]IncidenceGraph.Cell = .{
+                            skeleton_edges.get(.{ if (v1.index() < v2.index()) v1 else v2, if (v1.index() < v2.index()) v2 else v1 }).?,
+                            skeleton_edges.get(.{ if (v2.index() < v3.index()) v2 else v3, if (v2.index() < v3.index()) v3 else v2 }).?,
+                            skeleton_edges.get(.{ if (v3.index() < v1.index()) v3 else v1, if (v3.index() < v1.index()) v1 else v3 }).?,
+                        };
+                        _ = try mad.skeleton.addFace(&edges);
+                    }
                 }
             }
         }
@@ -412,6 +444,7 @@ module: Module = .{
     .vtable = &.{
         .surfaceMeshCreated = surfaceMeshCreated,
         .surfaceMeshDestroyed = surfaceMeshDestroyed,
+        // TODO: should manage the destruction of the PointClouds and IncidenceGraph
         .rightPanel = rightPanel,
     },
 },

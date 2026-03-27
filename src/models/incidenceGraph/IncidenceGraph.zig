@@ -83,6 +83,22 @@ pub fn deinit(ig: *IncidenceGraph) void {
 }
 
 pub fn clearRetainingCapacity(ig: *IncidenceGraph) void {
+    var it = ig.vertex_incident_edges.iterator();
+    while (it.next()) |entry| {
+        entry.deinit(ig.allocator);
+    }
+    it = ig.edge_incident_faces.iterator();
+    while (it.next()) |entry| {
+        entry.deinit(ig.allocator);
+    }
+    it = ig.face_incident_edges.iterator();
+    while (it.next()) |entry| {
+        entry.deinit(ig.allocator);
+    }
+    var dir_it = ig.face_incident_edges_dir.iterator();
+    while (dir_it.next()) |entry| {
+        entry.deinit(ig.allocator);
+    }
     ig.vertex_data.clearRetainingCapacity();
     ig.edge_data.clearRetainingCapacity();
     ig.face_data.clearRetainingCapacity();
@@ -289,7 +305,15 @@ pub fn addEdge(ig: *IncidenceGraph, v0: Cell, v1: Cell) !Cell {
 
 pub fn addFace(ig: *IncidenceGraph, edges: []const Cell) !Cell {
     const idx = try ig.face_data.getIndex();
-    ig.face_incident_edges.valuePtr(idx).appendSlice(ig.allocator, edges);
-    ig.face_incident_edges_dir.valuePtr(idx).* = .empty;
+    var fie: *std.ArrayList(CellIndex) = ig.face_incident_edges.valuePtr(idx);
+    var fied: *std.ArrayList(bool) = ig.face_incident_edges_dir.valuePtr(idx);
+    fie.* = .empty;
+    fied.* = .empty;
+    // TODO: order the edges of the face and set directions accordingly
+    for (edges) |e| {
+        try fie.append(ig.allocator, e.index());
+        try fied.append(ig.allocator, true);
+        try ig.edge_incident_faces.valuePtr(e.index()).append(ig.allocator, idx);
+    }
     return .{ .face = idx };
 }
