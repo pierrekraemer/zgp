@@ -5,6 +5,7 @@ uniform vec4 u_ambiant_color;
 uniform vec3 u_light_position;
 uniform usamplerBuffer u_face_index_buffer;
 uniform samplerBuffer u_face_color_buffer;
+uniform bool u_dim_backfaces;
 
 in vec3 v_position;
 
@@ -19,7 +20,7 @@ void main() {
     vec4 result = vec4(color.rgb * lambert_term, 1.0);
     result += vec4(u_ambiant_color.rgb, 0.0);
     f_color = result;
-    if (!gl_FrontFacing) {
+    if (u_dim_backfaces && !gl_FrontFacing) {
         f_color *= 0.5;
     }
 }

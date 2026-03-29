@@ -533,14 +533,15 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
             if (module.vtable.rightPanel == null) continue; // check if the module has a rightPanel function
             c.ImGui_PushIDPtr(module);
             defer c.ImGui_PopID();
-            c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(255, 128, 0, 200));
-            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(255, 128, 0, 255));
-            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(255, 128, 0, 128));
+            c.ImGui_PushStyleColor(c.ImGuiCol_Text, c.IM_COL32(25, 25, 25, 255));
+            c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(65, 255, 130, 200));
+            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(65, 255, 130, 255));
+            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(65, 255, 130, 128));
             if (c.ImGui_CollapsingHeader(module.name.ptr, 0)) {
-                c.ImGui_PopStyleColorEx(3);
+                c.ImGui_PopStyleColorEx(4);
                 module.rightPanel();
             } else {
-                c.ImGui_PopStyleColorEx(3);
+                c.ImGui_PopStyleColorEx(4);
             }
         }
     }

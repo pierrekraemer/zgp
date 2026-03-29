@@ -33,7 +33,6 @@ pub const PointCloudStdDatas = struct {
     radius: ?PointCloud.CellData(f32) = null,
     // color: ?PointCloud.CellData(Vec3f) = null,
 };
-
 /// This tagged union is generated from the PointCloudStdDatas struct and allows to
 /// easily provide a single data entry to the setPointCloudStdData function
 pub const PointCloudStdData = types_utils.UnionFromStruct(PointCloudStdDatas);
@@ -63,12 +62,17 @@ allocator: std.mem.Allocator,
 // list of Modules that have registered interest in PointCloud events
 listeners: std.ArrayList(*Module),
 
-point_clouds: std.StringHashMap(*PointCloud),
-point_clouds_info: std.AutoHashMap(*const PointCloud, PointCloudInfo),
+point_clouds: std.StringArrayHashMapUnmanaged(*PointCloud),
+point_clouds_info: std.AutoArrayHashMapUnmanaged(*const PointCloud, PointCloudInfo),
 selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 
-data_vbo: std.AutoHashMap(*const DataGen, VBO),
-data_last_update: std.AutoHashMap(*const DataGen, std.time.Instant),
+// each DataGen can be associated with a VBO
+// once a VBO has been requested for a Data (in dataVBO) it is stored in this map
+// and updated upon calls to pointCloudDataUpdated
+data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
+// stores the last update time for each DataGen
+// updated upon calls to pointCloudDataUpdated
+data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.time.Instant),
 
 point_buffer_pool: BufferPool(PointCloud.Point),
 
@@ -76,43 +80,39 @@ pub fn init(allocator: std.mem.Allocator) !PointCloudStore {
     return .{
         .allocator = allocator,
         .listeners = .empty,
-        .point_clouds = .init(allocator),
-        .point_clouds_info = .init(allocator),
-        .data_vbo = .init(allocator),
-        .data_last_update = .init(allocator),
+        .point_clouds = .empty,
+        .point_clouds_info = .empty,
+        .data_vbo = .empty,
+        .data_last_update = .empty,
         .point_buffer_pool = try .init(allocator, 1024, 64, 32),
     };
 }
 
 pub fn deinit(pcs: *PointCloudStore) void {
-    var pc_info_it = pcs.point_clouds_info.iterator();
-    while (pc_info_it.next()) |entry| {
-        var info = entry.value_ptr.*;
+    pcs.listeners.deinit(pcs.allocator);
+
+    for (pcs.point_clouds_info.values()) |*info| {
         info.deinit();
     }
-    pcs.point_clouds_info.deinit();
+    pcs.point_clouds_info.deinit(pcs.allocator);
 
-    var pc_it = pcs.point_clouds.iterator();
-    while (pc_it.next()) |entry| {
-        var pc = entry.value_ptr.*;
-        const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in createPointCloud)
-        pcs.allocator.free(name); // free the name
+    for (pcs.point_clouds.keys(), pcs.point_clouds.values()) |name, pc| {
+        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeZ in createPointCloud)
+        pcs.allocator.free(nameZ); // free the name
         pc.deinit();
         pcs.allocator.destroy(pc); // destroy the PointCloud
     }
-    pcs.point_clouds.deinit();
+    pcs.point_clouds.deinit(pcs.allocator);
 
     var vbo_it = pcs.data_vbo.iterator();
     while (vbo_it.next()) |entry| {
-        var vbo = entry.value_ptr.*;
-        vbo.deinit();
+        entry.value_ptr.deinit();
     }
-    pcs.data_vbo.deinit();
-    pcs.data_last_update.deinit();
+    pcs.data_vbo.deinit(pcs.allocator);
+
+    pcs.data_last_update.deinit(pcs.allocator);
 
     pcs.point_buffer_pool.deinit();
-
-    pcs.listeners.deinit(pcs.allocator);
 }
 
 pub fn addListener(pcs: *PointCloudStore, module: *Module) !void {
@@ -126,16 +126,16 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     }
     const pc = try pcs.allocator.create(PointCloud);
     errdefer pcs.allocator.destroy(pc);
-    pc.* = try PointCloud.init(pcs.allocator);
+    pc.* = try .init(pcs.allocator);
     errdefer pc.deinit();
     const owned_name = try pcs.allocator.dupeZ(u8, name);
     errdefer pcs.allocator.free(owned_name);
-    try pcs.point_clouds.put(owned_name, pc);
-    errdefer _ = pcs.point_clouds.remove(owned_name);
-    var info = PointCloudInfo.init();
+    try pcs.point_clouds.put(pcs.allocator, owned_name, pc);
+    errdefer _ = pcs.point_clouds.swapRemove(owned_name);
+    var info: PointCloudInfo = .init();
     errdefer info.deinit();
-    try pcs.point_clouds_info.put(pc, info);
-    errdefer _ = pcs.point_clouds_info.remove(pc);
+    try pcs.point_clouds_info.put(pcs.allocator, pc, info);
+    errdefer _ = pcs.point_clouds_info.swapRemove(pc);
 
     for (pcs.listeners.items) |module| {
         module.pointCloudCreated(pc);
@@ -162,11 +162,11 @@ pub fn destroyPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
         },
         else => {},
     }
-    _ = pcs.point_clouds.remove(name);
+    _ = pcs.point_clouds.swapRemove(name);
     pcs.allocator.free(name); // free the name
     const info = pcs.point_clouds_info.getPtr(pc).?;
     info.deinit();
-    _ = pcs.point_clouds_info.remove(pc);
+    _ = pcs.point_clouds_info.swapRemove(pc);
     pc.deinit();
     pcs.allocator.destroy(pc); // destroy the PointCloud
 }
@@ -187,7 +187,7 @@ pub fn pointCloudDataUpdated(
         zgp_log.err("Failed to get current time: {}", .{err});
         return;
     };
-    pcs.data_last_update.put(data.gen(), now) catch |err| {
+    pcs.data_last_update.put(pcs.allocator, data.gen(), now) catch |err| {
         zgp_log.err("Failed to update last update time for PointCloud data: {}", .{err});
         return;
     };
@@ -215,7 +215,7 @@ pub fn dataVBO(
     comptime T: type,
     data: PointCloud.CellData(T),
 ) VBO {
-    const vbo = pcs.data_vbo.getOrPut(data.gen()) catch |err| {
+    const vbo = pcs.data_vbo.getOrPut(pcs.allocator, data.gen()) catch |err| {
         zgp_log.err("Failed to get or add VBO in the registry: {}", .{err});
         return VBO.init(); // return a dummy VBO
     };
@@ -235,10 +235,9 @@ pub fn pointCloudInfo(pcs: *PointCloudStore, pc: *const PointCloud) *PointCloudI
 }
 
 pub fn pointCloudName(pcs: *PointCloudStore, pc: *const PointCloud) ?[:0]const u8 {
-    var it = pcs.point_clouds.iterator();
-    while (it.next()) |entry| {
-        if (entry.value_ptr.* == pc) {
-            return @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in createPointCloud)
+    for (pcs.point_clouds.keys(), pcs.point_clouds.values()) |name, pc_ptr| {
+        if (pc_ptr == pc) {
+            return @ptrCast(name); // the name is a null-terminated string (dupeZ in createPointCloud)
         }
     }
     return null;

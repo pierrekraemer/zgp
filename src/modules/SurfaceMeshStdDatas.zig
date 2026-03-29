@@ -71,7 +71,7 @@ pub fn leftPanel(m: *Module) void {
             c.ImGui_Text(field.name);
             c.ImGui_SameLine();
             // align 2 buttons to the right of the text
-            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + c.ImGui_GetContentRegionAvail().x - 2 * button_width - style.*.ItemSpacing.x);
+            c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + c.ImGui_GetContentRegionAvail().x - 2 * (button_width + style.*.ItemSpacing.x));
             const data_selected = @field(info.std_datas, field.name) != null;
             if (!data_selected) {
                 c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 128, 128, 200));

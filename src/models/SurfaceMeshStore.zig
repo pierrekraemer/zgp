@@ -83,21 +83,21 @@ allocator: std.mem.Allocator,
 // list of Modules that have registered interest in SurfaceMesh events
 listeners: std.ArrayList(*Module),
 
-surface_meshes: std.StringHashMap(*SurfaceMesh),
-surface_meshes_info: std.AutoHashMap(*const SurfaceMesh, SurfaceMeshInfo),
+surface_meshes: std.StringArrayHashMapUnmanaged(*SurfaceMesh),
+surface_meshes_info: std.AutoArrayHashMapUnmanaged(*const SurfaceMesh, SurfaceMeshInfo),
 selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 
 // each DataGen can be associated with a VBO
 // once a VBO has been requested for a Data (in dataVBO) it is stored in this map
 // and updated upon calls to surfaceMeshDataUpdated
-data_vbo: std.AutoHashMap(*const DataGen, VBO),
+data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
 // each CellSet can be associated with an IBO
 // once an IBO has been requested for a CellSet (in cellSetIBO) it is stored in this map
 // and updated upon calls to surfaceMeshCellSetUpdated
-cell_set_ibo: std.AutoHashMap(*const SurfaceMesh.CellSet, IBO),
+cell_set_ibo: std.AutoHashMapUnmanaged(*const SurfaceMesh.CellSet, IBO),
 // stores the last update time for each DataGen
 // updated upon calls to surfaceMeshDataUpdated
-data_last_update: std.AutoHashMap(*const DataGen, std.time.Instant),
+data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.time.Instant),
 
 cell_buffer_pool: BufferPool(SurfaceMesh.Cell),
 
@@ -105,11 +105,11 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMeshStore {
     return .{
         .allocator = allocator,
         .listeners = .empty,
-        .surface_meshes = .init(allocator),
-        .surface_meshes_info = .init(allocator),
-        .data_vbo = .init(allocator),
-        .cell_set_ibo = .init(allocator),
-        .data_last_update = .init(allocator),
+        .surface_meshes = .empty,
+        .surface_meshes_info = .empty,
+        .data_vbo = .empty,
+        .cell_set_ibo = .empty,
+        .data_last_update = .empty,
         .cell_buffer_pool = try .init(allocator, 1024, 64, 32),
     };
 }
@@ -117,34 +117,32 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMeshStore {
 pub fn deinit(sms: *SurfaceMeshStore) void {
     sms.listeners.deinit(sms.allocator);
 
-    var sm_info_it = sms.surface_meshes_info.iterator();
-    while (sm_info_it.next()) |entry| {
-        entry.value_ptr.deinit();
+    for (sms.surface_meshes_info.values()) |*info| {
+        info.deinit();
     }
-    sms.surface_meshes_info.deinit();
+    sms.surface_meshes_info.deinit(sms.allocator);
 
-    var sm_it = sms.surface_meshes.iterator();
-    while (sm_it.next()) |entry| {
-        var sm = entry.value_ptr.*;
-        const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in createSurfaceMesh)
-        sms.allocator.free(name); // free the name
+    for (sms.surface_meshes.keys(), sms.surface_meshes.values()) |name, sm| {
+        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeZ in createSurfaceMesh)
+        sms.allocator.free(nameZ); // free the name
         sm.deinit();
         sms.allocator.destroy(sm); // destroy the SurfaceMesh
     }
-    sms.surface_meshes.deinit();
+    sms.surface_meshes.deinit(sms.allocator);
 
     var vbo_it = sms.data_vbo.iterator();
     while (vbo_it.next()) |entry| {
         entry.value_ptr.deinit();
     }
-    sms.data_vbo.deinit();
+    sms.data_vbo.deinit(sms.allocator);
+
     var cell_set_ibo_it = sms.cell_set_ibo.iterator();
     while (cell_set_ibo_it.next()) |entry| {
         entry.value_ptr.deinit();
     }
-    sms.cell_set_ibo.deinit();
+    sms.cell_set_ibo.deinit(sms.allocator);
 
-    sms.data_last_update.deinit();
+    sms.data_last_update.deinit(sms.allocator);
 
     sms.cell_buffer_pool.deinit();
 }
@@ -164,12 +162,12 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     errdefer sm.deinit();
     const owned_name = try sms.allocator.dupeZ(u8, name);
     errdefer sms.allocator.free(owned_name);
-    try sms.surface_meshes.put(owned_name, sm);
-    errdefer _ = sms.surface_meshes.remove(owned_name);
+    try sms.surface_meshes.put(sms.allocator, owned_name, sm);
+    errdefer _ = sms.surface_meshes.swapRemove(owned_name);
     var info: SurfaceMeshInfo = .init();
     errdefer info.deinit();
-    try sms.surface_meshes_info.put(sm, info);
-    errdefer _ = sms.surface_meshes_info.remove(sm);
+    try sms.surface_meshes_info.put(sms.allocator, sm, info);
+    errdefer _ = sms.surface_meshes_info.swapRemove(sm);
 
     for (sms.listeners.items) |module| {
         module.surfaceMeshCreated(sm);
@@ -196,11 +194,11 @@ pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
         },
         else => {},
     }
-    _ = sms.surface_meshes.remove(name);
+    _ = sms.surface_meshes.swapRemove(name);
     sms.allocator.free(name); // free the name
     const info = sms.surface_meshes_info.getPtr(sm).?;
     info.deinit();
-    _ = sms.surface_meshes_info.remove(sm);
+    _ = sms.surface_meshes_info.swapRemove(sm);
     sm.deinit();
     sms.allocator.destroy(sm); // destroy the SurfaceMesh
 }
@@ -221,7 +219,7 @@ pub fn surfaceMeshDataUpdated(
     // update the last known data update time
     const now = std.time.Instant.now();
     if (now) |t| {
-        sms.data_last_update.put(data.gen(), t) catch |err| {
+        sms.data_last_update.put(sms.allocator, data.gen(), t) catch |err| {
             zgp_log.err("Failed to update last update time for SurfaceMesh data: {}", .{err});
         };
     } else |err| {
@@ -331,7 +329,7 @@ pub fn dataVBO(
     comptime T: type,
     data: SurfaceMesh.CellData(cell_type, T),
 ) VBO {
-    const vbo = sms.data_vbo.getOrPut(data.gen()) catch |err| {
+    const vbo = sms.data_vbo.getOrPut(sms.allocator, data.gen()) catch |err| {
         zgp_log.err("Failed to get or add VBO in the registry: {}", .{err});
         return VBO.init(); // return a dummy VBO
     };
@@ -343,7 +341,7 @@ pub fn dataVBO(
 }
 
 pub fn cellSetIBO(sms: *SurfaceMeshStore, cell_set: *const SurfaceMesh.CellSet) IBO {
-    const ibo = sms.cell_set_ibo.getOrPut(cell_set) catch |err| {
+    const ibo = sms.cell_set_ibo.getOrPut(sms.allocator, cell_set) catch |err| {
         zgp_log.err("Failed to get or add IBO in the registry: {}", .{err});
         return IBO.init(); // return a dummy IBO
     };
@@ -366,10 +364,9 @@ pub fn surfaceMeshInfo(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) *SurfaceM
 }
 
 pub fn surfaceMeshName(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) ?[:0]const u8 {
-    var it = sms.surface_meshes.iterator();
-    while (it.next()) |entry| {
-        if (entry.value_ptr.* == sm) {
-            return @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in createSurfaceMesh)
+    for (sms.surface_meshes.keys(), sms.surface_meshes.values()) |name, sm_ptr| {
+        if (sm_ptr == sm) {
+            return @ptrCast(name); // the name is a null-terminated string (dupeZ in createSurfaceMesh)
         }
     }
     return null;

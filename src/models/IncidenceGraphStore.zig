@@ -30,7 +30,6 @@ const Vec3f = vec.Vec3f;
 pub const IncidenceGraphStdDatas = struct {
     vertex_position: ?IncidenceGraph.CellData(.vertex, Vec3f) = null,
 };
-
 /// This tagged union is generated from the IncidenceGraphStdDatas struct and allows to
 /// easily provide a single data entry to the setIncidenceGraphStdData function
 pub const IncidenceGraphStdData = types_utils.UnionFromStruct(IncidenceGraphStdDatas);
@@ -66,12 +65,17 @@ allocator: std.mem.Allocator,
 // list of Modules that have registered interest in IncidenceGraph events
 listeners: std.ArrayList(*Module),
 
-incidence_graphs: std.StringHashMap(*IncidenceGraph),
-incidence_graphs_info: std.AutoHashMap(*const IncidenceGraph, IncidenceGraphInfo),
+incidence_graphs: std.StringArrayHashMapUnmanaged(*IncidenceGraph),
+incidence_graphs_info: std.AutoArrayHashMapUnmanaged(*const IncidenceGraph, IncidenceGraphInfo),
 selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 
-data_vbo: std.AutoHashMap(*const DataGen, VBO),
-data_last_update: std.AutoHashMap(*const DataGen, std.time.Instant),
+// each DataGen can be associated with a VBO
+// once a VBO has been requested for a Data (in dataVBO) it is stored in this map
+// and updated upon calls to incidenceGraphDataUpdated
+data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
+// stores the last update time for each DataGen
+// updated upon calls to incidenceGraphDataUpdated
+data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.time.Instant),
 
 cell_buffer_pool: BufferPool(IncidenceGraph.Cell),
 
@@ -79,43 +83,39 @@ pub fn init(allocator: std.mem.Allocator) !IncidenceGraphStore {
     return .{
         .allocator = allocator,
         .listeners = .empty,
-        .incidence_graphs = .init(allocator),
-        .incidence_graphs_info = .init(allocator),
-        .data_vbo = .init(allocator),
-        .data_last_update = .init(allocator),
+        .incidence_graphs = .empty,
+        .incidence_graphs_info = .empty,
+        .data_vbo = .empty,
+        .data_last_update = .empty,
         .cell_buffer_pool = try .init(allocator, 1024, 64, 32),
     };
 }
 
 pub fn deinit(igs: *IncidenceGraphStore) void {
-    var ig_info_it = igs.incidence_graphs_info.iterator();
-    while (ig_info_it.next()) |entry| {
-        var info = entry.value_ptr.*;
+    igs.listeners.deinit(igs.allocator);
+
+    for (igs.incidence_graphs_info.values()) |*info| {
         info.deinit();
     }
-    igs.incidence_graphs_info.deinit();
+    igs.incidence_graphs_info.deinit(igs.allocator);
 
-    var ig_it = igs.incidence_graphs.iterator();
-    while (ig_it.next()) |entry| {
-        var ig = entry.value_ptr.*;
-        const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in createIncidenceGraph)
-        igs.allocator.free(name); // free the name
+    for (igs.incidence_graphs.keys(), igs.incidence_graphs.values()) |name, ig| {
+        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeZ in createIncidenceGraph)
+        igs.allocator.free(nameZ); // free the name
         ig.deinit();
         igs.allocator.destroy(ig); // destroy the IncidenceGraph
     }
-    igs.incidence_graphs.deinit();
+    igs.incidence_graphs.deinit(igs.allocator);
 
     var vbo_it = igs.data_vbo.iterator();
     while (vbo_it.next()) |entry| {
-        var vbo = entry.value_ptr.*;
-        vbo.deinit();
+        entry.value_ptr.deinit();
     }
-    igs.data_vbo.deinit();
-    igs.data_last_update.deinit();
+    igs.data_vbo.deinit(igs.allocator);
+
+    igs.data_last_update.deinit(igs.allocator);
 
     igs.cell_buffer_pool.deinit();
-
-    igs.listeners.deinit(igs.allocator);
 }
 
 pub fn addListener(igs: *IncidenceGraphStore, module: *Module) !void {
@@ -129,16 +129,16 @@ pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*Incid
     }
     const ig = try igs.allocator.create(IncidenceGraph);
     errdefer igs.allocator.destroy(ig);
-    ig.* = try IncidenceGraph.init(igs.allocator, &igs.cell_buffer_pool);
+    ig.* = try .init(igs.allocator, &igs.cell_buffer_pool);
     errdefer ig.deinit();
     const owned_name = try igs.allocator.dupeZ(u8, name);
     errdefer igs.allocator.free(owned_name);
-    try igs.incidence_graphs.put(owned_name, ig);
-    errdefer _ = igs.incidence_graphs.remove(owned_name);
-    var info = IncidenceGraphInfo.init();
+    try igs.incidence_graphs.put(igs.allocator, owned_name, ig);
+    errdefer _ = igs.incidence_graphs.swapRemove(owned_name);
+    var info: IncidenceGraphInfo = .init();
     errdefer info.deinit();
-    try igs.incidence_graphs_info.put(ig, info);
-    errdefer _ = igs.incidence_graphs_info.remove(ig);
+    try igs.incidence_graphs_info.put(igs.allocator, ig, info);
+    errdefer _ = igs.incidence_graphs_info.swapRemove(ig);
 
     for (igs.listeners.items) |module| {
         module.incidenceGraphCreated(ig);
@@ -165,11 +165,11 @@ pub fn destroyIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) voi
         },
         else => {},
     }
-    _ = igs.incidence_graphs.remove(name);
+    _ = igs.incidence_graphs.swapRemove(name);
     igs.allocator.free(name); // free the name
     const info = igs.incidence_graphs_info.getPtr(ig).?;
     info.deinit();
-    _ = igs.incidence_graphs_info.remove(ig);
+    _ = igs.incidence_graphs_info.swapRemove(ig);
     ig.deinit();
     igs.allocator.destroy(ig); // destroy the IncidenceGraph
 }
@@ -191,7 +191,7 @@ pub fn incidenceGraphDataUpdated(
         zgp_log.err("Failed to get current time: {}", .{err});
         return;
     };
-    igs.data_last_update.put(data.gen(), now) catch |err| {
+    igs.data_last_update.put(igs.allocator, data.gen(), now) catch |err| {
         zgp_log.err("Failed to update last update time for PointCloud data: {}", .{err});
         return;
     };
@@ -228,7 +228,7 @@ pub fn dataVBO(
     comptime T: type,
     data: IncidenceGraph.CellData(cell_type, T),
 ) VBO {
-    const vbo = igs.data_vbo.getOrPut(data.gen()) catch |err| {
+    const vbo = igs.data_vbo.getOrPut(igs.allocator, data.gen()) catch |err| {
         zgp_log.err("Failed to get or add VBO in the registry: {}", .{err});
         return VBO.init(); // return a dummy VBO
     };
@@ -248,10 +248,9 @@ pub fn incidenceGraphInfo(igs: *IncidenceGraphStore, ig: *const IncidenceGraph) 
 }
 
 pub fn incidenceGraphName(igs: *IncidenceGraphStore, ig: *const IncidenceGraph) ?[:0]const u8 {
-    var it = igs.incidence_graphs.iterator();
-    while (it.next()) |entry| {
-        if (entry.value_ptr.* == ig) {
-            return @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in createIncidenceGraph)
+    for (igs.incidence_graphs.keys(), igs.incidence_graphs.values()) |name, ig_ptr| {
+        if (ig_ptr == ig) {
+            return @ptrCast(name); // the name is a null-terminated string (dupeZ in createIncidenceGraph)
         }
     }
     return null;

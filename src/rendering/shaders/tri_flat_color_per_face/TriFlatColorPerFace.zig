@@ -29,6 +29,7 @@ ambiant_color_uniform: c_int = undefined,
 light_position_uniform: c_int = undefined,
 face_index_buffer_uniform: c_int = undefined,
 face_color_buffer_uniform: c_int = undefined,
+dim_backfaces_uniform: c_int = undefined,
 
 position_attrib: VAO.VertexAttribInfo = undefined,
 
@@ -54,6 +55,7 @@ fn init() !TriFlatColorPerFace {
     tfcpf.light_position_uniform = gl.GetUniformLocation(tfcpf.program.index, "u_light_position");
     tfcpf.face_index_buffer_uniform = gl.GetUniformLocation(tfcpf.program.index, "u_face_index_buffer");
     tfcpf.face_color_buffer_uniform = gl.GetUniformLocation(tfcpf.program.index, "u_face_color_buffer");
+    tfcpf.dim_backfaces_uniform = gl.GetUniformLocation(tfcpf.program.index, "u_dim_backfaces");
 
     tfcpf.position_attrib = .{
         .index = @intCast(gl.GetAttribLocation(tfcpf.program.index, "a_position")),
@@ -80,6 +82,7 @@ pub const Parameters = struct {
     projection_matrix: [16]f32 = undefined,
     ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
     light_position: [3]f32 = .{ 10, 0, 100 },
+    dim_backfaces: bool = true,
 
     pub fn init() Parameters {
         return .{
@@ -120,6 +123,7 @@ pub const Parameters = struct {
         gl.UniformMatrix4fv(p.shader.projection_matrix_uniform, 1, gl.FALSE, @ptrCast(&p.projection_matrix));
         gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
         gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
+        gl.Uniform1i(p.shader.dim_backfaces_uniform, @intFromBool(p.dim_backfaces));
 
         gl.ActiveTexture(gl.TEXTURE0 + @as(c_uint, @intCast(p.face_index_buffer_texture_unit)));
         gl.BindTexture(gl.TEXTURE_BUFFER, p.face_index_buffer_texture.index);

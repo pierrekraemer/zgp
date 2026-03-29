@@ -33,12 +33,14 @@ pub fn init(sdl_window: *c.SDL_Window, gl_context: c.SDL_GLContext) void {
     _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/ui/fa-solid-900.ttf", font_size, &font_config, null);
 
     c.ImGui_StyleColorsDark(null);
+
     const imstyle = c.ImGui_GetStyle();
-    imstyle.*.Colors[c.ImGuiCol_Header] = c.ImVec4_t{ .x = 65.0 / 255.0, .y = 255.0 / 255.0, .z = 255.0 / 255.0, .w = 120.0 / 255.0 };
-    imstyle.*.Colors[c.ImGuiCol_HeaderActive] = c.ImVec4_t{ .x = 65.0 / 255.0, .y = 255.0 / 255.0, .z = 255.0 / 255.0, .w = 200.0 / 255.0 };
-    imstyle.*.Colors[c.ImGuiCol_HeaderHovered] = c.ImVec4_t{ .x = 65.0 / 255.0, .y = 255.0 / 255.0, .z = 255.0 / 255.0, .w = 80.0 / 255.0 };
     imstyle.*.SeparatorTextAlign = c.ImVec2{ .x = 1.0, .y = 0.0 };
-    imstyle.*.FrameRounding = 3;
+    imstyle.*.FrameRounding = 2;
+    imstyle.*.WindowPadding = c.ImVec2{ .x = 4.0, .y = 4.0 };
+    imstyle.*.FramePadding = c.ImVec2{ .x = 4.0, .y = 2.0 };
+    imstyle.*.ItemSpacing = c.ImVec2{ .x = 6.0, .y = 2.0 };
+    imstyle.*.CellPadding = c.ImVec2{ .x = 4.0, .y = 1.0 };
 
     const shader_version = switch (gl.info.api) {
         .gl => (

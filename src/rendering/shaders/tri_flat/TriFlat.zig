@@ -27,6 +27,7 @@ projection_matrix_uniform: c_int = undefined,
 ambiant_color_uniform: c_int = undefined,
 light_position_uniform: c_int = undefined,
 vertex_color_uniform: c_int = undefined,
+dim_backfaces_uniform: c_int = undefined,
 
 position_attrib: VAO.VertexAttribInfo = undefined,
 
@@ -51,6 +52,7 @@ fn init() !TriFlat {
     tf.ambiant_color_uniform = gl.GetUniformLocation(tf.program.index, "u_ambiant_color");
     tf.light_position_uniform = gl.GetUniformLocation(tf.program.index, "u_light_position");
     tf.vertex_color_uniform = gl.GetUniformLocation(tf.program.index, "u_vertex_color");
+    tf.dim_backfaces_uniform = gl.GetUniformLocation(tf.program.index, "u_dim_backfaces");
 
     tf.position_attrib = .{
         .index = @intCast(gl.GetAttribLocation(tf.program.index, "a_position")),
@@ -71,6 +73,7 @@ pub const Parameters = struct {
     ambiant_color: [4]f32 = .{ 0.1, 0.1, 0.1, 1 },
     light_position: [3]f32 = .{ 10, 0, 100 },
     vertex_color: [4]f32 = .{ 0.8, 0.8, 0.8, 1 },
+    dim_backfaces: bool = true,
 
     pub fn init() Parameters {
         return .{
@@ -106,6 +109,7 @@ pub const Parameters = struct {
         gl.Uniform4fv(p.shader.ambiant_color_uniform, 1, @ptrCast(&p.ambiant_color));
         gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
         gl.Uniform4fv(p.shader.vertex_color_uniform, 1, @ptrCast(&p.vertex_color));
+        gl.Uniform1i(p.shader.dim_backfaces_uniform, @intFromBool(p.dim_backfaces));
 
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);

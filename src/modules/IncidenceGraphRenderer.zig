@@ -73,7 +73,7 @@ const IncidenceGraphRendererParameters = struct {
     },
 
     pub fn init() IncidenceGraphRendererParameters {
-        return .{
+        var parameters: IncidenceGraphRendererParameters = .{
             .point_sphere_shader_parameters = PointSphere.Parameters.init(),
             .point_sphere_color_per_vertex_shader_parameters = PointSphereColorPerVertex.Parameters.init(),
             .point_sphere_scalar_per_vertex_shader_parameters = PointSphereScalarPerVertex.Parameters.init(),
@@ -84,6 +84,12 @@ const IncidenceGraphRendererParameters = struct {
             .tri_flat_color_per_face_shader_parameters = TriFlatColorPerFace.Parameters.init(),
             .tri_flat_scalar_per_face_shader_parameters = TriFlatScalarPerFace.Parameters.init(),
         };
+        parameters.tri_flat_shader_parameters.dim_backfaces = false;
+        parameters.tri_flat_color_per_vertex_shader_parameters.dim_backfaces = false;
+        parameters.tri_flat_scalar_per_vertex_shader_parameters.dim_backfaces = false;
+        parameters.tri_flat_color_per_face_shader_parameters.dim_backfaces = false;
+        parameters.tri_flat_scalar_per_face_shader_parameters.dim_backfaces = false;
+        return parameters;
     }
 
     pub fn deinit(self: *IncidenceGraphRendererParameters) void {

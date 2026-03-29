@@ -30,6 +30,7 @@ min_value_uniform: c_int = undefined,
 max_value_uniform: c_int = undefined,
 draw_isolines_uniform: c_int = undefined,
 nb_isolines_uniform: c_int = undefined,
+dim_backfaces_uniform: c_int = undefined,
 
 position_attrib: VAO.VertexAttribInfo = undefined,
 scalar_attrib: VAO.VertexAttribInfo = undefined,
@@ -59,6 +60,7 @@ fn init() !TriFlatScalarPerVertex {
     tfspv.max_value_uniform = gl.GetUniformLocation(tfspv.program.index, "u_max_value");
     tfspv.draw_isolines_uniform = gl.GetUniformLocation(tfspv.program.index, "u_draw_isolines");
     tfspv.nb_isolines_uniform = gl.GetUniformLocation(tfspv.program.index, "u_nb_isolines");
+    tfspv.dim_backfaces_uniform = gl.GetUniformLocation(tfspv.program.index, "u_dim_backfaces");
 
     tfspv.position_attrib = .{
         .index = @intCast(gl.GetAttribLocation(tfspv.program.index, "a_position")),
@@ -88,6 +90,7 @@ pub const Parameters = struct {
     max_value: f32 = 1.0,
     draw_isolines: bool = false,
     nb_isolines: i32 = 10,
+    dim_backfaces: bool = true,
 
     pub fn init() Parameters {
         return .{
@@ -126,8 +129,9 @@ pub const Parameters = struct {
         gl.Uniform3fv(p.shader.light_position_uniform, 1, @ptrCast(&p.light_position));
         gl.Uniform1f(p.shader.min_value_uniform, p.min_value);
         gl.Uniform1f(p.shader.max_value_uniform, p.max_value);
-        gl.Uniform1i(p.shader.draw_isolines_uniform, if (p.draw_isolines) 1 else 0);
+        gl.Uniform1i(p.shader.draw_isolines_uniform, @intFromBool(p.draw_isolines));
         gl.Uniform1i(p.shader.nb_isolines_uniform, p.nb_isolines);
+        gl.Uniform1i(p.shader.dim_backfaces_uniform, @intFromBool(p.dim_backfaces));
 
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);

@@ -444,6 +444,7 @@ module: Module = .{
     .vtable = &.{
         .surfaceMeshCreated = surfaceMeshCreated,
         .surfaceMeshDestroyed = surfaceMeshDestroyed,
+        // TODO: should manage SurfaceMesh connectivity & vertex_position updates
         // TODO: should manage the destruction of the PointClouds and IncidenceGraph
         .rightPanel = rightPanel,
     },
