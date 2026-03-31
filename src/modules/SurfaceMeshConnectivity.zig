@@ -70,7 +70,7 @@ fn triangulateFaces(
 fn remesh(
     smc: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
-    sm_bvh: bvh.TrianglesBVH,
+    sm_bvh: *bvh.TrianglesBVH,
     edge_length_factor: f32,
     adaptive: bool,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -175,7 +175,7 @@ fn generateConvexHull(
 ) !void {
     var timer = try std.time.Timer.start();
 
-    var pc: PointCloud = try .init(smc.app_ctx.allocator);
+    var pc: PointCloud = try .init(smc.app_ctx.allocator, &smc.app_ctx.point_cloud_store.point_buffer_pool);
     defer pc.deinit();
     const point_position = try pc.addData(Vec3f, "position");
     var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
@@ -326,7 +326,7 @@ pub fn rightClickMenu(m: *Module) void {
             if (c.ImGui_ButtonEx("Remesh", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 smc.remesh(
                     sm,
-                    info.bvh,
+                    &info.bvh,
                     UiData.edge_length_factor,
                     UiData.adaptive_remeshing,
                     info.std_datas.vertex_position.?,

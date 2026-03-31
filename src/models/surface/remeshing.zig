@@ -49,7 +49,7 @@ fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
 pub fn pliantRemeshing(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    sm_bvh: bvh.TrianglesBVH,
+    sm_bvh: *bvh.TrianglesBVH,
     edge_length_factor: f32,
     adaptive: bool,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),

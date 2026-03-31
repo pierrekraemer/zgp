@@ -479,6 +479,10 @@ pub const ParallelCellTaskRunner = struct {
         }
     }
 
+    pub fn reset(pctr: *ParallelCellTaskRunner) void {
+        pctr.iterator.reset();
+    }
+
     fn runTaskOnBuffer(task: anytype, buf: []Cell) void {
         for (buf) |cell| {
             task.run(cell);

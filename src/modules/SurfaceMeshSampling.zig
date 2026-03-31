@@ -158,7 +158,7 @@ fn uniformSampling(
 fn poissonDiskSampling(
     sms: *SurfaceMeshSampling,
     sm: *SurfaceMesh,
-    sm_bvh: bvh.TrianglesBVH,
+    sm_bvh: *bvh.TrianglesBVH,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     min_distance: f32,
@@ -268,7 +268,7 @@ pub fn rightPanel(m: *Module) void {
         if (c.ImGui_ButtonEx("Poisson disk sampling", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
             sms.poissonDiskSampling(
                 sm,
-                info.bvh,
+                &info.bvh,
                 info.std_datas.vertex_position.?,
                 info.std_datas.face_normal.?,
                 UiData.min_distance,

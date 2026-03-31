@@ -126,7 +126,7 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     }
     const pc = try pcs.allocator.create(PointCloud);
     errdefer pcs.allocator.destroy(pc);
-    pc.* = try .init(pcs.allocator);
+    pc.* = try .init(pcs.allocator, &pcs.point_buffer_pool);
     errdefer pc.deinit();
     const owned_name = try pcs.allocator.dupeZ(u8, name);
     errdefer pcs.allocator.free(owned_name);

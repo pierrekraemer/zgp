@@ -11,7 +11,7 @@ const geometry_utils = @import("../../geometry/utils.zig");
 const bvh = @import("../../geometry/bvh.zig");
 
 pub fn shrinkingBall(
-    sm_bvh: bvh.TrianglesBVH,
+    sm_bvh: *bvh.TrianglesBVH,
     p: Vec3f,
     n: Vec3f,
 ) ?Vec4f {
@@ -53,11 +53,11 @@ pub fn shrinkingBall(
     return .{ c[0], c[1], c[2], r };
 }
 
-/// Compute the
+/// Compute the shrinking balls for all vertices of the given SurfaceMesh
 pub fn computeVertexShrinkingBalls(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    sm_bvh: bvh.TrianglesBVH,
+    sm_bvh: *bvh.TrianglesBVH,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_shrinking_ball: SurfaceMesh.CellData(.vertex, ?Vec4f),
@@ -66,7 +66,7 @@ pub fn computeVertexShrinkingBalls(
         const Task = @This();
 
         surface_mesh: *const SurfaceMesh,
-        sm_bvh: bvh.TrianglesBVH,
+        sm_bvh: *bvh.TrianglesBVH,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_shrinking_ball: SurfaceMesh.CellData(.vertex, ?Vec4f),

@@ -58,7 +58,7 @@ pub fn uniformlySamplePointsOnSurface(
 pub fn poissonDiskSamplePointsOnSurface(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    sm_bvh: bvh.TrianglesBVH,
+    sm_bvh: *bvh.TrianglesBVH,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     pc: *PointCloud,

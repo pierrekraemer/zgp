@@ -37,7 +37,7 @@ fbo: FBO = undefined,
 fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = undefined,
 infinite_grid_parameters: InfiniteGrid.Parameters = undefined,
 
-background_color: Vec4f = .{ 0.48, 0.48, 0.48, 1 },
+background_color: Vec4f = .{ 0.35, 0.35, 0.35, 1 },
 show_grid: bool = true,
 
 needs_redraw: bool = true,
