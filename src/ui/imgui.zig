@@ -13,15 +13,29 @@ const IncidenceGraph = @import("../models/incidenceGraph/IncidenceGraph.zig");
 
 const Data = @import("../utils/data.zig").Data;
 
+// const icons_glyph_ranges = [_]c.ImWchar{ c.ICON_MIN_FA, c.ICON_MAX_FA, 0 };
+
 pub fn init(sdl_window: *c.SDL_Window, gl_context: c.SDL_GLContext) void {
     _ = c.CIMGUI_CHECKVERSION();
     _ = c.ImGui_CreateContext(null);
+    c.ImGui_StyleColorsDark(null);
 
     const font_size: f32 = 16.0;
+
+    const imstyle = c.ImGui_GetStyle();
+    imstyle.*.FontSizeBase = font_size;
+    imstyle.*.SeparatorTextAlign = c.ImVec2{ .x = 1.0, .y = 0.0 };
+    imstyle.*.FrameRounding = 2;
+    imstyle.*.WindowPadding = c.ImVec2{ .x = 4.0, .y = 4.0 };
+    imstyle.*.FramePadding = c.ImVec2{ .x = 4.0, .y = 2.0 };
+    imstyle.*.ItemSpacing = c.ImVec2{ .x = 6.0, .y = 2.0 };
+    imstyle.*.CellPadding = c.ImVec2{ .x = 4.0, .y = 1.0 };
+
     const imio = c.ImGui_GetIO();
     imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard | c.ImGuiConfigFlags_DockingEnable | c.ImGuiConfigFlags_ViewportsEnable;
+
+    // _ = c.ImFontAtlas_AddFontDefaultVector(imio.*.Fonts, null);
     _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/ui/DroidSans.ttf", font_size, null, null);
-    // _ = c.ImFontAtlas_AddFontDefault(imio.*.Fonts, null);
     var font_config: c.ImFontConfig = .{};
     font_config.MergeMode = true;
     font_config.SizePixels = font_size;
@@ -29,18 +43,9 @@ pub fn init(sdl_window: *c.SDL_Window, gl_context: c.SDL_GLContext) void {
     font_config.GlyphMaxAdvanceX = font_size;
     font_config.RasterizerMultiply = 1.0;
     font_config.RasterizerDensity = 1.0;
+    font_config.ExtraSizeScale = 1.0;
     _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/ui/fa-regular-400.ttf", font_size, &font_config, null);
     _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/ui/fa-solid-900.ttf", font_size, &font_config, null);
-
-    c.ImGui_StyleColorsDark(null);
-
-    const imstyle = c.ImGui_GetStyle();
-    imstyle.*.SeparatorTextAlign = c.ImVec2{ .x = 1.0, .y = 0.0 };
-    imstyle.*.FrameRounding = 2;
-    imstyle.*.WindowPadding = c.ImVec2{ .x = 4.0, .y = 4.0 };
-    imstyle.*.FramePadding = c.ImVec2{ .x = 4.0, .y = 2.0 };
-    imstyle.*.ItemSpacing = c.ImVec2{ .x = 6.0, .y = 2.0 };
-    imstyle.*.CellPadding = c.ImVec2{ .x = 4.0, .y = 1.0 };
 
     const shader_version = switch (gl.info.api) {
         .gl => (

@@ -71,6 +71,7 @@ pub fn build(b: *std.Build) void {
         // .lto = lto,
         .platforms = &[_]cimgui.Platform{.SDL3},
         .renderers = &[_]cimgui.Renderer{.OpenGL3},
+        .docking = true,
     });
     const cimgui_lib = cimgui_dep.artifact("cimgui");
     exe_mod.linkLibrary(cimgui_lib);
