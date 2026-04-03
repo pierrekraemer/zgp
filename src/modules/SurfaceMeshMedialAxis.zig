@@ -231,26 +231,51 @@ const MedialAxisData = struct {
     fn computeClusters(mad: *MedialAxisData) !void {
         assert(mad.initialized);
         // clean up previous clusters
-        mad.vertex_sphere.data.fill(null);
         var p_it = mad.spheres.pointIterator();
         while (p_it.next()) |s| {
             mad.sphere_cluster.valuePtr(s).*.clearRetainingCapacity();
             mad.sphere_error.valuePtr(s).* = 0.0;
         }
+        // mad.vertex_sphere.data.fill(null);
         // compute new clusters
         var v_it: SurfaceMesh.CellIterator = try .init(mad.surface_mesh, .vertex);
         defer v_it.deinit();
         while (v_it.next()) |v| {
+            const v_sqem = mad.vertex_sqem.valuePtr(v);
             var min_distance = std.math.floatMax(f32);
             var min_sphere: PointCloud.Point = undefined;
-            var s_it = mad.spheres.pointIterator();
-            while (s_it.next()) |s| {
-                const sc = mad.sphere_center.value(s);
-                const sr = mad.sphere_radius.value(s);
-                const dist = mad.vertex_sqem.valuePtr(v).eval(.{ sc[0], sc[1], sc[2], sr });
-                if (dist < min_distance) {
-                    min_distance = dist;
-                    min_sphere = s;
+            const old_sphere = mad.vertex_sphere.value(v);
+            // if there is a sphere assigned to this vertex, restrict the search to it and its neighbors
+            if (old_sphere) |os| {
+                {
+                    const sc = mad.sphere_center.value(os);
+                    const sr = mad.sphere_radius.value(os);
+                    const dist = v_sqem.eval(.{ sc[0], sc[1], sc[2], sr });
+                    if (dist < min_distance) {
+                        min_distance = dist;
+                        min_sphere = os;
+                    }
+                }
+                const s_neighbors = mad.sphere_neighbor_spheres.valuePtr(os);
+                for (s_neighbors.keys()) |osn| {
+                    const osc = mad.sphere_center.value(osn);
+                    const osr = mad.sphere_radius.value(osn);
+                    const dist = v_sqem.eval(.{ osc[0], osc[1], osc[2], osr });
+                    if (dist < min_distance) {
+                        min_distance = dist;
+                        min_sphere = osn;
+                    }
+                }
+            } else { // if there is no sphere assigned to this vertex, search all spheres
+                var s_it = mad.spheres.pointIterator();
+                while (s_it.next()) |s| {
+                    const sc = mad.sphere_center.value(s);
+                    const sr = mad.sphere_radius.value(s);
+                    const dist = v_sqem.eval(.{ sc[0], sc[1], sc[2], sr });
+                    if (dist < min_distance) {
+                        min_distance = dist;
+                        min_sphere = s;
+                    }
                 }
             }
             try mad.sphere_cluster.valuePtr(min_sphere).append(mad.app_ctx.allocator, v);
@@ -259,7 +284,7 @@ const MedialAxisData = struct {
             mad.vertex_sphere_error.valuePtr(v).* = min_distance;
             mad.sphere_error.valuePtr(min_sphere).* += min_distance;
         }
-        // check clusters sizes
+        // check clusters sizes & remove too small clusters
         var s_it = mad.spheres.pointIterator();
         while (s_it.next()) |s| {
             if (mad.sphere_cluster.valuePtr(s).items.len < 4) {
@@ -270,6 +295,21 @@ const MedialAxisData = struct {
                 mad.sphere_cluster.valuePtr(s).deinit(mad.app_ctx.allocator);
                 mad.sphere_neighbor_spheres.valuePtr(s).deinit();
                 mad.spheres.removePoint(s); // it is safe to remove the point while iterating
+            }
+        }
+        // update clusters neighbors
+        s_it.reset();
+        while (s_it.next()) |s| {
+            mad.sphere_neighbor_spheres.valuePtr(s).clearRetainingCapacity();
+        }
+        var e_it: SurfaceMesh.CellIterator = try .init(mad.surface_mesh, .edge);
+        defer e_it.deinit();
+        while (e_it.next()) |e| {
+            const s1 = mad.vertex_sphere.value(.{ .vertex = e.dart() });
+            const s2 = mad.vertex_sphere.value(.{ .vertex = mad.surface_mesh.phi1(e.dart()) });
+            if (s1 != null and s2 != null and s1.? != s2.?) {
+                try mad.sphere_neighbor_spheres.valuePtr(s1.?).put(s2.?, {});
+                try mad.sphere_neighbor_spheres.valuePtr(s2.?).put(s1.?, {});
             }
         }
     }
@@ -286,15 +326,35 @@ const MedialAxisData = struct {
         while (nb_iterations < max_iterations) {
             s_it.reset();
             while (s_it.next()) |s| {
+                // add the SQEM contributions of all vertices in the cluster
                 const cluster = mad.sphere_cluster.valuePtr(s);
                 var cluster_sqem: SQEM = .zero;
                 for (cluster.items) |v| {
                     cluster_sqem.add(mad.vertex_sqem.valuePtr(v));
                 }
+                // compute the optimal sphere
                 const optimized_sphere = cluster_sqem.optimalSphere();
                 if (optimized_sphere) |opt_s| {
-                    mad.sphere_center.valuePtr(s).* = .{ opt_s[0], opt_s[1], opt_s[2] };
-                    mad.sphere_radius.valuePtr(s).* = opt_s[3];
+                    // correct the optimal sphere on the medial axis
+                    const s_center = .{ opt_s[0], opt_s[1], opt_s[2] };
+                    const cp, const sp = mad.surface_mesh_bvh.closestPointWithSurfacePoint(s_center);
+                    var cp_dir = vec.normalized3f(vec.sub3f(cp, s_center));
+                    const cp_normal = sp.readData(Vec3f, .face, mad.face_normal);
+                    if (vec.dot3f(cp_dir, cp_normal) <= 0.0) {
+                        cp_dir = vec.mulScalar3f(cp_dir, -1.0);
+                    }
+                    const corrected_sphere = medialAxis.shrinkingBall(
+                        mad.surface_mesh_bvh,
+                        vec.add3f(cp, vec.mulScalar3f(cp_dir, -1e-4)),
+                        cp_dir,
+                    );
+                    if (corrected_sphere) |cs| {
+                        mad.sphere_center.valuePtr(s).* = .{ cs[0], cs[1], cs[2] };
+                        mad.sphere_radius.valuePtr(s).* = cs[3];
+                    } else {
+                        mad.sphere_center.valuePtr(s).* = .{ opt_s[0], opt_s[1], opt_s[2] };
+                        mad.sphere_radius.valuePtr(s).* = opt_s[3];
+                    }
                 }
             }
 
@@ -354,49 +414,15 @@ const MedialAxisData = struct {
         mad.sphere_error.valuePtr(s).* = 0.0;
         mad.sphere_neighbor_spheres.valuePtr(s).* = .init(mad.app_ctx.allocator);
 
-        try mad.computeClusters();
-    }
+        try mad.sphere_neighbor_spheres.valuePtr(worst_sphere).put(s, {});
+        try mad.sphere_neighbor_spheres.valuePtr(s).put(worst_sphere, {});
+        mad.vertex_sphere.valuePtr(worst_vertex).* = s;
 
-    pub fn correctSpheres(mad: *MedialAxisData) void {
-        var s_it = mad.spheres.pointIterator();
-        while (s_it.next()) |s| {
-            const s_center = mad.sphere_center.value(s);
-            const cp, const sp = mad.surface_mesh_bvh.closestPointWithSurfacePoint(s_center);
-            var cp_dir = vec.normalized3f(vec.sub3f(cp, s_center));
-            const cp_normal = sp.readData(Vec3f, .face, mad.face_normal);
-            if (vec.dot3f(cp_dir, cp_normal) <= 0.0) {
-                cp_dir = vec.mulScalar3f(cp_dir, -1.0);
-            }
-            const corrected_sphere = medialAxis.shrinkingBall(
-                mad.surface_mesh_bvh,
-                vec.add3f(cp, vec.mulScalar3f(cp_dir, -1e-4)),
-                cp_dir,
-            );
-            if (corrected_sphere) |cs| {
-                mad.sphere_center.valuePtr(s).* = .{ cs[0], cs[1], cs[2] };
-                mad.sphere_radius.valuePtr(s).* = cs[3];
-            }
-        }
+        try mad.computeClusters();
     }
 
     pub fn updateSkeleton(mad: *MedialAxisData) !void {
         assert(mad.initialized);
-
-        var s_it = mad.spheres.pointIterator();
-        while (s_it.next()) |s| {
-            mad.sphere_neighbor_spheres.valuePtr(s).clearRetainingCapacity();
-        }
-
-        var e_it: SurfaceMesh.CellIterator = try .init(mad.surface_mesh, .edge);
-        defer e_it.deinit();
-        while (e_it.next()) |e| {
-            const s1 = mad.vertex_sphere.value(.{ .vertex = e.dart() });
-            const s2 = mad.vertex_sphere.value(.{ .vertex = mad.surface_mesh.phi1(e.dart()) });
-            if (s1 != null and s2 != null and s1.? != s2.?) {
-                try mad.sphere_neighbor_spheres.valuePtr(s1.?).put(s2.?, {});
-                try mad.sphere_neighbor_spheres.valuePtr(s2.?).put(s1.?, {});
-            }
-        }
 
         var sphere_skeleton_vertex = try mad.spheres.addData(IncidenceGraph.Cell, "__sphere_skeleton_vertex");
         defer mad.spheres.removeData(IncidenceGraph.Cell, sphere_skeleton_vertex);
@@ -404,6 +430,7 @@ const MedialAxisData = struct {
         defer skeleton_edges.deinit();
 
         mad.skeleton.clearRetainingCapacity();
+        var s_it = mad.spheres.pointIterator();
         s_it.reset();
         while (s_it.next()) |s| {
             const v = try mad.skeleton.addVertex();
@@ -504,7 +531,7 @@ pub fn rightPanel(m: *Module) void {
     const sm = smma.app_ctx.selected_model.surface_mesh;
 
     const UiData = struct {
-        var line_quadric_epsilon: f32 = 0.1;
+        var line_quadric_epsilon: f32 = 0.2;
         var nb_spheres: usize = 100;
     };
 
@@ -516,7 +543,7 @@ pub fn rightPanel(m: *Module) void {
     const info = sm_store.surfaceMeshInfo(sm);
     const mad = smma.surface_meshes_data.getPtr(sm).?;
     c.ImGui_PushID("Line Quadric Epsilon");
-    _ = c.ImGui_SliderFloatEx("", &UiData.line_quadric_epsilon, 0.0001, 1.0, "%.4f", c.ImGuiSliderFlags_Logarithmic);
+    _ = c.ImGui_SliderFloatEx("", &UiData.line_quadric_epsilon, 0.001, 1.0, "%.3f", c.ImGuiSliderFlags_Logarithmic);
     c.ImGui_PopID();
     const disabled =
         !info.bvh.initialized or
@@ -558,7 +585,6 @@ pub fn rightPanel(m: *Module) void {
             mad.updateSpheres() catch |err| {
                 std.debug.print("Failed to update Medial Axis spheres for SurfaceMesh: {}\n", .{err});
             };
-            mad.correctSpheres();
             mad.updateSkeleton() catch |err| {
                 std.debug.print("Failed to update Medial Axis skeleton for SurfaceMesh: {}\n", .{err});
             };
@@ -581,7 +607,6 @@ pub fn rightPanel(m: *Module) void {
             mad.updateSpheres() catch |err| {
                 std.debug.print("Failed to update Medial Axis spheres for SurfaceMesh: {}\n", .{err});
             };
-            mad.correctSpheres();
             mad.updateSkeleton() catch |err| {
                 std.debug.print("Failed to update Medial Axis skeleton for SurfaceMesh: {}\n", .{err});
             };
@@ -614,7 +639,12 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.requestRedraw();
         }
         _ = c.ImGui_InputInt("Number of spheres", @ptrCast(&UiData.nb_spheres));
-        if (c.ImGui_ButtonEx("Build skeleton", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+        if (c.ImGui_ButtonEx("Build skeleton from scratch", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            var timer = std.time.Timer.start() catch |err| {
+                std.debug.print("Failed to start timer: {}", .{err});
+                return;
+            };
+
             mad.init(
                 &info.bvh,
                 info.std_datas.vertex_position.?,
@@ -633,13 +663,10 @@ pub fn rightPanel(m: *Module) void {
                     std.debug.print("Failed to split worse Medial Axis sphere for SurfaceMesh: {}\n", .{err});
                     break;
                 };
-                for (0..5) |_| {
-                    mad.updateSpheres() catch |err| {
-                        std.debug.print("Failed to update Medial Axis spheres for SurfaceMesh: {}\n", .{err});
-                        break;
-                    };
-                    mad.correctSpheres();
-                }
+                mad.updateSpheres() catch |err| {
+                    std.debug.print("Failed to update Medial Axis spheres for SurfaceMesh: {}\n", .{err});
+                    break;
+                };
             }
             mad.updateSkeleton() catch |err| {
                 std.debug.print("Failed to update Medial Axis skeleton for SurfaceMesh: {}\n", .{err});
@@ -654,6 +681,9 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(mad.surface_mesh, .vertex, Vec3f, mad.vertex_sphere_color);
             mad.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(mad.surface_mesh, .vertex, f32, mad.vertex_sphere_error);
             mad.app_ctx.requestRedraw();
+
+            const elapsed: f64 = @floatFromInt(timer.read());
+            zgp_log.info("Medial Axis skeleton computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
         }
     }
 }
