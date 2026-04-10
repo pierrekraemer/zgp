@@ -120,22 +120,24 @@ pub fn addListener(pcs: *PointCloudStore, module: *Module) !void {
 }
 
 pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
-    const maybe_point_cloud = pcs.point_clouds.get(name);
-    if (maybe_point_cloud) |_| {
+    if (pcs.point_clouds.contains(name)) {
         return error.ModelNameAlreadyExists;
     }
+
+    // create and init the PointCloud
     const pc = try pcs.allocator.create(PointCloud);
     errdefer pcs.allocator.destroy(pc);
-    pc.* = try .init(pcs.allocator, &pcs.point_buffer_pool);
+    try pc.init(pcs.allocator, &pcs.point_buffer_pool);
     errdefer pc.deinit();
+
+    // duplicate name and store the PointCloud pointer in the map
     const owned_name = try pcs.allocator.dupeZ(u8, name);
     errdefer pcs.allocator.free(owned_name);
     try pcs.point_clouds.put(pcs.allocator, owned_name, pc);
     errdefer _ = pcs.point_clouds.swapRemove(owned_name);
-    var info: PointCloudInfo = .init();
-    errdefer info.deinit();
-    try pcs.point_clouds_info.put(pcs.allocator, pc, info);
-    errdefer _ = pcs.point_clouds_info.swapRemove(pc);
+
+    // store the PointCloudInfo in the map
+    try pcs.point_clouds_info.put(pcs.allocator, pc, .init());
 
     for (pcs.listeners.items) |module| {
         module.pointCloudCreated(pc);
@@ -150,10 +152,6 @@ pub fn destroyPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
         return;
     };
 
-    for (pcs.listeners.items) |module| {
-        module.pointCloudDestroyed(pc);
-    }
-
     switch (pcs.selected_model.*) {
         .point_cloud => |selected_pc| {
             if (selected_pc == pc) {
@@ -162,11 +160,17 @@ pub fn destroyPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
         },
         else => {},
     }
+
+    for (pcs.listeners.items) |module| {
+        module.pointCloudDestroyed(pc);
+    }
+
+    pcs.point_clouds_info.getPtr(pc).?.deinit();
+    _ = pcs.point_clouds_info.swapRemove(pc);
+
     _ = pcs.point_clouds.swapRemove(name);
     pcs.allocator.free(name); // free the name
-    const info = pcs.point_clouds_info.getPtr(pc).?;
-    info.deinit();
-    _ = pcs.point_clouds_info.swapRemove(pc);
+
     pc.deinit();
     pcs.allocator.destroy(pc); // destroy the PointCloud
 }

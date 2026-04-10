@@ -64,42 +64,37 @@ pub const Cell = union(enum) {
 pub const CellType = std.meta.Tag(Cell);
 
 allocator: std.mem.Allocator,
-cell_buffer_pool: *BufferPool(Cell),
+cell_buffer_pool: *BufferPool(Cell), // the BufferPool is shared between SurfaceMeshes (owned by the SurfaceMeshStore)
 
 /// Data containers for darts & the different cell types.
-dart_data: *DataContainer, // also used to store corner & halfedge data
-vertex_data: *DataContainer,
-edge_data: *DataContainer,
-face_data: *DataContainer,
+dart_data: DataContainer, // also used to store corner & halfedge data
+vertex_data: DataContainer,
+edge_data: DataContainer,
+face_data: DataContainer,
 
 /// Dart data: connectivity, cell indices, boundary marker.
-dart_phi1: *Data(Dart) = undefined,
-dart_phi_1: *Data(Dart) = undefined,
-dart_phi2: *Data(Dart) = undefined,
-dart_vertex_index: *Data(u32) = undefined, // index of the vertex the dart belongs to
-dart_edge_index: *Data(u32) = undefined, // index of the edge the dart belongs to
-dart_face_index: *Data(u32) = undefined, // index of the face the dart belongs to
-dart_boundary_marker: *Data(bool) = undefined, // true if the dart is a boundary dart (i.e. belongs to a boundary face)
+dart_phi1: *Data(Dart),
+dart_phi_1: *Data(Dart),
+dart_phi2: *Data(Dart),
+dart_vertex_index: *Data(u32), // index of the vertex the dart belongs to
+dart_edge_index: *Data(u32), // index of the edge the dart belongs to
+dart_face_index: *Data(u32), // index of the face the dart belongs to
+dart_boundary_marker: *Data(bool), // true if the dart is a boundary dart (i.e. belongs to a boundary face)
 
-nb_boundary_darts: u32 = 0, // number of boundary darts; only updated upon calls to SurfaceMeshStore.surfaceMeshConnectivityUpdated
+nb_boundary_darts: u32, // number of boundary darts; only updated upon calls to SurfaceMeshStore.surfaceMeshConnectivityUpdated
 
 /// CellSets for each cell type
-vertex_sets: std.StringHashMapUnmanaged(*CellSet),
-edge_sets: std.StringHashMapUnmanaged(*CellSet),
-face_sets: std.StringHashMapUnmanaged(*CellSet),
+vertex_sets: std.StringHashMapUnmanaged(CellSet),
+edge_sets: std.StringHashMapUnmanaged(CellSet),
+face_sets: std.StringHashMapUnmanaged(CellSet),
 
-pub fn init(allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !SurfaceMesh {
-    var sm: SurfaceMesh = .{
-        .allocator = allocator,
-        .cell_buffer_pool = cell_buffer_pool,
-        .dart_data = try .init(allocator),
-        .vertex_data = try .init(allocator),
-        .edge_data = try .init(allocator),
-        .face_data = try .init(allocator),
-        .vertex_sets = .empty,
-        .edge_sets = .empty,
-        .face_sets = .empty,
-    };
+pub fn init(sm: *SurfaceMesh, allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !void {
+    sm.allocator = allocator;
+    sm.cell_buffer_pool = cell_buffer_pool;
+    try sm.dart_data.init(allocator);
+    try sm.vertex_data.init(allocator);
+    try sm.edge_data.init(allocator);
+    try sm.face_data.init(allocator);
     sm.dart_phi1 = try sm.dart_data.addData(Dart, "phi1");
     sm.dart_phi_1 = try sm.dart_data.addData(Dart, "phi_1");
     sm.dart_phi2 = try sm.dart_data.addData(Dart, "phi2");
@@ -107,7 +102,10 @@ pub fn init(allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !
     sm.dart_edge_index = try sm.dart_data.addData(u32, "edge_index");
     sm.dart_face_index = try sm.dart_data.addData(u32, "face_index");
     sm.dart_boundary_marker = try sm.dart_data.getMarker();
-    return sm;
+    sm.nb_boundary_darts = 0;
+    sm.vertex_sets = .empty;
+    sm.edge_sets = .empty;
+    sm.face_sets = .empty;
 }
 
 pub fn deinit(sm: *SurfaceMesh) void {
@@ -115,22 +113,22 @@ pub fn deinit(sm: *SurfaceMesh) void {
     while (vertex_sets_it.next()) |entry| {
         const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addCellSet)
         sm.allocator.free(name); // free the name
-        entry.value_ptr.*.deinit();
-        sm.allocator.destroy(entry.value_ptr.*);
+        entry.value_ptr.deinit();
+        // sm.allocator.destroy(entry.value_ptr.*);
     }
     var edge_sets_it = sm.edge_sets.iterator();
     while (edge_sets_it.next()) |entry| {
         const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addCellSet)
         sm.allocator.free(name); // free the name
-        entry.value_ptr.*.deinit();
-        sm.allocator.destroy(entry.value_ptr.*);
+        entry.value_ptr.deinit();
+        // sm.allocator.destroy(entry.value_ptr.*);
     }
     var face_sets_it = sm.face_sets.iterator();
     while (face_sets_it.next()) |entry| {
         const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addCellSet)
         sm.allocator.free(name); // free the name
-        entry.value_ptr.*.deinit();
-        sm.allocator.destroy(entry.value_ptr.*);
+        entry.value_ptr.deinit();
+        // sm.allocator.destroy(entry.value_ptr.*);
     }
     sm.vertex_sets.deinit(sm.allocator);
     sm.edge_sets.deinit(sm.allocator);
@@ -145,15 +143,15 @@ pub fn deinit(sm: *SurfaceMesh) void {
 pub fn clearRetainingCapacity(sm: *SurfaceMesh) void {
     var vertex_sets_it = sm.vertex_sets.iterator();
     while (vertex_sets_it.next()) |entry| {
-        entry.value_ptr.*.clear();
+        entry.value_ptr.clear();
     }
     var edge_sets_it = sm.edge_sets.iterator();
     while (edge_sets_it.next()) |entry| {
-        entry.value_ptr.*.clear();
+        entry.value_ptr.clear();
     }
     var face_sets_it = sm.face_sets.iterator();
     while (face_sets_it.next()) |entry| {
-        entry.value_ptr.*.clear();
+        entry.value_ptr.clear();
     }
     sm.dart_data.clearRetainingCapacity();
     sm.vertex_data.clearRetainingCapacity();
@@ -638,12 +636,12 @@ pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
 }
 
 /// Returns the data container associated with the given CellType.
-pub fn dataContainer(sm: *const SurfaceMesh, cell_type: CellType) *DataContainer {
+pub fn dataContainerPtr(sm: anytype, cell_type: CellType) if (@typeInfo(@TypeOf(sm)).pointer.is_const) *const DataContainer else *DataContainer {
     return switch (cell_type) {
-        .halfedge, .corner => sm.dart_data,
-        .vertex => sm.vertex_data,
-        .edge => sm.edge_data,
-        .face => sm.face_data,
+        .halfedge, .corner => &sm.dart_data,
+        .vertex => &sm.vertex_data,
+        .edge => &sm.edge_data,
+        .face => &sm.face_data,
         else => unreachable,
     };
 }
@@ -653,14 +651,14 @@ pub fn dataContainer(sm: *const SurfaceMesh, cell_type: CellType) *DataContainer
 pub fn addData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
     return .{
         .surface_mesh = sm,
-        .data = try sm.dataContainer(cell_type).addData(T, name),
+        .data = try sm.dataContainerPtr(cell_type).addData(T, name),
     };
 }
 
 /// Returns a handle to the data array of the type `T` associated with cells of the given CellType
 /// if it exists with the given name, otherwise returns null.
 pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) ?CellData(cell_type, T) {
-    if (sm.dataContainer(cell_type).getData(T, name)) |d| {
+    if (sm.dataContainerPtr(cell_type).getData(T, name)) |d| {
         return .{
             .surface_mesh = sm,
             .data = d,
@@ -674,14 +672,14 @@ pub fn getData(sm: *const SurfaceMesh, comptime cell_type: CellType, comptime T:
 pub fn getOrAddData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
     return .{
         .surface_mesh = sm,
-        .data = try sm.dataContainer(cell_type).getOrAddData(T, name),
+        .data = try sm.dataContainerPtr(cell_type).getOrAddData(T, name),
     };
 }
 
 /// Removes the data array of the type `T` associated with cells of the given CellType.
 pub fn removeData(sm: *SurfaceMesh, comptime cell_type: CellType, comptime T: type, cellData: CellData(cell_type, T)) void {
     assert(cellData.surface_mesh == sm);
-    sm.dataContainer(cell_type).removeData(&cellData.data.data_gen);
+    sm.dataContainerPtr(cell_type).removeData(&cellData.data.data_gen);
 }
 
 /// Gets a new index for the given cell type.
@@ -707,18 +705,20 @@ pub fn addCellSet(sm: *SurfaceMesh, cell_type: CellType, name: []const u8) !*Cel
         .face => &sm.face_sets,
         else => unreachable,
     };
-    const maybe_cell_set = cell_sets.get(name);
-    if (maybe_cell_set) |_| {
+    if (cell_sets.contains(name)) {
         return error.CellSetNameAlreadyExists;
     }
+
     const owned_name = try sm.allocator.dupeZ(u8, name); // duplicate name to own the hashmap key
     errdefer sm.allocator.free(owned_name);
-    const cell_set = try sm.allocator.create(CellSet);
-    errdefer sm.allocator.destroy(cell_set);
-    cell_set.* = try .init(sm, cell_type, owned_name);
-    errdefer cell_set.deinit();
-    try cell_sets.put(sm.allocator, owned_name, cell_set);
-    return cell_set;
+
+    // const cell_set = try sm.allocator.create(CellSet);
+    // errdefer sm.allocator.destroy(cell_set);
+    // cell_set.* = try .init(sm, cell_type, owned_name);
+    // errdefer cell_set.deinit();
+
+    try cell_sets.put(sm.allocator, owned_name, try .init(sm, cell_type, owned_name));
+    return cell_sets.getPtr(owned_name).?;
 }
 
 /// Removes the cell set of the given CellType.
@@ -731,11 +731,12 @@ pub fn removeCellSet(sm: *SurfaceMesh, cell_type: CellType, cell_set: *CellSet) 
         .face => &sm.face_sets,
         else => unreachable,
     };
-    if (cell_sets.remove(cell_set.name)) |_| {
+    cell_set.deinit();
+    if (cell_sets.remove(cell_set.name)) {
         const name: [:0]const u8 = @ptrCast(cell_set.name); // the name is a null-terminated string (dupeZ in addData)
         sm.allocator.free(name); // free the name
-        cell_set.deinit();
-        sm.allocator.destroy(cell_set);
+        // cell_set.deinit();
+        // sm.allocator.destroy(cell_set);
     }
 }
 
@@ -837,7 +838,7 @@ pub fn setDartCellIndex(sm: *SurfaceMesh, d: Dart, cell_type: CellType, index: u
         .face => sm.dart_face_index,
         else => unreachable,
     };
-    var data_container = sm.dataContainer(cell_type);
+    var data_container = sm.dataContainerPtr(cell_type);
     const old_index: u32 = index_data.value(d);
     if (index != invalid_index) {
         data_container.refIndex(index);
@@ -913,7 +914,7 @@ pub fn indexCells(sm: *SurfaceMesh, cell_type: CellType) !void {
 /// For boundary faces, as there is no index and no data container, an explicit traversal is also needed).
 pub fn nbCells(sm: *SurfaceMesh, cell_type: CellType) u32 {
     return switch (cell_type) {
-        .vertex, .edge, .face => sm.dataContainer(cell_type).nbElements(),
+        .vertex, .edge, .face => sm.dataContainerPtr(cell_type).nbElements(),
         .halfedge, .corner => sm.dart_data.nbElements() - sm.nb_boundary_darts,
         .boundary => unreachable,
         // .boundary => blk: {
@@ -1056,7 +1057,7 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
                 else => unreachable,
             }
         }
-        var data_container = sm.dataContainer(cell_type);
+        var data_container = sm.dataContainerPtr(cell_type);
         var idx = data_container.firstIndex();
         while (idx != data_container.lastIndex()) : (idx = data_container.nextIndex(idx)) {
             const ref_count = data_container.nb_refs.value(idx);

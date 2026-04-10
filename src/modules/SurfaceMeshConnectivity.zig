@@ -175,7 +175,8 @@ fn generateConvexHull(
 ) !void {
     var timer = try std.time.Timer.start();
 
-    var pc: PointCloud = try .init(smc.app_ctx.allocator, &smc.app_ctx.point_cloud_store.point_buffer_pool);
+    var pc: PointCloud = undefined;
+    try pc.init(smc.app_ctx.allocator, &smc.app_ctx.point_cloud_store.point_buffer_pool);
     defer pc.deinit();
     const point_position = try pc.addData(Vec3f, "position");
     var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);

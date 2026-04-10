@@ -123,22 +123,24 @@ pub fn addListener(igs: *IncidenceGraphStore, module: *Module) !void {
 }
 
 pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*IncidenceGraph {
-    const maybe_incidence_graph = igs.incidence_graphs.get(name);
-    if (maybe_incidence_graph) |_| {
+    if (igs.incidence_graphs.contains(name)) {
         return error.ModelNameAlreadyExists;
     }
+
+    // create and init the IncidenceGraph
     const ig = try igs.allocator.create(IncidenceGraph);
     errdefer igs.allocator.destroy(ig);
-    ig.* = try .init(igs.allocator, &igs.cell_buffer_pool);
+    try ig.init(igs.allocator, &igs.cell_buffer_pool);
     errdefer ig.deinit();
+
+    // duplicate name and store the IncidenceGraph pointer in the map
     const owned_name = try igs.allocator.dupeZ(u8, name);
     errdefer igs.allocator.free(owned_name);
     try igs.incidence_graphs.put(igs.allocator, owned_name, ig);
     errdefer _ = igs.incidence_graphs.swapRemove(owned_name);
-    var info: IncidenceGraphInfo = .init();
-    errdefer info.deinit();
-    try igs.incidence_graphs_info.put(igs.allocator, ig, info);
-    errdefer _ = igs.incidence_graphs_info.swapRemove(ig);
+
+    // store the IncidenceGraphInfo in the map
+    try igs.incidence_graphs_info.put(igs.allocator, ig, .init());
 
     for (igs.listeners.items) |module| {
         module.incidenceGraphCreated(ig);
@@ -153,10 +155,6 @@ pub fn destroyIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) voi
         return;
     };
 
-    for (igs.listeners.items) |module| {
-        module.incidenceGraphDestroyed(ig);
-    }
-
     switch (igs.selected_model.*) {
         .incidence_graph => |selected_ig| {
             if (selected_ig == ig) {
@@ -165,11 +163,17 @@ pub fn destroyIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) voi
         },
         else => {},
     }
+
+    for (igs.listeners.items) |module| {
+        module.incidenceGraphDestroyed(ig);
+    }
+
+    igs.incidence_graphs_info.getPtr(ig).?.deinit();
+    _ = igs.incidence_graphs_info.swapRemove(ig);
+
     _ = igs.incidence_graphs.swapRemove(name);
     igs.allocator.free(name); // free the name
-    const info = igs.incidence_graphs_info.getPtr(ig).?;
-    info.deinit();
-    _ = igs.incidence_graphs_info.swapRemove(ig);
+
     ig.deinit();
     igs.allocator.destroy(ig); // destroy the IncidenceGraph
 }
@@ -308,7 +312,7 @@ pub fn leftPanel(igs: *IncidenceGraphStore) void {
 
             const cells = std.fmt.bufPrintZ(&buf_name, "{s}", .{@tagName(cell_type)}) catch "";
             const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{ig.nbCells(cell_type)}) catch "";
-            const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{ig.dataContainer(cell_type).density() * 100}) catch "";
+            const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{ig.dataContainerPtr(cell_type).density() * 100}) catch "";
 
             c.ImGui_TableNextRow();
             _ = c.ImGui_TableNextColumn();

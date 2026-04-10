@@ -208,7 +208,7 @@ pub fn surfaceMeshCellDataComboBox(
             c.ImGui_SetItemDefaultFocus();
         }
 
-        var data_container = surface_mesh.dataContainer(cell_type);
+        var data_container = surface_mesh.dataContainerPtr(cell_type);
         var data_it = data_container.typedIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
@@ -246,7 +246,7 @@ pub fn surfaceMeshCellSetComboBox(
         };
         var cell_set_it = cell_sets.iterator();
         while (cell_set_it.next()) |entry| {
-            const cell_set = entry.value_ptr.*;
+            const cell_set = entry.value_ptr;
             const is_selected = if (selected_cell_set) |scs| scs == cell_set else false;
             if (c.ImGui_SelectableEx(cell_set.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 return .{ .changed = cell_set };
@@ -319,7 +319,7 @@ pub fn incidenceGraphCellDataComboBox(
             c.ImGui_SetItemDefaultFocus();
         }
 
-        var data_container = incidence_graph.dataContainer(cell_type);
+        var data_container = incidence_graph.dataContainerPtr(cell_type);
         var data_it = data_container.typedIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;

@@ -35,20 +35,18 @@ pub fn Data(comptime T: type) type {
         data_gen: DataGen,
         data: std.ArrayList(T),
 
-        pub fn init(name: []const u8, container: *DataContainer) Data(T) {
-            return .{
-                .data_gen = .{
-                    .name = name,
-                    .container = container,
-                    .type_id = typeId(T),
-                    .vtable = &.{
-                        .deinit = deinit,
-                        .ensureSize = ensureSize,
-                        .clearRetainingCapacity = clearRetainingCapacity,
-                    },
+        pub fn init(self: *Self, name: []const u8, container: *DataContainer) void {
+            self.data_gen = .{
+                .name = name,
+                .container = container,
+                .type_id = typeId(T),
+                .vtable = &.{
+                    .deinit = deinit,
+                    .ensureSize = ensureSize,
+                    .clearRetainingCapacity = clearRetainingCapacity,
                 },
-                .data = .empty,
             };
+            self.data = .empty;
         }
 
         /// Part of the DataGen interface.
@@ -247,34 +245,33 @@ pub const DataContainer = struct {
     available_markers: std.ArrayList(*Data(bool)),
     // size is the maximum index that has been allocated so far
     // to get the number of current active elements, use nbElements()
-    size: u32 = 0,
+    size: u32,
     // the is_active data is used to mark indices as active or inactive
     // active indices are currently used and processed by iterators
     // inactive indices are skipped by iterators, and will be used upon calls to getIndex
-    is_active: *Data(bool) = undefined,
+    is_active: *Data(bool),
     // the nb_refs data is used by the refIndex/unrefIndex API
     // each time an index is activated and returned by getIndex, its nb_refs is set to 0
     // each time an active index is refed, its nb_refs is incremented
     // each time an active index is unreffed, if its nb_refs reaches 0, it becomes inactive and is added to the list of inactive indices
-    nb_refs: *Data(u32) = undefined,
+    nb_refs: *Data(u32),
     // the list of inactive indices is implemented as a linked list using the nb_refs data as a backing store (which is not used on inactive indices)
     // when an index is released, the first_inactive_index is set to this index
     // and its nb_refs is set to the previous first_inactive_index
-    first_inactive_index: u32 = invalid_index,
+    first_inactive_index: u32,
     // nb_inactive_indices is used to quickly check if there are any inactive indices and quickly compute nbElements and density
-    nb_inactive_indices: u32 = 0,
+    nb_inactive_indices: u32,
 
-    pub fn init(allocator: std.mem.Allocator) !*DataContainer {
-        const dc = try allocator.create(DataContainer);
-        dc.* = .{
-            .allocator = allocator,
-            .datas = .empty,
-            .markers = try .initCapacity(allocator, 16),
-            .available_markers = try .initCapacity(allocator, 16),
-        };
+    pub fn init(dc: *DataContainer, allocator: std.mem.Allocator) !void {
+        dc.allocator = allocator;
+        dc.datas = .empty;
+        dc.markers = try .initCapacity(allocator, 16);
+        dc.available_markers = try .initCapacity(allocator, 16);
+        dc.size = 0;
         dc.is_active = try dc.addData(bool, "__is_active");
         dc.nb_refs = try dc.addData(u32, "__nb_refs");
-        return dc;
+        dc.first_inactive_index = invalid_index;
+        dc.nb_inactive_indices = 0;
     }
 
     pub fn deinit(dc: *DataContainer) void {
@@ -282,7 +279,7 @@ pub const DataContainer = struct {
         while (it.next()) |entry| {
             const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addData)
             dc.allocator.free(name); // free the name
-            entry.value_ptr.*.deinit(); // Data(T) destroy is called in DataGen deinit
+            entry.value_ptr.*.deinit(); // DataGen deinit calls Data(T) deinit which also destroys the Data(T)
         }
         for (dc.markers.items) |marker| {
             marker.data_gen.deinit();
@@ -290,7 +287,6 @@ pub const DataContainer = struct {
         dc.datas.deinit(dc.allocator);
         dc.markers.deinit(dc.allocator);
         dc.available_markers.deinit(dc.allocator);
-        dc.allocator.destroy(dc);
     }
 
     pub fn clearRetainingCapacity(dc: *DataContainer) void {
@@ -308,16 +304,17 @@ pub const DataContainer = struct {
     }
 
     pub fn addData(dc: *DataContainer, comptime T: type, name: []const u8) !*Data(T) {
-        const maybe_data_gen = dc.datas.get(name);
-        if (maybe_data_gen) |_| {
+        if (dc.datas.contains(name)) {
             return error.DataNameAlreadyExists;
         }
+
         const owned_name = try dc.allocator.dupeZ(u8, name); // duplicate name to own the hashmap key
         errdefer dc.allocator.free(owned_name);
+
         const data = try dc.allocator.create(Data(T));
-        errdefer dc.allocator.destroy(data);
-        data.* = .init(owned_name, dc);
-        errdefer data.data_gen.deinit();
+        data.init(owned_name, dc);
+        errdefer data.data_gen.deinit(); // DataGen deinit calls Data(T) deinit which also destroys the Data(T)
+
         try data.data_gen.ensureSize(dc.size);
         try dc.datas.put(dc.allocator, owned_name, &data.data_gen);
         return data;
@@ -347,7 +344,7 @@ pub const DataContainer = struct {
         if (dc.datas.remove(data_gen.name)) {
             const name: [:0]const u8 = @ptrCast(data_gen.name); // the name is a null-terminated string (dupeZ in addData)
             dc.allocator.free(name); // free the name
-            data_gen.deinit(); // Data(T) destroy is called in Data(T) deinit
+            data_gen.deinit(); // DataGen deinit calls Data(T) deinit which also destroys the Data(T)
         }
     }
 
@@ -394,10 +391,12 @@ pub const DataContainer = struct {
             marker.fill(false); // reset the marker to false before reuse
             return marker;
         }
+
         // same as for addData, but the name is not used (the marker is not stored in the hashmap)
         const marker = try dc.allocator.create(Data(bool));
-        errdefer dc.allocator.destroy(marker);
-        marker.* = .init("", dc);
+        marker.init("", dc);
+        errdefer marker.data_gen.deinit(); // DataGen deinit calls Data(T) deinit which also destroys the Data(T)
+
         try marker.data_gen.ensureSize(dc.size);
         marker.fill(false); // marker is filled with false before use
         try dc.markers.append(dc.allocator, marker);

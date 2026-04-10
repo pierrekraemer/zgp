@@ -16,16 +16,14 @@ const BufferPool = @import("../../utils/BufferPool.zig").BufferPool;
 pub const Point = u32;
 
 allocator: std.mem.Allocator,
-point_buffer_pool: *BufferPool(Point),
+point_buffer_pool: *BufferPool(Point), // the BufferPool is shared between PointClouds (owned by the PointCloudStore)
 
-point_data: *DataContainer,
+point_data: DataContainer,
 
-pub fn init(allocator: std.mem.Allocator, point_buffer_pool: *BufferPool(Point)) !PointCloud {
-    return .{
-        .allocator = allocator,
-        .point_buffer_pool = point_buffer_pool,
-        .point_data = try .init(allocator),
-    };
+pub fn init(pc: *PointCloud, allocator: std.mem.Allocator, point_buffer_pool: *BufferPool(Point)) !void {
+    pc.allocator = allocator;
+    pc.point_buffer_pool = point_buffer_pool;
+    try pc.point_data.init(allocator);
 }
 
 pub fn deinit(pc: *PointCloud) void {

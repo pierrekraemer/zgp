@@ -32,32 +32,29 @@ pub const Cell = union(enum) {
 pub const CellType = std.meta.Tag(Cell);
 
 allocator: std.mem.Allocator,
-cell_buffer_pool: *BufferPool(Cell),
+cell_buffer_pool: *BufferPool(Cell), // the BufferPool is shared between IncidenceGraphs (owned by the IncidenceGraphStore)
 
-vertex_data: *DataContainer,
-edge_data: *DataContainer,
-face_data: *DataContainer,
+vertex_data: DataContainer,
+edge_data: DataContainer,
+face_data: DataContainer,
 
-vertex_incident_edges: *Data(std.ArrayList(CellIndex)) = undefined,
-edge_incident_vertices: *Data([2]CellIndex) = undefined,
-edge_incident_faces: *Data(std.ArrayList(CellIndex)) = undefined,
-face_incident_edges: *Data(std.ArrayList(CellIndex)) = undefined,
-face_incident_edges_dir: *Data(std.ArrayList(bool)) = undefined,
+vertex_incident_edges: *Data(std.ArrayList(CellIndex)),
+edge_incident_vertices: *Data([2]CellIndex),
+edge_incident_faces: *Data(std.ArrayList(CellIndex)),
+face_incident_edges: *Data(std.ArrayList(CellIndex)),
+face_incident_edges_dir: *Data(std.ArrayList(bool)),
 
-pub fn init(allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !IncidenceGraph {
-    var ig: IncidenceGraph = .{
-        .allocator = allocator,
-        .cell_buffer_pool = cell_buffer_pool,
-        .vertex_data = try .init(allocator),
-        .edge_data = try .init(allocator),
-        .face_data = try .init(allocator),
-    };
+pub fn init(ig: *IncidenceGraph, allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !void {
+    ig.allocator = allocator;
+    ig.cell_buffer_pool = cell_buffer_pool;
+    try ig.vertex_data.init(allocator);
+    try ig.edge_data.init(allocator);
+    try ig.face_data.init(allocator);
     ig.vertex_incident_edges = try ig.vertex_data.addData(std.ArrayList(CellIndex), "vertex_incident_edges");
     ig.edge_incident_vertices = try ig.edge_data.addData([2]CellIndex, "edge_incident_vertices");
     ig.edge_incident_faces = try ig.edge_data.addData(std.ArrayList(CellIndex), "edge_incident_faces");
     ig.face_incident_edges = try ig.face_data.addData(std.ArrayList(CellIndex), "face_incident_edges");
     ig.face_incident_edges_dir = try ig.face_data.addData(std.ArrayList(bool), "face_incident_edges_dir");
-    return ig;
 }
 
 pub fn deinit(ig: *IncidenceGraph) void {
@@ -179,7 +176,7 @@ pub fn cellIterator(ig: *IncidenceGraph, cell_type: CellType) CellIterator {
     var ci: CellIterator = .{
         .incidence_graph = ig,
         .cell_type = cell_type,
-        .cell_container = ig.dataContainer(cell_type),
+        .cell_container = ig.dataContainerPtr(cell_type),
     };
     ci.reset();
     return ci;
@@ -217,11 +214,11 @@ pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
 }
 
 /// Returns the data container associated with the given CellType.
-pub fn dataContainer(ig: *const IncidenceGraph, cell_type: CellType) *DataContainer {
+pub fn dataContainerPtr(ig: anytype, cell_type: CellType) if (@typeInfo(@TypeOf(ig)).pointer.is_const) *const DataContainer else *DataContainer {
     return switch (cell_type) {
-        .vertex => ig.vertex_data,
-        .edge => ig.edge_data,
-        .face => ig.face_data,
+        .vertex => &ig.vertex_data,
+        .edge => &ig.edge_data,
+        .face => &ig.face_data,
     };
 }
 
@@ -230,14 +227,14 @@ pub fn dataContainer(ig: *const IncidenceGraph, cell_type: CellType) *DataContai
 pub fn addData(ig: *IncidenceGraph, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
     return .{
         .incidence_graph = ig,
-        .data = try ig.dataContainer(cell_type).addData(T, name),
+        .data = try ig.dataContainerPtr(cell_type).addData(T, name),
     };
 }
 
 /// Returns a handle to the data array of the type `T` associated with cells of the given CellType
 /// if it exists with the given name, otherwise returns null.
 pub fn getData(ig: *const IncidenceGraph, comptime cell_type: CellType, comptime T: type, name: []const u8) ?CellData(cell_type, T) {
-    if (ig.dataContainer(cell_type).getData(T, name)) |d| {
+    if (ig.dataContainerPtr(cell_type).getData(T, name)) |d| {
         return .{
             .incidence_graph = ig,
             .data = d,
@@ -251,19 +248,19 @@ pub fn getData(ig: *const IncidenceGraph, comptime cell_type: CellType, comptime
 pub fn getOrAddData(ig: *IncidenceGraph, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
     return .{
         .incidence_graph = ig,
-        .data = try ig.dataContainer(cell_type).getOrAddData(T, name),
+        .data = try ig.dataContainerPtr(cell_type).getOrAddData(T, name),
     };
 }
 
 /// Removes the data array of the type `T` associated with cells of the given CellType.
 pub fn removeData(ig: *IncidenceGraph, comptime cell_type: CellType, comptime T: type, cellData: CellData(cell_type, T)) void {
     assert(cellData.incidence_graph == ig);
-    ig.dataContainer(cell_type).removeData(&cellData.data.data_gen);
+    ig.dataContainerPtr(cell_type).removeData(&cellData.data.data_gen);
 }
 
 /// Returns the number of cells of the given CellType in the given IncidenceGraph.
 pub fn nbCells(ig: *const IncidenceGraph, cell_type: CellType) u32 {
-    return ig.dataContainer(cell_type).nbElements();
+    return ig.dataContainerPtr(cell_type).nbElements();
 }
 
 /// Returns the degree of the given cell (number of d+1 incident cells).

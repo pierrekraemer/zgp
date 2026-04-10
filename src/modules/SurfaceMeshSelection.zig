@@ -481,16 +481,15 @@ pub fn rightPanel(m: *Module) void {
         if (c.ImGui_RadioButton(@tagName(cell_type), sms.selecting_cell_type == cell_type)) {
             sms.selecting_cell_type = cell_type;
             const cell_sets = switch (cell_type) {
-                .vertex => sm.vertex_sets,
-                .edge => sm.edge_sets,
-                .face => sm.face_sets,
+                .vertex => &sm.vertex_sets,
+                .edge => &sm.edge_sets,
+                .face => &sm.face_sets,
                 else => unreachable,
             };
             // select the first cell set of the new cell type if it exists, otherwise set to null
-
             sd.selected_cell_set = if (cell_sets.count() > 0) blk: {
                 var it = cell_sets.iterator();
-                break :blk it.next().?.value_ptr.*;
+                break :blk it.next().?.value_ptr;
             } else null;
             sms.app_ctx.requestRedraw();
         }

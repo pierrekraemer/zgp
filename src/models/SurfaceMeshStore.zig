@@ -152,22 +152,24 @@ pub fn addListener(sms: *SurfaceMeshStore, module: *Module) !void {
 }
 
 pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh {
-    const maybe_surface_mesh = sms.surface_meshes.get(name);
-    if (maybe_surface_mesh) |_| {
+    if (sms.surface_meshes.contains(name)) {
         return error.ModelNameAlreadyExists;
     }
+
+    // create and init the SurfaceMesh
     var sm = try sms.allocator.create(SurfaceMesh);
     errdefer sms.allocator.destroy(sm);
-    sm.* = try .init(sms.allocator, &sms.cell_buffer_pool);
+    try sm.init(sms.allocator, &sms.cell_buffer_pool);
     errdefer sm.deinit();
+
+    // duplicate name and store the SurfaceMesh pointer in the map
     const owned_name = try sms.allocator.dupeZ(u8, name);
     errdefer sms.allocator.free(owned_name);
     try sms.surface_meshes.put(sms.allocator, owned_name, sm);
     errdefer _ = sms.surface_meshes.swapRemove(owned_name);
-    var info: SurfaceMeshInfo = .init();
-    errdefer info.deinit();
-    try sms.surface_meshes_info.put(sms.allocator, sm, info);
-    errdefer _ = sms.surface_meshes_info.swapRemove(sm);
+
+    // store the SurfaceMeshInfo in the map
+    try sms.surface_meshes_info.put(sms.allocator, sm, .init());
 
     for (sms.listeners.items) |module| {
         module.surfaceMeshCreated(sm);
@@ -182,10 +184,6 @@ pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
         return;
     };
 
-    for (sms.listeners.items) |module| {
-        module.surfaceMeshDestroyed(sm);
-    }
-
     switch (sms.selected_model.*) {
         .surface_mesh => |selected_sm| {
             if (selected_sm == sm) {
@@ -194,11 +192,17 @@ pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
         },
         else => {},
     }
+
+    for (sms.listeners.items) |module| {
+        module.surfaceMeshDestroyed(sm);
+    }
+
+    sms.surface_meshes_info.getPtr(sm).?.deinit();
+    _ = sms.surface_meshes_info.swapRemove(sm);
+
     _ = sms.surface_meshes.swapRemove(name);
     sms.allocator.free(name); // free the name
-    const info = sms.surface_meshes_info.getPtr(sm).?;
-    info.deinit();
-    _ = sms.surface_meshes_info.swapRemove(sm);
+
     sm.deinit();
     sms.allocator.destroy(sm); // destroy the SurfaceMesh
 }
@@ -277,24 +281,24 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
     // update the cells sets
     var vertex_sets_it = sm.vertex_sets.iterator();
     while (vertex_sets_it.next()) |entry| {
-        entry.value_ptr.*.update() catch |err| {
+        entry.value_ptr.update() catch |err| {
             zgp_log.err("Failed to update vertex set for SurfaceMesh: {}", .{err});
         };
-        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr.*);
+        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr);
     }
     var edge_sets_it = sm.edge_sets.iterator();
     while (edge_sets_it.next()) |entry| {
-        entry.value_ptr.*.update() catch |err| {
+        entry.value_ptr.update() catch |err| {
             zgp_log.err("Failed to update edge set for SurfaceMesh: {}", .{err});
         };
-        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr.*);
+        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr);
     }
     var face_sets_it = sm.face_sets.iterator();
     while (face_sets_it.next()) |entry| {
-        entry.value_ptr.*.update() catch |err| {
+        entry.value_ptr.update() catch |err| {
             zgp_log.err("Failed to update face set for SurfaceMesh: {}", .{err});
         };
-        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr.*);
+        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr);
     }
 
     // dispatch call to listeners
@@ -425,7 +429,7 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
 
             const cells = std.fmt.bufPrintZ(&buf_name, "{s}", .{@tagName(cell_type)}) catch "";
             const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{sm.nbCells(cell_type)}) catch "";
-            const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{sm.dataContainer(cell_type).density() * 100}) catch "";
+            const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{sm.dataContainerPtr(cell_type).density() * 100}) catch "";
 
             c.ImGui_TableNextRow();
             _ = c.ImGui_TableNextColumn();
