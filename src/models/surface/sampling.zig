@@ -72,8 +72,8 @@ pub fn poissonDiskSamplePointsOnSurface(
     const center = vec.mulScalar3f(vec.add3f(bb_min, bb_max), 0.5);
 
     const grid_unit_size = min_distance / @sqrt(3.0);
-    var grid: std.AutoHashMap([3]i32, Vec3f) = .init(app_ctx.allocator);
-    defer grid.deinit();
+    var grid: std.AutoHashMapUnmanaged([3]i32, Vec3f) = .empty;
+    defer grid.deinit(app_ctx.allocator);
 
     var active_points: std.ArrayList(SurfacePoint) = try .initCapacity(app_ctx.allocator, 1024);
     defer active_points.deinit(app_ctx.allocator);
@@ -101,7 +101,7 @@ pub fn poissonDiskSamplePointsOnSurface(
             @intFromFloat(pos_grid_coord[1]),
             @intFromFloat(pos_grid_coord[2]),
         };
-        try grid.put(grid_idx, pos); // add the point in the spatial grid
+        try grid.put(app_ctx.allocator, grid_idx, pos); // add the point in the spatial grid
     }
 
     var r = app_ctx.rng.random();
@@ -170,7 +170,7 @@ pub fn poissonDiskSamplePointsOnSurface(
                     @intFromFloat(candidate_pos_grid_coord[1]),
                     @intFromFloat(candidate_pos_grid_coord[2]),
                 };
-                try grid.put(grid_idx, candidate_pos); // add the point in the spatial grid
+                try grid.put(app_ctx.allocator, grid_idx, candidate_pos); // add the point in the spatial grid
                 new_point_added = true;
                 break;
             }

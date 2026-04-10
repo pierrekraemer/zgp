@@ -24,7 +24,7 @@ pub fn init(allocator: std.mem.Allocator, point_buffer_pool: *BufferPool(Point))
     return .{
         .allocator = allocator,
         .point_buffer_pool = point_buffer_pool,
-        .point_data = try DataContainer.init(allocator),
+        .point_data = try .init(allocator),
     };
 }
 

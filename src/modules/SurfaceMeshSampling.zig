@@ -83,17 +83,16 @@ module: Module = .{
         .rightPanel = rightPanel,
     },
 },
-surface_meshes_data: std.AutoHashMap(*SurfaceMesh, SamplingData),
+surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, SamplingData) = .empty,
 
 pub fn init(app_ctx: *AppContext) SurfaceMeshSampling {
     return .{
         .app_ctx = app_ctx,
-        .surface_meshes_data = .init(app_ctx.allocator),
     };
 }
 
 pub fn deinit(sms: *SurfaceMeshSampling) void {
-    sms.surface_meshes_data.deinit();
+    sms.surface_meshes_data.deinit(sms.app_ctx.allocator);
 }
 
 /// Part of the Module interface.
@@ -113,7 +112,7 @@ pub fn pointCloudDestroyed(m: *Module, point_cloud: *PointCloud) void {
 /// Create and store a SamplingData for the created SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const sms: *SurfaceMeshSampling = @alignCast(@fieldParentPtr("module", m));
-    sms.surface_meshes_data.put(surface_mesh, .{ .app_ctx = sms.app_ctx }) catch |err| {
+    sms.surface_meshes_data.put(sms.app_ctx.allocator, surface_mesh, .{ .app_ctx = sms.app_ctx }) catch |err| {
         std.debug.print("Failed to store SamplingData for new SurfaceMesh: {}\n", .{err});
         return;
     };

@@ -116,12 +116,11 @@ module: Module = .{
         .rightPanel = rightPanel,
     },
 },
-parameters: std.AutoHashMap(*SurfaceMesh, SurfaceMeshRendererParameters),
+parameters: std.AutoHashMapUnmanaged(*SurfaceMesh, SurfaceMeshRendererParameters) = .empty,
 
 pub fn init(app_ctx: *AppContext) SurfaceMeshRenderer {
     return .{
         .app_ctx = app_ctx,
-        .parameters = .init(app_ctx.allocator),
     };
 }
 
@@ -130,14 +129,14 @@ pub fn deinit(smr: *SurfaceMeshRenderer) void {
     while (p_it.next()) |entry| {
         entry.value_ptr.deinit();
     }
-    smr.parameters.deinit();
+    smr.parameters.deinit(smr.app_ctx.allocator);
 }
 
 /// Part of the Module interface.
 /// Create and store a SurfaceMeshRendererParameters for the new SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smr: *SurfaceMeshRenderer = @alignCast(@fieldParentPtr("module", m));
-    smr.parameters.put(surface_mesh, SurfaceMeshRendererParameters.init()) catch |err| {
+    smr.parameters.put(smr.app_ctx.allocator, surface_mesh, SurfaceMeshRendererParameters.init()) catch |err| {
         std.debug.print("Failed to create SurfaceMeshRendererParameters for new SurfaceMesh: {}\n", .{err});
         return;
     };

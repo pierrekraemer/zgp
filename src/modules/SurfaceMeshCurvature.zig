@@ -27,17 +27,16 @@ module: Module = .{
         .rightClickMenu = rightClickMenu,
     },
 },
-surface_meshes_curvature_datas: std.AutoHashMap(*SurfaceMesh, curvature.SurfaceMeshCurvatureDatas),
+surface_meshes_curvature_datas: std.AutoHashMapUnmanaged(*SurfaceMesh, curvature.SurfaceMeshCurvatureDatas) = .empty,
 
 pub fn init(app_ctx: *AppContext) SurfaceMeshCurvature {
     return .{
         .app_ctx = app_ctx,
-        .surface_meshes_curvature_datas = .init(app_ctx.allocator),
     };
 }
 
 pub fn deinit(smc: *SurfaceMeshCurvature) void {
-    smc.surface_meshes_curvature_datas.deinit();
+    smc.surface_meshes_curvature_datas.deinit(smc.app_ctx.allocator);
 }
 
 fn computeVertexCurvatures(
@@ -80,7 +79,7 @@ pub fn surfaceMeshCurvatureDatas(smc: *SurfaceMeshCurvature, surface_mesh: *Surf
 /// Create and store a CurvatureDatas for the created SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smc: *SurfaceMeshCurvature = @alignCast(@fieldParentPtr("module", m));
-    _ = smc.surface_meshes_curvature_datas.put(surface_mesh, .{}) catch {
+    _ = smc.surface_meshes_curvature_datas.put(smc.app_ctx.allocator, surface_mesh, .{}) catch {
         zgp_log.err("Error creating CurvatureDatas for new SurfaceMesh", .{});
     };
 }

@@ -118,28 +118,27 @@ module: Module = .{
         .rightPanel = rightPanel,
     },
 },
-parameters: std.AutoHashMap(*IncidenceGraph, IncidenceGraphRendererParameters),
+parameters: std.AutoHashMapUnmanaged(*IncidenceGraph, IncidenceGraphRendererParameters) = .empty,
 
 pub fn init(app_ctx: *AppContext) IncidenceGraphRenderer {
     return .{
         .app_ctx = app_ctx,
-        .parameters = .init(app_ctx.allocator),
     };
 }
 
-pub fn deinit(smr: *IncidenceGraphRenderer) void {
-    var p_it = smr.parameters.iterator();
+pub fn deinit(igr: *IncidenceGraphRenderer) void {
+    var p_it = igr.parameters.iterator();
     while (p_it.next()) |entry| {
         entry.value_ptr.deinit();
     }
-    smr.parameters.deinit();
+    igr.parameters.deinit(igr.app_ctx.allocator);
 }
 
 /// Part of the Module interface.
 /// Create and store a IncidenceGraphRendererParameters for the new IncidenceGraph.
 pub fn incidenceGraphCreated(m: *Module, incidence_graph: *IncidenceGraph) void {
     const igr: *IncidenceGraphRenderer = @alignCast(@fieldParentPtr("module", m));
-    igr.parameters.put(incidence_graph, IncidenceGraphRendererParameters.init()) catch |err| {
+    igr.parameters.put(igr.app_ctx.allocator, incidence_graph, IncidenceGraphRendererParameters.init()) catch |err| {
         std.debug.print("Failed to create IncidenceGraphRendererParameters for new IncidenceGraph: {}\n", .{err});
         return;
     };

@@ -69,14 +69,12 @@ module: Module = .{
         .rightPanel = rightPanel,
     },
 },
-point_cloud_parameters: std.AutoHashMap(*PointCloud, VectorPerVertexRendererParameters),
-surface_mesh_parameters: std.AutoHashMap(*SurfaceMesh, VectorPerVertexRendererParameters),
+point_cloud_parameters: std.AutoHashMapUnmanaged(*PointCloud, VectorPerVertexRendererParameters) = .empty,
+surface_mesh_parameters: std.AutoHashMapUnmanaged(*SurfaceMesh, VectorPerVertexRendererParameters) = .empty,
 
 pub fn init(app_ctx: *AppContext) VectorPerVertexRenderer {
     return .{
         .app_ctx = app_ctx,
-        .point_cloud_parameters = .init(app_ctx.allocator),
-        .surface_mesh_parameters = .init(app_ctx.allocator),
     };
 }
 
@@ -89,15 +87,15 @@ pub fn deinit(vpvr: *VectorPerVertexRenderer) void {
     while (sm_it.next()) |entry| {
         entry.value_ptr.deinit();
     }
-    vpvr.point_cloud_parameters.deinit();
-    vpvr.surface_mesh_parameters.deinit();
+    vpvr.point_cloud_parameters.deinit(vpvr.app_ctx.allocator);
+    vpvr.surface_mesh_parameters.deinit(vpvr.app_ctx.allocator);
 }
 
 /// Part of the Module interface.
 /// Create and store a VectorPerVertexRendererParameters for the new PointCloud.
 pub fn pointCloudCreated(m: *Module, point_cloud: *PointCloud) void {
     const vpvr: *VectorPerVertexRenderer = @alignCast(@fieldParentPtr("module", m));
-    vpvr.point_cloud_parameters.put(point_cloud, VectorPerVertexRendererParameters.init(.point_cloud)) catch |err| {
+    vpvr.point_cloud_parameters.put(vpvr.app_ctx.allocator, point_cloud, VectorPerVertexRendererParameters.init(.point_cloud)) catch |err| {
         std.debug.print("Failed to create VectorPerVertexRendererParameters for new PointCloud: {}\n", .{err});
     };
 }
@@ -133,7 +131,7 @@ pub fn pointCloudStdDataChanged(m: *Module, point_cloud: *PointCloud, std_data: 
 /// Create and store a VectorPerVertexRendererParameters for the new SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const vpvr: *VectorPerVertexRenderer = @alignCast(@fieldParentPtr("module", m));
-    vpvr.surface_mesh_parameters.put(surface_mesh, VectorPerVertexRendererParameters.init(.surface_mesh)) catch |err| {
+    vpvr.surface_mesh_parameters.put(vpvr.app_ctx.allocator, surface_mesh, VectorPerVertexRendererParameters.init(.surface_mesh)) catch |err| {
         std.debug.print("Failed to create VectorPerVertexRendererParameters for new SurfaceMesh: {}\n", .{err});
     };
 }

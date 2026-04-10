@@ -84,9 +84,9 @@ dart_boundary_marker: *Data(bool) = undefined, // true if the dart is a boundary
 nb_boundary_darts: u32 = 0, // number of boundary darts; only updated upon calls to SurfaceMeshStore.surfaceMeshConnectivityUpdated
 
 /// CellSets for each cell type
-vertex_sets: std.StringHashMap(*CellSet),
-edge_sets: std.StringHashMap(*CellSet),
-face_sets: std.StringHashMap(*CellSet),
+vertex_sets: std.StringHashMapUnmanaged(*CellSet),
+edge_sets: std.StringHashMapUnmanaged(*CellSet),
+face_sets: std.StringHashMapUnmanaged(*CellSet),
 
 pub fn init(allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !SurfaceMesh {
     var sm: SurfaceMesh = .{
@@ -96,9 +96,9 @@ pub fn init(allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !
         .vertex_data = try .init(allocator),
         .edge_data = try .init(allocator),
         .face_data = try .init(allocator),
-        .vertex_sets = .init(allocator),
-        .edge_sets = .init(allocator),
-        .face_sets = .init(allocator),
+        .vertex_sets = .empty,
+        .edge_sets = .empty,
+        .face_sets = .empty,
     };
     sm.dart_phi1 = try sm.dart_data.addData(Dart, "phi1");
     sm.dart_phi_1 = try sm.dart_data.addData(Dart, "phi_1");
@@ -132,9 +132,9 @@ pub fn deinit(sm: *SurfaceMesh) void {
         entry.value_ptr.*.deinit();
         sm.allocator.destroy(entry.value_ptr.*);
     }
-    sm.vertex_sets.deinit();
-    sm.edge_sets.deinit();
-    sm.face_sets.deinit();
+    sm.vertex_sets.deinit(sm.allocator);
+    sm.edge_sets.deinit(sm.allocator);
+    sm.face_sets.deinit(sm.allocator);
 
     sm.dart_data.deinit();
     sm.vertex_data.deinit();
@@ -717,7 +717,7 @@ pub fn addCellSet(sm: *SurfaceMesh, cell_type: CellType, name: []const u8) !*Cel
     errdefer sm.allocator.destroy(cell_set);
     cell_set.* = try .init(sm, cell_type, owned_name);
     errdefer cell_set.deinit();
-    try cell_sets.put(owned_name, cell_set);
+    try cell_sets.put(sm.allocator, owned_name, cell_set);
     return cell_set;
 }
 

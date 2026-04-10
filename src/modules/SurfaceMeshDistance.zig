@@ -32,24 +32,23 @@ module: Module = .{
         .rightClickMenu = rightClickMenu,
     },
 },
-surface_meshes_data: std.AutoHashMap(*SurfaceMesh, DistanceData),
+surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, DistanceData) = .empty,
 
 pub fn init(app_ctx: *AppContext) SurfaceMeshDistance {
     return .{
         .app_ctx = app_ctx,
-        .surface_meshes_data = .init(app_ctx.allocator),
     };
 }
 
 pub fn deinit(smd: *SurfaceMeshDistance) void {
-    smd.surface_meshes_data.deinit();
+    smd.surface_meshes_data.deinit(smd.app_ctx.allocator);
 }
 
 /// Part of the Module interface.
 /// Create and store a DistanceData for the created SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smd: *SurfaceMeshDistance = @alignCast(@fieldParentPtr("module", m));
-    smd.surface_meshes_data.put(surface_mesh, .{}) catch |err| {
+    smd.surface_meshes_data.put(smd.app_ctx.allocator, surface_mesh, .{}) catch |err| {
         std.debug.print("Failed to store DistanceData for new SurfaceMesh: {}\n", .{err});
         return;
     };

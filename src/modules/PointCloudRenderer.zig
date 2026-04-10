@@ -102,12 +102,11 @@ module: Module = .{
         .draw = draw,
     },
 },
-parameters: std.AutoHashMap(*PointCloud, PointCloudRendererParameters),
+parameters: std.AutoHashMapUnmanaged(*PointCloud, PointCloudRendererParameters) = .empty,
 
 pub fn init(app_ctx: *AppContext) PointCloudRenderer {
     return .{
         .app_ctx = app_ctx,
-        .parameters = .init(app_ctx.allocator),
     };
 }
 
@@ -116,14 +115,14 @@ pub fn deinit(pcr: *PointCloudRenderer) void {
     while (p_it.next()) |entry| {
         entry.value_ptr.deinit();
     }
-    pcr.parameters.deinit();
+    pcr.parameters.deinit(pcr.app_ctx.allocator);
 }
 
 /// Part of the Module interface.
 /// Create and store a PointCloudRendererParameters for the created PointCloud.
 pub fn pointCloudCreated(m: *Module, point_cloud: *PointCloud) void {
     const pcr: *PointCloudRenderer = @alignCast(@fieldParentPtr("module", m));
-    pcr.parameters.put(point_cloud, PointCloudRendererParameters.init()) catch |err| {
+    pcr.parameters.put(pcr.app_ctx.allocator, point_cloud, PointCloudRendererParameters.init()) catch |err| {
         std.debug.print("Failed to create PointCloudRendererParameters for new PointCloud: {}\n", .{err});
         return;
     };

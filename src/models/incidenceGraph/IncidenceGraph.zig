@@ -48,9 +48,9 @@ pub fn init(allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !
     var ig: IncidenceGraph = .{
         .allocator = allocator,
         .cell_buffer_pool = cell_buffer_pool,
-        .vertex_data = try DataContainer.init(allocator),
-        .edge_data = try DataContainer.init(allocator),
-        .face_data = try DataContainer.init(allocator),
+        .vertex_data = try .init(allocator),
+        .edge_data = try .init(allocator),
+        .face_data = try .init(allocator),
     };
     ig.vertex_incident_edges = try ig.vertex_data.addData(std.ArrayList(CellIndex), "vertex_incident_edges");
     ig.edge_incident_vertices = try ig.edge_data.addData([2]CellIndex, "edge_incident_vertices");

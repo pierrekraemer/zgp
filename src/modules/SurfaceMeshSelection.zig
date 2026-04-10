@@ -82,7 +82,7 @@ module: Module = .{
         .rightPanel = rightPanel,
     },
 },
-surface_meshes_data: std.AutoHashMap(*SurfaceMesh, SelectionData),
+surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, SelectionData) = .empty,
 
 selection_mode: SelectionMode = .single,
 selection_radius: f32 = 0.05,
@@ -94,7 +94,6 @@ hovered_cell_ibo: IBO,
 pub fn init(app_ctx: *AppContext) SurfaceMeshSelection {
     return .{
         .app_ctx = app_ctx,
-        .surface_meshes_data = .init(app_ctx.allocator),
         .hovered_cell_ibo = .init(),
     };
 }
@@ -104,14 +103,14 @@ pub fn deinit(sms: *SurfaceMeshSelection) void {
     while (smdata_it.next()) |entry| {
         entry.value_ptr.deinit();
     }
-    sms.surface_meshes_data.deinit();
+    sms.surface_meshes_data.deinit(sms.app_ctx.allocator);
 }
 
 /// Part of the Module interface.
 /// Create and store a SelectionData for the created SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const sms: *SurfaceMeshSelection = @alignCast(@fieldParentPtr("module", m));
-    sms.surface_meshes_data.put(surface_mesh, SelectionData.init()) catch |err| {
+    sms.surface_meshes_data.put(sms.app_ctx.allocator, surface_mesh, SelectionData.init()) catch |err| {
         std.debug.print("Failed to store SelectionData for new SurfaceMesh: {}\n", .{err});
         return;
     };
@@ -481,7 +480,18 @@ pub fn rightPanel(m: *Module) void {
         c.ImGui_SameLine();
         if (c.ImGui_RadioButton(@tagName(cell_type), sms.selecting_cell_type == cell_type)) {
             sms.selecting_cell_type = cell_type;
-            sd.selected_cell_set = null;
+            const cell_sets = switch (cell_type) {
+                .vertex => sm.vertex_sets,
+                .edge => sm.edge_sets,
+                .face => sm.face_sets,
+                else => unreachable,
+            };
+            // select the first cell set of the new cell type if it exists, otherwise set to null
+
+            sd.selected_cell_set = if (cell_sets.count() > 0) blk: {
+                var it = cell_sets.iterator();
+                break :blk it.next().?.value_ptr.*;
+            } else null;
             sms.app_ctx.requestRedraw();
         }
     }

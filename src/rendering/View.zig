@@ -94,6 +94,12 @@ pub fn resize(view: *View, width: c_int, height: c_int) void {
 }
 
 pub fn draw(view: *View, modules: []*Module) void {
+    gl.ClearColor(
+        view.background_color[0],
+        view.background_color[1],
+        view.background_color[2],
+        view.background_color[3],
+    );
     gl.Viewport(0, 0, view.width, view.height);
     if (view.needs_redraw) {
         gl.BindFramebuffer(gl.FRAMEBUFFER, view.fbo.index);

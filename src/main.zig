@@ -1,6 +1,5 @@
 const std = @import("std");
 const builtin = @import("builtin");
-const gl = @import("gl");
 pub const c = @cImport({
     @cDefine("SDL_DISABLE_OLD_NAMES", {});
     @cInclude("SDL3/SDL.h");
@@ -310,13 +309,6 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     _ = appstate;
 
     const style = c.ImGui_GetStyle();
-
-    gl.ClearColor(
-        app_ctx.view.background_color[0],
-        app_ctx.view.background_color[1],
-        app_ctx.view.background_color[2],
-        app_ctx.view.background_color[3],
-    );
 
     // Draw the main view
     // ******************

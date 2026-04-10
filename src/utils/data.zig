@@ -242,7 +242,7 @@ pub fn Data(comptime T: type) type {
 
 pub const DataContainer = struct {
     allocator: std.mem.Allocator,
-    datas: std.StringHashMap(*DataGen),
+    datas: std.StringHashMapUnmanaged(*DataGen),
     markers: std.ArrayList(*Data(bool)),
     available_markers: std.ArrayList(*Data(bool)),
     // size is the maximum index that has been allocated so far
@@ -250,13 +250,14 @@ pub const DataContainer = struct {
     size: u32 = 0,
     // the is_active data is used to mark indices as active or inactive
     // active indices are currently used and processed by iterators
-    // inactive indices are free, skipped by iterators, and will be used upon calls to getIndex
+    // inactive indices are skipped by iterators, and will be used upon calls to getIndex
     is_active: *Data(bool) = undefined,
     // the nb_refs data is used by the refIndex/unrefIndex API
-    // each time an index is returned by getIndex, its nb_refs is set to 0
-    // each time an active index is unreffed, if its nb_refs reaches 0, it is freed (i.e. becomes inactive and added to the list of free indices)
+    // each time an index is activated and returned by getIndex, its nb_refs is set to 0
+    // each time an active index is refed, its nb_refs is incremented
+    // each time an active index is unreffed, if its nb_refs reaches 0, it becomes inactive and is added to the list of inactive indices
     nb_refs: *Data(u32) = undefined,
-    // the list of inactive indices is implemented as a linked list using the nb_refs data as a backing store (which is not useful on inactive indices)
+    // the list of inactive indices is implemented as a linked list using the nb_refs data as a backing store (which is not used on inactive indices)
     // when an index is released, the first_inactive_index is set to this index
     // and its nb_refs is set to the previous first_inactive_index
     first_inactive_index: u32 = invalid_index,
@@ -267,7 +268,7 @@ pub const DataContainer = struct {
         const dc = try allocator.create(DataContainer);
         dc.* = .{
             .allocator = allocator,
-            .datas = std.StringHashMap(*DataGen).init(allocator),
+            .datas = .empty,
             .markers = try .initCapacity(allocator, 16),
             .available_markers = try .initCapacity(allocator, 16),
         };
@@ -286,7 +287,7 @@ pub const DataContainer = struct {
         for (dc.markers.items) |marker| {
             marker.data_gen.deinit();
         }
-        dc.datas.deinit();
+        dc.datas.deinit(dc.allocator);
         dc.markers.deinit(dc.allocator);
         dc.available_markers.deinit(dc.allocator);
         dc.allocator.destroy(dc);
@@ -318,7 +319,7 @@ pub const DataContainer = struct {
         data.* = .init(owned_name, dc);
         errdefer data.data_gen.deinit();
         try data.data_gen.ensureSize(dc.size);
-        try dc.datas.put(owned_name, &data.data_gen);
+        try dc.datas.put(dc.allocator, owned_name, &data.data_gen);
         return data;
     }
 
@@ -351,7 +352,7 @@ pub const DataContainer = struct {
     }
 
     const DataGenIterator = struct {
-        iterator: std.StringHashMap(*DataGen).Iterator,
+        iterator: std.StringHashMapUnmanaged(*DataGen).Iterator,
         pub fn next(it: *@This()) ?*DataGen {
             if (it.iterator.next()) |entry| {
                 return entry.value_ptr.*;
@@ -368,7 +369,7 @@ pub const DataContainer = struct {
 
     fn DataIterator(comptime T: type) type {
         return struct {
-            iterator: std.StringHashMap(*DataGen).Iterator,
+            iterator: std.StringHashMapUnmanaged(*DataGen).Iterator,
             pub fn next(it: *@This()) ?*Data(T) {
                 while (it.iterator.next()) |entry| {
                     const data_gen = entry.value_ptr.*;

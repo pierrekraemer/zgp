@@ -33,26 +33,25 @@ module: Module = .{
         .rightPanel = rightPanel,
     },
 },
-surface_meshes_data: std.AutoHashMap(*SurfaceMesh, DeformationData),
+surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, DeformationData) = .empty,
 dragging: bool = false,
 drag_z: f32 = 0,
 
 pub fn init(app_ctx: *AppContext) SurfaceMeshDeformation {
     return .{
         .app_ctx = app_ctx,
-        .surface_meshes_data = .init(app_ctx.allocator),
     };
 }
 
 pub fn deinit(smd: *SurfaceMeshDeformation) void {
-    smd.surface_meshes_data.deinit();
+    smd.surface_meshes_data.deinit(smd.app_ctx.allocator);
 }
 
 /// Part of the Module interface.
 /// Create and store a DeformationData for the created SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smd: *SurfaceMeshDeformation = @alignCast(@fieldParentPtr("module", m));
-    smd.surface_meshes_data.put(surface_mesh, .{}) catch |err| {
+    smd.surface_meshes_data.put(smd.app_ctx.allocator, surface_mesh, .{}) catch |err| {
         std.debug.print("Failed to store DeformationData for new SurfaceMesh: {}\n", .{err});
         return;
     };

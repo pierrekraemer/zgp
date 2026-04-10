@@ -59,24 +59,23 @@ module: Module = .{
         .rightPanel = rightPanel,
     },
 },
-surface_meshes_data: std.AutoHashMap(*SurfaceMesh, TnBData),
+surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, TnBData) = .empty,
 
 pub fn init(app_ctx: *AppContext) SurfaceMeshProceduralTexturing {
     return .{
         .app_ctx = app_ctx,
-        .surface_meshes_data = .init(app_ctx.allocator),
     };
 }
 
 pub fn deinit(smpt: *SurfaceMeshProceduralTexturing) void {
-    smpt.surface_meshes_data.deinit();
+    smpt.surface_meshes_data.deinit(smpt.app_ctx.allocator);
 }
 
 /// Part of the Module interface.
 /// Create and store a TnBData for the created SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smpt: *SurfaceMeshProceduralTexturing = @alignCast(@fieldParentPtr("module", m));
-    smpt.surface_meshes_data.put(surface_mesh, .{
+    smpt.surface_meshes_data.put(smpt.app_ctx.allocator, surface_mesh, .{
         .surface_mesh = surface_mesh,
     }) catch |err| {
         std.debug.print("Failed to store TnBData for new SurfaceMesh: {}\n", .{err});

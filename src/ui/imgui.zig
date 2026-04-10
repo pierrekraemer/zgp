@@ -112,7 +112,7 @@ pub fn SelectionResult(comptime T: type) type {
 }
 
 pub fn pointCloudListBox(
-    pc_store: *PointCloudStore,
+    pc_store: *const PointCloudStore,
     height: f32,
 ) SelectionResult(*PointCloud) {
     if (c.ImGui_BeginListBox("##Point Clouds", c.ImVec2{ .x = 0, .y = height })) {
@@ -138,7 +138,7 @@ pub fn pointCloudListBox(
 }
 
 pub fn pointCloudDataComboBox(
-    point_cloud: *PointCloud,
+    point_cloud: *const PointCloud,
     comptime T: type,
     selected_data: ?PointCloud.CellData(T),
 ) SelectionResult(PointCloud.CellData(T)) {
@@ -167,7 +167,7 @@ pub fn pointCloudDataComboBox(
 }
 
 pub fn surfaceMeshListBox(
-    sm_store: *SurfaceMeshStore,
+    sm_store: *const SurfaceMeshStore,
     height: f32,
 ) SelectionResult(*SurfaceMesh) {
     if (c.ImGui_BeginListBox("##Surface Meshes", c.ImVec2{ .x = 0, .y = height })) {
@@ -193,7 +193,7 @@ pub fn surfaceMeshListBox(
 }
 
 pub fn surfaceMeshCellDataComboBox(
-    surface_mesh: *SurfaceMesh,
+    surface_mesh: *const SurfaceMesh,
     comptime cell_type: SurfaceMesh.CellType,
     comptime T: type,
     selected_data: ?SurfaceMesh.CellData(cell_type, T),
@@ -224,7 +224,7 @@ pub fn surfaceMeshCellDataComboBox(
 }
 
 pub fn surfaceMeshCellSetComboBox(
-    surface_mesh: *SurfaceMesh,
+    surface_mesh: *const SurfaceMesh,
     cell_type: SurfaceMesh.CellType,
     selected_cell_set: ?*SurfaceMesh.CellSet,
 ) SelectionResult(*SurfaceMesh.CellSet) {
@@ -278,7 +278,7 @@ pub fn surfaceMeshCellTypeComboBox(
 }
 
 pub fn incidenceGraphListBox(
-    ig_store: *IncidenceGraphStore,
+    ig_store: *const IncidenceGraphStore,
     height: f32,
 ) SelectionResult(*IncidenceGraph) {
     if (c.ImGui_BeginListBox("##Incidence Graphs", c.ImVec2{ .x = 0, .y = height })) {
@@ -304,7 +304,7 @@ pub fn incidenceGraphListBox(
 }
 
 pub fn incidenceGraphCellDataComboBox(
-    incidence_graph: *IncidenceGraph,
+    incidence_graph: *const IncidenceGraph,
     comptime cell_type: IncidenceGraph.CellType,
     comptime T: type,
     selected_data: ?IncidenceGraph.CellData(cell_type, T),
