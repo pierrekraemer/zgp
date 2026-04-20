@@ -57,6 +57,7 @@ const PointCloudInfo = struct {
     }
 };
 
+io: std.Io,
 allocator: std.mem.Allocator,
 
 // list of Modules that have registered interest in PointCloud events
@@ -72,19 +73,20 @@ selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
 // stores the last update time for each DataGen
 // updated upon calls to pointCloudDataUpdated
-data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.time.Instant),
+data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.Io.Timestamp),
 
 point_buffer_pool: BufferPool(PointCloud.Point),
 
-pub fn init(allocator: std.mem.Allocator) !PointCloudStore {
+pub fn init(io: std.Io, allocator: std.mem.Allocator) !PointCloudStore {
     return .{
+        .io = io,
         .allocator = allocator,
         .listeners = .empty,
         .point_clouds = .empty,
         .point_clouds_info = .empty,
         .data_vbo = .empty,
         .data_last_update = .empty,
-        .point_buffer_pool = try .init(allocator, 1024, 64, 32),
+        .point_buffer_pool = try .init(io, allocator, 1024, 64, 32),
     };
 }
 
@@ -187,15 +189,13 @@ pub fn pointCloudDataUpdated(
         vbo.fillFrom(T, data.data);
     }
 
-    const now = std.time.Instant.now() catch |err| {
-        zgp_log.err("Failed to get current time: {}", .{err});
-        return;
-    };
-    pcs.data_last_update.put(pcs.allocator, data.gen(), now) catch |err| {
+    // update the last known data update time
+    pcs.data_last_update.put(pcs.allocator, data.gen(), std.Io.Timestamp.now(pcs.io, .real)) catch |err| {
         zgp_log.err("Failed to update last update time for PointCloud data: {}", .{err});
         return;
     };
 
+    // dispatch call to listeners
     for (pcs.listeners.items) |module| {
         module.pointCloudDataUpdated(pc, data.gen());
     }
@@ -230,7 +230,7 @@ pub fn dataVBO(
     return vbo.value_ptr.*;
 }
 
-pub fn dataLastUpdate(pcs: *PointCloudStore, data_gen: *const DataGen) ?std.time.Instant {
+pub fn dataLastUpdate(pcs: *PointCloudStore, data_gen: *const DataGen) ?std.Io.Timestamp {
     return pcs.data_last_update.get(data_gen);
 }
 

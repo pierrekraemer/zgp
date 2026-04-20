@@ -11,15 +11,15 @@ const Mat4f = mat.Mat4f;
 
 const gl_log = std.log.scoped(.infinite_grid);
 
-var global_instance: InfiniteGrid = undefined;
-var init_global_once = std.once(init_global);
+var global_instance: ?InfiniteGrid = null;
 fn init_global() void {
+    if (global_instance) |_| return;
     global_instance = init() catch unreachable;
-    Shader.register(&global_instance.program);
+    Shader.register(&global_instance.?.program);
 }
 pub fn instance() *InfiniteGrid {
-    init_global_once.call();
-    return &global_instance;
+    init_global();
+    return &global_instance.?;
 }
 
 program: Shader,

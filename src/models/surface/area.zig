@@ -49,7 +49,7 @@ pub fn computeFaceAreas(
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         face_area: SurfaceMesh.CellData(.face, f32),
 
-        pub inline fn run(t: *const Task, face: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, face: SurfaceMesh.Cell) void {
             t.face_area.valuePtr(face).* = faceArea(
                 t.surface_mesh,
                 face,

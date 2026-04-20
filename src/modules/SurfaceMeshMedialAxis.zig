@@ -639,10 +639,7 @@ pub fn rightPanel(m: *Module) void {
         }
         _ = c.ImGui_InputInt("Number of spheres", @ptrCast(&UiData.nb_spheres));
         if (c.ImGui_ButtonEx("Build skeleton from scratch", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            var timer = std.time.Timer.start() catch |err| {
-                std.debug.print("Failed to start timer: {}", .{err});
-                return;
-            };
+            const t = std.Io.Timestamp.now(smma.app_ctx.io, .real);
 
             mad.init(
                 &info.bvh,
@@ -681,7 +678,7 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(mad.surface_mesh, .vertex, f32, mad.vertex_sphere_error);
             mad.app_ctx.requestRedraw();
 
-            const elapsed: f64 = @floatFromInt(timer.read());
+            const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smma.app_ctx.io, .real).nanoseconds);
             zgp_log.info("Medial Axis skeleton computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
         }
     }

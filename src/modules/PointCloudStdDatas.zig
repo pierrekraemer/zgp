@@ -133,28 +133,14 @@ const StdDataComputation = struct {
 
     fn ComputeFuncType(comptime self: *const StdDataComputation) type {
         const nbparams = self.reads.len + 3; // AppContext + PointCloud + read datas + computed data
-        var params: [nbparams]std.builtin.Type.Fn.Param = undefined;
-        params[0] = .{ .is_generic = false, .is_noalias = false, .type = *AppContext };
-        params[1] = .{ .is_generic = false, .is_noalias = false, .type = *PointCloud };
+        var params: [nbparams]type = undefined;
+        params[0] = *AppContext;
+        params[1] = *PointCloud;
         inline for (self.reads, 0..self.reads.len) |read_tag, i| {
-            params[i + 2] = .{
-                .is_generic = false,
-                .is_noalias = false,
-                .type = @typeInfo(@FieldType(PointCloudStore.PointCloudStdDatas, @tagName(read_tag))).optional.child,
-            };
+            params[i + 2] = @typeInfo(@FieldType(PointCloudStore.PointCloudStdDatas, @tagName(read_tag))).optional.child;
         }
-        params[nbparams - 1] = .{
-            .is_generic = false,
-            .is_noalias = false,
-            .type = @typeInfo(@FieldType(PointCloudStore.PointCloudStdDatas, @tagName(self.computes))).optional.child,
-        };
-        return @Type(.{ .@"fn" = .{
-            .calling_convention = .auto,
-            .is_generic = false,
-            .is_var_args = false,
-            .return_type = anyerror!void,
-            .params = &params,
-        } });
+        params[nbparams - 1] = @typeInfo(@FieldType(PointCloudStore.PointCloudStdDatas, @tagName(self.computes))).optional.child;
+        return @Fn(params, &@splat(.{}), anyerror!void, .{.@"callconv"(.auto)});
     }
 
     // get the standard datas to read and the one to compute from the PointCloudStdDatas of the given PointCloud

@@ -48,7 +48,7 @@ pub fn computeHalfedgeCotanWeights(
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
 
-        pub inline fn run(t: *const Task, halfedge: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, halfedge: SurfaceMesh.Cell) void {
             t.halfedge_cotan_weight.valuePtr(halfedge).* = halfedgeCotanWeight(
                 t.surface_mesh,
                 halfedge,

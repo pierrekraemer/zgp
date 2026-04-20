@@ -74,7 +74,7 @@ fn computeVertexGeodesicDistancesFromSource(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     vertex_distance: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
-    var timer = try std.time.Timer.start();
+    const t = std.Io.Timestamp.now(smd.app_ctx.io, .real);
 
     try distance.computeVertexGeodesicDistancesFromSource(
         smd.app_ctx,
@@ -92,7 +92,7 @@ fn computeVertexGeodesicDistancesFromSource(
     smd.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_distance);
     smd.app_ctx.requestRedraw();
 
-    const elapsed: f64 = @floatFromInt(timer.read());
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smd.app_ctx.io, .real).nanoseconds);
     zgp_log.info("Geodesic distance computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
 

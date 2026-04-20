@@ -84,7 +84,7 @@ pub fn build(b: *std.Build) void {
         .root_module = exe_mod,
     });
     // exe.lto = lto;
-    exe.addIncludePath(b.path("src"));
+    exe.root_module.addIncludePath(b.path("src"));
     b.installArtifact(exe);
 
     // RUN CMD

@@ -64,7 +64,7 @@ pub fn computeScalarFieldFaceGradients(
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
         face_gradient: SurfaceMesh.CellData(.face, Vec3d),
 
-        pub inline fn run(t: *const Task, face: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, face: SurfaceMesh.Cell) void {
             t.face_gradient.valuePtr(face).* = scalarFieldFaceGradient(
                 t.surface_mesh,
                 face,
@@ -142,7 +142,7 @@ pub fn computeVectorFieldVertexDivergences(
         face_vector_field: SurfaceMesh.CellData(.face, Vec3d),
         vertex_divergence: SurfaceMesh.CellData(.vertex, f64),
 
-        pub inline fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
             t.vertex_divergence.valuePtr(vertex).* = vectorFieldVertexDivergence(
                 t.surface_mesh,
                 vertex,

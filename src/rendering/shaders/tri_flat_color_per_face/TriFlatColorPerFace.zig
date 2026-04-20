@@ -10,15 +10,15 @@ const VBO = @import("../../VBO.zig");
 const IBO = @import("../../IBO.zig");
 const TextureBuffer = @import("../../TextureBuffer.zig");
 
-var global_instance: TriFlatColorPerFace = undefined;
-var init_global_once = std.once(init_global);
+var global_instance: ?TriFlatColorPerFace = null;
 fn init_global() void {
+    if (global_instance) |_| return;
     global_instance = init() catch unreachable;
-    Shader.register(&global_instance.program);
+    Shader.register(&global_instance.?.program);
 }
 pub fn instance() *TriFlatColorPerFace {
-    init_global_once.call();
-    return &global_instance;
+    init_global();
+    return &global_instance.?;
 }
 
 program: Shader,

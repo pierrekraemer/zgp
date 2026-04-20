@@ -145,7 +145,7 @@ pub fn computeVertexCurvatures(
         face_area: SurfaceMesh.CellData(.face, f32),
         vertex_curvature: SurfaceMeshCurvatureDatas,
 
-        pub inline fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
             const curvature_values = try vertexCurvature(
                 t.surface_mesh,
                 vertex,

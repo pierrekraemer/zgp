@@ -77,7 +77,7 @@ pub fn computeVertexSQEMs(
         line_quadric_epsilon: f32,
         vertex_sqem: SurfaceMesh.CellData(.vertex, SQEM),
 
-        pub inline fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
             t.vertex_sqem.valuePtr(vertex).* = vertexSQEM(
                 t.surface_mesh,
                 vertex,

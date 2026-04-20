@@ -262,7 +262,7 @@ pub fn rightPanel(m: *Module) void {
                 .changed => |data| vpvr.setPointCloudVectorData(pc, data),
             }
         },
-        .incidence_graph => |_| {
+        .incidence_graph => {
             // TODO
         },
         .none => {},

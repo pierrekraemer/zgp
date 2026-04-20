@@ -46,7 +46,7 @@ pub fn computeVertexTangentBases(
         vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
 
-        pub inline fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
             t.vertex_tangent_basis.valuePtr(vertex).* = vertexTangentBasis(
                 t.surface_mesh,
                 vertex,

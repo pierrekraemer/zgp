@@ -40,7 +40,7 @@ pub fn computeCornerAngles(
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         corner_angle: SurfaceMesh.CellData(.corner, f32),
 
-        pub inline fn run(t: *const Task, corner: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, corner: SurfaceMesh.Cell) void {
             t.corner_angle.valuePtr(corner).* = cornerAngle(
                 t.surface_mesh,
                 corner,
@@ -114,7 +114,7 @@ pub fn computeEdgeDihedralAngles(
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
         edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
 
-        pub inline fn run(t: *const Task, edge: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, edge: SurfaceMesh.Cell) void {
             t.edge_dihedral_angle.valuePtr(edge).* = edgeDihedralAngle(
                 t.surface_mesh,
                 edge,

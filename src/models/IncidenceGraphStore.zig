@@ -60,6 +60,7 @@ const IncidenceGraphInfo = struct {
     }
 };
 
+io: std.Io,
 allocator: std.mem.Allocator,
 
 // list of Modules that have registered interest in IncidenceGraph events
@@ -75,19 +76,20 @@ selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
 // stores the last update time for each DataGen
 // updated upon calls to incidenceGraphDataUpdated
-data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.time.Instant),
+data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.Io.Timestamp),
 
 cell_buffer_pool: BufferPool(IncidenceGraph.Cell),
 
-pub fn init(allocator: std.mem.Allocator) !IncidenceGraphStore {
+pub fn init(io: std.Io, allocator: std.mem.Allocator) !IncidenceGraphStore {
     return .{
+        .io = io,
         .allocator = allocator,
         .listeners = .empty,
         .incidence_graphs = .empty,
         .incidence_graphs_info = .empty,
         .data_vbo = .empty,
         .data_last_update = .empty,
-        .cell_buffer_pool = try .init(allocator, 1024, 64, 32),
+        .cell_buffer_pool = try .init(io, allocator, 1024, 64, 32),
     };
 }
 
@@ -191,15 +193,13 @@ pub fn incidenceGraphDataUpdated(
         vbo.fillFrom(T, data.data);
     }
 
-    const now = std.time.Instant.now() catch |err| {
-        zgp_log.err("Failed to get current time: {}", .{err});
-        return;
-    };
-    igs.data_last_update.put(igs.allocator, data.gen(), now) catch |err| {
-        zgp_log.err("Failed to update last update time for PointCloud data: {}", .{err});
+    // update the last known data update time
+    igs.data_last_update.put(igs.allocator, data.gen(), std.Io.Timestamp.now(igs.io, .real)) catch |err| {
+        zgp_log.err("Failed to update last update time for IncidenceGraph data: {}", .{err});
         return;
     };
 
+    // dispatch call to listeners
     for (igs.listeners.items) |module| {
         module.incidenceGraphDataUpdated(ig, cell_type, data.gen());
     }
@@ -243,7 +243,7 @@ pub fn dataVBO(
     return vbo.value_ptr.*;
 }
 
-pub fn dataLastUpdate(igs: *IncidenceGraphStore, data_gen: *const DataGen) ?std.time.Instant {
+pub fn dataLastUpdate(igs: *IncidenceGraphStore, data_gen: *const DataGen) ?std.Io.Timestamp {
     return igs.data_last_update.get(data_gen);
 }
 

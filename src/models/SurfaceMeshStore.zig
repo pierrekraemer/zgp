@@ -54,7 +54,7 @@ const SurfaceMeshInfo = struct {
     std_datas: SurfaceMeshStdDatas = .{},
 
     bvh: bvh.TrianglesBVH = .{},
-    bvh_last_update: ?std.time.Instant = null,
+    bvh_last_update: ?std.Io.Timestamp = null,
 
     points_ibo: IBO,
     lines_ibo: IBO,
@@ -78,6 +78,7 @@ const SurfaceMeshInfo = struct {
     }
 };
 
+io: std.Io,
 allocator: std.mem.Allocator,
 
 // list of Modules that have registered interest in SurfaceMesh events
@@ -97,12 +98,13 @@ data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
 cell_set_ibo: std.AutoHashMapUnmanaged(*const SurfaceMesh.CellSet, IBO),
 // stores the last update time for each DataGen
 // updated upon calls to surfaceMeshDataUpdated
-data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.time.Instant),
+data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.Io.Timestamp),
 
 cell_buffer_pool: BufferPool(SurfaceMesh.Cell),
 
-pub fn init(allocator: std.mem.Allocator) !SurfaceMeshStore {
+pub fn init(io: std.Io, allocator: std.mem.Allocator) !SurfaceMeshStore {
     return .{
+        .io = io,
         .allocator = allocator,
         .listeners = .empty,
         .surface_meshes = .empty,
@@ -110,7 +112,7 @@ pub fn init(allocator: std.mem.Allocator) !SurfaceMeshStore {
         .data_vbo = .empty,
         .cell_set_ibo = .empty,
         .data_last_update = .empty,
-        .cell_buffer_pool = try .init(allocator, 1024, 64, 32),
+        .cell_buffer_pool = try .init(io, allocator, 1024, 64, 32),
     };
 }
 
@@ -221,14 +223,9 @@ pub fn surfaceMeshDataUpdated(
     }
 
     // update the last known data update time
-    const now = std.time.Instant.now();
-    if (now) |t| {
-        sms.data_last_update.put(sms.allocator, data.gen(), t) catch |err| {
-            zgp_log.err("Failed to update last update time for SurfaceMesh data: {}", .{err});
-        };
-    } else |err| {
-        zgp_log.err("Failed to get current time: {}", .{err});
-    }
+    sms.data_last_update.put(sms.allocator, data.gen(), std.Io.Timestamp.now(sms.io, .real)) catch |err| {
+        zgp_log.err("Failed to update last update time for SurfaceMesh data: {}", .{err});
+    };
 
     // dispatch call to listeners
     for (sms.listeners.items) |module| {
@@ -359,7 +356,7 @@ pub fn cellSetIBO(sms: *SurfaceMeshStore, cell_set: *const SurfaceMesh.CellSet) 
     return ibo.value_ptr.*;
 }
 
-pub fn dataLastUpdate(sms: *SurfaceMeshStore, data_gen: *const DataGen) ?std.time.Instant {
+pub fn dataLastUpdate(sms: *SurfaceMeshStore, data_gen: *const DataGen) ?std.Io.Timestamp {
     return sms.data_last_update.get(data_gen);
 }
 
@@ -503,7 +500,7 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
             bvh_computable = false;
         }
         var bvh_upToDate = true;
-        if (!bvh_computable or info.bvh_last_update == null or info.bvh_last_update.?.order(sms.dataLastUpdate(info.std_datas.vertex_position.?.gen()).?) == .lt) {
+        if (!bvh_computable or info.bvh_last_update == null or std.math.order(info.bvh_last_update.?.nanoseconds, sms.dataLastUpdate(info.std_datas.vertex_position.?.gen()).?.nanoseconds) == .lt) {
             bvh_upToDate = false;
         }
         if (!bvh_computable) {
@@ -525,11 +522,7 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
                 break :blk .{};
             };
             if (info.bvh.initialized) {
-                if (std.time.Instant.now()) |t| {
-                    info.bvh_last_update = t;
-                } else |err| {
-                    zgp_log.err("Failed to get current time: {}", .{err});
-                }
+                info.bvh_last_update = std.Io.Timestamp.now(sms.io, .real);
             }
         }
         c.ImGui_PopStyleColorEx(3);
@@ -576,11 +569,11 @@ const SurfaceMeshImportData = struct {
 };
 
 pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*SurfaceMesh {
-    var file = try std.fs.cwd().openFile(filename, .{});
-    defer file.close();
+    var file = try std.Io.Dir.cwd().openFile(sms.io, filename, .{});
+    defer file.close(sms.io);
 
     var buffer: [1024]u8 = undefined;
-    var file_reader = file.reader(&buffer);
+    var file_reader = file.reader(sms.io, &buffer);
 
     const supported_filetypes = enum {
         off,

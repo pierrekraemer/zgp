@@ -49,7 +49,7 @@ fn computeVertexCurvatures(
     face_area: SurfaceMesh.CellData(.face, f32),
     vertex_curvature: curvature.SurfaceMeshCurvatureDatas,
 ) !void {
-    var timer = try std.time.Timer.start();
+    const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
     try curvature.computeVertexCurvatures(
         smc.app_ctx,
@@ -67,7 +67,7 @@ fn computeVertexCurvatures(
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_curvature.vertex_Kmax.?);
     smc.app_ctx.requestRedraw();
 
-    const elapsed: f64 = @floatFromInt(timer.read());
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smc.app_ctx.io, .real).nanoseconds);
     zgp_log.info("Curvatures computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
 

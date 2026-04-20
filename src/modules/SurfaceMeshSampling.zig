@@ -138,7 +138,7 @@ fn uniformSampling(
     nb_points: usize,
     pointcloud_name: []const u8,
 ) !void {
-    var timer = try std.time.Timer.start();
+    const t = std.Io.Timestamp.now(sms.app_ctx.io, .real);
 
     const sd = sms.surface_meshes_data.getPtr(sm).?;
     try sd.init(pointcloud_name);
@@ -150,7 +150,7 @@ fn uniformSampling(
 
     sms.app_ctx.requestRedraw();
 
-    const elapsed: f64 = @floatFromInt(timer.read());
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, sms.app_ctx.io, .real).nanoseconds);
     zgp_log.info("Uniform sampling computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
 
@@ -163,7 +163,7 @@ fn poissonDiskSampling(
     min_distance: f32,
     pointcloud_name: []const u8,
 ) !void {
-    var timer = try std.time.Timer.start();
+    const t = std.Io.Timestamp.now(sms.app_ctx.io, .real);
 
     const sd = sms.surface_meshes_data.getPtr(sm).?;
     try sd.init(pointcloud_name);
@@ -175,7 +175,7 @@ fn poissonDiskSampling(
 
     sms.app_ctx.requestRedraw();
 
-    const elapsed: f64 = @floatFromInt(timer.read());
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, sms.app_ctx.io, .real).nanoseconds);
     zgp_log.info("Poisson disk sampling computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
 

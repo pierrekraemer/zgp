@@ -71,7 +71,7 @@ pub fn computeVertexShrinkingBalls(
         vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_shrinking_ball: SurfaceMesh.CellData(.vertex, ?Vec4f),
 
-        pub inline fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
             const n = t.vertex_normal.value(vertex);
             t.vertex_shrinking_ball.valuePtr(vertex).* = shrinkingBall(
                 t.sm_bvh,

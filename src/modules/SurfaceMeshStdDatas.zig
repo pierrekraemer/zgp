@@ -192,28 +192,14 @@ const StdDataComputation = struct {
 
     fn ComputeFuncType(comptime self: *const StdDataComputation) type {
         const nbparams = self.reads.len + 3; // AppContext + SurfaceMesh + read datas + computed data
-        var params: [nbparams]std.builtin.Type.Fn.Param = undefined;
-        params[0] = .{ .is_generic = false, .is_noalias = false, .type = *AppContext };
-        params[1] = .{ .is_generic = false, .is_noalias = false, .type = *SurfaceMesh };
+        var params: [nbparams]type = undefined;
+        params[0] = *AppContext;
+        params[1] = *SurfaceMesh;
         inline for (self.reads, 0..self.reads.len) |read_tag, i| {
-            params[i + 2] = .{
-                .is_generic = false,
-                .is_noalias = false,
-                .type = @typeInfo(@FieldType(SurfaceMeshStore.SurfaceMeshStdDatas, @tagName(read_tag))).optional.child,
-            };
+            params[i + 2] = @typeInfo(@FieldType(SurfaceMeshStore.SurfaceMeshStdDatas, @tagName(read_tag))).optional.child;
         }
-        params[nbparams - 1] = .{
-            .is_generic = false,
-            .is_noalias = false,
-            .type = @typeInfo(@FieldType(SurfaceMeshStore.SurfaceMeshStdDatas, @tagName(self.computes))).optional.child,
-        };
-        return @Type(.{ .@"fn" = .{
-            .calling_convention = .auto,
-            .is_generic = false,
-            .is_var_args = false,
-            .return_type = anyerror!void,
-            .params = &params,
-        } });
+        params[nbparams - 1] = @typeInfo(@FieldType(SurfaceMeshStore.SurfaceMeshStdDatas, @tagName(self.computes))).optional.child;
+        return @Fn(&params, &@splat(.{}), anyerror!void, .{ .@"callconv" = .auto });
     }
 
     // actually calls the computation function with the right arguments
@@ -309,7 +295,7 @@ pub fn dataComputableAndUpToDate(
                 // the computed data is up-to-date only if the last update of the computed data is after the last update of all read data
                 // and all read data are themselves up-to-date (recursive call)
                 const reads_last_update = sms.dataLastUpdate(reads_data.?.gen());
-                if (computes_last_update == null or reads_last_update == null or computes_last_update.?.order(reads_last_update.?) == .lt) {
+                if (computes_last_update == null or reads_last_update == null or std.math.order(computes_last_update.?.nanoseconds, reads_last_update.?.nanoseconds) == .lt) {
                     upToDate = false;
                 } else {
                     _, upToDate = dataComputableAndUpToDate(sms, sm, reads_tag);
@@ -359,9 +345,9 @@ fn computeEdgeDihedralAngles(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
 ) !void {
-    var timer = try std.time.Timer.start();
+    const t = std.Io.Timestamp.now(app_ctx.io, .real);
     try angle.computeEdgeDihedralAngles(app_ctx, sm, vertex_position, face_normal, edge_dihedral_angle);
-    const elapsed: f64 = @floatFromInt(timer.read());
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, app_ctx.io, .real).nanoseconds);
     zgp_log.info("Edge dihedral angles computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
 }
@@ -382,9 +368,9 @@ fn computeFaceNormals(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
 ) !void {
-    var timer = try std.time.Timer.start();
+    const t = std.Io.Timestamp.now(app_ctx.io, .real);
     try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
-    const elapsed: f64 = @floatFromInt(timer.read());
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, app_ctx.io, .real).nanoseconds);
     zgp_log.info("Face normals computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, Vec3f, face_normal);
 }
@@ -406,9 +392,9 @@ fn computeVertexNormals(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
-    var timer = try std.time.Timer.start();
+    const t = std.Io.Timestamp.now(app_ctx.io, .real);
     try normal.computeVertexNormals(app_ctx, sm, corner_angle, face_normal, vertex_normal);
-    const elapsed: f64 = @floatFromInt(timer.read());
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, app_ctx.io, .real).nanoseconds);
     zgp_log.info("Vertex normals computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_normal);
 }

@@ -19,8 +19,9 @@ pub fn BufferPool(comptime T: type) type {
             }
         };
 
+        io: std.Io,
         allocator: std.mem.Allocator,
-        mutex: std.Thread.Mutex,
+        mutex: std.Io.Mutex,
         buffer_size: usize,
         max_pool_size: usize,
 
@@ -30,7 +31,7 @@ pub fn BufferPool(comptime T: type) type {
         /// Initialize a new BufferPool.
         /// `buffer_size`: The number of items of type T in each buffer.
         /// `max_pool_size`: The maximum number of idle buffers to keep in the pool.
-        pub fn init(allocator: std.mem.Allocator, buffer_size: usize, max_pool_size: usize, init_pool_size: usize) !Self {
+        pub fn init(io: std.Io, allocator: std.mem.Allocator, buffer_size: usize, max_pool_size: usize, init_pool_size: usize) !Self {
             var free_list: std.ArrayList([]T) = try .initCapacity(allocator, init_pool_size);
             errdefer {
                 for (free_list.items) |buf| allocator.free(buf);
@@ -42,8 +43,9 @@ pub fn BufferPool(comptime T: type) type {
                 free_list.appendAssumeCapacity(buf);
             }
             return Self{
+                .io = io,
                 .allocator = allocator,
-                .mutex = .{},
+                .mutex = .init,
                 .buffer_size = buffer_size,
                 .max_pool_size = max_pool_size,
                 .free_list = free_list,
@@ -53,8 +55,8 @@ pub fn BufferPool(comptime T: type) type {
         /// Deinitialize the pool and free all pooled buffers.
         /// Note: This does not free buffers currently acquired by users of the pool.
         pub fn deinit(self: *Self) void {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lock(self.io) catch {};
+            defer self.mutex.unlock(self.io);
             for (self.free_list.items) |buf| {
                 self.allocator.free(buf);
             }
@@ -64,14 +66,14 @@ pub fn BufferPool(comptime T: type) type {
         /// Acquire a buffer from the pool.
         /// If the pool is empty, a new buffer is allocated.
         pub fn acquire(self: *Self) !Buffer {
-            self.mutex.lock();
+            try self.mutex.lock(self.io);
             // Try to pop from free list first
             if (self.free_list.pop()) |buf| {
-                self.mutex.unlock();
+                self.mutex.unlock(self.io);
                 // Reset memory if needed? Usually generic buffers are assumed "dirty"
                 return Buffer{ .data = buf, .pool = self };
             }
-            self.mutex.unlock();
+            self.mutex.unlock(self.io);
             // Allocate new buffer if none available (outside lock to reduce contention)
             const buf = try self.allocator.alloc(T, self.buffer_size);
             return Buffer{ .data = buf, .pool = self };
@@ -79,8 +81,8 @@ pub fn BufferPool(comptime T: type) type {
 
         /// Internal function to return a buffer to the free list.
         pub fn release(self: *Self, buf: []T) void {
-            self.mutex.lock();
-            defer self.mutex.unlock();
+            self.mutex.lock(self.io) catch {};
+            defer self.mutex.unlock(self.io);
             // If we have hit the max capacity of the pool, discard the buffer
             if (self.free_list.items.len >= self.max_pool_size) {
                 self.allocator.free(buf);

@@ -74,14 +74,15 @@ var cli_args: CLIArgs = undefined;
 // Should benchmark and switch between parallel and sequential execution based on the mesh size and the type of quantity computed.
 
 /// Application Context:
-/// - allocator
+/// - io instance
+/// - allocator instance
 /// - PointCloud / SurfaceMesh / VolumeMesh stores
 /// - current selected model
 /// - random number generator
 /// - window
 /// - view
-/// - thread pool
 pub const AppContext = struct {
+    io: std.Io,
     allocator: std.mem.Allocator,
     point_cloud_store: PointCloudStore,
     surface_mesh_store: SurfaceMeshStore,
@@ -90,15 +91,17 @@ pub const AppContext = struct {
     rng: std.Random.DefaultPrng,
     window: Window = .{},
     view: View = .{},
-    thread_pool: std.Thread.Pool = undefined,
 
-    pub fn init(allocator: std.mem.Allocator) !AppContext {
+    pub fn init(io: std.Io, allocator: std.mem.Allocator) !AppContext {
+        var seed: u64 = undefined;
+        io.random(std.mem.asBytes(&seed));
         return .{
+            .io = io,
             .allocator = allocator,
-            .point_cloud_store = try .init(allocator),
-            .surface_mesh_store = try .init(allocator),
-            .incidence_graph_store = try .init(allocator),
-            .rng = .init(@intCast(std.time.timestamp())),
+            .point_cloud_store = try .init(io, allocator),
+            .surface_mesh_store = try .init(io, allocator),
+            .incidence_graph_store = try .init(io, allocator),
+            .rng = .init(seed),
         };
     }
 
@@ -112,7 +115,6 @@ pub const AppContext = struct {
         self.surface_mesh_store.deinit();
         self.point_cloud_store.deinit();
         self.incidence_graph_store.deinit();
-        self.thread_pool.deinit();
         self.view.deinit();
         self.window.deinit();
     }
@@ -254,7 +256,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     // *********************
 
     for (cli_args.mesh_files) |mesh_file| {
-        var timer = try std.time.Timer.start();
+        const t = std.Io.Timestamp.now(app_ctx.io, .real);
 
         const sm = try app_ctx.surface_mesh_store.loadSurfaceMeshFromFile(mesh_file);
         errdefer sm.deinit();
@@ -276,7 +278,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
         app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
 
-        const elapsed: f64 = @floatFromInt(timer.read());
+        const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, app_ctx.io, .real).nanoseconds);
         zgp_log.info("Mesh loaded in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
     }
 
@@ -328,7 +330,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     // ************************
 
     const imgui_io = c.ImGui_GetIO();
-    if (imgui_io.*.MouseClicked[1] and !(imgui_io.*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow))) {
+    if (c.ImGui_IsMouseClicked(1) and !(imgui_io.*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow))) {
         c.ImGui_OpenPopup("RightClickMenu", 0);
     }
     if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
@@ -635,26 +637,14 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
     Shader.deinitRegistry();
 }
 
-pub fn main() !u8 {
+pub fn main(init: std.process.Init) !u8 {
     app_err.reset();
     var empty_argv: [0:null]?[*:0]u8 = .{};
 
-    var allocator: std.mem.Allocator = undefined;
+    const io = init.io;
+    const allocator = init.gpa;
 
-    var da: std.heap.DebugAllocator(.{}) = .init;
-    if (builtin.mode == .Debug) {
-        allocator = da.allocator();
-        zgp_log.info("Using DebugAllocator", .{});
-    } else {
-        allocator = std.heap.smp_allocator; // use the SmpAllocator in release mode for better performance
-        zgp_log.info("Using SmpAllocator", .{});
-    }
-    defer if (builtin.mode == .Debug) {
-        _ = da.detectLeaks();
-        _ = da.deinit();
-    };
-
-    app_ctx = try .init(allocator);
+    app_ctx = try .init(io, allocator);
     app_ctx.wireUp();
     defer app_ctx.deinit();
 
@@ -663,14 +653,9 @@ pub fn main() !u8 {
     app_ctx.view.init();
 
     zgp_log.info("Thread mode: {s}", .{if (builtin.single_threaded) "single-threaded" else "multi-threaded"});
-    try app_ctx.thread_pool.init(.{ .allocator = app_ctx.allocator });
 
-    const argv = std.process.argsAlloc(allocator) catch {
-        zgp_log.err("Failed to get command line arguments", .{});
-        return 1;
-    };
-    defer std.process.argsFree(allocator, argv);
-    cli_args = CLIArgs.init(argv) catch |err| {
+    const args = try init.minimal.args.toSlice(init.arena.allocator());
+    cli_args = CLIArgs.init(args) catch |err| {
         switch (err) {
             error.MissingArgs => return c.SDL_APP_FAILURE,
             error.InvalidArgs => return c.SDL_APP_FAILURE,

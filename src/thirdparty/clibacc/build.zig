@@ -16,9 +16,9 @@ pub fn build(b: *std.Build) void {
         .root_module = mod,
     });
 
-    lib.addIncludePath(b.path("lib"));
-    lib.addIncludePath(b.path("include"));
-    lib.addCSourceFiles(.{
+    mod.addIncludePath(b.path("lib"));
+    mod.addIncludePath(b.path("include"));
+    mod.addCSourceFiles(.{
         .root = b.path("src"),
         .files = &.{
             "bvh.cpp",

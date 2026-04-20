@@ -52,7 +52,7 @@ pub fn computeFaceNormals(
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
 
-        pub inline fn run(t: *const Task, face: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, face: SurfaceMesh.Cell) void {
             t.face_normal.valuePtr(face).* = faceNormal(
                 t.surface_mesh,
                 face,
@@ -138,7 +138,7 @@ pub fn computeVertexNormals(
     //     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     //     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 
-    //     pub inline fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+    //     pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
     //         t.vertex_normal.valuePtr(vertex).* = vertexNormal(
     //             t.surface_mesh,
     //             vertex,

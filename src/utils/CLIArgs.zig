@@ -18,7 +18,7 @@ const usage_fmt =
 
 normalize: bool = false,
 center: bool = false,
-mesh_files: [][:0]u8 = undefined,
+mesh_files: []const [:0]const u8 = undefined,
 
 pub fn display_usage() void {
     std.debug.print(usage_fmt, .{program_name});
@@ -26,7 +26,7 @@ pub fn display_usage() void {
 
 const ArgParseError = error{ MissingArgs, InvalidArgs };
 
-pub fn init(argv: [][:0]u8) ArgParseError!CLIArgs {
+pub fn init(argv: []const [:0]const u8) ArgParseError!CLIArgs {
     program_name = std.fs.path.basename(argv[0]);
     var args: CLIArgs = .{};
 

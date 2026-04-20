@@ -83,7 +83,7 @@ fn remesh(
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_curvature: curvature.SurfaceMeshCurvatureDatas,
 ) !void {
-    var timer = try std.time.Timer.start();
+    const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
     try remeshing.pliantRemeshing(
         smc.app_ctx,
@@ -124,7 +124,7 @@ fn remesh(
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
     smc.app_ctx.requestRedraw();
 
-    const elapsed: f64 = @floatFromInt(timer.read());
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smc.app_ctx.io, .real).nanoseconds);
     zgp_log.info("Remeshing computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
 
@@ -138,7 +138,7 @@ fn decimate(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     nb_vertices_to_remove: u32,
 ) !void {
-    var timer = try std.time.Timer.start();
+    const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
     const vertex_qem = try sm.addData(.vertex, Mat4f, "__vertex_qem");
     defer sm.removeData(.vertex, Mat4f, vertex_qem);
@@ -163,7 +163,7 @@ fn decimate(
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
     smc.app_ctx.requestRedraw();
 
-    const elapsed: f64 = @floatFromInt(timer.read());
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smc.app_ctx.io, .real).nanoseconds);
     zgp_log.info("Decimation computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
 
@@ -173,7 +173,7 @@ fn generateConvexHull(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     convex_hull_name: []const u8,
 ) !void {
-    var timer = try std.time.Timer.start();
+    const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
     var pc: PointCloud = undefined;
     try pc.init(smc.app_ctx.allocator, &smc.app_ctx.point_cloud_store.point_buffer_pool);
@@ -194,7 +194,7 @@ fn generateConvexHull(
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(ch, .vertex, Vec3f, ch_vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(ch);
 
-    const elapsed: f64 = @floatFromInt(timer.read());
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smc.app_ctx.io, .real).nanoseconds);
     zgp_log.info("Convex hull generated in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 
     smc.app_ctx.requestRedraw();
