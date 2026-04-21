@@ -48,7 +48,7 @@ float interSphere(vec3 ro, vec3 rd, vec3 ce, float ra) {
 }
 
 void main() {
-  vec3 rayStart = vec3(0.0, 0.0, 0.0);
+    vec3 rayStart = vec3(0.0, 0.0, 0.0);
 	vec3 rayDir = normalize(proxy_pos);
     
     float t = interSphere(rayStart, rayDir, sphere_center, u_sphere_radius);

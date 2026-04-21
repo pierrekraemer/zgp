@@ -277,6 +277,48 @@ pub fn viewToWorldRayIfGeometry(view: *const View, x: f32, y: f32) ?Ray {
     };
 }
 
+/// Reconstruct a ray in world space from the camera position through the pixel at (x, y) in the view.
+pub fn viewToWorldRay(view: *const View, x: f32, y: f32) Ray {
+    const width: f32 = @floatFromInt(view.width);
+    const height: f32 = @floatFromInt(view.height);
+    const x_ndc = 2.0 * (x / width) - 1.0;
+    const y_ndc = 1.0 - 2.0 * (y / height);
+
+    const right = vec.normalized3f(vec.cross3f(view.camera.look_dir, view.camera.up_dir));
+
+    return switch (view.camera.projection_type) {
+        .perspective => blk: {
+            const tan_half_fov = @tan(view.camera.field_of_view / 2.0);
+            const dir = vec.normalized3f(vec.add3f(
+                view.camera.look_dir,
+                vec.add3f(
+                    vec.mulScalar3f(right, x_ndc * view.camera.aspect_ratio * tan_half_fov),
+                    vec.mulScalar3f(view.camera.up_dir, y_ndc * tan_half_fov),
+                ),
+            ));
+            break :blk .{
+                .origin = view.camera.position,
+                .direction = dir,
+            };
+        },
+        .orthographic => blk: {
+            const ortho_height = -view.camera.view_matrix[3][2];
+            const ortho_width = view.camera.aspect_ratio * ortho_height;
+            const origin = vec.add3f(
+                view.camera.position,
+                vec.add3f(
+                    vec.mulScalar3f(right, x_ndc * ortho_width * 0.5),
+                    vec.mulScalar3f(view.camera.up_dir, y_ndc * ortho_height * 0.5),
+                ),
+            );
+            break :blk .{
+                .origin = origin,
+                .direction = view.camera.look_dir,
+            };
+        },
+    };
+}
+
 pub fn worldToView(view: *const View, world_pos: Vec3f) ?Vec3f {
     const p_world: Vec4f = .{ world_pos[0], world_pos[1], world_pos[2], 1.0 };
     const p_clip = mat.mulVec4f(view.camera.projection_matrix, mat.mulVec4f(view.camera.view_matrix, p_world));

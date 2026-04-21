@@ -62,7 +62,7 @@ pub fn updateProjectionMatrix(c: *Camera) void {
 }
 
 pub fn lookAtPivotPosition(c: *Camera) void {
-    c.look_dir = vec.normalized3f(vec.sub3f(c.pivot_position, c.position));
+    c.look_dir = vec.normalized3f(vec.sub3f(c.pivot_position, c.position)); // TODO: handle case where position == pivot_position
     c.updateViewMatrix();
 }
 

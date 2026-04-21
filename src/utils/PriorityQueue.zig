@@ -26,31 +26,37 @@ pub fn PriorityQueue(
 
         items: []T,
         cap: usize,
-        allocator: Allocator,
         context: Context,
 
-        /// Initialize and return a priority queue.
-        pub fn init(allocator: Allocator, context: Context) Self {
+        /// A priority queue containing no elements.
+        pub const empty: Self = .{
+            .items = &.{},
+            .cap = 0,
+            .context = undefined,
+        };
+
+        /// Initialize and return a priority queue with context.
+        pub fn initContext(context: Context) Self {
             return Self{
-                .items = &[_]T{},
+                .items = &.{},
                 .cap = 0,
-                .allocator = allocator,
                 .context = context,
             };
         }
 
         /// Free memory used by the queue.
-        pub fn deinit(self: Self) void {
-            self.allocator.free(self.allocatedSlice());
+        pub fn deinit(self: *Self, allocator: Allocator) void {
+            allocator.free(self.allocatedSlice());
+            self.* = undefined;
         }
 
         /// Insert a new element, maintaining priority.
-        pub fn add(self: *Self, elem: T) !void {
-            try self.ensureUnusedCapacity(1);
-            addUnchecked(self, elem);
+        pub fn push(self: *Self, allocator: Allocator, elem: T) !void {
+            try self.ensureUnusedCapacity(allocator, 1);
+            pushUnchecked(self, elem);
         }
 
-        fn addUnchecked(self: *Self, elem: T) void {
+        fn pushUnchecked(self: *Self, elem: T) void {
             self.items.len += 1;
             self.items[self.items.len - 1] = elem;
             setElemIndexFn(self.context, elem, self.items.len - 1);
@@ -73,35 +79,29 @@ pub fn PriorityQueue(
         }
 
         /// Add each element in `items` to the queue.
-        pub fn addSlice(self: *Self, items: []const T) !void {
-            try self.ensureUnusedCapacity(items.len);
+        pub fn pushSlice(self: *Self, allocator: Allocator, items: []const T) !void {
+            try self.ensureUnusedCapacity(allocator, items.len);
             for (items) |e| {
-                self.addUnchecked(e);
+                self.pushUnchecked(e);
             }
         }
 
         /// Look at the highest priority element in the queue. Returns
         /// `null` if empty.
-        pub fn peek(self: *Self) ?T {
+        pub fn peek(self: *const Self) ?T {
             return if (self.items.len > 0) self.items[0] else null;
         }
 
-        /// Pop the highest priority element from the queue. Returns
-        /// `null` if empty.
-        pub fn removeOrNull(self: *Self) ?T {
-            return if (self.items.len > 0) self.remove() else null;
-        }
-
-        /// Remove and return the highest priority element from the
-        /// queue.
-        pub fn remove(self: *Self) T {
-            return self.removeIndex(0);
+        /// Remove and return the highest priority element from the queue.
+        /// Returns `null` if empty.
+        pub fn pop(self: *Self) ?T {
+            return if (self.items.len > 0) self.popIndex(0) else null;
         }
 
         /// Remove and return element at index. Indices are in the
         /// same order as iterator, which is not necessarily priority
         /// order.
-        pub fn removeIndex(self: *Self, index: usize) T {
+        pub fn popIndex(self: *Self, index: usize) T {
             assert(self.items.len > index);
             const last = self.items[self.items.len - 1];
             const item = self.items[index];
@@ -128,19 +128,19 @@ pub fn PriorityQueue(
 
         /// Return the number of elements remaining in the priority
         /// queue.
-        pub fn count(self: Self) usize {
+        pub fn count(self: *const Self) usize {
             return self.items.len;
         }
 
         /// Return the number of elements that can be added to the
         /// queue before more memory is allocated.
-        pub fn capacity(self: Self) usize {
+        pub fn capacity(self: *const Self) usize {
             return self.cap;
         }
 
         /// Returns a slice of all the items plus the extra capacity, whose memory
         /// contents are `undefined`.
-        fn allocatedSlice(self: Self) []T {
+        fn allocatedSlice(self: *const Self) []T {
             // `items.len` is the length, not the capacity.
             return self.items.ptr[0..self.cap];
         }
@@ -170,11 +170,10 @@ pub fn PriorityQueue(
         /// PriorityQueue takes ownership of the passed in slice. The slice must have been
         /// allocated with `allocator`.
         /// Deinitialize with `deinit`.
-        pub fn fromOwnedSlice(allocator: Allocator, items: []T, context: Context) Self {
+        pub fn fromOwnedSlice(items: []T, context: Context) Self {
             var self = Self{
                 .items = items,
                 .cap = items.len,
-                .allocator = allocator,
                 .context = context,
             };
 
@@ -187,39 +186,42 @@ pub fn PriorityQueue(
         }
 
         /// Ensure that the queue can fit at least `new_capacity` items.
-        pub fn ensureTotalCapacity(self: *Self, new_capacity: usize) !void {
+        pub fn ensureTotalCapacity(self: *Self, allocator: Allocator, new_capacity: usize) !void {
             var better_capacity = self.cap;
             if (better_capacity >= new_capacity) return;
             while (true) {
                 better_capacity += better_capacity / 2 + 8;
                 if (better_capacity >= new_capacity) break;
             }
-            try self.ensureTotalCapacityPrecise(better_capacity);
+            try self.ensureTotalCapacityPrecise(allocator, better_capacity);
         }
 
-        pub fn ensureTotalCapacityPrecise(self: *Self, new_capacity: usize) !void {
+        /// If the current capacity is less than `new_capacity`, this function will
+        /// modify the array so that it can hold exactly `new_capacity` items.
+        /// Invalidates element pointers if additional memory is needed.
+        pub fn ensureTotalCapacityPrecise(self: *Self, allocator: Allocator, new_capacity: usize) !void {
             if (self.capacity() >= new_capacity) return;
 
             const old_memory = self.allocatedSlice();
-            const new_memory = try self.allocator.realloc(old_memory, new_capacity);
+            const new_memory = try allocator.realloc(old_memory, new_capacity);
             self.items.ptr = new_memory.ptr;
             self.cap = new_memory.len;
         }
 
         /// Ensure that the queue can fit at least `additional_count` **more** item.
-        pub fn ensureUnusedCapacity(self: *Self, additional_count: usize) !void {
-            return self.ensureTotalCapacity(self.items.len + additional_count);
+        pub fn ensureUnusedCapacity(self: *Self, allocator: Allocator, additional_count: usize) !void {
+            return self.ensureTotalCapacity(allocator, self.items.len + additional_count);
         }
 
         /// Reduce allocated capacity to `new_capacity`.
-        pub fn shrinkAndFree(self: *Self, new_capacity: usize) void {
+        pub fn shrinkAndFree(self: *Self, allocator: Allocator, new_capacity: usize) void {
             assert(new_capacity <= self.cap);
 
             // Cannot shrink to smaller than the current queue size without invalidating the heap property
             assert(new_capacity >= self.items.len);
 
             const old_memory = self.allocatedSlice();
-            const new_memory = self.allocator.realloc(old_memory, new_capacity) catch |e| switch (e) {
+            const new_memory = allocator.realloc(old_memory, new_capacity) catch |e| switch (e) {
                 error.OutOfMemory => { // no problem, capacity is still correct then.
                     return;
                 },
@@ -229,17 +231,21 @@ pub fn PriorityQueue(
             self.cap = new_memory.len;
         }
 
+        /// Remove all elements from the items slice.
         pub fn clearRetainingCapacity(self: *Self) void {
             self.items.len = 0;
         }
 
-        pub fn clearAndFree(self: *Self) void {
-            self.allocator.free(self.allocatedSlice());
+        /// Invalidates all element pointers.
+        pub fn clearAndFree(self: *Self, allocator: Allocator) void {
+            allocator.free(self.allocatedSlice());
             self.items.len = 0;
             self.cap = 0;
         }
 
         // TODO: make an other version that takes an index instead of searching for the element
+        /// Replace an element in the queue with a new element, maintaining priority.
+        /// If the element being updated doesn't exist, return `error.ElementNotFound`.
         pub fn update(self: *Self, elem: T, new_elem: T) !void {
             const update_index = blk: {
                 var idx: usize = 0;
@@ -283,22 +289,6 @@ pub fn PriorityQueue(
                 .queue = self,
                 .count = 0,
             };
-        }
-
-        fn dump(self: *Self) void {
-            const print = std.debug.print;
-            print("{{ ", .{});
-            print("items: ", .{});
-            for (self.items) |e| {
-                print("{}, ", .{e});
-            }
-            print("array: ", .{});
-            for (self.items) |e| {
-                print("{}, ", .{e});
-            }
-            print("len: {} ", .{self.items.len});
-            print("capacity: {}", .{self.cap});
-            print(" }}\n", .{});
         }
     };
 }
