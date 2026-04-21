@@ -120,6 +120,11 @@ public:
     BVHTree(std::vector<IdxType> const &faces,
             std::vector<Vec3fType> const &vertices,
             int max_threads = std::thread::hardware_concurrency());
+    BVHTree(const IdxType *faces,
+            IdxType nb_faces,
+            const Vec3fType *vertices,
+            IdxType nb_vertices,
+            int max_threads = std::thread::hardware_concurrency());
 
     Tri const &get_triangle(IdxType idx) const { return tris[idx]; }
 
@@ -362,10 +367,84 @@ BVHTree<IdxType, Vec3fType>::ssplit(typename Node::ID node_id, std::vector<AABB>
 }
 
 template <typename IdxType, typename Vec3fType>
+BVHTree<IdxType, Vec3fType>::BVHTree(const IdxType *faces,
+                                     IdxType nb_faces,
+                                     const Vec3fType *vertices,
+                                     IdxType nb_vertices,
+                                     int max_threads) : num_nodes(0)
+{
+    std::size_t num_faces = nb_faces;
+    std::vector<AABB> aabbs(num_faces);
+    std::vector<Tri> ttris(num_faces);
+
+    /* Initialize vector with upper bound of nodes. */
+    nodes.resize(2 * num_faces - 1);
+
+    /* Initialize root node. */
+    Node &root = nodes[create_node(0, num_faces)];
+    for (std::size_t i = 0; i < aabbs.size(); ++i)
+    {
+        ttris[i].a = vertices[faces[i * 3 + 0]];
+        ttris[i].b = vertices[faces[i * 3 + 1]];
+        ttris[i].c = vertices[faces[i * 3 + 2]];
+
+        calculate_aabb(ttris[i], &aabbs[i]);
+        root.aabb += aabbs[i];
+    }
+
+    indices.resize(num_faces);
+    std::iota(indices.begin(), indices.end(), 0);
+
+    std::atomic<int> num_threads(max_threads);
+    split(0, aabbs, &num_threads);
+
+    nodes.resize(num_nodes);
+
+    /* Order breath first */
+    typename Node::ID node_id = 0;
+    typename Node::ID idx = 0;
+
+    IdxType last = 0;
+
+    std::vector<IdxType> nindices;
+    nindices.reserve(indices.size());
+    std::vector<Node> nnodes(nodes.size());
+
+    nnodes[idx++] = nodes[node_id];
+    while (node_id < nnodes.size())
+    {
+        Node &node = nnodes[node_id++];
+        if (node.left != NAI && node.right != NAI)
+        {
+            nnodes[idx] = nodes[node.left];
+            node.left = idx++;
+            nnodes[idx] = nodes[node.right];
+            node.right = idx++;
+        }
+        else
+        {
+            nindices.insert(nindices.begin() + last,
+                            indices.begin() + node.first, indices.begin() + node.last);
+            node.first = last;
+            last = static_cast<IdxType>(nindices.size());
+            node.last = last;
+        }
+    }
+
+    std::swap(nnodes, nodes);
+    std::swap(nindices, indices);
+
+    tris.resize(ttris.size());
+    for (std::size_t i = 0; i < indices.size(); ++i)
+    {
+        tris[i] = ttris[indices[i]];
+    }
+}
+
+template <typename IdxType, typename Vec3fType>
 BVHTree<IdxType, Vec3fType>::BVHTree(std::vector<IdxType> const &faces,
                                      std::vector<Vec3fType> const &vertices, int max_threads) : num_nodes(0)
 {
-
     std::size_t num_faces = faces.size() / 3;
     std::vector<AABB> aabbs(num_faces);
     std::vector<Tri> ttris(num_faces);

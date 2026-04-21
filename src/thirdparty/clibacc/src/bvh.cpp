@@ -52,23 +52,10 @@ using BVH = acc::BVHTree<INDEX, Vec3f>;
 
 extern "C"
 {
-    // TODO: too much data copying..
-    // Data could be passed directly as needed by the BVH constructor,
-    // i.e. an array of triangles (Vec3f[3])
-    // vector could also be avoided by passing raw pointer and size
     void *createTrianglesBVH(INDEX *triangle_vertex_indices, INDEX nb_triangles, void *vertex_position, INDEX nb_vertices)
     {
         const Vec3f *vertex_position_array = static_cast<const Vec3f *>(vertex_position);
-        const INDEX nb_indices = nb_triangles * 3;
-        std::vector<INDEX> triangle_vertex_indices_vector;
-        triangle_vertex_indices_vector.reserve(nb_indices);
-        for (INDEX i = 0; i < nb_indices; i++)
-            triangle_vertex_indices_vector.push_back(triangle_vertex_indices[i]);
-        std::vector<Vec3f> vertex_position_vector;
-        vertex_position_vector.reserve(nb_vertices);
-        for (INDEX i = 0; i < nb_vertices; i++)
-            vertex_position_vector.push_back(vertex_position_array[i]);
-        return new BVH(triangle_vertex_indices_vector, vertex_position_vector);
+        return new BVH(triangle_vertex_indices, nb_triangles, vertex_position_array, nb_vertices);
     }
 
     void destroyTrianglesBVH(void *bvh)
