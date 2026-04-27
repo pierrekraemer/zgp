@@ -89,12 +89,12 @@ surface_meshes_info: std.AutoArrayHashMapUnmanaged(*const SurfaceMesh, SurfaceMe
 selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 
 // each DataGen can be associated with a VBO
-// once a VBO has been requested for a Data (in dataVBO) it is stored in this map
-// and updated upon calls to surfaceMeshDataUpdated
+// once a VBO has been requested for a Data (in dataVBO function) it is stored in this map
+// and updated upon calls to surfaceMeshDataUpdated function
 data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
 // each CellSet can be associated with an IBO
-// once an IBO has been requested for a CellSet (in cellSetIBO) it is stored in this map
-// and updated upon calls to surfaceMeshCellSetUpdated
+// once an IBO has been requested for a CellSet (in cellSetIBO function) it is stored in this map
+// and updated upon calls to surfaceMeshCellSetUpdated function
 cell_set_ibo: std.AutoHashMapUnmanaged(*const SurfaceMesh.CellSet, IBO),
 // stores the last update time for each DataGen
 // updated upon calls to surfaceMeshDataUpdated
@@ -112,7 +112,7 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !SurfaceMeshStore {
         .data_vbo = .empty,
         .cell_set_ibo = .empty,
         .data_last_update = .empty,
-        .cell_buffer_pool = try .init(io, allocator, 1024, 64, 32),
+        .cell_buffer_pool = try .init(io, allocator, 2048, 64, 32),
     };
 }
 
@@ -515,7 +515,9 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
             c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 200, 128, 255));
             c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 200, 128, 128));
         }
-        if (c.ImGui_ButtonEx(c.ICON_FA_SITEMAP ++ " Update BVH", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+        var buf_bvh_button: [32]u8 = undefined;
+        const bvh_button = std.fmt.bufPrintZ(&buf_bvh_button, c.ICON_FA_SITEMAP ++ " {s} BVH", .{if (info.bvh.initialized) "Update" else "Build"}) catch "";
+        if (c.ImGui_ButtonEx(bvh_button, c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
             info.bvh.deinit();
             info.bvh = bvh.TrianglesBVH.init(sm, info.std_datas.vertex_position.?) catch |err| blk: {
                 zgp_log.err("Failed to build BVH: {}", .{err});

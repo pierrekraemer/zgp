@@ -14,6 +14,8 @@ const Mat4d = mat.Mat4d;
 const eigen = @import("../../geometry/eigen.zig");
 const geometry_utils = @import("../../geometry/utils.zig");
 
+const line_quadric_epsilon = 1e-4;
+
 /// Compute and return the QEM of the given vertex.
 /// The QEM of a vertex is defined as the sum of the outer products of the planes of its incident faces.
 /// The plane of a face is defined by its normal n and a point p on the face as the 4D vector (n, -p.n).
@@ -46,7 +48,6 @@ pub fn vertexQEM(
             vq = mat.add4f(vq, fq);
         }
     }
-    const line_quadric_epsilon = 1e-4;
     const tb = vertex_tangent_basis.value(vertex);
     const plane_tb1 = Vec4f{ tb[0][0], tb[0][1], tb[0][2], -vec.dot3f(p, tb[0]) };
     const plane_tb2 = Vec4f{ tb[1][0], tb[1][1], tb[1][2], -vec.dot3f(p, tb[1]) };
@@ -100,7 +101,6 @@ pub fn computeVertexQEMs(
             );
         }
     }
-    const line_quadric_epsilon = 1e-4;
     var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
     defer vertex_it.deinit();
     while (vertex_it.next()) |vertex| {

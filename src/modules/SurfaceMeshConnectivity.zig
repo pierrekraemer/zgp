@@ -72,6 +72,7 @@ fn remesh(
     sm: *SurfaceMesh,
     sm_bvh: *bvh.TrianglesBVH,
     edge_length_factor: f32,
+    preserve_features: bool,
     adaptive: bool,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
@@ -85,11 +86,12 @@ fn remesh(
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
-    try remeshing.pliantRemeshing(
+    try remeshing.isotropicRemeshing(
         smc.app_ctx,
         sm,
         sm_bvh,
         edge_length_factor,
+        preserve_features,
         adaptive,
         vertex_position,
         corner_angle,
@@ -213,6 +215,7 @@ pub fn rightClickMenu(m: *Module) void {
         var edge_length_factor: f32 = 1.0;
         var percent_vertices_to_keep: i32 = 75;
         var adaptive_remeshing: bool = false;
+        var preserve_features: bool = false;
         var convex_hull_name_buf: [32]u8 = @splat(0);
     };
 
@@ -305,6 +308,7 @@ pub fn rightClickMenu(m: *Module) void {
             _ = c.ImGui_SliderFloatEx("", &UiData.edge_length_factor, 0.1, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
             c.ImGui_PopID();
             _ = c.ImGui_Checkbox("Curvature adaptive", &UiData.adaptive_remeshing);
+            _ = c.ImGui_Checkbox("Preserve features", &UiData.preserve_features);
             var disabled =
                 !info.bvh.initialized or
                 info.std_datas.vertex_position == null or
@@ -329,6 +333,7 @@ pub fn rightClickMenu(m: *Module) void {
                     sm,
                     &info.bvh,
                     UiData.edge_length_factor,
+                    UiData.preserve_features,
                     UiData.adaptive_remeshing,
                     info.std_datas.vertex_position.?,
                     info.std_datas.corner_angle.?,

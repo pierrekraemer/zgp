@@ -118,8 +118,8 @@ pub fn poissonDiskSamplePointsOnSurface(
         const f_basis_Y: Vec3f = vec.normalized3f(vec.cross3f(face_normal.value(f), f_basis_X));
         const pos = sp.readData(Vec3f, .vertex, vertex_position);
         var new_point_added = false;
-        // 25 attempts to find a valid candidate point around the current point
-        for (0..25) |_| {
+        // 15 attempts to find a valid candidate point around the current point
+        for (0..15) |_| {
             // sample a random angle and distance
             const angle = r.float(f32) * std.math.pi * 2.0;
             const dist = r.float(f32) * min_distance + min_distance;

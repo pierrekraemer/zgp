@@ -89,7 +89,7 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !IncidenceGraphStore {
         .incidence_graphs_info = .empty,
         .data_vbo = .empty,
         .data_last_update = .empty,
-        .cell_buffer_pool = try .init(io, allocator, 1024, 64, 32),
+        .cell_buffer_pool = try .init(io, allocator, 2048, 64, 32),
     };
 }
 

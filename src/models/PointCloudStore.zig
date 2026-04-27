@@ -86,7 +86,7 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !PointCloudStore {
         .point_clouds_info = .empty,
         .data_vbo = .empty,
         .data_last_update = .empty,
-        .point_buffer_pool = try .init(io, allocator, 1024, 64, 32),
+        .point_buffer_pool = try .init(io, allocator, 2048, 64, 32),
     };
 }
 

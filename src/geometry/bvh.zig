@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 
 const c = @import("../main.zig").c;
-const zgp_log = std.log.scoped(.zgp);
 
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfacePoint = @import("../models/surface/SurfacePoint.zig");

@@ -22,6 +22,7 @@ pub fn build(b: *std.Build) void {
         .root = b.path("src"),
         .files = &.{
             "bvh.cpp",
+            "kd.cpp",
         },
     });
     lib.installHeadersDirectory(

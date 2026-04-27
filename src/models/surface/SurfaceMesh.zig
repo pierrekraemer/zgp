@@ -290,11 +290,11 @@ pub const DartMarker = struct {
     }
 
     pub fn mark(dm: *DartMarker, d: Dart) void {
-        assert(!dm.isMarked(d));
+        // assert(!dm.isMarked(d));
         dm.marker.valuePtr(d).* = true;
     }
     pub fn unmark(dm: *DartMarker, d: Dart) void {
-        assert(dm.isMarked(d));
+        // assert(dm.isMarked(d));
         dm.marker.valuePtr(d).* = false;
     }
     pub fn isMarked(dm: *DartMarker, d: Dart) bool {
@@ -337,12 +337,12 @@ pub const CellMarker = struct {
 
     pub fn mark(cm: *CellMarker, c: Cell) void {
         assert(c.cellType() == cm.cell_type);
-        assert(!cm.isMarked(c));
+        // assert(!cm.isMarked(c));
         cm.marker.valuePtr(cm.surface_mesh.cellIndex(c)).* = true;
     }
     pub fn unmark(cm: *CellMarker, c: Cell) void {
         assert(c.cellType() == cm.cell_type);
-        assert(cm.isMarked(c));
+        // assert(cm.isMarked(c));
         cm.marker.valuePtr(cm.surface_mesh.cellIndex(c)).* = false;
     }
     pub fn isMarked(cm: *CellMarker, c: Cell) bool {
@@ -414,6 +414,14 @@ pub const CellIterator = struct {
             }
         }
         return cell;
+    }
+    // this "safe" version checks if the current_dart prepared at the previous call is still valid
+    // (it could be invalid in case of removal operations during the iteration)
+    pub fn nextSafe(ci: *CellIterator) ?Cell {
+        if (!ci.surface_mesh.dart_data.isActiveIndex(ci.current_dart)) {
+            ci.current_dart = if (ci.cell_type == .boundary) ci.surface_mesh.nextBoundaryDart(ci.current_dart) else ci.surface_mesh.nextNonBoundaryDart(ci.current_dart);
+        }
+        return ci.next();
     }
     pub fn reset(ci: *CellIterator) void {
         ci.current_dart = if (ci.cell_type == .boundary) ci.surface_mesh.firstBoundaryDart() else ci.surface_mesh.firstNonBoundaryDart();
@@ -711,11 +719,6 @@ pub fn addCellSet(sm: *SurfaceMesh, cell_type: CellType, name: []const u8) !*Cel
     const owned_name = try sm.allocator.dupeZ(u8, name); // duplicate name to own the hashmap key
     errdefer sm.allocator.free(owned_name);
 
-    // const cell_set = try sm.allocator.create(CellSet);
-    // errdefer sm.allocator.destroy(cell_set);
-    // cell_set.* = try .init(sm, cell_type, owned_name);
-    // errdefer cell_set.deinit();
-
     try cell_sets.put(sm.allocator, owned_name, try .init(sm, cell_type, owned_name));
     return cell_sets.getPtr(owned_name).?;
 }
@@ -734,8 +737,6 @@ pub fn removeCellSet(sm: *SurfaceMesh, cell_type: CellType, cell_set: *CellSet) 
     if (cell_sets.remove(cell_set.name)) {
         const name: [:0]const u8 = @ptrCast(cell_set.name); // the name is a null-terminated string (dupeZ in addData)
         sm.allocator.free(name); // free the name
-        // cell_set.deinit();
-        // sm.allocator.destroy(cell_set);
     }
 }
 
@@ -895,7 +896,7 @@ pub fn cellIndex(sm: *const SurfaceMesh, c: Cell) u32 {
 /// However, it is harmless to call it at any time (but likely unnecessary).
 pub fn indexCells(sm: *SurfaceMesh, cell_type: CellType) !void {
     assert(cell_type == .vertex or cell_type == .edge or cell_type == .face);
-    var it = try CellIterator.init(sm, cell_type);
+    var it: CellIterator = try .init(sm, cell_type);
     defer it.deinit();
     while (it.next()) |cell| {
         if (sm.cellIndex(cell) == invalid_index) {
@@ -915,16 +916,17 @@ pub fn nbCells(sm: *SurfaceMesh, cell_type: CellType) u32 {
     return switch (cell_type) {
         .vertex, .edge, .face => sm.dataContainerPtr(cell_type).nbElements(),
         .halfedge, .corner => sm.dart_data.nbElements() - sm.nb_boundary_darts,
-        .boundary => unreachable,
-        // .boundary => blk: {
-        //     var count: u32 = 0;
-        //     var it: CellIterator = try .init(sm, .boundary);
-        //     defer it.deinit();
-        //     while (it.next()) |_| {
-        //         count += 1;
-        //     }
-        //     break :blk count;
-        // },
+        .boundary => blk: {
+            var count: u32 = 0;
+            var it: CellIterator = CellIterator.init(sm, .boundary) catch {
+                break :blk 0; // if the iterator cannot be created, return 0
+            };
+            defer it.deinit();
+            while (it.next()) |_| {
+                count += 1;
+            }
+            break :blk count;
+        },
     };
 }
 
@@ -933,8 +935,12 @@ pub fn nbCells(sm: *SurfaceMesh, cell_type: CellType) u32 {
 pub fn degree(sm: *const SurfaceMesh, cell: Cell) u32 {
     return switch (cell) {
         // nb refs is equal to the number of darts of the vertex which is equal to its degree
-        // (more efficient than iterating through the darts of the vertex)
-        .vertex => sm.vertex_data.nb_refs.value(sm.cellIndex(cell)),
+        // (no need to iterate through the darts of the vertex)
+        .vertex => blk: {
+            const index = sm.cellIndex(cell);
+            assert(sm.vertex_data.isActiveIndex(index));
+            break :blk sm.vertex_data.nb_refs.value(index);
+        },
         .edge => if (sm.isBoundaryDart(cell.dart()) or sm.isBoundaryDart(sm.phi2(cell.dart()))) 1 else 2,
         else => unreachable,
     };
@@ -946,7 +952,7 @@ pub fn codegree(sm: *const SurfaceMesh, cell: Cell) u32 {
     return switch (cell) {
         .edge => 2,
         // nb refs is equal to the number of darts of the face which is equal to its codegree
-        // (more efficient than iterating through the darts of the face)
+        // (no need to iterate through the darts of the face)
         .face => blk: {
             // boundary faces are not indexed and thus do not have an associated index with a ref count
             if (sm.isBoundaryDart(cell.dart())) {
@@ -954,7 +960,11 @@ pub fn codegree(sm: *const SurfaceMesh, cell: Cell) u32 {
                 var dart_it = sm.cellDartIterator(cell);
                 while (dart_it.next()) |_| : (res += 1) {}
                 break :blk res;
-            } else break :blk sm.face_data.nb_refs.value(sm.cellIndex(cell));
+            } else {
+                const index = sm.cellIndex(cell);
+                assert(sm.face_data.isActiveIndex(index));
+                break :blk sm.face_data.nb_refs.value(index);
+            }
         },
         else => unreachable,
     };
@@ -1458,6 +1468,7 @@ pub fn canCollapseEdge(sm: *const SurfaceMesh, edge: Cell) bool {
     }
 
     // condition 3: avoid _pinching_ the surface
+    // TODO: could implement this with a set (HashMap(u32, void))
     var buf: [64]u32 = undefined; // TODO: arbitrary limit of 64 only to avoid dynamic memory allocation here
     var adjacentVertices = std.ArrayList(u32).initBuffer(&buf);
     var d_it = sm.phi_1(d_12);
@@ -1522,8 +1533,8 @@ pub fn removeVertex(sm: *SurfaceMesh, vertex: Cell) void {
     assert(vertex.cellType() == .vertex);
     const d = vertex.dart();
     const d1 = sm.phi1(d);
-    var v_dart_it = sm.cellDartIterator(vertex);
-    while (v_dart_it.next()) |it| {
+    var dart_it = sm.cellDartIterator(vertex);
+    while (dart_it.next()) |it| {
         sm.phi1Sew(it, sm.phi_1(sm.phi2(it)));
     }
     sm.removeFace(.{ .face = d });

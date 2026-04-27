@@ -15,6 +15,7 @@ pub const c = @cImport({
     @cInclude("ceigen/sparse.h");
     @cInclude("ceigen/dense.h");
     @cInclude("clibacc/bvh.h");
+    // @cInclude("predicates/predicates.h");
 });
 
 const SurfaceMesh = @import("models/surface/SurfaceMesh.zig");

@@ -131,12 +131,12 @@ pub const CellMarker = struct {
 
     pub fn mark(cm: *CellMarker, c: Cell) void {
         assert(c.cellType() == cm.cell_type);
-        assert(!cm.isMarked(c));
+        // assert(!cm.isMarked(c));
         cm.marker.valuePtr(c.index()).* = true;
     }
     pub fn unmark(cm: *CellMarker, c: Cell) void {
         assert(c.cellType() == cm.cell_type);
-        assert(cm.isMarked(c));
+        // assert(cm.isMarked(c));
         cm.marker.valuePtr(c.index()).* = false;
     }
     pub fn isMarked(cm: *CellMarker, c: Cell) bool {

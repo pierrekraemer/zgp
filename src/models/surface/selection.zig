@@ -23,15 +23,13 @@ fn includeVertex(
             try edge_buffer.append(sm.allocator, .{ .edge = d });
         }
         // if all darts of the face are now marked, include face in result
-        var face_in = true;
         const face: SurfaceMesh.Cell = .{ .face = d };
         var face_dart_it = sm.cellDartIterator(face);
-        while (face_dart_it.next()) |fd| {
+        const face_in = while (face_dart_it.next()) |fd| {
             if (!dm.isMarked(fd)) {
-                face_in = false;
-                break;
+                break false;
             }
-        }
+        } else true;
         if (face_in) {
             try face_buffer.append(sm.allocator, face);
         }

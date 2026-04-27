@@ -64,8 +64,8 @@ pub fn readData(sp: *const SurfacePoint, comptime T: type, comptime cell_type: S
                 const wc = f.bcoords[0] * f.bcoords[1];
                 break :blk interpolate3(
                     data.value(.{ .edge = sp.surface_mesh.phi1(f.cell.dart()) }), // opposite edge of v0 in the triangle
-                    data.value(.{ .edge = f.cell.dart() }), // opposite edge of v1 in the triangle
-                    data.value(.{ .edge = sp.surface_mesh.phi_1(f.cell.dart()) }), // opposite edge of v2 in the triangle
+                    data.value(.{ .edge = sp.surface_mesh.phi_1(f.cell.dart()) }), // opposite edge of v1 in the triangle
+                    data.value(.{ .edge = f.cell.dart() }), // opposite edge of v2 in the triangle
                     wa / @max((wa + wb + wc), geometry_utils.epsilon),
                     wb / @max((wa + wb + wc), geometry_utils.epsilon),
                     wc / @max((wa + wb + wc), geometry_utils.epsilon),

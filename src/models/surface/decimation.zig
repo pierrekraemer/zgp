@@ -1,8 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
-const PriorityQueue = @import("../../utils/PriorityQueue.zig").PriorityQueue;
 
-const zgp_log = std.log.scoped(.zgp);
+const PriorityQueue = @import("../../utils/PriorityQueue.zig").PriorityQueue;
 
 const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
@@ -39,7 +38,7 @@ const EdgeQueue = PriorityQueue(EdgeInfo, EdgeQueueContext, EdgeInfo.cmp, EdgeIn
 
 fn edgeCollapsePositionAndQuadric(queue: *EdgeQueue, edge: SurfaceMesh.Cell) struct { Vec3f, Mat4f } {
     assert(edge.cellType() == .edge);
-    const ctx: EdgeQueueContext = queue.context;
+    const ctx: *const EdgeQueueContext = &queue.context;
     const d = edge.dart();
     const d1 = ctx.surface_mesh.phi1(d);
     const v1: SurfaceMesh.Cell = .{ .vertex = d };
@@ -122,7 +121,7 @@ pub fn decimateQEM(
     });
     defer queue.deinit(app_ctx.allocator);
 
-    // init queue with collapsible edges
+    // init queue with all topologically collapsible edges
     var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
     defer edge_it.deinit();
     while (edge_it.next()) |edge| {
@@ -157,8 +156,8 @@ pub fn decimateQEM(
         vertex_position.valuePtr(v).* = p;
         vertex_qem.valuePtr(v).* = q;
 
-        var dit = sm.cellDartIterator(v); // v.dart() == d_12
-        while (dit.next()) |dv| {
+        var dart_it = sm.cellDartIterator(v); // v.dart() == d_12
+        while (dart_it.next()) |dv| {
             try updateEdgeInQueue(app_ctx.allocator, &queue, .{ .edge = dv });
             try updateEdgeInQueue(app_ctx.allocator, &queue, .{ .edge = sm.phi1(dv) });
             if (dv == d_12 or dv == dd_12) {
