@@ -52,19 +52,6 @@ pub fn computeVertexSQEMs(
     line_quadric_epsilon: f32,
     vertex_sqem: SurfaceMesh.CellData(.vertex, SQEM),
 ) !void {
-    // vertex_sqem.data.fill(SQEM.zero);
-    // var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
-    // defer face_it.deinit();
-    // while (face_it.next()) |face| {
-    //     const n = face_normal.value(face);
-    //     const p = vertex_position.value(.{ .vertex = face.dart() });
-    //     var fsq: SQEM = .initSpherePlaneDistance(p, n, face_area.value(face) / 3.0); // TODO: should divide by sm.codegree(face) to avoid triangular hypothesis
-    //     var dart_it = sm.cellDartIterator(face);
-    //     while (dart_it.next()) |d| {
-    //         vertex_sqem.valuePtr(.{ .vertex = d }).add(&fsq);
-    //     }
-    // }
-
     const Task = struct {
         const Task = @This();
 

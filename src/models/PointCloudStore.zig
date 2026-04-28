@@ -5,8 +5,6 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 
 const c = @import("../main.zig").c;
-
-const imgui_log = std.log.scoped(.imgui);
 const zgp_log = std.log.scoped(.zgp);
 
 const imgui_utils = @import("../ui/imgui.zig");
@@ -25,6 +23,7 @@ const IBO = @import("../rendering/IBO.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
+const kdtree = @import("../geometry/kdtree.zig");
 
 /// This struct defines the standard datas of a PointCloud
 pub const PointCloudStdDatas = struct {
@@ -45,6 +44,9 @@ pub const PointCloudStdDataTag = std.meta.Tag(PointCloudStdData);
 const PointCloudInfo = struct {
     std_datas: PointCloudStdDatas = .{},
 
+    kdtree: kdtree.PointsKDTree = .{},
+    kdtree_last_update: ?std.Io.Timestamp = null,
+
     points_ibo: IBO,
 
     pub fn init() PointCloudInfo {
@@ -52,8 +54,9 @@ const PointCloudInfo = struct {
             .points_ibo = .init(),
         };
     }
-    pub fn deinit(self: *PointCloudInfo) void {
-        self.points_ibo.deinit();
+    pub fn deinit(pci: *PointCloudInfo) void {
+        pci.kdtree.deinit();
+        pci.points_ibo.deinit();
     }
 };
 
@@ -64,7 +67,7 @@ allocator: std.mem.Allocator,
 listeners: std.ArrayList(*Module),
 
 point_clouds: std.StringArrayHashMapUnmanaged(*PointCloud),
-point_clouds_info: std.AutoArrayHashMapUnmanaged(*const PointCloud, PointCloudInfo),
+point_clouds_info: std.AutoHashMapUnmanaged(*const PointCloud, PointCloudInfo),
 selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 
 // each DataGen can be associated with a VBO
@@ -93,7 +96,8 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !PointCloudStore {
 pub fn deinit(pcs: *PointCloudStore) void {
     pcs.listeners.deinit(pcs.allocator);
 
-    for (pcs.point_clouds_info.values()) |*info| {
+    var info_it = pcs.point_clouds_info.valueIterator();
+    while (info_it.next()) |info| {
         info.deinit();
     }
     pcs.point_clouds_info.deinit(pcs.allocator);
@@ -168,7 +172,7 @@ pub fn destroyPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
     }
 
     pcs.point_clouds_info.getPtr(pc).?.deinit();
-    _ = pcs.point_clouds_info.swapRemove(pc);
+    _ = pcs.point_clouds_info.remove(pc);
 
     _ = pcs.point_clouds.swapRemove(name);
     pcs.allocator.free(name); // free the name
@@ -347,6 +351,47 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
                     UiData.data_name_buf = @splat(0);
                 },
             }
+        }
+    }
+
+    {
+        const info = pcs.point_clouds_info.getPtr(pc).?;
+
+        var kdtree_computable = true;
+        if (info.std_datas.position == null) {
+            kdtree_computable = false;
+        }
+        var kdtree_upToDate = true;
+        if (!kdtree_computable or info.kdtree_last_update == null or std.math.order(info.kdtree_last_update.?.nanoseconds, pcs.dataLastUpdate(info.std_datas.position.?.gen()).?.nanoseconds) == .lt) {
+            kdtree_upToDate = false;
+        }
+        if (!kdtree_computable) {
+            c.ImGui_BeginDisabled(true);
+        }
+        if (!kdtree_upToDate) {
+            c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
+            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
+            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
+        } else {
+            c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 200, 128, 200));
+            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 200, 128, 255));
+            c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 200, 128, 128));
+        }
+        var buf_kdtree_button: [32]u8 = undefined;
+        const kdtree_button = std.fmt.bufPrintZ(&buf_kdtree_button, c.ICON_FA_SITEMAP ++ " {s} KdTree", .{if (info.kdtree.initialized) "Update" else "Build"}) catch "";
+        if (c.ImGui_ButtonEx(kdtree_button, c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            info.kdtree.deinit();
+            info.kdtree = kdtree.PointsKDTree.init(pc, info.std_datas.position.?) catch |err| blk: {
+                zgp_log.err("Failed to build KdTree: {}", .{err});
+                break :blk .{};
+            };
+            if (info.kdtree.initialized) {
+                info.kdtree_last_update = std.Io.Timestamp.now(pcs.io, .real);
+            }
+        }
+        c.ImGui_PopStyleColorEx(3);
+        if (!kdtree_computable) {
+            c.ImGui_EndDisabled();
         }
     }
 

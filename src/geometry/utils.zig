@@ -85,6 +85,18 @@ pub fn removeComponent(v: Vec3f, unitDir: Vec3f) Vec3f {
     );
 }
 
+/// Compute and return a tangent basis for the given vector.
+pub fn tangentBasis(v: Vec3f) [2]Vec3f {
+    const vn = vec.normalized3f(v);
+    var X: Vec3f = .{ 1.0, 0.0, 0.0 };
+    if (@abs(vec.dot3f(X, vn)) > 0.9) {
+        X = .{ 0.0, 1.0, 0.0 };
+    }
+    X = vec.cross3f(X, vn); // X and vn are both unit vectors
+    const Y = vec.cross3f(vn, X);
+    return .{ X, Y };
+}
+
 /// Compute and return the axis-aligned bounding box of the given data points
 /// as a pair of minimum and maximum corners.
 pub fn boundingBox(data: *const Data(Vec3f)) struct { Vec3f, Vec3f } {

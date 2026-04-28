@@ -5,8 +5,6 @@ const assert = std.debug.assert;
 const builtin = @import("builtin");
 
 const c = @import("../main.zig").c;
-
-const imgui_log = std.log.scoped(.imgui);
 const zgp_log = std.log.scoped(.zgp);
 
 const imgui_utils = @import("../ui/imgui.zig");
@@ -85,7 +83,7 @@ allocator: std.mem.Allocator,
 listeners: std.ArrayList(*Module),
 
 surface_meshes: std.StringArrayHashMapUnmanaged(*SurfaceMesh),
-surface_meshes_info: std.AutoArrayHashMapUnmanaged(*const SurfaceMesh, SurfaceMeshInfo),
+surface_meshes_info: std.AutoHashMapUnmanaged(*const SurfaceMesh, SurfaceMeshInfo),
 selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 
 // each DataGen can be associated with a VBO
@@ -119,7 +117,8 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !SurfaceMeshStore {
 pub fn deinit(sms: *SurfaceMeshStore) void {
     sms.listeners.deinit(sms.allocator);
 
-    for (sms.surface_meshes_info.values()) |*info| {
+    var info_it = sms.surface_meshes_info.valueIterator();
+    while (info_it.next()) |info| {
         info.deinit();
     }
     sms.surface_meshes_info.deinit(sms.allocator);
@@ -200,7 +199,7 @@ pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
     }
 
     sms.surface_meshes_info.getPtr(sm).?.deinit();
-    _ = sms.surface_meshes_info.swapRemove(sm);
+    _ = sms.surface_meshes_info.remove(sm);
 
     _ = sms.surface_meshes.swapRemove(name);
     sms.allocator.free(name); // free the name

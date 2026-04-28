@@ -10,28 +10,28 @@ const Vec3f = vec.Vec3f;
 
 pub const Index = u32;
 
-pub const KDTree = struct {
+pub const PointsKDTree = struct {
     initialized: bool = false,
     kdtree_ptr: *anyopaque = undefined,
     point_cloud: *PointCloud = undefined,
-    positions: PointCloud.CellData(.point, Vec3f) = undefined,
+    point_position: PointCloud.CellData(Vec3f) = undefined,
+    pc_points: std.ArrayList(PointCloud.Point) = .empty,
 
     pub fn init(
         pc: *PointCloud,
-        positions: PointCloud.CellData(.point, Vec3f),
-    ) !KDTree {
-        var point_index = try pc.addData(.point, u32, "__point_index");
-        defer pc.removeData(.point, u32, point_index);
+        point_position: PointCloud.CellData(Vec3f),
+    ) !PointsKDTree {
+        var pc_points = try std.ArrayList(PointCloud.Point).initCapacity(pc.allocator, pc.nbPoints());
+        errdefer pc_points.deinit(pc.allocator);
 
-        var point_array = try std.ArrayList(Vec3f).initCapacity(pc.allocator, pc.nbCells(.point));
+        var point_array = try std.ArrayList(Vec3f).initCapacity(pc.allocator, pc.nbPoints());
         defer point_array.deinit(pc.allocator);
 
-        var point_it: PointCloud.CellIterator = try .init(pc, .point);
-        defer point_it.deinit();
+        var point_it = pc.pointIterator();
         var nb_points: u32 = 0;
         while (point_it.next()) |p| : (nb_points += 1) {
-            point_index.valuePtr(p).* = nb_points;
-            try point_array.append(pc.allocator, positions.value(p));
+            try pc_points.append(pc.allocator, p);
+            try point_array.append(pc.allocator, point_position.value(p));
         }
 
         const kdtree_ptr = c.createKDTree(
@@ -43,21 +43,56 @@ pub const KDTree = struct {
             .initialized = true,
             .kdtree_ptr = kdtree_ptr,
             .point_cloud = pc,
-            .positions = positions,
+            .point_position = point_position,
+            .pc_points = pc_points,
         };
     }
 
-    pub fn deinit(kdtree: *KDTree) void {
+    pub fn deinit(kdtree: *PointsKDTree) void {
         if (kdtree.initialized) {
             c.destroyKDTree(kdtree.kdtree_ptr);
+            kdtree.pc_points.deinit(kdtree.point_cloud.allocator);
         }
         kdtree.initialized = false;
     }
 
-    pub fn nearestNeighbor(kdtree: KDTree, point: Vec3f) Vec3f {
+    pub fn nearestNeighbor(kdtree: *PointsKDTree, point: Vec3f) ?Vec3f {
         assert(kdtree.initialized);
-        var nearest: Vec3f = undefined;
-        c.nearestNeighbor(kdtree.kdtree_ptr, &point, &nearest);
-        return nearest;
+        var nearest: Index = undefined;
+        if (c.nearestNeighbor(kdtree.kdtree_ptr, &point, &nearest)) {
+            return kdtree.point_position.value(kdtree.pc_points.items[nearest]);
+        } else {
+            return null;
+        }
+    }
+
+    pub fn nearestNeighborIndex(kdtree: *PointsKDTree, point: Vec3f) ?PointCloud.Point {
+        assert(kdtree.initialized);
+        var nearest: Index = undefined;
+        if (c.nearestNeighbor(kdtree.kdtree_ptr, &point, &nearest)) {
+            return kdtree.pc_points.items[nearest];
+        } else {
+            return null;
+        }
+    }
+
+    // caller is responsible for ArrayList deinit
+    pub fn nearestNeighbors(
+        kdtree: *PointsKDTree,
+        allocator: std.mem.Allocator,
+        point: Vec3f,
+        n: u32,
+    ) !std.ArrayList(PointCloud.Point) {
+        assert(kdtree.initialized);
+        var nn_indices = try std.ArrayList(Index).initCapacity(allocator, n);
+        defer nn_indices.deinit(allocator);
+        const nb_neighbors = c.nearestNeighbors(kdtree.kdtree_ptr, &point, n, nn_indices.items.ptr);
+        nn_indices.items.len = nb_neighbors;
+
+        var nns = try std.ArrayList(PointCloud.Point).initCapacity(allocator, nb_neighbors);
+        for (nn_indices.items) |idx| {
+            try nns.append(allocator, kdtree.pc_points.items[idx]);
+        }
+        return nns;
     }
 };

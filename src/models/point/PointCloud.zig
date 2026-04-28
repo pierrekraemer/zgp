@@ -72,8 +72,8 @@ pub const ParallelPointTaskRunner = struct {
     iterator: PointIterator,
     // manage two groups of buffers to be able to run tasks on one group while filling the other
     buffers: [2][]PointBuffer,
-    // one WaitGroup per group of buffers to be able to wait for the completion of tasks on each group independently
-    wg: [2]std.Thread.WaitGroup,
+    // one Group per group of buffers to be able to wait for the completion of tasks on each group independently
+    wg: [2]std.Io.Group,
 
     pub fn init(pc: *PointCloud) !ParallelPointTaskRunner {
         const cpu_count = try std.Thread.getCpuCount();
@@ -98,7 +98,7 @@ pub const ParallelPointTaskRunner = struct {
                     break :blk buffers;
                 },
             },
-            .wg = .{ .{}, .{} },
+            .wg = .{ .init, .init },
         };
     }
 
@@ -115,52 +115,51 @@ pub const ParallelPointTaskRunner = struct {
         pctr.iterator.reset();
     }
 
-    fn runTaskOnBuffer(task: anytype, buf: []Point) void {
-        for (buf) |p| {
-            task.run(p);
-        }
+    fn runTaskOnBuffer(Task: type) fn (*const Task, []Point) void {
+        return struct {
+            fn f(task: *const Task, buf: []Point) void {
+                for (buf) |cell| task.run(cell);
+            }
+        }.f;
     }
 
     // The `task` must expose a `run(self: *Self, point: Point) void` function
-    pub fn run(pctr: *ParallelPointTaskRunner, app_ctx: *AppContext, task: anytype) !void {
+    pub fn run(pptr: *ParallelPointTaskRunner, app_ctx: *AppContext, task: anytype) !void {
         var current_buf_group: usize = 0;
         var current_buf_index: usize = 0;
         var current_index_in_buffer: usize = 0;
-        while (pctr.iterator.next()) |p| {
+        while (pptr.iterator.next()) |p| {
             // add point to current buffer of current buffer group
-            pctr.buffers[current_buf_group][current_buf_index].data[current_index_in_buffer] = p;
+            pptr.buffers[current_buf_group][current_buf_index].data[current_index_in_buffer] = p;
             current_index_in_buffer += 1;
             // if the current buffer is full, run the task on it and switch to the next buffer of the current buffer group
-            if (current_index_in_buffer == pctr.buffers[current_buf_group][current_buf_index].data.len) {
-                app_ctx.thread_pool.spawnWg(
-                    &pctr.wg[current_buf_group],
-                    runTaskOnBuffer,
-                    .{ &task, pctr.buffers[current_buf_group][current_buf_index].data },
+            if (current_index_in_buffer == pptr.buffers[current_buf_group][current_buf_index].data.len) {
+                pptr.wg[current_buf_group].async(
+                    app_ctx.io,
+                    runTaskOnBuffer(@TypeOf(task)),
+                    .{ &task, pptr.buffers[current_buf_group][current_buf_index].data },
                 );
                 current_buf_index += 1;
                 current_index_in_buffer = 0;
             }
             // if we have used all the buffers of the current buffer group, switch to the next buffer group
-            if (current_buf_index == pctr.buffers[current_buf_group].len) {
+            if (current_buf_index == pptr.buffers[current_buf_group].len) {
                 current_buf_group = (current_buf_group + 1) % 2;
                 // threads working on this buffer group are waited on before we can reuse the buffers of this group
-                pctr.wg[current_buf_group].wait();
-                pctr.wg[current_buf_group].reset();
+                try pptr.wg[current_buf_group].await(app_ctx.io);
                 current_buf_index = 0;
             }
         }
         // run the task on the last potentially partially filled buffer and wait for the threads to finish
         if (current_index_in_buffer > 0) {
-            app_ctx.thread_pool.spawnWg(
-                &pctr.wg[current_buf_group],
-                runTaskOnBuffer,
-                .{ &task, pctr.buffers[current_buf_group][current_buf_index].data[0..current_index_in_buffer] },
+            pptr.wg[current_buf_group].async(
+                app_ctx.io,
+                runTaskOnBuffer(@TypeOf(task)),
+                .{ &task, pptr.buffers[current_buf_group][current_buf_index].data[0..current_index_in_buffer] },
             );
         }
-        pctr.wg[0].wait();
-        pctr.wg[0].reset();
-        pctr.wg[1].wait();
-        pctr.wg[1].reset();
+        try pptr.wg[0].await(app_ctx.io);
+        try pptr.wg[1].await(app_ctx.io);
     }
 };
 

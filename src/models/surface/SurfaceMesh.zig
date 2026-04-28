@@ -1479,7 +1479,7 @@ pub fn canCollapseEdge(sm: *const SurfaceMesh, edge: Cell) bool {
     }
     d_it = sm.phi_1(dd_12);
     while (d_it != d12) : (d_it = sm.phi_1(sm.phi2(d_it))) {
-        if (std.mem.indexOfScalar(u32, adjacentVertices.items, sm.dartCellIndex(d_it, .vertex)) != null) {
+        if (std.mem.findScalar(u32, adjacentVertices.items, sm.dartCellIndex(d_it, .vertex)) != null) {
             return false;
         }
     }

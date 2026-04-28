@@ -53,10 +53,10 @@ const IncidenceGraphInfo = struct {
             .triangles_ibo = .init(),
         };
     }
-    pub fn deinit(self: *IncidenceGraphInfo) void {
-        self.points_ibo.deinit();
-        self.lines_ibo.deinit();
-        self.triangles_ibo.deinit();
+    pub fn deinit(igi: *IncidenceGraphInfo) void {
+        igi.points_ibo.deinit();
+        igi.lines_ibo.deinit();
+        igi.triangles_ibo.deinit();
     }
 };
 
@@ -67,7 +67,7 @@ allocator: std.mem.Allocator,
 listeners: std.ArrayList(*Module),
 
 incidence_graphs: std.StringArrayHashMapUnmanaged(*IncidenceGraph),
-incidence_graphs_info: std.AutoArrayHashMapUnmanaged(*const IncidenceGraph, IncidenceGraphInfo),
+incidence_graphs_info: std.AutoHashMapUnmanaged(*const IncidenceGraph, IncidenceGraphInfo),
 selected_model: *ModelSelection = undefined, // set in AppContext wireUp
 
 // each DataGen can be associated with a VBO
@@ -96,7 +96,8 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !IncidenceGraphStore {
 pub fn deinit(igs: *IncidenceGraphStore) void {
     igs.listeners.deinit(igs.allocator);
 
-    for (igs.incidence_graphs_info.values()) |*info| {
+    var info_it = igs.incidence_graphs_info.valueIterator();
+    while (info_it.next()) |info| {
         info.deinit();
     }
     igs.incidence_graphs_info.deinit(igs.allocator);
@@ -171,7 +172,7 @@ pub fn destroyIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) voi
     }
 
     igs.incidence_graphs_info.getPtr(ig).?.deinit();
-    _ = igs.incidence_graphs_info.swapRemove(ig);
+    _ = igs.incidence_graphs_info.remove(ig);
 
     _ = igs.incidence_graphs.swapRemove(name);
     igs.allocator.free(name); // free the name

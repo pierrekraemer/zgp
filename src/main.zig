@@ -15,6 +15,7 @@ pub const c = @cImport({
     @cInclude("ceigen/sparse.h");
     @cInclude("ceigen/dense.h");
     @cInclude("clibacc/bvh.h");
+    @cInclude("clibacc/kd.h");
     // @cInclude("predicates/predicates.h");
 });
 
@@ -44,6 +45,7 @@ const SurfaceMeshDeformation = @import("modules/SurfaceMeshDeformation.zig");
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
 const SurfaceMeshSampling = @import("modules/SurfaceMeshSampling.zig");
 const SurfaceMeshMedialAxis = @import("modules/SurfaceMeshMedialAxis.zig");
+const PointCloudMedialAxis = @import("modules/PointCloudMedialAxis.zig");
 const SurfaceMeshProceduralTexturing = @import("modules/SurfaceMeshProceduralTexturing.zig");
 
 const geometry_utils = @import("geometry/utils.zig");
@@ -161,6 +163,7 @@ var surface_mesh_deformation: SurfaceMeshDeformation = undefined;
 var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
 var surface_mesh_sampling: SurfaceMeshSampling = undefined;
 var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
+var point_cloud_medial_axis: PointCloudMedialAxis = undefined;
 var surface_mesh_procedural_texturing: SurfaceMeshProceduralTexturing = undefined;
 
 // TODO: add a console bar at the bottom of the window to display logs & info messages
@@ -196,6 +199,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     surface_mesh_connectivity = .init(&app_ctx, &surface_mesh_curvature);
     surface_mesh_sampling = .init(&app_ctx);
     surface_mesh_medial_axis = .init(&app_ctx);
+    point_cloud_medial_axis = .init(&app_ctx);
     surface_mesh_procedural_texturing = .init(&app_ctx);
 
     errdefer point_cloud_std_datas.deinit();
@@ -212,6 +216,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer surface_mesh_connectivity.deinit();
     errdefer surface_mesh_sampling.deinit();
     errdefer surface_mesh_medial_axis.deinit();
+    errdefer point_cloud_medial_axis.deinit();
     errdefer surface_mesh_procedural_texturing.deinit();
 
     try modules.append(app_ctx.allocator, &point_cloud_std_datas.module);
@@ -228,6 +233,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(app_ctx.allocator, &surface_mesh_connectivity.module);
     try modules.append(app_ctx.allocator, &surface_mesh_sampling.module);
     try modules.append(app_ctx.allocator, &surface_mesh_medial_axis.module);
+    try modules.append(app_ctx.allocator, &point_cloud_medial_axis.module);
     try modules.append(app_ctx.allocator, &surface_mesh_procedural_texturing.module);
     errdefer modules.deinit(app_ctx.allocator);
 
@@ -237,6 +243,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try app_ctx.point_cloud_store.addListener(&point_cloud_renderer.module);
     try app_ctx.point_cloud_store.addListener(&vector_per_vertex_renderer.module);
     try app_ctx.point_cloud_store.addListener(&surface_mesh_sampling.module);
+    try app_ctx.point_cloud_store.addListener(&point_cloud_medial_axis.module);
 
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_std_datas.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_renderer.module);
@@ -631,6 +638,7 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
     surface_mesh_connectivity.deinit();
     surface_mesh_sampling.deinit();
     surface_mesh_medial_axis.deinit();
+    point_cloud_medial_axis.deinit();
     surface_mesh_procedural_texturing.deinit();
 
     modules.deinit(app_ctx.allocator);
