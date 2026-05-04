@@ -143,7 +143,16 @@ fn uniformSampling(
     const sd = sms.surface_meshes_data.getPtr(sm).?;
     try sd.init(pointcloud_name);
 
-    try sampling.uniformlySamplePointsOnSurface(sms.app_ctx, sm, vertex_position, face_area, sd.samples, sd.position, sd.surface_point, nb_points);
+    try sampling.uniformlySamplePointsOnSurface(
+        sms.app_ctx,
+        sm,
+        vertex_position,
+        face_area,
+        sd.samples,
+        sd.position,
+        sd.surface_point,
+        nb_points,
+    );
     sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, Vec3f, sd.position);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, SurfacePoint, sd.surface_point);
@@ -160,7 +169,7 @@ fn poissonDiskSampling(
     sm_bvh: *bvh.TrianglesBVH,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    min_distance: f32,
+    poisson_radius: f32,
     pointcloud_name: []const u8,
 ) !void {
     const t = std.Io.Timestamp.now(sms.app_ctx.io, .real);
@@ -168,7 +177,17 @@ fn poissonDiskSampling(
     const sd = sms.surface_meshes_data.getPtr(sm).?;
     try sd.init(pointcloud_name);
 
-    try sampling.poissonDiskSamplePointsOnSurface(sms.app_ctx, sm, sm_bvh, vertex_position, face_normal, sd.samples, sd.position, sd.surface_point, min_distance);
+    try sampling.poissonDiskSamplePointsOnSurface(
+        sms.app_ctx,
+        sm,
+        sm_bvh,
+        vertex_position,
+        face_normal,
+        sd.samples,
+        sd.position,
+        sd.surface_point,
+        poisson_radius,
+    );
     sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, Vec3f, sd.position);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, SurfacePoint, sd.surface_point);
@@ -192,7 +211,7 @@ pub fn rightPanel(m: *Module) void {
     const DataTypesTag = std.meta.Tag(DataTypes);
     const UiData = struct {
         var nb_points: usize = 1000;
-        var min_distance: f32 = 0.02;
+        var poisson_radius: f32 = 0.02;
         var pointcloud_name_buf: [32]u8 = @splat(0);
         var selected_surface_mesh_cell_type: SurfaceMesh.CellType = .vertex;
         var selected_data_type: DataTypesTag = .Vec3f;
@@ -208,8 +227,13 @@ pub fn rightPanel(m: *Module) void {
     const sd = sms.surface_meshes_data.getPtr(sm).?;
 
     if (!sd.initialized) {
-        c.ImGui_Text("PointCloud name:");
+        c.ImGui_Text("Samples PointCloud name:");
         _ = c.ImGui_InputText("##Name", &UiData.pointcloud_name_buf, UiData.pointcloud_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
+    } else {
+        c.ImGui_TextDisabled("Samples Point Cloud: ");
+        c.ImGui_SameLine();
+        c.ImGui_Text(sms.app_ctx.point_cloud_store.pointCloudName(sd.samples).?);
+        c.ImGui_Separator();
     }
     const pointcloud_name = if (!sd.initialized) std.mem.sliceTo(&UiData.pointcloud_name_buf, 0) else "_"; // only used when not initialized
 
@@ -254,7 +278,7 @@ pub fn rightPanel(m: *Module) void {
         c.ImGui_SeparatorText("Poisson disk sampling");
         c.ImGui_Text("Minimum distance");
         c.ImGui_PushID("Minimum distance");
-        _ = c.ImGui_InputFloat("", @ptrCast(&UiData.min_distance));
+        _ = c.ImGui_InputFloat("", @ptrCast(&UiData.poisson_radius));
         c.ImGui_PopID();
         const disabled =
             !info.bvh.initialized or
@@ -270,7 +294,7 @@ pub fn rightPanel(m: *Module) void {
                 &info.bvh,
                 info.std_datas.vertex_position.?,
                 info.std_datas.face_normal.?,
-                UiData.min_distance,
+                UiData.poisson_radius,
                 pointcloud_name,
             ) catch |err| {
                 std.debug.print("Error during Poisson disk sampling: {}\n", .{err});

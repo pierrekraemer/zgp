@@ -22,7 +22,7 @@ pub fn shrinkingBall(
     while (true) {
         const q_next = pc_kdtree.nearestNeighbor(c) orelse return null;
         const dist = vec.norm3f(vec.sub3f(q_next, c));
-        if (@abs(dist - r) < 1e-4 or vec.norm3f(vec.sub3f(q_next, q)) < 1e-4) { // TODO: use a better epsilon?
+        if (@abs(dist - r) < 1e-4 or vec.norm3f(vec.sub3f(q_next, q)) < 1e-4 or vec.norm3f(vec.sub3f(p, q_next)) < 1e-4) { // TODO: use a better epsilon?
             break;
         }
         const r_next = blk: {
@@ -33,7 +33,7 @@ pub fn shrinkingBall(
         };
         const c_next = vec.sub3f(p, vec.mulScalar3f(n, r_next));
         const sep_angle = geometry_utils.angle(vec.sub3f(p, c_next), vec.sub3f(q_next, c_next));
-        if (j > 0 and sep_angle < 45.0 * std.math.pi / 180.0) { // TODO: use a configurable angle threshold?
+        if (j > 0 and sep_angle < 35.0 * std.math.pi / 180.0) { // TODO: use a configurable angle threshold?
             break;
         }
         r = r_next;
@@ -44,6 +44,9 @@ pub fn shrinkingBall(
             std.debug.print("Shrinking ball: too many iterations\n", .{});
             break;
         }
+    }
+    if (vec.norm3f(vec.sub3f(p, q)) < 1e-4) {
+        std.debug.print("Warning: shrinking ball center is too close to the point\n", .{});
     }
     return .{ c[0], c[1], c[2], r };
 }

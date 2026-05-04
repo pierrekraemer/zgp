@@ -150,7 +150,7 @@ const MedialAxisData = struct {
             var nns = try mad.point_cloud_kdtree.nearestNeighbors(mad.app_ctx.allocator, mad.point_position.value(p), 6);
             const p_idx = std.mem.findScalar(PointCloud.Point, nns.items, p);
             if (p_idx) |idx| {
-                _ = nns.swapRemove(idx);
+                _ = nns.swapRemove(idx); // remove the point itself from its neighbors
             }
             mad.point_knn.valuePtr(p).* = nns;
 
@@ -213,11 +213,13 @@ const MedialAxisData = struct {
             mad.point_shrinking_ball,
         );
         // and initialize the shrinking balls PointCloud
-        for (mad.point_shrinking_ball.data.data.items) |ball| { // raw data iteration is ok because the data was filled with null
+        for (mad.point_shrinking_ball.data.data.items, 0..) |ball, idx| { // raw data iteration is ok because the data was filled with null
             if (ball) |b| {
                 const sb = try mad.shrinking_balls.addPoint();
                 mad.shrinking_ball_center.valuePtr(sb).* = .{ b[0], b[1], b[2] };
                 mad.shrinking_ball_radius.valuePtr(sb).* = b[3];
+            } else {
+                std.debug.print("Warning: point {d} has no shrinking ball\n", .{idx});
             }
         }
 
@@ -405,10 +407,6 @@ const MedialAxisData = struct {
                         mad.sphere_center.valuePtr(s).* = .{ cs[0], cs[1], cs[2] };
                         mad.sphere_radius.valuePtr(s).* = cs[3];
                     }
-                    // else {
-                    //     mad.sphere_center.valuePtr(s).* = .{ opt_s[0], opt_s[1], opt_s[2] };
-                    //     mad.sphere_radius.valuePtr(s).* = opt_s[3];
-                    // }
                 }
             }
 

@@ -8,7 +8,6 @@ const c = @import("../main.zig").c;
 
 const Module = @import("../modules/Module.zig");
 
-const eigen = @import("../geometry/eigen.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec4f = vec.Vec4f;
@@ -149,13 +148,11 @@ pub fn menuBar(view: *View) void {
         c.ImGui_Separator();
         if (c.ImGui_Button("Pivot around world origin")) {
             view.camera.pivot_position = .{ 0.0, 0.0, 0.0 };
-            view.camera.look_dir = vec.normalized3f(vec.sub3f(view.camera.pivot_position, view.camera.position));
-            view.camera.updateViewMatrix();
+            view.camera.lookAtPivotPosition();
             view.needs_redraw = true;
         }
         if (c.ImGui_Button("Look at pivot point")) {
-            view.camera.look_dir = vec.normalized3f(vec.sub3f(view.camera.pivot_position, view.camera.position));
-            view.camera.updateViewMatrix();
+            view.camera.lookAtPivotPosition();
             view.needs_redraw = true;
         }
     }
@@ -214,33 +211,23 @@ pub fn sdlEvent(view: *View, event: *const c.SDL_Event) void {
 
 /// Reconstruct the world position of the pixel at (x, y) in the view with given depth value z.
 /// z is expected to be in [0, 1], as read from the depth buffer.
-/// Returns null if the world position cannot be reconstructed (e.g. if the camera is not set or if the projection/view matrix cannot be inverted).
+/// Returns null if the world position cannot be reconstructed
 pub fn viewToWorldZ(view: *const View, x: f32, y: f32, z: f32) ?Vec3f {
-    // reconstruct the world position from the depth value
-    // warning: Eigen (via ceigen) uses double precision
-    const p_ndc: Vec4d = .{
-        2.0 * (x / @as(f64, @floatFromInt(view.width))) - 1.0,
-        1.0 - (2.0 * y) / @as(f64, @floatFromInt(view.height)),
+    // reconstruct the world position from the depth value by unprojecting the clip-space position
+    // corresponding to the pixel coordinates and depth value using the inverse projection/view matrices
+    const p_ndc: Vec4f = .{
+        2.0 * (x / @as(f32, @floatFromInt(view.width))) - 1.0,
+        1.0 - (2.0 * y) / @as(f32, @floatFromInt(view.height)),
         z * 2.0 - 1.0,
         1.0,
     };
-    const m_proj = mat.mat4dFromMat4f(view.camera.projection_matrix);
-    const m_proj_inv = eigen.computeInverse4d(m_proj) orelse {
-        gl_log.err("Cannot invert projection matrix", .{});
-        return null;
-    };
-    var p_view = mat.mulVec4d(m_proj_inv, p_ndc);
+    var p_view = mat.mulVec4f(view.camera.projection_matrix_inv, p_ndc);
     if (p_view[3] == 0.0) {
         gl_log.err("Cannot divide by zero w component", .{});
         return null;
     }
-    p_view = vec.divScalar4d(p_view, p_view[3]);
-    const m_view = mat.mat4dFromMat4f(view.camera.view_matrix);
-    const m_view_inv = eigen.computeInverse4d(m_view) orelse {
-        gl_log.err("Cannot invert view matrix", .{});
-        return null;
-    };
-    const p_world_f = vec.vec4fFromVec4d(mat.mulVec4d(m_view_inv, p_view));
+    p_view = vec.divScalar4f(p_view, p_view[3]);
+    const p_world_f = mat.mulVec4f(view.camera.view_matrix_inv, p_view);
     return .{ p_world_f[0], p_world_f[1], p_world_f[2] };
 }
 
@@ -279,42 +266,27 @@ pub fn viewToWorldRayIfGeometry(view: *const View, x: f32, y: f32) ?Ray {
 
 /// Reconstruct a ray in world space from the camera position through the pixel at (x, y) in the view.
 pub fn viewToWorldRay(view: *const View, x: f32, y: f32) Ray {
-    const width: f32 = @floatFromInt(view.width);
-    const height: f32 = @floatFromInt(view.height);
-    const x_ndc = 2.0 * (x / width) - 1.0;
-    const y_ndc = 1.0 - 2.0 * (y / height);
-
-    const right = vec.normalized3f(vec.cross3f(view.camera.look_dir, view.camera.up_dir));
+    // Build the ray by unprojecting near/far clip-space points using the current projection/view matrices.
+    const near_world = view.viewToWorldZ(x, y, 0.0) orelse .{
+        view.camera.position[0],
+        view.camera.position[1],
+        view.camera.position[2],
+    };
+    const far_world = view.viewToWorldZ(x, y, 1.0) orelse .{
+        view.camera.position[0] + view.camera.look_dir[0],
+        view.camera.position[1] + view.camera.look_dir[1],
+        view.camera.position[2] + view.camera.look_dir[2],
+    };
+    const direction = vec.normalized3f(vec.sub3f(far_world, near_world));
 
     return switch (view.camera.projection_type) {
-        .perspective => blk: {
-            const tan_half_fov = @tan(view.camera.field_of_view / 2.0);
-            const dir = vec.normalized3f(vec.add3f(
-                view.camera.look_dir,
-                vec.add3f(
-                    vec.mulScalar3f(right, x_ndc * view.camera.aspect_ratio * tan_half_fov),
-                    vec.mulScalar3f(view.camera.up_dir, y_ndc * tan_half_fov),
-                ),
-            ));
-            break :blk .{
-                .origin = view.camera.position,
-                .direction = dir,
-            };
+        .perspective => .{
+            .origin = view.camera.position,
+            .direction = direction,
         },
-        .orthographic => blk: {
-            const ortho_height = -view.camera.view_matrix[3][2];
-            const ortho_width = view.camera.aspect_ratio * ortho_height;
-            const origin = vec.add3f(
-                view.camera.position,
-                vec.add3f(
-                    vec.mulScalar3f(right, x_ndc * ortho_width * 0.5),
-                    vec.mulScalar3f(view.camera.up_dir, y_ndc * ortho_height * 0.5),
-                ),
-            );
-            break :blk .{
-                .origin = origin,
-                .direction = view.camera.look_dir,
-            };
+        .orthographic => .{
+            .origin = near_world,
+            .direction = direction,
         },
     };
 }

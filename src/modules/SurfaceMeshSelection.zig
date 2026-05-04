@@ -312,10 +312,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                 const info = sm_store.surfaceMeshInfo(sm);
                 // TODO: fallback to brute-force search if the BVH is not available
                 if (info.bvh.initialized) {
-                    var mouse_x: f32 = 0;
-                    var mouse_y: f32 = 0;
-                    _ = c.SDL_GetMouseState(&mouse_x, &mouse_y);
-                    const ray = view.viewToWorldRay(mouse_x, mouse_y);
+                    const ray = view.viewToWorldRay(event.motion.x, event.motion.y);
                     switch (sms.selection_mode) {
                         .single => {
                             switch (sms.selecting_cell_type) {
@@ -493,21 +490,6 @@ pub fn rightPanel(m: *Module) void {
 
     c.ImGui_SeparatorText("Cell set");
     {
-        c.ImGui_Text("Cell set:");
-        c.ImGui_PushID("cell set");
-        switch (imgui_utils.surfaceMeshCellSetComboBox(sm, sms.selecting_cell_type, sd.selected_cell_set)) {
-            .unchanged => {},
-            .cleared => {
-                sd.selected_cell_set = null;
-                sms.app_ctx.requestRedraw();
-            },
-            .changed => |cell_set| {
-                sd.selected_cell_set = cell_set;
-                sms.app_ctx.requestRedraw();
-            },
-        }
-        c.ImGui_PopID();
-
         c.ImGui_Text("Cell set name:");
         _ = c.ImGui_InputText("##Name", &UiData.cell_set_name_buf, UiData.cell_set_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
         const cell_set_name = std.mem.sliceTo(&UiData.cell_set_name_buf, 0);
@@ -528,6 +510,23 @@ pub fn rightPanel(m: *Module) void {
             imgui_utils.tooltip("Requires a cell set name");
             c.ImGui_EndDisabled();
         }
+
+        c.ImGui_Separator();
+
+        c.ImGui_Text("Cell set:");
+        c.ImGui_PushID("cell set");
+        switch (imgui_utils.surfaceMeshCellSetComboBox(sm, sms.selecting_cell_type, sd.selected_cell_set)) {
+            .unchanged => {},
+            .cleared => {
+                sd.selected_cell_set = null;
+                sms.app_ctx.requestRedraw();
+            },
+            .changed => |cell_set| {
+                sd.selected_cell_set = cell_set;
+                sms.app_ctx.requestRedraw();
+            },
+        }
+        c.ImGui_PopID();
     }
     if (sd.selected_cell_set) |cell_set| {
         var buf: [64]u8 = undefined;

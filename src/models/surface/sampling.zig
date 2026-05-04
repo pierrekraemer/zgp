@@ -64,14 +64,14 @@ pub fn poissonDiskSamplePointsOnSurface(
     pc: *PointCloud,
     point_position: PointCloud.CellData(Vec3f),
     point_surface_point: PointCloud.CellData(SurfacePoint),
-    min_distance: f32,
+    poisson_radius: f32,
 ) !void {
     if (sm.nbCells(.face) == 0) return;
 
     const bb_min, const bb_max = geometry_utils.boundingBox(vertex_position.data);
     const center = vec.mulScalar3f(vec.add3f(bb_min, bb_max), 0.5);
 
-    const grid_unit_size = min_distance / @sqrt(3.0);
+    const grid_unit_size = poisson_radius / @sqrt(3.0);
     var grid: std.AutoHashMapUnmanaged([3]i32, Vec3f) = .empty;
     defer grid.deinit(app_ctx.allocator);
 
@@ -122,7 +122,7 @@ pub fn poissonDiskSamplePointsOnSurface(
         for (0..15) |_| {
             // sample a random angle and distance
             const angle = r.float(f32) * std.math.pi * 2.0;
-            const dist = r.float(f32) * min_distance + min_distance;
+            const dist = r.float(f32) * poisson_radius + poisson_radius;
             // compute the candidate point in the tangent space of the face
             const candidate_pos_tangent = vec.add3f(pos, vec.add3f(
                 vec.mulScalar3f(f_basis_X, dist * @cos(angle)),
@@ -152,7 +152,7 @@ pub fn poissonDiskSamplePointsOnSurface(
                             @as(i32, @intFromFloat(candidate_pos_grid_coord[2])) + @as(i32, @intCast(z)) - 1,
                         };
                         if (grid.get(grid_idx)) |p| { // if it is occupied
-                            if (vec.norm3f(vec.sub3f(candidate_pos, p)) < min_distance) { // and its content is too close to the candidate point
+                            if (vec.norm3f(vec.sub3f(candidate_pos, p)) < poisson_radius) { // and its content is too close to the candidate point
                                 candidate_is_valid = false; // it is not valid
                                 break :blk;
                             }
