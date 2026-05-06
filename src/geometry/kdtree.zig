@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const c = @import("../main.zig").c;
+const c = @import("c");
 
 const PointCloud = @import("../models/point/PointCloud.zig");
 

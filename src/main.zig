@@ -1,23 +1,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
-pub const c = @cImport({
-    @cDefine("SDL_DISABLE_OLD_NAMES", {});
-    @cInclude("SDL3/SDL.h");
-    @cInclude("SDL3/SDL_revision.h");
-    @cDefine("SDL_MAIN_HANDLED", {});
-    @cInclude("SDL3/SDL_main.h");
-    // @cInclude("SDL3/SDL_opengl.h");
-    @cInclude("dcimgui.h");
-    @cInclude("backends/dcimgui_impl_sdl3.h");
-    @cInclude("backends/dcimgui_impl_opengl3.h");
-    @cInclude("utils/IconsFontAwesome7.h");
-    @cInclude("ceigen/small.h");
-    @cInclude("ceigen/sparse.h");
-    @cInclude("ceigen/dense.h");
-    @cInclude("clibacc/bvh.h");
-    @cInclude("clibacc/kd.h");
-    // @cInclude("predicates/predicates.h");
-});
+const c = @import("c");
 
 const SurfaceMesh = @import("models/surface/SurfaceMesh.zig");
 const PointCloud = @import("models/point/PointCloud.zig");

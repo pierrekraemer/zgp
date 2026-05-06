@@ -1,7 +1,7 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const c = @import("../main.zig").c;
+const c = @import("c");
 
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfacePoint = @import("../models/surface/SurfacePoint.zig");

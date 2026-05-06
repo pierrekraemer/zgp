@@ -4,7 +4,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const builtin = @import("builtin");
 
-const c = @import("../main.zig").c;
+const c = @import("c");
 const zgp_log = std.log.scoped(.zgp);
 
 const imgui_utils = @import("../ui/imgui.zig");

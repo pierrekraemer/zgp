@@ -5,22 +5,25 @@
     .minimum_zig_version = "0.16.0",
     .dependencies = .{
         .zigglgen = .{
-            .url = "git+https://github.com/castholm/zigglgen.git#6b21369ac50de8826f8af60a7edb33693b4ec7bf",
-            .hash = "zigglgen-0.5.0-zigglr_CLwBs1aABtYVtxNPo1SB8AzgKMVouoqULqkDQ",
+            .url = "git+https://github.com/castholm/zigglgen.git#7e55ad15655fc4d602ed3bcbe7fb487592063156",
+            .hash = "zigglgen-0.5.0-ziggltzDLwA0Gk0Pj6QMij1j6Z_jkvGEtGKBM6-YlI_s",
         },
         .sdl = .{
-            .url = "git+https://github.com/castholm/SDL.git#c5ba24c694b5d520cdc1d029d8def398690d6894",
-            .hash = "sdl-0.4.2+3.4.4-SDL--kB3pQHKG_4zWG-pH04ZcZZj_IRF7dwMpxNVGwd6",
+            .url = "git+https://github.com/castholm/SDL.git#21c6b79840d123e94a9f183f4b0fa1731668f48d",
+            .hash = "sdl-0.5.0+3.4.8-SDL--k4DpgH323IfF6cEaGzKUdtUQv1azbBmmcv0RMAu",
         },
         .cimgui_zig = .{
-            .url = "git+https://github.com/tiawl/cimgui.zig.git#0de4765591bf33b6473a96598238d74b1ce70f7c",
-            .hash = "cimgui_zig-1.0.0-2XubkmPNvwCdkhjfQ3XnR0s-u5aGB3ZoFlZUOnNqYlUD",
+            .url = "git+https://github.com/tiawl/cimgui.zig.git#68c0ed133ed317061baad3a3ae56cd2940c61a62",
+            .hash = "cimgui_zig-1.0.0-2XubksPPvwDUY1zt1EGL16m1Zr-a53ZGn13PsqjChWhk",
         },
         .ceigen = .{
             .path = "src/thirdparty/ceigen",
         },
         .clibacc = .{
             .path = "src/thirdparty/clibacc",
+        },
+        .predicates = .{
+            .path = "src/thirdparty/predicates",
         },
     },
     .paths = .{

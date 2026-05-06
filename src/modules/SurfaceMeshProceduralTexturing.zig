@@ -6,7 +6,7 @@ const assert = std.debug.assert;
 // const imgui_utils = @import("../ui/imgui.zig");
 // const zgp_log = std.log.scoped(.zgp);
 
-const c = @import("../main.zig").c;
+const c = @import("c");
 
 const AppContext = @import("../main.zig").AppContext;
 const Module = @import("Module.zig");

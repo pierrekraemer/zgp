@@ -2,7 +2,7 @@ const Window = @This();
 
 const std = @import("std");
 const gl = @import("gl");
-const c = @import("../main.zig").c;
+const c = @import("c");
 
 const sdl_log = std.log.scoped(.sdl);
 

@@ -4,7 +4,7 @@ const std = @import("std");
 const assert = std.debug.assert;
 const gl = @import("gl");
 
-const c = @import("../main.zig").c;
+const c = @import("c");
 
 const imgui_utils = @import("../ui/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);

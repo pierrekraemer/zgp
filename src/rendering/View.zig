@@ -4,7 +4,7 @@ const std = @import("std");
 const gl = @import("gl");
 const gl_log = std.log.scoped(.gl);
 
-const c = @import("../main.zig").c;
+const c = @import("c");
 
 const Module = @import("../modules/Module.zig");
 

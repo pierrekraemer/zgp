@@ -1,6 +1,6 @@
 const Module = @This();
 
-const c = @import("../main.zig").c;
+const c = @import("c");
 
 const DataGen = @import("../utils/data.zig").DataGen;
 

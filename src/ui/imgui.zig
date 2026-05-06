@@ -1,6 +1,6 @@
 const std = @import("std");
 const gl = @import("gl");
-const c = @import("../main.zig").c;
+const c = @import("c");
 
 const PointCloudStore = @import("../models/PointCloudStore.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");

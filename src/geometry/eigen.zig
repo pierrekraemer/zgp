@@ -1,4 +1,4 @@
-const c = @import("../main.zig").c;
+const c = @import("c");
 
 const vec = @import("vec.zig");
 const Vec3d = vec.Vec3d;
