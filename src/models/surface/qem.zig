@@ -17,10 +17,10 @@ const geometry_utils = @import("../../geometry/utils.zig");
 const line_quadric_epsilon = 1e-4;
 
 /// Compute and return the QEM of the given vertex.
-/// The QEM of a vertex is defined as the sum of the outer products of the planes of its incident faces.
+/// The QEM of a vertex is defined as the weighted sum of the outer products of the planes of its incident faces.
 /// The plane of a face is defined by its normal n and a point p on the face as the 4D vector (n, -p.n).
 /// Face normals are assumed to be normalized.
-/// A regularization term is added to ensure QEM is well-conditioned by adding a small contribution of the vertices tangent basis planes.
+/// A regularization term is added to ensure QEM is well-conditioned by adding a small contribution of the vertices normal line quadric.
 /// SGP2025: Controlling Quadric Error Simplification with Line Quadrics
 /// https://www.dgp.toronto.edu/~hsuehtil/pdf/lineQuadric.pdf
 pub fn vertexQEM(
@@ -58,16 +58,17 @@ pub fn vertexQEM(
         ),
         line_quadric_epsilon * vertex_area.value(vertex),
     );
+
     vq = mat.add4f(vq, reg);
     return vq;
 }
 
 /// Compute the QEMs of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_qem data.
-/// The QEM of a vertex is defined as the sum of the outer products of the planes of its incident faces.
+/// The QEM of a vertex is defined as the weighted sum of the outer products of the planes of its incident faces.
 /// The plane of a face is defined by its normal n and a point p on the face as the 4D vector (n, -p.n).
 /// Face normals are assumed to be normalized.
-/// A regularization term is added to ensure QEM is well-conditioned by adding a small contribution of the vertices tangent basis planes.
+/// A regularization term is added to ensure QEM is well-conditioned by adding a small contribution of the vertices normal line quadrics.
 /// SGP2025: Controlling Quadric Error Simplification with Line Quadrics
 /// https://www.dgp.toronto.edu/~hsuehtil/pdf/lineQuadric.pdf
 /// Face contributions to vertices quadrics are computed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance)

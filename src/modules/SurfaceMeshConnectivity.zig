@@ -27,6 +27,8 @@ const decimation = @import("../models/surface/decimation.zig");
 const curvature = @import("../models/surface/curvature.zig");
 const convex_hull = @import("../models/point/convex_hull.zig");
 
+const geometry_utils = @import("../geometry/utils.zig");
+
 app_ctx: *AppContext,
 module: Module = .{
     .name = "Surface Mesh Connectivity",

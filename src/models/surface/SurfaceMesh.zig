@@ -1440,7 +1440,8 @@ pub fn collapseEdge(sm: *SurfaceMesh, edge: Cell) Cell {
 
 /// Checks if the given edge can be collapsed. Edges that cannot be collapsed:
 ///  1 - edges whose incident triangle face has the third vertex of degree < 4
-///  2 - edges whose incident vertices share a common adjacent vertex other than themselves and the third vertex of incident triangle faces
+///  2 - edges whose incident vertices are both boundary vertices but the edge is not a boundary edge
+///  3 - edges whose incident vertices share a common adjacent vertex other than themselves and the third vertex of incident triangle faces
 /// No geometry conditions are checked here.
 pub fn canCollapseEdge(sm: *const SurfaceMesh, edge: Cell) bool {
     assert(edge.cellType() == .edge);
@@ -1465,6 +1466,13 @@ pub fn canCollapseEdge(sm: *const SurfaceMesh, edge: Cell) bool {
     // condition 2: avoid creating vertices of degree > 15 // TODO: seems kind of arbitrary here
     if (sm.degree(.{ .vertex = d }) + sm.degree(.{ .vertex = dd }) > 15) {
         return false;
+    }
+
+    // condition 2: avoid collapsing incident boundary vertices of a non-boundary edge
+    if (!sm.isIncidentToBoundary(edge)) {
+        if (sm.isIncidentToBoundary(.{ .vertex = d }) and sm.isIncidentToBoundary(.{ .vertex = dd })) {
+            return false;
+        }
     }
 
     // condition 3: avoid _pinching_ the surface

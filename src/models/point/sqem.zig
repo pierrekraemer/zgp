@@ -9,6 +9,7 @@ const Vec3f = vec.Vec3f;
 const SQEM = @import("../../geometry/SQEM.zig");
 
 /// Compute and return the SQEM of the given point.
+/// TODO: should give an area to each point to weight the different terms of the SQEM instead of using a uniform weight of 1.0
 pub fn pointSQEM(
     point: PointCloud.Point,
     point_position: PointCloud.CellData(Vec3f),
