@@ -294,22 +294,33 @@ pub const DataContainer = struct {
         dc.nb_inactive_indices = 0;
     }
 
-    pub fn initFrom(dst: *DataContainer, src: *const DataContainer) !void {
+    pub fn initFrom(dst: *DataContainer, src: *const DataContainer, copy_data: bool) !void {
         dst.allocator = src.allocator;
         dst.datas = .empty;
         dst.markers = try .initCapacity(dst.allocator, 16);
         dst.available_markers = try .initCapacity(dst.allocator, 16);
         dst.size = src.size;
-        var src_it = src.datas.iterator();
-        while (src_it.next()) |src_entry| {
-            const dst_owned_name: [:0]const u8 = try dst.allocator.dupeZ(u8, src_entry.key_ptr.*); // duplicate name to own the hashmap key
-            errdefer dst.allocator.free(dst_owned_name);
-            const dst_data_gen = try src_entry.value_ptr.*.clone(dst_owned_name, dst); // clone the src DataGen, which also clones the Data(T)
-            errdefer dst_data_gen.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
-            try dst.datas.put(dst.allocator, dst_owned_name, dst_data_gen);
+        if (copy_data) {
+            // if copy_data is true, all the Data(T) are cloned
+            // which includes the internal is_active & nb_refs data, which are then recovered
+            var src_it = src.datas.iterator();
+            while (src_it.next()) |src_entry| {
+                const dst_owned_name: [:0]const u8 = try dst.allocator.dupeZ(u8, src_entry.key_ptr.*); // duplicate name to own the hashmap key
+                errdefer dst.allocator.free(dst_owned_name);
+                const dst_data_gen = try src_entry.value_ptr.*.clone(dst_owned_name, dst); // clone the src DataGen, which also clones the Data(T)
+                errdefer dst_data_gen.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
+                try dst.datas.put(dst.allocator, dst_owned_name, dst_data_gen);
+            }
+            dst.is_active = dst.getData(bool, "__is_active").?; // recover the is_active data from the cloned datas hashmap
+            dst.nb_refs = dst.getData(u32, "__nb_refs").?; // recover the nb_refs data from the cloned datas hashmap
+        } else {
+            // else, only the structure of the DataContainer is copied
+            // and the internal is_active & nb_refs data are created and copied from the src ones
+            dst.is_active = try dst.addData(bool, "__is_active");
+            dst.is_active.copyFrom(src.is_active);
+            dst.nb_refs = try dst.addData(u32, "__nb_refs");
+            dst.nb_refs.copyFrom(src.nb_refs);
         }
-        dst.is_active = dst.getData(bool, "__is_active").?; // recover the is_active data from the cloned datas hashmap
-        dst.nb_refs = dst.getData(u32, "__nb_refs").?; // recover the nb_refs data from the cloned datas hashmap
         dst.first_inactive_index = src.first_inactive_index;
         dst.nb_inactive_indices = src.nb_inactive_indices;
     }

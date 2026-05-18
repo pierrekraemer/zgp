@@ -179,23 +179,23 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     return sm;
 }
 
-// pub fn registerSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8, sm: *SurfaceMesh) !void {
-//     if (sms.surface_meshes.contains(name)) {
-//         return error.ModelNameAlreadyExists;
-//     }
+pub fn registerSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8, sm: *SurfaceMesh) !void {
+    if (sms.surface_meshes.contains(name)) {
+        return error.ModelNameAlreadyExists;
+    }
 
-//     const owned_name = try sms.allocator.dupeZ(u8, name);
-//     errdefer sms.allocator.free(owned_name);
-//     try sms.surface_meshes.put(sms.allocator, owned_name, sm);
-//     errdefer _ = sms.surface_meshes.swapRemove(owned_name);
+    const owned_name = try sms.allocator.dupeZ(u8, name);
+    errdefer sms.allocator.free(owned_name);
+    try sms.surface_meshes.put(sms.allocator, owned_name, sm);
+    errdefer _ = sms.surface_meshes.swapRemove(owned_name);
 
-//     // store the SurfaceMeshInfo in the map
-//     try sms.surface_meshes_info.put(sms.allocator, sm, .init());
+    // store the SurfaceMeshInfo in the map
+    try sms.surface_meshes_info.put(sms.allocator, sm, .init());
 
-//     for (sms.listeners.items) |module| {
-//         module.surfaceMeshCreated(sm);
-//     }
-// }
+    for (sms.listeners.items) |module| {
+        module.surfaceMeshCreated(sm);
+    }
+}
 
 pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
     const name = sms.surfaceMeshName(sm) orelse {

@@ -19,6 +19,8 @@ const DataGen = @import("../utils/data.zig").DataGen;
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
+const length = @import("../models/surface/length.zig");
+
 const ITData = struct {
     app_ctx: *AppContext,
 
@@ -36,12 +38,32 @@ const ITData = struct {
             itd.intrinsic_surface_mesh.deinit();
             itd.app_ctx.allocator.destroy(itd.intrinsic_surface_mesh);
         }
-        itd.intrinsic_surface_mesh = try extrinsic_surface_mesh.clone();
+        itd.intrinsic_surface_mesh = try extrinsic_surface_mesh.cloneWithoutCellData();
         itd.intrinsic_vertex_sp = try itd.intrinsic_surface_mesh.addData(.vertex, SurfacePoint, "sp");
         itd.intrinsic_edge_length = try itd.intrinsic_surface_mesh.addData(.edge, f32, "length");
 
         itd.extrinsic_surface_mesh = extrinsic_surface_mesh;
         itd.extrinsic_vertex_position = extrinsic_vertex_position;
+
+        // after cloning, darts/cells of the intrinsic SurfaceMesh have the same indices as those of the extrinsic SurfaceMesh
+        // so we can directly use intrinsic Cells to refer to the corresponding extrinsic Cells
+        // and read extrinsic vertex positions using the intrinsic vertex indices
+
+        // initialize intrinsic vertex SurfacePoints (vertex type)
+        var int_vertex_it: SurfaceMesh.CellIterator = try .init(itd.intrinsic_surface_mesh, .vertex);
+        defer int_vertex_it.deinit();
+        while (int_vertex_it.next()) |v| {
+            const sp: SurfacePoint = .{
+                .surface_mesh = itd.extrinsic_surface_mesh,
+                .type = .{
+                    .vertex = v,
+                },
+            };
+            itd.intrinsic_vertex_sp.valuePtr(v).* = sp;
+        }
+
+        // initialize intrinsic edge lengths using the extrinsic vertex positions
+        try length.computeEdgeLengths(itd.app_ctx, itd.intrinsic_surface_mesh, itd.extrinsic_vertex_position, itd.intrinsic_edge_length);
 
         itd.initialized = true;
     }

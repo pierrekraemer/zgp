@@ -91,18 +91,22 @@ face_sets: std.StringHashMapUnmanaged(CellSet),
 pub fn init(sm: *SurfaceMesh, allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !void {
     sm.allocator = allocator;
     sm.cell_buffer_pool = cell_buffer_pool;
+
     try sm.dart_data.init(allocator);
     try sm.vertex_data.init(allocator);
     try sm.edge_data.init(allocator);
     try sm.face_data.init(allocator);
+
     sm.dart_phi1 = try sm.dart_data.addData(Dart, "phi1");
     sm.dart_phi_1 = try sm.dart_data.addData(Dart, "phi_1");
     sm.dart_phi2 = try sm.dart_data.addData(Dart, "phi2");
     sm.dart_vertex_index = try sm.dart_data.addData(u32, "vertex_index");
     sm.dart_edge_index = try sm.dart_data.addData(u32, "edge_index");
     sm.dart_face_index = try sm.dart_data.addData(u32, "face_index");
+
     sm.dart_boundary_marker = try sm.dart_data.getMarker();
     sm.nb_boundary_darts = 0;
+
     sm.vertex_sets = .empty;
     sm.edge_sets = .empty;
     sm.face_sets = .empty;
@@ -163,13 +167,13 @@ pub fn clone(sm: *const SurfaceMesh) !*SurfaceMesh {
     cloned_sm.allocator = sm.allocator;
     cloned_sm.cell_buffer_pool = sm.cell_buffer_pool;
 
-    // copy all the Data of the DataContainers, but not the Markers
-    try cloned_sm.dart_data.initFrom(&sm.dart_data);
-    try cloned_sm.vertex_data.initFrom(&sm.vertex_data);
-    try cloned_sm.edge_data.initFrom(&sm.edge_data);
-    try cloned_sm.face_data.initFrom(&sm.face_data);
+    // Markers are not copied by ths initFrom function
+    try cloned_sm.dart_data.initFrom(&sm.dart_data, true);
+    try cloned_sm.vertex_data.initFrom(&sm.vertex_data, true);
+    try cloned_sm.edge_data.initFrom(&sm.edge_data, true);
+    try cloned_sm.face_data.initFrom(&sm.face_data, true);
 
-    // recover the topological relations and cell indices from the copied Dart DataContainer
+    // recover the topological relations & cell indices from the copied Dart DataContainer
     cloned_sm.dart_phi1 = cloned_sm.dart_data.getData(Dart, "phi1").?;
     cloned_sm.dart_phi_1 = cloned_sm.dart_data.getData(Dart, "phi_1").?;
     cloned_sm.dart_phi2 = cloned_sm.dart_data.getData(Dart, "phi2").?;
@@ -177,6 +181,47 @@ pub fn clone(sm: *const SurfaceMesh) !*SurfaceMesh {
     cloned_sm.dart_edge_index = cloned_sm.dart_data.getData(u32, "edge_index").?;
     cloned_sm.dart_face_index = cloned_sm.dart_data.getData(u32, "face_index").?;
 
+    // create the boundary marker and copy its values from the source SurfaceMesh
+    cloned_sm.dart_boundary_marker = try cloned_sm.dart_data.getMarker();
+    cloned_sm.dart_boundary_marker.copyFrom(sm.dart_boundary_marker);
+    cloned_sm.nb_boundary_darts = sm.nb_boundary_darts;
+
+    cloned_sm.vertex_sets = .empty;
+    cloned_sm.edge_sets = .empty;
+    cloned_sm.face_sets = .empty;
+
+    return cloned_sm;
+}
+
+pub fn cloneWithoutCellData(sm: *const SurfaceMesh) !*SurfaceMesh {
+    const cloned_sm = try sm.allocator.create(SurfaceMesh);
+    errdefer sm.allocator.destroy(cloned_sm);
+
+    cloned_sm.allocator = sm.allocator;
+    cloned_sm.cell_buffer_pool = sm.cell_buffer_pool;
+
+    // Copy only the structure of the DataContainers (i.e. size, capacity, indices management) but not the CellData
+    // Markers are not copied by ths initFrom function
+    try cloned_sm.dart_data.initFrom(&sm.dart_data, false);
+    try cloned_sm.vertex_data.initFrom(&sm.vertex_data, false);
+    try cloned_sm.edge_data.initFrom(&sm.edge_data, false);
+    try cloned_sm.face_data.initFrom(&sm.face_data, false);
+
+    // create the topological relations & cell indices and copy them from the source Dart DataContainer
+    cloned_sm.dart_phi1 = try cloned_sm.dart_data.addData(Dart, "phi1");
+    cloned_sm.dart_phi1.copyFrom(sm.dart_phi1);
+    cloned_sm.dart_phi_1 = try cloned_sm.dart_data.addData(Dart, "phi_1");
+    cloned_sm.dart_phi_1.copyFrom(sm.dart_phi_1);
+    cloned_sm.dart_phi2 = try cloned_sm.dart_data.addData(Dart, "phi2");
+    cloned_sm.dart_phi2.copyFrom(sm.dart_phi2);
+    cloned_sm.dart_vertex_index = try cloned_sm.dart_data.addData(u32, "vertex_index");
+    cloned_sm.dart_vertex_index.copyFrom(sm.dart_vertex_index);
+    cloned_sm.dart_edge_index = try cloned_sm.dart_data.addData(u32, "edge_index");
+    cloned_sm.dart_edge_index.copyFrom(sm.dart_edge_index);
+    cloned_sm.dart_face_index = try cloned_sm.dart_data.addData(u32, "face_index");
+    cloned_sm.dart_face_index.copyFrom(sm.dart_face_index);
+
+    // create the boundary marker and copy its values from the source SurfaceMesh
     cloned_sm.dart_boundary_marker = try cloned_sm.dart_data.getMarker();
     cloned_sm.dart_boundary_marker.copyFrom(sm.dart_boundary_marker);
     cloned_sm.nb_boundary_darts = sm.nb_boundary_darts;
