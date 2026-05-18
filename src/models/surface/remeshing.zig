@@ -463,14 +463,14 @@ pub fn isotropicRemeshing(
     }
 
     // update all given dependent datas one last time after remeshing
-    try length.computeEdgeLengths(app_ctx, sm, vertex_position, edge_length);
-    try angle.computeCornerAngles(app_ctx, sm, vertex_position, corner_angle);
-    try area.computeFaceAreas(app_ctx, sm, vertex_position, face_area);
-    try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
-    try angle.computeEdgeDihedralAngles(app_ctx, sm, vertex_position, face_normal, edge_dihedral_angle);
-    try area.computeVertexAreas(app_ctx, sm, face_area, vertex_area);
-    try normal.computeVertexNormals(app_ctx, sm, corner_angle, face_normal, vertex_normal);
-    if (adaptive) {
-        try curvature.computeVertexCurvatures(app_ctx, sm, vertex_position, vertex_normal, edge_dihedral_angle, edge_length, face_area, vertex_curvature);
-    }
+    // try length.computeEdgeLengths(app_ctx, sm, vertex_position, edge_length);
+    // try angle.computeCornerAngles(app_ctx, sm, vertex_position, corner_angle);
+    // try area.computeFaceAreas(app_ctx, sm, vertex_position, face_area);
+    // try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
+    // try angle.computeEdgeDihedralAngles(app_ctx, sm, vertex_position, face_normal, edge_dihedral_angle);
+    // try area.computeVertexAreas(app_ctx, sm, face_area, vertex_area);
+    // try normal.computeVertexNormals(app_ctx, sm, corner_angle, face_normal, vertex_normal);
+    // if (adaptive) {
+    //     try curvature.computeVertexCurvatures(app_ctx, sm, vertex_position, vertex_normal, edge_dihedral_angle, edge_length, face_area, vertex_curvature);
+    // }
 }

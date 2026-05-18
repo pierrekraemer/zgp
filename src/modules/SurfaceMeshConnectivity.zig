@@ -106,25 +106,6 @@ fn remesh(
         vertex_curvature,
     );
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
-    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle);
-    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, f32, face_area);
-    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, Vec3f, face_normal);
-    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_length);
-    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_dihedral_angle);
-    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area);
-    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_normal);
-    if (vertex_curvature.vertex_kmin) |kmin| {
-        smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, kmin);
-    }
-    if (vertex_curvature.vertex_Kmin) |Kmin| {
-        smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, Kmin);
-    }
-    if (vertex_curvature.vertex_kmax) |kmax| {
-        smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, kmax);
-    }
-    if (vertex_curvature.vertex_Kmax) |Kmax| {
-        smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, Kmax);
-    }
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
     smc.app_ctx.requestRedraw();
 

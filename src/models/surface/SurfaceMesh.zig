@@ -114,21 +114,18 @@ pub fn deinit(sm: *SurfaceMesh) void {
         const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addCellSet)
         sm.allocator.free(name); // free the name
         entry.value_ptr.deinit();
-        // sm.allocator.destroy(entry.value_ptr.*);
     }
     var edge_sets_it = sm.edge_sets.iterator();
     while (edge_sets_it.next()) |entry| {
         const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addCellSet)
         sm.allocator.free(name); // free the name
         entry.value_ptr.deinit();
-        // sm.allocator.destroy(entry.value_ptr.*);
     }
     var face_sets_it = sm.face_sets.iterator();
     while (face_sets_it.next()) |entry| {
         const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addCellSet)
         sm.allocator.free(name); // free the name
         entry.value_ptr.deinit();
-        // sm.allocator.destroy(entry.value_ptr.*);
     }
     sm.vertex_sets.deinit(sm.allocator);
     sm.edge_sets.deinit(sm.allocator);
@@ -157,6 +154,38 @@ pub fn clearRetainingCapacity(sm: *SurfaceMesh) void {
     sm.vertex_data.clearRetainingCapacity();
     sm.edge_data.clearRetainingCapacity();
     sm.face_data.clearRetainingCapacity();
+}
+
+pub fn clone(sm: *const SurfaceMesh) !*SurfaceMesh {
+    const cloned_sm = try sm.allocator.create(SurfaceMesh);
+    errdefer sm.allocator.destroy(cloned_sm);
+
+    cloned_sm.allocator = sm.allocator;
+    cloned_sm.cell_buffer_pool = sm.cell_buffer_pool;
+
+    // copy all the Data of the DataContainers, but not the Markers
+    try cloned_sm.dart_data.initFrom(&sm.dart_data);
+    try cloned_sm.vertex_data.initFrom(&sm.vertex_data);
+    try cloned_sm.edge_data.initFrom(&sm.edge_data);
+    try cloned_sm.face_data.initFrom(&sm.face_data);
+
+    // recover the topological relations and cell indices from the copied Dart DataContainer
+    cloned_sm.dart_phi1 = cloned_sm.dart_data.getData(Dart, "phi1").?;
+    cloned_sm.dart_phi_1 = cloned_sm.dart_data.getData(Dart, "phi_1").?;
+    cloned_sm.dart_phi2 = cloned_sm.dart_data.getData(Dart, "phi2").?;
+    cloned_sm.dart_vertex_index = cloned_sm.dart_data.getData(u32, "vertex_index").?;
+    cloned_sm.dart_edge_index = cloned_sm.dart_data.getData(u32, "edge_index").?;
+    cloned_sm.dart_face_index = cloned_sm.dart_data.getData(u32, "face_index").?;
+
+    cloned_sm.dart_boundary_marker = try cloned_sm.dart_data.getMarker();
+    cloned_sm.dart_boundary_marker.copyFrom(sm.dart_boundary_marker);
+    cloned_sm.nb_boundary_darts = sm.nb_boundary_darts;
+
+    cloned_sm.vertex_sets = .empty;
+    cloned_sm.edge_sets = .empty;
+    cloned_sm.face_sets = .empty;
+
+    return cloned_sm;
 }
 
 /// DartIterator iterates over all the darts of the SurfaceMesh (including boundary darts).

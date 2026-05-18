@@ -179,6 +179,24 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     return sm;
 }
 
+// pub fn registerSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8, sm: *SurfaceMesh) !void {
+//     if (sms.surface_meshes.contains(name)) {
+//         return error.ModelNameAlreadyExists;
+//     }
+
+//     const owned_name = try sms.allocator.dupeZ(u8, name);
+//     errdefer sms.allocator.free(owned_name);
+//     try sms.surface_meshes.put(sms.allocator, owned_name, sm);
+//     errdefer _ = sms.surface_meshes.swapRemove(owned_name);
+
+//     // store the SurfaceMeshInfo in the map
+//     try sms.surface_meshes_info.put(sms.allocator, sm, .init());
+
+//     for (sms.listeners.items) |module| {
+//         module.surfaceMeshCreated(sm);
+//     }
+// }
+
 pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
     const name = sms.surfaceMeshName(sm) orelse {
         zgp_log.err("Could not find name for SurfaceMesh to destroy it", .{});
@@ -410,30 +428,30 @@ pub fn leftPanel(sms: *SurfaceMeshStore) void {
 
     const sm = sms.selected_model.surface_mesh;
 
-    if (c.ImGui_BeginTable("CellStats", 3, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
+    if (c.ImGui_BeginTable("CellStats", 2, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
         defer c.ImGui_EndTable();
 
         c.ImGui_TableSetupColumn("CellType", c.ImGuiTableColumnFlags_WidthStretch);
         c.ImGui_TableSetupColumn("Count", c.ImGuiTableColumnFlags_WidthFixed);
-        c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
+        // c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
         c.ImGui_TableHeadersRow();
 
         inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
             var buf_name: [32]u8 = undefined;
             var buf_count: [16]u8 = undefined;
-            var buf_density: [16]u8 = undefined;
+            // var buf_density: [16]u8 = undefined;
 
             const cells = std.fmt.bufPrintZ(&buf_name, "{s}", .{@tagName(cell_type)}) catch "";
             const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{sm.nbCells(cell_type)}) catch "";
-            const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{sm.dataContainerPtr(cell_type).density() * 100}) catch "";
+            // const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{sm.dataContainerPtr(cell_type).density() * 100}) catch "";
 
             c.ImGui_TableNextRow();
             _ = c.ImGui_TableNextColumn();
             c.ImGui_Text(cells.ptr);
             _ = c.ImGui_TableNextColumn();
             c.ImGui_Text(count.ptr);
-            _ = c.ImGui_TableNextColumn();
-            c.ImGui_Text(density.ptr);
+            // _ = c.ImGui_TableNextColumn();
+            // c.ImGui_Text(density.ptr);
         }
     }
 

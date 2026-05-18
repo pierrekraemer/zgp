@@ -287,27 +287,27 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
 
     const pc = pcs.selected_model.point_cloud;
 
-    if (c.ImGui_BeginTable("CellStats", 3, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
+    if (c.ImGui_BeginTable("CellStats", 2, c.ImGuiTableFlags_Borders | c.ImGuiTableFlags_RowBg)) {
         defer c.ImGui_EndTable();
 
         c.ImGui_TableSetupColumn("CellType", c.ImGuiTableColumnFlags_WidthStretch);
         c.ImGui_TableSetupColumn("Count", c.ImGuiTableColumnFlags_WidthFixed);
-        c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
+        // c.ImGui_TableSetupColumn("ContainerDensity", c.ImGuiTableColumnFlags_WidthFixed);
         c.ImGui_TableHeadersRow();
 
         var buf_count: [16]u8 = undefined;
-        var buf_density: [16]u8 = undefined;
+        // var buf_density: [16]u8 = undefined;
 
         const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{pc.nbPoints()}) catch "";
-        const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{pc.point_data.density() * 100}) catch "";
+        // const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{pc.point_data.density() * 100}) catch "";
 
         c.ImGui_TableNextRow();
         _ = c.ImGui_TableNextColumn();
         c.ImGui_Text("Points");
         _ = c.ImGui_TableNextColumn();
         c.ImGui_Text(count.ptr);
-        _ = c.ImGui_TableNextColumn();
-        c.ImGui_Text(density.ptr);
+        // _ = c.ImGui_TableNextColumn();
+        // c.ImGui_Text(density.ptr);
     }
 
     if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {

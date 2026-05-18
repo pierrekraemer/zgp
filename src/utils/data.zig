@@ -15,16 +15,20 @@ pub const DataGen = struct {
         deinit: *const fn (data_gen: *DataGen) void,
         ensureSize: *const fn (data_gen: *DataGen, size: usize) anyerror!void,
         clearRetainingCapacity: *const fn (data_gen: *DataGen) void,
+        clone: *const fn (data_gen: *const DataGen, name: []const u8, container: *DataContainer) anyerror!*DataGen,
     };
 
-    pub inline fn ensureSize(data_gen: *DataGen, size: usize) !void {
+    pub fn deinit(data_gen: *DataGen) void {
+        data_gen.vtable.deinit(data_gen);
+    }
+    pub fn ensureSize(data_gen: *DataGen, size: usize) !void {
         try data_gen.vtable.ensureSize(data_gen, size);
     }
-    pub inline fn clearRetainingCapacity(data_gen: *DataGen) void {
+    pub fn clearRetainingCapacity(data_gen: *DataGen) void {
         data_gen.vtable.clearRetainingCapacity(data_gen);
     }
-    pub inline fn deinit(data_gen: *DataGen) void {
-        data_gen.vtable.deinit(data_gen);
+    pub fn clone(data_gen: *const DataGen, name: []const u8, container: *DataContainer) !*DataGen {
+        return try data_gen.vtable.clone(data_gen, name, container);
     }
 };
 
@@ -44,6 +48,7 @@ pub fn Data(comptime T: type) type {
                     .deinit = deinit,
                     .ensureSize = ensureSize,
                     .clearRetainingCapacity = clearRetainingCapacity,
+                    .clone = clone,
                 },
             };
             self.data = .empty;
@@ -70,6 +75,15 @@ pub fn Data(comptime T: type) type {
         pub fn clearRetainingCapacity(data_gen: *DataGen) void {
             const self: *Data(T) = @alignCast(@fieldParentPtr("data_gen", data_gen));
             self.data.clearRetainingCapacity();
+        }
+
+        /// Part of the DataGen interface.
+        pub fn clone(data_gen: *const DataGen, name: []const u8, container: *DataContainer) !*DataGen {
+            const self: *const Data(T) = @alignCast(@fieldParentPtr("data_gen", data_gen));
+            const cloned_data = try container.allocator.create(Data(T));
+            cloned_data.init(name, container);
+            cloned_data.data = try self.data.clone(container.allocator);
+            return &cloned_data.data_gen;
         }
 
         fn ValuePtrType(comptime SelfType: type) type {
@@ -100,6 +114,12 @@ pub fn Data(comptime T: type) type {
                     element.* = val;
                 }
             }
+        }
+
+        pub fn copyFrom(self: *Self, src: *const Self) void {
+            assert(self.data_gen.type_id == src.data_gen.type_id);
+            assert(self.data.items.len == src.data.items.len);
+            @memcpy(self.data.items, src.data.items);
         }
 
         pub fn minValue(
@@ -259,7 +279,7 @@ pub const DataContainer = struct {
     // when an index is released, the first_inactive_index is set to this index
     // and its nb_refs is set to the previous first_inactive_index
     first_inactive_index: u32,
-    // nb_inactive_indices is used to quickly check if there are any inactive indices and quickly compute nbElements and density
+    // nb_inactive_indices is used to quickly check if there are any inactive indices and quickly compute nbElements
     nb_inactive_indices: u32,
 
     pub fn init(dc: *DataContainer, allocator: std.mem.Allocator) !void {
@@ -274,12 +294,32 @@ pub const DataContainer = struct {
         dc.nb_inactive_indices = 0;
     }
 
+    pub fn initFrom(dst: *DataContainer, src: *const DataContainer) !void {
+        dst.allocator = src.allocator;
+        dst.datas = .empty;
+        dst.markers = try .initCapacity(dst.allocator, 16);
+        dst.available_markers = try .initCapacity(dst.allocator, 16);
+        dst.size = src.size;
+        var src_it = src.datas.iterator();
+        while (src_it.next()) |src_entry| {
+            const dst_owned_name: [:0]const u8 = try dst.allocator.dupeZ(u8, src_entry.key_ptr.*); // duplicate name to own the hashmap key
+            errdefer dst.allocator.free(dst_owned_name);
+            const dst_data_gen = try src_entry.value_ptr.*.clone(dst_owned_name, dst); // clone the src DataGen, which also clones the Data(T)
+            errdefer dst_data_gen.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
+            try dst.datas.put(dst.allocator, dst_owned_name, dst_data_gen);
+        }
+        dst.is_active = dst.getData(bool, "__is_active").?; // recover the is_active data from the cloned datas hashmap
+        dst.nb_refs = dst.getData(u32, "__nb_refs").?; // recover the nb_refs data from the cloned datas hashmap
+        dst.first_inactive_index = src.first_inactive_index;
+        dst.nb_inactive_indices = src.nb_inactive_indices;
+    }
+
     pub fn deinit(dc: *DataContainer) void {
         var it = dc.datas.iterator();
         while (it.next()) |entry| {
             const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addData)
             dc.allocator.free(name); // free the name
-            entry.value_ptr.*.deinit(); // DataGen deinit calls Data(T) deinit which also destroys the Data(T)
+            entry.value_ptr.*.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
         }
         for (dc.markers.items) |marker| {
             marker.data_gen.deinit();
@@ -313,7 +353,7 @@ pub const DataContainer = struct {
 
         const data = try dc.allocator.create(Data(T));
         data.init(owned_name, dc);
-        errdefer data.data_gen.deinit(); // DataGen deinit calls Data(T) deinit which also destroys the Data(T)
+        errdefer data.data_gen.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
 
         try data.data_gen.ensureSize(dc.size);
         try dc.datas.put(dc.allocator, owned_name, &data.data_gen);
@@ -344,7 +384,7 @@ pub const DataContainer = struct {
         if (dc.datas.remove(data_gen.name)) {
             const name: [:0]const u8 = @ptrCast(data_gen.name); // the name is a null-terminated string (dupeZ in addData)
             dc.allocator.free(name); // free the name
-            data_gen.deinit(); // DataGen deinit calls Data(T) deinit which also destroys the Data(T)
+            data_gen.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
         }
     }
 
@@ -395,7 +435,7 @@ pub const DataContainer = struct {
         // same as for addData, but the name is not used (the marker is not stored in the hashmap)
         const marker = try dc.allocator.create(Data(bool));
         marker.init("", dc);
-        errdefer marker.data_gen.deinit(); // DataGen deinit calls Data(T) deinit which also destroys the Data(T)
+        errdefer marker.data_gen.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
 
         try marker.data_gen.ensureSize(dc.size);
         marker.fill(false); // marker is filled with false before use
@@ -467,12 +507,12 @@ pub const DataContainer = struct {
         return dc.size - dc.nb_inactive_indices;
     }
 
-    pub fn density(dc: *const DataContainer) f32 {
-        if (dc.size == 0) {
-            return 0.0;
-        }
-        return 1.0 - (@as(f32, @floatFromInt(dc.nb_inactive_indices)) / @as(f32, @floatFromInt(dc.size)));
-    }
+    // pub fn density(dc: *const DataContainer) f32 {
+    //     if (dc.size == 0) {
+    //         return 0.0;
+    //     }
+    //     return 1.0 - (@as(f32, @floatFromInt(dc.nb_inactive_indices)) / @as(f32, @floatFromInt(dc.size)));
+    // }
 
     pub fn firstIndex(dc: *const DataContainer) u32 {
         var index: u32 = 0;
