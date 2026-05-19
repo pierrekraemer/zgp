@@ -6,9 +6,9 @@ const PointCloud = @import("../point/PointCloud.zig");
 const SurfaceMesh = @import("../surface/SurfaceMesh.zig");
 const SurfacePoint = @import("../surface/SurfacePoint.zig");
 
-const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
+const geometry_utils = @import("../../geometry/utils.zig");
 
 const bvh = @import("../../geometry/bvh.zig");
 
@@ -122,7 +122,7 @@ pub fn poissonDiskSamplePointsOnSurface(
         for (0..15) |_| {
             // sample a random angle and distance
             const angle = r.float(f32) * std.math.pi * 2.0;
-            const dist = r.float(f32) * poisson_radius + poisson_radius;
+            const dist = r.float(f32) * poisson_radius + poisson_radius; // TODO: try with a smaller distance annulus
             // compute the candidate point in the tangent space of the face
             const candidate_pos_tangent = vec.add3f(pos, vec.add3f(
                 vec.mulScalar3f(f_basis_X, dist * @cos(angle)),

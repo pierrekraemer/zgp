@@ -10,9 +10,8 @@ const Vec4f = vec.Vec4f;
 const mat = @import("../../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
 const Mat4d = mat.Mat4d;
-
-const eigen = @import("../../geometry/eigen.zig");
 const geometry_utils = @import("../../geometry/utils.zig");
+const eigen = @import("../../geometry/eigen.zig");
 
 const line_quadric_epsilon = 1e-4;
 

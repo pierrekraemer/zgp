@@ -4,9 +4,9 @@ const assert = std.debug.assert;
 const AppContext = @import("../../main.zig").AppContext;
 const PointCloud = @import("PointCloud.zig");
 
-const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
+const geometry_utils = @import("../../geometry/utils.zig");
 
 /// Compute the tangent bases of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_tangent_basis data.

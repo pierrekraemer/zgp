@@ -18,6 +18,7 @@ const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const mat = @import("../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
+const geometry_utils = @import("../geometry/utils.zig");
 const bvh = @import("../geometry/bvh.zig");
 
 const subdivision = @import("../models/surface/subdivision.zig");
@@ -26,8 +27,6 @@ const qem = @import("../models/surface/qem.zig");
 const decimation = @import("../models/surface/decimation.zig");
 const curvature = @import("../models/surface/curvature.zig");
 const convex_hull = @import("../models/point/convex_hull.zig");
-
-const geometry_utils = @import("../geometry/utils.zig");
 
 app_ctx: *AppContext,
 module: Module = .{

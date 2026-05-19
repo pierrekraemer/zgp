@@ -4,11 +4,11 @@ const assert = std.debug.assert;
 const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
-const geometry_utils = @import("../../geometry/utils.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const mat = @import("../../geometry/mat.zig");
 const Mat3f = mat.Mat3f;
+const geometry_utils = @import("../../geometry/utils.zig");
 const eigen = @import("../../geometry/eigen.zig");
 
 const VertexCurvatureValues = struct {

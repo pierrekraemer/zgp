@@ -3,9 +3,9 @@ const assert = std.debug.assert;
 
 const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
+
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
-
 const geometry_utils = @import("../../geometry/utils.zig");
 
 /// Compute and return the area of the given face.
@@ -74,6 +74,59 @@ pub fn computeFaceAreas(
     // while (it.next()) |face| {
     //     task.run(face);
     // }
+}
+
+/// Compute and return the area of the given face.
+/// This version uses intrinsic geometry (edge lengths) instead of extrinsic vertex positions.
+pub fn faceAreaIntrinsic(
+    sm: *const SurfaceMesh,
+    face: SurfaceMesh.Cell,
+    edge_length: SurfaceMesh.CellData(.edge, f32),
+) f32 {
+    assert(face.cellType() == .face);
+
+    const d = face.dart();
+    const d1 = sm.phi1(d);
+    const d_1 = sm.phi_1(d);
+    return geometry_utils.triangleAreaIntrinsic(
+        edge_length.value(.{ .edge = d }),
+        edge_length.value(.{ .edge = d1 }),
+        edge_length.value(.{ .edge = d_1 }),
+    );
+}
+
+/// Compute the areas of all faces of the given SurfaceMesh
+/// and store them in the given face_area data.
+/// This version uses intrinsic geometry (edge lengths) instead of extrinsic vertex positions.
+pub fn computeFaceAreasIntrinsic(
+    app_ctx: *AppContext,
+    sm: *SurfaceMesh,
+    edge_length: SurfaceMesh.CellData(.edge, f32),
+    face_area: SurfaceMesh.CellData(.face, f32),
+) !void {
+    const Task = struct {
+        const Task = @This();
+
+        surface_mesh: *const SurfaceMesh,
+        edge_length: SurfaceMesh.CellData(.edge, f32),
+        face_area: SurfaceMesh.CellData(.face, f32),
+
+        pub fn run(t: *const Task, face: SurfaceMesh.Cell) void {
+            t.face_area.valuePtr(face).* = faceAreaIntrinsic(
+                t.surface_mesh,
+                face,
+                t.edge_length,
+            );
+        }
+    };
+
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .face);
+    defer pctr.deinit();
+    try pctr.run(app_ctx, Task{
+        .surface_mesh = sm,
+        .edge_length = edge_length,
+        .face_area = face_area,
+    });
 }
 
 /// Compute and return the area of the given vertex.

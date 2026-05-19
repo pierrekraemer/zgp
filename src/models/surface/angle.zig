@@ -3,9 +3,9 @@ const assert = std.debug.assert;
 
 const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
+
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
-
 const geometry_utils = @import("../../geometry/utils.zig");
 
 /// Compute and return the angle of the given corner.

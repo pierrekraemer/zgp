@@ -6,16 +6,16 @@ const PriorityQueue = @import("../../utils/PriorityQueue.zig").PriorityQueue;
 const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
+const vec = @import("../../geometry/vec.zig");
+const Vec3f = vec.Vec3f;
+const geometry_utils = @import("../../geometry/utils.zig");
+
 const length = @import("length.zig");
 const angle = @import("angle.zig");
 const subdivision = @import("subdivision.zig");
 const area = @import("area.zig");
 const normal = @import("normal.zig");
 const curvature = @import("curvature.zig");
-
-const geometry_utils = @import("../../geometry/utils.zig");
-const vec = @import("../../geometry/vec.zig");
-const Vec3f = vec.Vec3f;
 
 const bvh = @import("../../geometry/bvh.zig");
 

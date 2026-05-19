@@ -3,6 +3,7 @@ const std = @import("std");
 const Data = @import("../utils/data.zig").Data;
 
 const vec = @import("../geometry/vec.zig");
+const Vec2f = vec.Vec2f;
 const Vec3f = vec.Vec3f;
 
 pub const epsilon: f32 = 1e-5;
@@ -28,12 +29,41 @@ pub fn triangleArea(a: Vec3f, b: Vec3f, c: Vec3f) f32 {
     ));
 }
 
+/// Compute and return the area of the triangle defined by the given three edge lengths using Heron's formula.
+pub fn triangleAreaIntrinsic(lAB: f32, lBC: f32, lCA: f32) f32 {
+    const s = 0.5 * (lAB + lBC + lCA);
+    const arg = s * (s - lAB) * (s - lBC) * (s - lCA);
+    return @sqrt(@max(arg, 0.0));
+}
+
 /// Compute and return the _unnormalized_ normal vector of the triangle defined by the given three points.
 pub fn triangleNormal(a: Vec3f, b: Vec3f, c: Vec3f) Vec3f {
     return vec.cross3f(
         vec.sub3f(b, a),
         vec.sub3f(c, a),
     );
+}
+
+// geometry_central : include/geometrycentral/utilities/elementary_geometry.h
+// For triangle A,B,C, given vertex positions pA and pB, compute pC, such that lengths lBC and lCA are realized.
+// pC will be placed on the side which gives CCW winding of ABC.
+pub fn layoutTriangleVertex(pA: Vec2f, pB: Vec2f, lBC: f32, lCA: f32) Vec2f {
+    const lAB = vec.norm2f(vec.sub2f(pB, pA));
+    const tArea = triangleAreaIntrinsic(lAB, lBC, lCA);
+    // Compute (signed) width and height of right triangle formed via altitude from C
+    const h = 2.0 * tArea / lAB;
+    const w = (lAB * lAB - lBC * lBC + lCA * lCA) / (2.0 * lAB);
+    // Project some vectors to get the actual position
+    const vABn = vec.mulScalar2f(vec.sub2f(pB, pA), 1.0 / lAB);
+    const vABnPerp: Vec2f = .{ -vABn[1], vABn[0] };
+    const pC = vec.add2f(
+        pA,
+        vec.add2f(
+            vec.mulScalar2f(vABn, w),
+            vec.mulScalar2f(vABnPerp, h),
+        ),
+    );
+    return pC;
 }
 
 // Compute the squared distance between the given point p and the line defined by the given two points a and b.
