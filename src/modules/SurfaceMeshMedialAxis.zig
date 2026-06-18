@@ -194,6 +194,7 @@ const MedialAxisData = struct {
 
     pub fn deinit(mad: *MedialAxisData) void {
         if (mad.initialized) {
+            // remove SurfaceMesh vertex data
             mad.surface_mesh.removeData(.vertex, SQEM, mad.vertex_sqem);
             mad.surface_mesh.removeData(.vertex, ?Vec4f, mad.vertex_shrinking_ball);
             mad.surface_mesh.removeData(.vertex, ?PointCloud.Point, mad.vertex_sphere);

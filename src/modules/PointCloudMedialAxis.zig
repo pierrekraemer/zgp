@@ -241,6 +241,7 @@ const MedialAxisData = struct {
             while (p_it.next()) |p| {
                 mad.point_knn.valuePtr(p).deinit(mad.app_ctx.allocator);
             }
+            // remove PointCloud data
             mad.point_cloud.removeData(std.ArrayList(PointCloud.Point), mad.point_knn);
             mad.point_cloud.removeData([2]Vec3f, mad.point_tangent_basis);
             mad.point_cloud.removeData(SQEM, mad.point_sqem);

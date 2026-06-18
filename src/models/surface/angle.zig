@@ -67,6 +67,58 @@ pub fn computeCornerAngles(
     // }
 }
 
+/// Compute and return the angle of the given corner.
+/// This version uses intrinsic geometry (edge lengths) instead of extrinsic vertex positions.
+pub fn cornerAngleIntrinsic(
+    sm: *const SurfaceMesh,
+    corner: SurfaceMesh.Cell,
+    edge_length: SurfaceMesh.CellData(.edge, f32),
+) f32 {
+    assert(corner.cellType() == .corner);
+    const d = corner.dart();
+    const d1 = sm.phi1(d);
+    const d_1 = sm.phi_1(d);
+    const lOpp = edge_length.value(.{ .edge = d1 });
+    const lA = edge_length.value(.{ .edge = d });
+    const lB = edge_length.value(.{ .edge = d_1 });
+    const q = (lA * lA + lB * lB - lOpp * lOpp) / (2.0 * lA * lB);
+    return std.math.acos(@max(-1.0, @min(1.0, q)));
+}
+
+/// Compute the angles of all corners of the given SurfaceMesh
+/// and store them in the given corner_angle data.
+/// This version uses intrinsic geometry (edge lengths) instead of extrinsic vertex positions.
+pub fn computeCornerAnglesIntrinsic(
+    app_ctx: *AppContext,
+    sm: *SurfaceMesh,
+    edge_length: SurfaceMesh.CellData(.edge, f32),
+    corner_angle: SurfaceMesh.CellData(.corner, f32),
+) !void {
+    const Task = struct {
+        const Task = @This();
+
+        surface_mesh: *const SurfaceMesh,
+        edge_length: SurfaceMesh.CellData(.edge, f32),
+        corner_angle: SurfaceMesh.CellData(.corner, f32),
+
+        pub fn run(t: *const Task, corner: SurfaceMesh.Cell) void {
+            t.corner_angle.valuePtr(corner).* = cornerAngleIntrinsic(
+                t.surface_mesh,
+                corner,
+                t.edge_length,
+            );
+        }
+    };
+
+    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .corner);
+    defer pctr.deinit();
+    try pctr.run(app_ctx, Task{
+        .surface_mesh = sm,
+        .edge_length = edge_length,
+        .corner_angle = corner_angle,
+    });
+}
+
 /// Compute and return the dihedral angle of the given edge.
 /// Return 0.0 if the edge is a boundary edge.
 /// Face normals are assumed to be normalized.

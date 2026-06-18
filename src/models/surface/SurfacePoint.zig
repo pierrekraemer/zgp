@@ -12,13 +12,16 @@ const geometry_utils = @import("../../geometry/utils.zig");
 
 // TODO: this code assumes that faces are triangles
 
+/// A SurfacePoint represents a point on the surface of a SurfaceMesh
+/// It can be of three types: vertex, edge or face, depending on whether the point sits on a vertex, edge or face of the SurfaceMesh.
+/// In the case of edge or face type, the SurfacePoint also stores barycentric coordinates to express the position of the point on the edge or face.
 pub const SurfacePointType = union(enum) {
     vertex: Cell, // a .vertex
     edge: struct { cell: Cell, t: f32 }, // cell is a .edge, t in [0, 1], orientation of cell.dart()
     face: struct { cell: Cell, bcoords: Vec3f }, // cell is a .face, bcoords simplex barycentric coordinates
 };
 
-surface_mesh: *SurfaceMesh,
+surface_mesh: *const SurfaceMesh,
 type: SurfacePointType,
 
 // Read values from the given data in the underlying SurfaceMesh.

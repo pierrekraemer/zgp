@@ -109,6 +109,25 @@ pub fn sub4d(a: Vec4d, b: Vec4d) Vec4d {
     return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3] };
 }
 
+pub fn sum2f(v: Vec2f) f32 {
+    return v[0] + v[1];
+}
+pub fn sum3f(v: Vec3f) f32 {
+    return v[0] + v[1] + v[2];
+}
+pub fn sum4f(v: Vec4f) f32 {
+    return v[0] + v[1] + v[2] + v[3];
+}
+pub fn sum2d(v: Vec2d) f64 {
+    return v[0] + v[1];
+}
+pub fn sum3d(v: Vec3d) f64 {
+    return v[0] + v[1] + v[2];
+}
+pub fn sum4d(v: Vec4d) f64 {
+    return v[0] + v[1] + v[2] + v[3];
+}
+
 pub fn mulScalar2f(v: Vec2f, s: f32) Vec2f {
     return .{ v[0] * s, v[1] * s };
 }
@@ -349,6 +368,12 @@ pub fn normalized4d(v: Vec4d) Vec4d {
     return mulScalar4d(v, 1 / n);
 }
 
+pub fn cross2f(a: Vec2f, b: Vec2f) f32 {
+    return a[0] * b[1] - a[1] * b[0];
+}
+pub fn cross2d(a: Vec2d, b: Vec2d) f64 {
+    return a[0] * b[1] - a[1] * b[0];
+}
 pub fn cross3f(a: Vec3f, b: Vec3f) Vec3f {
     return .{
         a[1] * b[2] - a[2] * b[1],

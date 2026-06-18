@@ -160,18 +160,18 @@ pub fn clearRetainingCapacity(sm: *SurfaceMesh) void {
     sm.face_data.clearRetainingCapacity();
 }
 
-pub fn clone(sm: *const SurfaceMesh) !*SurfaceMesh {
-    const cloned_sm = try sm.allocator.create(SurfaceMesh);
-    errdefer sm.allocator.destroy(cloned_sm);
+pub fn clone(sm: *const SurfaceMesh, allocator: std.mem.Allocator) !*SurfaceMesh {
+    const cloned_sm = try allocator.create(SurfaceMesh);
+    errdefer allocator.destroy(cloned_sm);
 
-    cloned_sm.allocator = sm.allocator;
+    cloned_sm.allocator = allocator;
     cloned_sm.cell_buffer_pool = sm.cell_buffer_pool;
 
     // Markers are not copied by ths initFrom function
-    try cloned_sm.dart_data.initFrom(&sm.dart_data, true);
-    try cloned_sm.vertex_data.initFrom(&sm.vertex_data, true);
-    try cloned_sm.edge_data.initFrom(&sm.edge_data, true);
-    try cloned_sm.face_data.initFrom(&sm.face_data, true);
+    try cloned_sm.dart_data.initFrom(&sm.dart_data, true, allocator);
+    try cloned_sm.vertex_data.initFrom(&sm.vertex_data, true, allocator);
+    try cloned_sm.edge_data.initFrom(&sm.edge_data, true, allocator);
+    try cloned_sm.face_data.initFrom(&sm.face_data, true, allocator);
 
     // recover the topological relations & cell indices from the copied Dart DataContainer
     cloned_sm.dart_phi1 = cloned_sm.dart_data.getData(Dart, "phi1").?;
@@ -193,19 +193,19 @@ pub fn clone(sm: *const SurfaceMesh) !*SurfaceMesh {
     return cloned_sm;
 }
 
-pub fn cloneWithoutCellData(sm: *const SurfaceMesh) !*SurfaceMesh {
-    const cloned_sm = try sm.allocator.create(SurfaceMesh);
-    errdefer sm.allocator.destroy(cloned_sm);
+pub fn cloneWithoutCellData(sm: *const SurfaceMesh, allocator: std.mem.Allocator) !*SurfaceMesh {
+    const cloned_sm = try allocator.create(SurfaceMesh);
+    errdefer allocator.destroy(cloned_sm);
 
-    cloned_sm.allocator = sm.allocator;
+    cloned_sm.allocator = allocator;
     cloned_sm.cell_buffer_pool = sm.cell_buffer_pool;
 
     // Copy only the structure of the DataContainers (i.e. size, capacity, indices management) but not the CellData
     // Markers are not copied by ths initFrom function
-    try cloned_sm.dart_data.initFrom(&sm.dart_data, false);
-    try cloned_sm.vertex_data.initFrom(&sm.vertex_data, false);
-    try cloned_sm.edge_data.initFrom(&sm.edge_data, false);
-    try cloned_sm.face_data.initFrom(&sm.face_data, false);
+    try cloned_sm.dart_data.initFrom(&sm.dart_data, false, allocator);
+    try cloned_sm.vertex_data.initFrom(&sm.vertex_data, false, allocator);
+    try cloned_sm.edge_data.initFrom(&sm.edge_data, false, allocator);
+    try cloned_sm.face_data.initFrom(&sm.face_data, false, allocator);
 
     // create the topological relations & cell indices and copy them from the source Dart DataContainer
     cloned_sm.dart_phi1 = try cloned_sm.dart_data.addData(Dart, "phi1");

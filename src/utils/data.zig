@@ -294,8 +294,8 @@ pub const DataContainer = struct {
         dc.nb_inactive_indices = 0;
     }
 
-    pub fn initFrom(dst: *DataContainer, src: *const DataContainer, copy_data: bool) !void {
-        dst.allocator = src.allocator;
+    pub fn initFrom(dst: *DataContainer, src: *const DataContainer, copy_data: bool, allocator: std.mem.Allocator) !void {
+        dst.allocator = allocator;
         dst.datas = .empty;
         dst.markers = try .initCapacity(dst.allocator, 16);
         dst.available_markers = try .initCapacity(dst.allocator, 16);

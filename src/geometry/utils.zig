@@ -56,17 +56,33 @@ pub fn layoutTriangleVertex(pA: Vec2f, pB: Vec2f, lBC: f32, lCA: f32) Vec2f {
     // Project some vectors to get the actual position
     const vABn = vec.mulScalar2f(vec.sub2f(pB, pA), 1.0 / lAB);
     const vABnPerp: Vec2f = .{ -vABn[1], vABn[0] };
-    const pC = vec.add2f(
+    return vec.add2f(
         pA,
         vec.add2f(
             vec.mulScalar2f(vABn, w),
             vec.mulScalar2f(vABnPerp, h),
         ),
     );
-    return pC;
+}
+/// Compute and return the barycentric coordinates of the given point p
+/// with respect to the triangle defined by the given three points a, b, c.
+pub fn barycentricCoordinates(p: Vec2f, a: Vec2f, b: Vec2f, c: Vec2f) Vec3f {
+    const ab = vec.sub2f(b, a);
+    const ac = vec.sub2f(c, a);
+    const ap = vec.sub2f(p, a);
+    const d00 = vec.squaredNorm2f(ab);
+    const d01 = vec.dot2f(ab, ac);
+    const d11 = vec.squaredNorm2f(ac);
+    const d20 = vec.dot2f(ap, ab);
+    const d21 = vec.dot2f(ap, ac);
+    const denom = d00 * d11 - d01 * d01;
+    const v = (d11 * d20 - d01 * d21) / denom;
+    const w = (d00 * d21 - d01 * d20) / denom;
+    const u = 1.0 - v - w;
+    return .{ u, v, w };
 }
 
-// Compute the squared distance between the given point p and the line defined by the given two points a and b.
+/// Compute the squared distance between the given point p and the line defined by the given two points a and b.
 pub fn squaredDistanceLinePoint(a: Vec3f, b: Vec3f, p: Vec3f) f32 {
     const ab = vec.normalized3f(vec.sub3f(b, a));
     const ap = vec.sub3f(p, a);
@@ -115,7 +131,7 @@ pub fn removeComponent(v: Vec3f, unitDir: Vec3f) Vec3f {
     );
 }
 
-/// Compute and return a tangent basis for the given vector.
+/// Compute and return a tangent basis orthogonal to the given normal vector.
 pub fn tangentBasis(v: Vec3f) [2]Vec3f {
     const vn = vec.normalized3f(v);
     var X: Vec3f = .{ 1.0, 0.0, 0.0 };
@@ -141,7 +157,7 @@ pub fn boundingBox(data: *const Data(Vec3f)) struct { Vec3f, Vec3f } {
 }
 
 /// Compute and return the 6 points that contribute to the axis-aligned bounding box of the given data points
-/// in the following order: xmin, xmin, ymin ymax, zmin, zmax
+/// in the following order: xmin, xmax, ymin ymax, zmin, zmax
 /// (a point can be present multiple times)
 pub fn extremePoints(data: *const Data(Vec3f)) [6]Vec3f {
     var bb_min = vec.splat3f(std.math.floatMax(f32));

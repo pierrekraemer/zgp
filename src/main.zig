@@ -99,8 +99,8 @@ pub const AppContext = struct {
     }
 
     pub fn deinit(self: *AppContext) void {
-        self.surface_mesh_store.deinit();
         self.point_cloud_store.deinit();
+        self.surface_mesh_store.deinit();
         self.incidence_graph_store.deinit();
         self.view.deinit();
         self.window.deinit();
@@ -381,6 +381,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         app_ctx.view.menuBar();
         app_ctx.point_cloud_store.menuBar();
         app_ctx.surface_mesh_store.menuBar();
+        app_ctx.incidence_graph_store.menuBar();
         for (modules.items) |module| {
             if (shouldCallOnModule(module, &app_ctx)) {
                 module.menuBar();
@@ -611,8 +612,9 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
     // clear the list of modules and store listeners before deinitializing modules
     // to avoid potential inter-dependencies issues
     modules.clearRetainingCapacity();
-    app_ctx.surface_mesh_store.listeners.clearRetainingCapacity();
     app_ctx.point_cloud_store.listeners.clearRetainingCapacity();
+    app_ctx.surface_mesh_store.listeners.clearRetainingCapacity();
+    app_ctx.incidence_graph_store.listeners.clearRetainingCapacity();
 
     point_cloud_std_datas.deinit();
     surface_mesh_std_datas.deinit();

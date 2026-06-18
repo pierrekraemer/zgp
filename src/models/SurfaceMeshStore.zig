@@ -163,18 +163,8 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     try sm.init(sms.allocator, &sms.cell_buffer_pool);
     errdefer sm.deinit();
 
-    // duplicate name and store the SurfaceMesh pointer in the map
-    const owned_name = try sms.allocator.dupeZ(u8, name);
-    errdefer sms.allocator.free(owned_name);
-    try sms.surface_meshes.put(sms.allocator, owned_name, sm);
-    errdefer _ = sms.surface_meshes.swapRemove(owned_name);
-
-    // store the SurfaceMeshInfo in the map
-    try sms.surface_meshes_info.put(sms.allocator, sm, .init());
-
-    for (sms.listeners.items) |module| {
-        module.surfaceMeshCreated(sm);
-    }
+    // register the SurfaceMesh in the SurfaceMeshStore to make it available in the UI and for other modules
+    try sms.registerSurfaceMesh(name, sm);
 
     return sm;
 }
@@ -184,6 +174,7 @@ pub fn registerSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8, sm: *Surfac
         return error.ModelNameAlreadyExists;
     }
 
+    // duplicate name and store the SurfaceMesh pointer in the map
     const owned_name = try sms.allocator.dupeZ(u8, name);
     errdefer sms.allocator.free(owned_name);
     try sms.surface_meshes.put(sms.allocator, owned_name, sm);
@@ -198,6 +189,15 @@ pub fn registerSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8, sm: *Surfac
 }
 
 pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
+    // unregister the SurfaceMesh from the SurfaceMeshStore
+    sms.unregisterSurfaceMesh(sm);
+
+    // deinit and destroy the SurfaceMesh
+    sm.deinit();
+    sms.allocator.destroy(sm); // destroy the SurfaceMesh
+}
+
+pub fn unregisterSurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
     const name = sms.surfaceMeshName(sm) orelse {
         zgp_log.err("Could not find name for SurfaceMesh to destroy it", .{});
         return;
@@ -221,9 +221,6 @@ pub fn destroySurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
 
     _ = sms.surface_meshes.swapRemove(name);
     sms.allocator.free(name); // free the name
-
-    sm.deinit();
-    sms.allocator.destroy(sm); // destroy the SurfaceMesh
 }
 
 pub fn surfaceMeshDataUpdated(

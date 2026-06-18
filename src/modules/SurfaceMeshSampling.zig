@@ -61,7 +61,8 @@ const SamplingData = struct {
         comptime cell_type: SurfaceMesh.CellType,
         src_data: SurfaceMesh.CellData(cell_type, T),
     ) !void {
-        if (!sd.initialized) return;
+        assert(sd.initialized);
+
         const dst_data = try sd.samples.getOrAddData(T, src_data.name());
         var point_it = sd.samples.pointIterator();
         while (point_it.next()) |point| {
@@ -125,7 +126,8 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
     const sms: *SurfaceMeshSampling = @alignCast(@fieldParentPtr("module", m));
     const sd = sms.surface_meshes_data.getPtr(surface_mesh).?;
     if (sd.initialized) {
-        sd.samples.removeData(SurfacePoint, sd.surface_point); // the SurfacePoint data is no longer valid after the SurfaceMesh is destroyed
+        // the SurfacePoint data is no longer valid after the SurfaceMesh is destroyed
+        sd.samples.removeData(SurfacePoint, sd.surface_point);
     }
     _ = sms.surface_meshes_data.remove(surface_mesh);
 }
