@@ -5,6 +5,7 @@ const assert = std.debug.assert;
 
 const imgui_utils = @import("../ui/imgui.zig");
 const zgp_log = std.log.scoped(.zgp);
+const hasFn = @import("../utils/types.zig").hasFn;
 
 const c = @import("c");
 
@@ -282,14 +283,20 @@ const ITData = struct {
         while (edge_it.next()) |e| {
             try edges_queue.append(itd.app_ctx.allocator, e);
         }
-        try flipEdgesToDelaunay(itd, &edges_queue);
+        try flipEdgesToDelaunay(itd, &edges_queue, null);
     }
 
-    fn flipEdgesToDelaunay(itd: *ITData, edges_queue: *std.ArrayList(SurfaceMesh.Cell)) !void {
+    fn flipEdgesToDelaunay(
+        itd: *ITData,
+        edges_queue: *std.ArrayList(SurfaceMesh.Cell),
+        callbacks: anytype, // can define `beforeEdgeFlip(edge: SurfaceMesh.Cell) void` and `afterEdgeFlip(edge: SurfaceMesh.Cell) void`
+    ) !void {
         var edge_in_queue: SurfaceMesh.CellMarker = try .init(itd.intrinsic_surface_mesh, .edge);
         defer edge_in_queue.deinit();
-        edge_in_queue.marker.fill(true); // all edges are initially in the queue
-        // var nb_flips: usize = 0;
+        for (edges_queue.items) |e| {
+            edge_in_queue.mark(e);
+        }
+
         while (edges_queue.pop()) |e| {
             edge_in_queue.unmark(e);
             // check if the edge can flip (i.e. not a boundary edge and incident vertices of degree > 2)
@@ -303,8 +310,16 @@ const ITData = struct {
 
             // TODO: check if the flip would create negative area faces (maybe test this in flipEdge once the triangles are laid out in 2D?)
 
+            if (comptime hasFn(@TypeOf(callbacks), "beforeEdgeFlip")) {
+                callbacks.beforeEdgeFlip(e);
+            }
+
             // flip the edge (updates the intrinsic geometry data accordingly)
             itd.flipEdge(e);
+
+            if (comptime hasFn(@TypeOf(callbacks), "afterEdgeFlip")) {
+                callbacks.afterEdgeFlip(e);
+            }
 
             // the 4 incident edges of the flipped edge might not be Delaunay anymore, so we add them to the queue if they are not already in
             const d = e.dart();
@@ -321,12 +336,7 @@ const ITData = struct {
                     edge_in_queue.mark(edge);
                 }
             }
-            // nb_flips += 1;
         }
-
-        // zgp_log.info("Flipped {} edges to get a Delaunay intrinsic triangulation", .{nb_flips});
-        // itd.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(itd.intrinsic_surface_mesh);
-        // itd.app_ctx.requestRedraw();
     }
 
     // flip the given edge and update the intrinsic geometry data accordingly
@@ -400,24 +410,46 @@ const ITData = struct {
             };
     }
 
+    // Priority queue of triangles to refine, ordered by the circumradius-to-shortest-edge ratio (rho)
     const TriangleInfo = struct {
         face: SurfaceMesh.Cell,
-        area: f32,
-        pub fn cmpDesc(ctx: FaceQueueContext, a: TriangleInfo, b: TriangleInfo) std.math.Order {
-            const area_order = std.math.order(b.area, a.area);
-            if (area_order != .eq) return area_order;
+        rho_sq: f32,
+        pub fn cmpDesc(ctx: FacePriorityQueueContext, a: TriangleInfo, b: TriangleInfo) std.math.Order {
+            const rho_order = std.math.order(b.rho_sq, a.rho_sq);
+            if (rho_order != .eq) return rho_order;
             // tie-breaker: use face indices to order faces
             return std.math.order(ctx.surface_mesh.cellIndex(a.face), ctx.surface_mesh.cellIndex(b.face));
         }
-        pub fn setFaceIndexInQueue(ctx: FaceQueueContext, a: TriangleInfo, index: usize) void {
+        pub fn setFaceIndexInQueue(ctx: FacePriorityQueueContext, a: TriangleInfo, index: usize) void {
             ctx.face_queue_index.valuePtr(a.face).* = index;
         }
     };
-    const FaceQueueContext = struct {
+    const FacePriorityQueueContext = struct {
         surface_mesh: *SurfaceMesh,
         face_queue_index: SurfaceMesh.CellData(.face, ?usize),
     };
-    const FaceQueueDesc = PriorityQueue(TriangleInfo, FaceQueueContext, TriangleInfo.cmpDesc, TriangleInfo.setFaceIndexInQueue);
+    const FacePriorityQueueDesc = PriorityQueue(TriangleInfo, FacePriorityQueueContext, TriangleInfo.cmpDesc, TriangleInfo.setFaceIndexInQueue);
+
+    // computes the sqaured circumradius-to-shortest-edge ratio of a triangle
+    // it is used as a cost in the priority queue of triangles in the Delaunay refinement algorithm
+    pub fn triangleCircumradiusToShortestEdgeRatioSquared(
+        itd: *ITData,
+        tri: SurfaceMesh.Cell,
+    ) f32 {
+        const t_area = itd.intrinsic_face_area.value(tri);
+        const l_v0v1 = itd.intrinsic_edge_length.value(.{ .edge = tri.dart() });
+        const l_v1v2 = itd.intrinsic_edge_length.value(.{ .edge = itd.intrinsic_surface_mesh.phi1(tri.dart()) });
+        const l_v2v0 = itd.intrinsic_edge_length.value(.{ .edge = itd.intrinsic_surface_mesh.phi_1(tri.dart()) });
+
+        // Prevent division by zero for degenerate triangles (zero area)
+        if (t_area < geometry_utils.epsilon) return std.math.inf(f32);
+
+        const l_v0v1_sq = l_v0v1 * l_v0v1;
+        const l_v1v2_sq = l_v1v2 * l_v1v2;
+        const l_v2v0_sq = l_v2v0 * l_v2v0;
+        const l_min_sq = @min(l_v0v1_sq, @min(l_v1v2_sq, l_v2v0_sq));
+        return (l_v0v1_sq * l_v1v2_sq * l_v2v0_sq) / (16.0 * t_area * t_area * l_min_sq);
+    }
 
     fn refineDelaunay(itd: *ITData, angle_threshold: f32) !void {
         var edges_queue: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(itd.app_ctx.allocator, itd.intrinsic_surface_mesh.nbCells(.edge));
@@ -428,34 +460,126 @@ const ITData = struct {
             try edges_queue.append(itd.app_ctx.allocator, e);
         }
 
-        try flipEdgesToDelaunay(itd, &edges_queue);
+        // start with a Delaunay triangulation (flip edges to Delaunay)
+        try flipEdgesToDelaunay(itd, &edges_queue, null);
 
-        var refine_triangle_queue_index = try itd.intrinsic_surface_mesh.addData(.face, ?usize, "__refine_triangle_queue_index");
-        defer itd.intrinsic_surface_mesh.removeData(.face, ?usize, refine_triangle_queue_index);
-        var refine_triangle_queue: FaceQueueDesc = .initContext(.{
+        var refine_triangle_pq_index = try itd.intrinsic_surface_mesh.addData(.face, ?usize, "__refine_triangle_pq_index");
+        refine_triangle_pq_index.data.fill(null);
+        defer itd.intrinsic_surface_mesh.removeData(.face, ?usize, refine_triangle_pq_index);
+        var refine_triangle_pq: FacePriorityQueueDesc = .initContext(.{
             .surface_mesh = itd.intrinsic_surface_mesh,
-            .face_queue_index = refine_triangle_queue_index,
+            .face_queue_index = refine_triangle_pq_index,
         });
-        defer refine_triangle_queue.deinit(itd.app_ctx.allocator);
+        defer refine_triangle_pq.deinit(itd.app_ctx.allocator);
+
+        const rho_threshold = 1.0 / (2.0 * std.math.sin(angle_threshold));
+        const rho_threshold_sq = rho_threshold * rho_threshold;
 
         var face_it: SurfaceMesh.CellIterator = try .init(itd.intrinsic_surface_mesh, .face);
         defer face_it.deinit();
-        refine_triangle_queue_index.data.fill(null);
+        while (face_it.next()) |f| {
+            const rho_sq = itd.triangleCircumradiusToShortestEdgeRatioSquared(f);
+            if (rho_sq > rho_threshold_sq) {
+                try refine_triangle_pq.push(itd.app_ctx.allocator, .{ .face = f, .rho_sq = rho_sq });
+            }
+        }
 
-        _ = angle_threshold;
+        // define callbacks for the refinement process to update the triangle priority queue when triangles are split or edges are flipped
+        const RefineCallbacks = struct {
+            const RefineCallbacks = @This();
+            itd: *ITData,
+            pq: *FacePriorityQueueDesc,
+            pq_index: SurfaceMesh.CellData(.face, ?usize),
+            rho_threshold_sq: f32,
+            pub fn beforeTriangleSplit(rc: *const RefineCallbacks, tri: SurfaceMesh.Cell) void {
+                // remove the triangle from the priority queue if it is present
+                if (rc.pq_index.value(tri)) |index| {
+                    _ = rc.pq.popIndex(index);
+                }
+                rc.pq_index.valuePtr(tri).* = null;
+            }
+            pub fn beforeEdgeFlip(rc: *const RefineCallbacks, edge: SurfaceMesh.Cell) void {
+                // remove the 2 incident triangles from the priority queue if they are present
+                const d = edge.dart();
+                const f1: SurfaceMesh.Cell = .{ .face = d };
+                if (rc.pq_index.value(f1)) |index| {
+                    _ = rc.pq.popIndex(index);
+                }
+                rc.pq_index.valuePtr(f1).* = null;
+                const f2: SurfaceMesh.Cell = .{ .face = rc.itd.intrinsic_surface_mesh.phi2(d) };
+                if (rc.pq_index.value(f2)) |index| {
+                    _ = rc.pq.popIndex(index);
+                }
+                rc.pq_index.valuePtr(f2).* = null;
+            }
+            pub fn afterEdgeFlip(rc: *const RefineCallbacks, edge: SurfaceMesh.Cell) void {
+                // add the 2 incident triangles to the priority queue if they meet the refinement criterion
+                const d = edge.dart();
+                const f1: SurfaceMesh.Cell = .{ .face = d };
+                assert(rc.pq_index.value(f1) == null);
+                const rho_sq_f1 = rc.itd.triangleCircumradiusToShortestEdgeRatioSquared(f1);
+                if (rho_sq_f1 > rc.rho_threshold_sq) {
+                    rc.pq.push(rc.itd.app_ctx.allocator, .{ .face = f1, .rho_sq = rho_sq_f1 }) catch {};
+                }
+                const f2: SurfaceMesh.Cell = .{ .face = rc.itd.intrinsic_surface_mesh.phi2(d) };
+                assert(rc.pq_index.value(f2) == null);
+                const rho_sq_f2 = rc.itd.triangleCircumradiusToShortestEdgeRatioSquared(f2);
+                if (rho_sq_f2 > rc.rho_threshold_sq) {
+                    rc.pq.push(rc.itd.app_ctx.allocator, .{ .face = f2, .rho_sq = rho_sq_f2 }) catch {};
+                }
+            }
+        };
+
+        // create an instance of the callbacks struct to pass to the refinement functions (insertIntrinsicTriangleCircumcenter and flipEdgesToDelaunay)
+        const refine_callbacks = RefineCallbacks{
+            .itd = itd,
+            .pq = &refine_triangle_pq,
+            .pq_index = refine_triangle_pq_index,
+            .rho_threshold_sq = rho_threshold_sq,
+        };
+
+        while (refine_triangle_pq.pop()) |tri_info| {
+            refine_triangle_pq_index.valuePtr(tri_info.face).* = null; // the triangle is no longer in the priority queue
+
+            const central_vertex = try itd.insertIntrinsicTriangleCircumcenter(
+                tri_info.face,
+                refine_callbacks,
+            );
+
+            // the queue containing edges to flip should be empty before refining a triangle
+            assert(edges_queue.items.len == 0);
+
+            // add the 3 new triangles to the triangle priority queue if they meet the refinement criterion
+            // and add the 3 edges of the original triangle to the edge flip queue
+            var cv_dart_it = itd.intrinsic_surface_mesh.cellDartIterator(central_vertex);
+            while (cv_dart_it.next()) |cv_d| {
+                const new_tri: SurfaceMesh.Cell = .{ .face = cv_d };
+                // new triangles are not in the priority queue yet, so we can directly set their index to null
+                refine_triangle_pq_index.valuePtr(new_tri).* = null;
+                const rho_sq = itd.triangleCircumradiusToShortestEdgeRatioSquared(new_tri);
+                // add the new triangle to the priority queue if it meets the refinement criterion
+                if (rho_sq > rho_threshold_sq) {
+                    try refine_triangle_pq.push(itd.app_ctx.allocator, .{ .face = new_tri, .rho_sq = rho_sq });
+                }
+                // add the edge of the new triangle opposite to the central vertex to the edge flip queue
+                try edges_queue.append(itd.app_ctx.allocator, .{ .edge = itd.intrinsic_surface_mesh.phi1(cv_d) });
+            }
+
+            // flip edges to Delaunay after refining the triangle
+            try flipEdgesToDelaunay(
+                itd,
+                &edges_queue,
+                refine_callbacks,
+            );
+        }
     }
 
-    fn insertIntrinsicTriangleCircumcenter(itd: *ITData, triangle: SurfaceMesh.Cell) !void {
-        // // find an intrinsic corner with an angle lower than 30°
-        // var int_corner_it: SurfaceMesh.CellIterator = try .init(itd.intrinsic_surface_mesh, .corner);
-        // defer int_corner_it.deinit();
-        // const corner_to_split: ?SurfaceMesh.Cell = while (int_corner_it.next()) |corner| {
-        //     const a = itd.intrinsic_corner_angle.value(corner);
-        //     if (a < std.math.pi / 6.0) { // 30 degrees in radians
-        //         break corner;
-        //     }
-        // } else null;
-
+    // returns the new central vertex of the intrinsic triangle split by inserting its circumcenter
+    fn insertIntrinsicTriangleCircumcenter(
+        itd: *ITData,
+        triangle: SurfaceMesh.Cell,
+        callbacks: anytype, // can define a method `beforeTriangleSplit(triangle: SurfaceMesh.Cell) void`
+    ) !SurfaceMesh.Cell {
         // Dart of the source intrinsic triangle to split
         const src_d = triangle.dart();
 
@@ -522,6 +646,11 @@ const ITData = struct {
         assert(circumcenter_sp_int.type == .face);
         const dst_d = circumcenter_sp_int.type.face.cell.dart();
 
+        // call the beforeTriangleSplit callback on the destination triangle
+        if (comptime hasFn(@TypeOf(callbacks), "beforeTriangleSplit")) {
+            callbacks.beforeTriangleSplit(.{ .face = dst_d });
+        }
+
         // layout the destination intrinsic triangle in 2D
         const dst_l_v0v1 = itd.intrinsic_edge_length.value(.{ .edge = dst_d });
         const dst_l_v1v2 = itd.intrinsic_edge_length.value(.{ .edge = itd.intrinsic_surface_mesh.phi1(dst_d) });
@@ -548,17 +677,18 @@ const ITData = struct {
         const dst_l_v1c = vec.norm2f(vec.sub2f(dst_circumcenter, dst_p2d[1]));
         const dst_l_v2c = vec.norm2f(vec.sub2f(dst_circumcenter, dst_p2d[2]));
 
-        // insert the central vertex
+        // grab the Dart on the other side of the first edge of the destination triangle
         const dst_d2 = itd.intrinsic_surface_mesh.phi2(dst_d);
-        // save halfedge angles before removing the face (they will be used to update the halfedge SurfacePoint angles after closing the hole)
+        // save halfedge angles before removing the face (they will be restored on the new halfedges created by the umbrella triangulation)
         const dst_tri_he_angles: [3]f32 = .{
             itd.intrinsic_halfedge_sp_angle.value(.{ .halfedge = dst_d }),
             itd.intrinsic_halfedge_sp_angle.value(.{ .halfedge = itd.intrinsic_surface_mesh.phi1(dst_d) }),
             itd.intrinsic_halfedge_sp_angle.value(.{ .halfedge = itd.intrinsic_surface_mesh.phi_1(dst_d) }),
         };
+
         // remove the triangle face
         itd.intrinsic_surface_mesh.removeFace(.{ .face = dst_d });
-        // and close the hole with an umbrella triangulation (the new central vertex is returned)
+        // and close the hole with an umbrella triangulation (the new central vertex is eventually returned)
         const central_vertex = try itd.intrinsic_surface_mesh.closeHoleWithUmbrella(dst_d2);
 
         // get the Darts of the three halfedges incident to the central vertex
@@ -652,13 +782,7 @@ const ITData = struct {
         itd.intrinsic_halfedge_sp_angle.valuePtr(.{ .halfedge = cvd1 }).* = cvd1_angle;
         itd.intrinsic_halfedge_sp_angle.valuePtr(.{ .halfedge = cvd2 }).* = cvd2_angle;
 
-        // trigger Delaunay flip on the three edges of the original triangle
-        var edges_queue: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(itd.app_ctx.allocator, 32);
-        defer edges_queue.deinit(itd.app_ctx.allocator);
-        try edges_queue.append(itd.app_ctx.allocator, .{ .edge = cvd0 });
-        try edges_queue.append(itd.app_ctx.allocator, .{ .edge = cvd1 });
-        try edges_queue.append(itd.app_ctx.allocator, .{ .edge = cvd2 });
-        try flipToDelaunay(itd, &edges_queue);
+        return central_vertex;
     }
 };
 
@@ -763,7 +887,7 @@ pub fn rightPanel(m: *Module) void {
             };
         }
         if (c.ImGui_ButtonEx("Refine Delaunay triangulation", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            itd.refineDelaunay(std.math.pi / 10.0) catch |err| {
+            itd.refineDelaunay(std.math.pi / 7.0) catch |err| {
                 std.debug.print("Error refining Delaunay: {}\n", .{err});
             };
         }
