@@ -63,12 +63,80 @@ const SamplingData = struct {
     ) !void {
         assert(sd.initialized);
 
+        const Task = struct {
+            const Task = @This();
+
+            surface_point: PointCloud.CellData(SurfacePoint),
+            src_data: SurfaceMesh.CellData(cell_type, T),
+            dst_data: PointCloud.CellData(T),
+
+            pub fn run(t: *const Task, point: PointCloud.Point) void {
+                t.dst_data.valuePtr(point).* = t.surface_point.value(point).readData(T, cell_type, t.src_data);
+            }
+        };
+
         const dst_data = try sd.samples.getOrAddData(T, src_data.name());
+
+        var pctr: PointCloud.ParallelPointTaskRunner = try .init(sd.samples);
+        defer pctr.deinit();
+        try pctr.run(sd.app_ctx, Task{
+            .surface_point = sd.surface_point,
+            .src_data = src_data,
+            .dst_data = dst_data,
+        });
+
+        // var point_it = sd.samples.pointIterator();
+        // while (point_it.next()) |point| {
+        //     dst_data.valuePtr(point).* = sd.surface_point.value(point).readData(T, cell_type, src_data);
+        // }
+
+        sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, T, dst_data);
+        sd.app_ctx.requestRedraw();
+    }
+
+    fn snapSamplesToSurfaceMeshVertices(
+        sd: *SamplingData,
+        surface_mesh: *SurfaceMesh,
+        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    ) void {
+        assert(sd.initialized);
+
         var point_it = sd.samples.pointIterator();
         while (point_it.next()) |point| {
-            dst_data.valuePtr(point).* = sd.surface_point.value(point).readData(T, cell_type, src_data);
+            switch (sd.surface_point.value(point).type) {
+                .vertex => {},
+                .edge => |e| {
+                    const d = e.cell.dart();
+                    const v0: SurfaceMesh.Cell = .{ .vertex = d };
+                    const v1: SurfaceMesh.Cell = .{ .vertex = surface_mesh.phi1(d) };
+                    if (e.t < 0.5) {
+                        sd.surface_point.valuePtr(point).* = .{ .surface_mesh = surface_mesh, .type = .{ .vertex = v0 } };
+                        sd.position.valuePtr(point).* = vertex_position.value(v0);
+                    } else {
+                        sd.surface_point.valuePtr(point).* = .{ .surface_mesh = surface_mesh, .type = .{ .vertex = v1 } };
+                        sd.position.valuePtr(point).* = vertex_position.value(v1);
+                    }
+                },
+                .face => |f| {
+                    const d = f.cell.dart();
+                    const v0: SurfaceMesh.Cell = .{ .vertex = d };
+                    const v1: SurfaceMesh.Cell = .{ .vertex = surface_mesh.phi1(d) };
+                    const v2: SurfaceMesh.Cell = .{ .vertex = surface_mesh.phi_1(d) };
+                    if (f.bcoords[0] >= f.bcoords[1] and f.bcoords[0] >= f.bcoords[2]) {
+                        sd.surface_point.valuePtr(point).* = .{ .surface_mesh = surface_mesh, .type = .{ .vertex = v0 } };
+                        sd.position.valuePtr(point).* = vertex_position.value(v0);
+                    } else if (f.bcoords[1] >= f.bcoords[0] and f.bcoords[1] >= f.bcoords[2]) {
+                        sd.surface_point.valuePtr(point).* = .{ .surface_mesh = surface_mesh, .type = .{ .vertex = v1 } };
+                        sd.position.valuePtr(point).* = vertex_position.value(v1);
+                    } else {
+                        sd.surface_point.valuePtr(point).* = .{ .surface_mesh = surface_mesh, .type = .{ .vertex = v2 } };
+                        sd.position.valuePtr(point).* = vertex_position.value(v2);
+                    }
+                },
+            }
         }
-        sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, T, dst_data);
+        sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, Vec3f, sd.position);
+        sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, SurfacePoint, sd.surface_point);
         sd.app_ctx.requestRedraw();
     }
 };
@@ -317,8 +385,27 @@ pub fn rightPanel(m: *Module) void {
     }
 
     if (sd.initialized) {
-        c.ImGui_SeparatorText("Push data SurfaceMesh -> PointCloud");
+        {
+            c.ImGui_SeparatorText("Snap samples to vertices");
+            const disabled = info.std_datas.vertex_position == null;
+            if (disabled) {
+                c.ImGui_BeginDisabled(true);
+            }
+            if (c.ImGui_ButtonEx("Snap samples to vertices", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                sd.snapSamplesToSurfaceMeshVertices(sm, info.std_datas.vertex_position.?);
+            }
+            if (disabled) {
+                imgui_utils.tooltip(
+                    \\ Requires:
+                    \\ - an already sampled PointCloud
+                    \\ Following data should be available:
+                    \\ - std vertex_position
+                );
+                c.ImGui_EndDisabled();
+            }
+        }
 
+        c.ImGui_SeparatorText("Push data SurfaceMesh -> PointCloud");
         c.ImGui_Text("Cell type:");
         c.ImGui_PushID("cell type");
         if (c.ImGui_BeginCombo("", @tagName(UiData.selected_surface_mesh_cell_type), 0)) {
