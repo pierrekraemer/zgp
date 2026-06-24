@@ -797,6 +797,27 @@ pub fn addCellSet(sm: *SurfaceMesh, cell_type: CellType, name: []const u8) !*Cel
     return cell_sets.getPtr(owned_name).?;
 }
 
+/// Returns a pointer to the cell set of the given CellType with the given name if it exists, otherwise returns null.
+pub fn getCellSet(sm: *const SurfaceMesh, cell_type: CellType, name: []const u8) ?*CellSet {
+    const cell_sets = switch (cell_type) {
+        .vertex => &sm.vertex_sets,
+        .edge => &sm.edge_sets,
+        .face => &sm.face_sets,
+        else => unreachable,
+    };
+    return cell_sets.getPtr(name);
+}
+
+/// Returns a pointer to the cell set of the given CellType with the given name if it exists,
+/// otherwise creates a new cell set with the given name and returns a pointer to it.
+pub fn getOrAddCellSet(sm: *SurfaceMesh, cell_type: CellType, name: []const u8) !*CellSet {
+    if (sm.getCellSet(cell_type, name)) |cs| {
+        return cs;
+    } else {
+        return try sm.addCellSet(cell_type, name);
+    }
+}
+
 /// Removes the cell set of the given CellType.
 pub fn removeCellSet(sm: *SurfaceMesh, cell_type: CellType, cell_set: *CellSet) void {
     assert(cell_set.surface_mesh == sm);

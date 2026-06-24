@@ -300,7 +300,7 @@ pub fn rightPanel(m: *Module) void {
         c.ImGui_Text("Samples PointCloud name:");
         _ = c.ImGui_InputText("##Name", &UiData.pointcloud_name_buf, UiData.pointcloud_name_buf.len, c.ImGuiInputTextFlags_CharsNoBlank);
     } else {
-        c.ImGui_TextDisabled("Samples Point Cloud: ");
+        c.ImGui_TextDisabled("Samples PointCloud: ");
         c.ImGui_SameLine();
         c.ImGui_Text(sms.app_ctx.point_cloud_store.pointCloudName(sd.samples).?);
         c.ImGui_Separator();
@@ -385,8 +385,9 @@ pub fn rightPanel(m: *Module) void {
     }
 
     if (sd.initialized) {
+        c.ImGui_SeparatorText("Samples post-processing");
+
         {
-            c.ImGui_SeparatorText("Snap samples to vertices");
             const disabled = info.std_datas.vertex_position == null;
             if (disabled) {
                 c.ImGui_BeginDisabled(true);
@@ -405,75 +406,97 @@ pub fn rightPanel(m: *Module) void {
             }
         }
 
-        c.ImGui_SeparatorText("Push data SurfaceMesh -> PointCloud");
-        c.ImGui_Text("Cell type:");
-        c.ImGui_PushID("cell type");
-        if (c.ImGui_BeginCombo("", @tagName(UiData.selected_surface_mesh_cell_type), 0)) {
-            defer c.ImGui_EndCombo();
-            inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
-                const is_selected = UiData.selected_surface_mesh_cell_type == cell_type;
-                if (c.ImGui_SelectableEx(@tagName(cell_type), is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                    UiData.selected_surface_mesh_cell_type = cell_type;
-                    UiData.selected_data_gen = null;
-                }
-                if (is_selected) {
-                    c.ImGui_SetItemDefaultFocus();
-                }
-            }
-        }
-        c.ImGui_PopID();
-        c.ImGui_Text("Data type:");
-        c.ImGui_PushID("data type");
-        if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
-            defer c.ImGui_EndCombo();
-            inline for (@typeInfo(DataTypesTag).@"enum".fields) |data_type| {
-                const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
-                if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                    if (!is_selected) {
-                        UiData.selected_data_type = @enumFromInt(data_type.value);
-                        UiData.selected_data_gen = null;
+        {
+            if (c.ImGui_ButtonEx("Select samples vertices", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                var vertex_set = sm.getOrAddCellSet(.vertex, "selected_samples_vertices") catch |err| {
+                    std.debug.print("Error creating vertex set: {}\n", .{err});
+                    return;
+                };
+                vertex_set.clear();
+                var point_it = sd.samples.pointIterator();
+                while (point_it.next()) |point| {
+                    if (sd.surface_point.value(point).type == .vertex) {
+                        vertex_set.add(sd.surface_point.value(point).type.vertex) catch |err| {
+                            std.debug.print("Error adding vertex to set: {}\n", .{err});
+                        };
                     }
                 }
-                if (is_selected) {
-                    c.ImGui_SetItemDefaultFocus();
-                }
+                sm_store.surfaceMeshCellSetUpdated(sm, vertex_set);
+                sms.app_ctx.requestRedraw();
             }
         }
-        c.ImGui_PopID();
-        c.ImGui_Text("Source data:");
-        inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
-            if (UiData.selected_surface_mesh_cell_type == cell_type) {
+
+        c.ImGui_SeparatorText("Push data SurfaceMesh -> PointCloud");
+        {
+            c.ImGui_Text("Cell type:");
+            c.ImGui_PushID("cell type");
+            if (c.ImGui_BeginCombo("", @tagName(UiData.selected_surface_mesh_cell_type), 0)) {
+                defer c.ImGui_EndCombo();
+                inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
+                    const is_selected = UiData.selected_surface_mesh_cell_type == cell_type;
+                    if (c.ImGui_SelectableEx(@tagName(cell_type), is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                        UiData.selected_surface_mesh_cell_type = cell_type;
+                        UiData.selected_data_gen = null;
+                    }
+                    if (is_selected) {
+                        c.ImGui_SetItemDefaultFocus();
+                    }
+                }
+            }
+            c.ImGui_PopID();
+            c.ImGui_Text("Data type:");
+            c.ImGui_PushID("data type");
+            if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
+                defer c.ImGui_EndCombo();
                 inline for (@typeInfo(DataTypesTag).@"enum".fields) |data_type| {
-                    if (UiData.selected_data_type == @as(DataTypesTag, @enumFromInt(data_type.value))) {
-                        const T = @FieldType(DataTypes, data_type.name);
-                        const selected_cell_data: ?SurfaceMesh.CellData(cell_type, T) = if (UiData.selected_data_gen) |data_gen| blk: {
-                            const selected_data: *Data(T) = @fieldParentPtr("data_gen", data_gen);
-                            break :blk .{
-                                .surface_mesh = sm,
-                                .data = selected_data,
-                            };
-                        } else null;
-                        switch (imgui_utils.surfaceMeshCellDataComboBox(sm, cell_type, @FieldType(DataTypes, data_type.name), selected_cell_data)) {
-                            .unchanged => {},
-                            .cleared => UiData.selected_data_gen = null,
-                            .changed => |data| UiData.selected_data_gen = &data.data.data_gen,
+                    const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
+                    if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                        if (!is_selected) {
+                            UiData.selected_data_type = @enumFromInt(data_type.value);
+                            UiData.selected_data_gen = null;
                         }
-                        const disabled = selected_cell_data == null;
-                        if (disabled) {
-                            c.ImGui_BeginDisabled(true);
-                        }
-                        if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Push data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                            sd.pushDataToPointCloud(T, cell_type, selected_cell_data.?) catch |err| {
-                                std.debug.print("Error pushing data from SurfaceMesh to PointCloud: {}\n", .{err});
-                            };
-                        }
-                        if (disabled) {
-                            imgui_utils.tooltip(
-                                \\ Requires:
-                                \\ - an already sampled PointCloud
-                                \\ - a selected source data
-                            );
-                            c.ImGui_EndDisabled();
+                    }
+                    if (is_selected) {
+                        c.ImGui_SetItemDefaultFocus();
+                    }
+                }
+            }
+            c.ImGui_PopID();
+            c.ImGui_Text("Source data:");
+            inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
+                if (UiData.selected_surface_mesh_cell_type == cell_type) {
+                    inline for (@typeInfo(DataTypesTag).@"enum".fields) |data_type| {
+                        if (UiData.selected_data_type == @as(DataTypesTag, @enumFromInt(data_type.value))) {
+                            const T = @FieldType(DataTypes, data_type.name);
+                            const selected_cell_data: ?SurfaceMesh.CellData(cell_type, T) = if (UiData.selected_data_gen) |data_gen| blk: {
+                                const selected_data: *Data(T) = @fieldParentPtr("data_gen", data_gen);
+                                break :blk .{
+                                    .surface_mesh = sm,
+                                    .data = selected_data,
+                                };
+                            } else null;
+                            switch (imgui_utils.surfaceMeshCellDataComboBox(sm, cell_type, @FieldType(DataTypes, data_type.name), selected_cell_data)) {
+                                .unchanged => {},
+                                .cleared => UiData.selected_data_gen = null,
+                                .changed => |data| UiData.selected_data_gen = &data.data.data_gen,
+                            }
+                            const disabled = selected_cell_data == null;
+                            if (disabled) {
+                                c.ImGui_BeginDisabled(true);
+                            }
+                            if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Push data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                                sd.pushDataToPointCloud(T, cell_type, selected_cell_data.?) catch |err| {
+                                    std.debug.print("Error pushing data from SurfaceMesh to PointCloud: {}\n", .{err});
+                                };
+                            }
+                            if (disabled) {
+                                imgui_utils.tooltip(
+                                    \\ Requires:
+                                    \\ - an already sampled PointCloud
+                                    \\ - a selected source data
+                                );
+                                c.ImGui_EndDisabled();
+                            }
                         }
                     }
                 }
