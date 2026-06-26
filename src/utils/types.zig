@@ -11,21 +11,6 @@ pub fn typeId(T: type) *const anyopaque {
     return @ptrCast(&TypeIdContainer(T).id);
 }
 
-/// Evaluates at compile-time to check if a type has a specific function with a given name.
-pub fn hasFn(comptime T: type, comptime name: []const u8) bool {
-    // 1. Safely handle explicit `null` or `void`
-    if (T == @TypeOf(null) or T == void) return false;
-    // 2. Unwrap pointer types (so context pointers like `*MyContext` work)
-    const BaseT = switch (@typeInfo(T)) {
-        .pointer => |ptrInfo| ptrInfo.child,
-        else => T,
-    };
-    // 3. We only expect functions to live inside structs
-    if (@typeInfo(BaseT) != .@"struct") return false;
-    // 4. Check if the function exists as a method (decl) or a function pointer (field)
-    return @hasDecl(BaseT, name) or @hasField(BaseT, name);
-}
-
 pub fn StructFromUnion(U: type) type {
     const nbfields = @typeInfo(U).@"union".fields.len;
     var field_names: [nbfields][]const u8 = undefined;

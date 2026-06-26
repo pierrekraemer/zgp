@@ -18,8 +18,9 @@ const Vec3f = vec.Vec3f;
 const distance = @import("../models/surface/distance.zig");
 
 const DistanceData = struct {
-    vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null,
     selected_vertex_set: ?*SurfaceMesh.CellSet = null,
+    vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null,
+    face_distance_gradient: ?SurfaceMesh.CellData(.face, Vec3f) = null,
 };
 
 app_ctx: *AppContext,
@@ -139,7 +140,6 @@ pub fn rightClickMenu(m: *Module) void {
                 .changed => |data| dd.vertex_distance = data,
             }
             c.ImGui_PopID();
-
             if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create distance data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 if (dd.vertex_distance == null) {
                     const maybe_data = sm.addData(.vertex, f32, "distance");
