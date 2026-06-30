@@ -14,6 +14,86 @@ const SparseMatrix = eigen.SparseMatrix;
 const laplacian = @import("laplacian.zig");
 const gradient = @import("gradient.zig");
 
+/// Compute the shortest edge path between two vertices of the SurfaceMesh using Dijkstra's algorithm.
+/// Returns an ArrayList(Dart) representing the oriented edges of the path (caller is responsible for deinit the returned ArrayList).
+pub fn shortestEdgePathBetweenVertices(
+    app_ctx: *AppContext,
+    sm: *SurfaceMesh,
+    v_start: SurfaceMesh.Cell,
+    v_end: SurfaceMesh.Cell,
+    edge_weight: SurfaceMesh.CellData(.edge, f32),
+) !std.ArrayList(SurfaceMesh.Dart) {
+    assert(v_start.cellType() == .vertex);
+    assert(v_end.cellType() == .vertex);
+
+    // this data is used to store the incoming dart for each vertex in the shortest path tree
+    // a null value indicates a vertex that has not been reached yet
+    var incoming_dart = try sm.addData(.vertex, ?SurfaceMesh.Dart, "__incoming_dart");
+    defer sm.removeData(.vertex, ?SurfaceMesh.Dart, incoming_dart);
+    incoming_dart.data.fill(null);
+
+    const DartInfo = struct {
+        const DartInfo = @This();
+        dart: SurfaceMesh.Dart,
+        distance: f32,
+        pub fn cmp(_: void, a: DartInfo, b: DartInfo) std.math.Order {
+            const distance_order = std.math.order(a.distance, b.distance);
+            if (distance_order != .eq) return distance_order;
+            // tie-breaker: use Dart indices to have a deterministic order
+            return std.math.order(a.dart, b.dart);
+        }
+    };
+    const DartQueue = std.PriorityQueue(DartInfo, void, DartInfo.cmp);
+
+    var queue: DartQueue = .empty;
+    defer queue.deinit(app_ctx.allocator);
+    // initialize the queue with the darts outgoing from the starting vertex
+    {
+        var dart_it = sm.cellDartIterator(v_start);
+        while (dart_it.next()) |d| {
+            try queue.push(
+                app_ctx.allocator,
+                .{ .dart = d, .distance = edge_weight.value(.{ .edge = d }) },
+            );
+        }
+    }
+    while (queue.pop()) |d_info| {
+        const pointed_v: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d_info.dart) };
+        if (incoming_dart.value(pointed_v) != null or sm.cellIndex(pointed_v) == sm.cellIndex(v_start)) {
+            // this vertex has already been reached, or is the starting vertex, skip it
+            continue;
+        }
+        incoming_dart.valuePtr(pointed_v).* = d_info.dart;
+        if (sm.cellIndex(pointed_v) == sm.cellIndex(v_end)) {
+            // reconstruct the path from v_end to v_start using the incoming_dart data
+            var path: std.ArrayList(SurfaceMesh.Dart) = try .initCapacity(app_ctx.allocator, 16);
+            try path.append(app_ctx.allocator, d_info.dart);
+            var current_d = d_info.dart;
+            while (incoming_dart.value(.{ .vertex = current_d })) |incoming| {
+                try path.append(app_ctx.allocator, incoming);
+                current_d = incoming;
+            }
+            // reverse the path to get it from v_start to v_end
+            std.mem.reverse(SurfaceMesh.Dart, path.items);
+            return path;
+        }
+        // expand the neighbors of the current pointed vertex
+        var dart_it = sm.cellDartIterator(pointed_v);
+        while (dart_it.next()) |d| {
+            const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
+            if (incoming_dart.value(nv) == null) {
+                const weight = edge_weight.value(.{ .edge = d });
+                // a smaller distance will naturally be popped from the priority queue first
+                try queue.push(app_ctx.allocator, .{ .dart = d, .distance = d_info.distance + weight });
+            }
+        }
+    }
+    // no path found
+    return .empty;
+}
+
+/// Compute the geodesic distance from each vertex of the SurfaceMesh to its closest source vertex using the heat method.
+/// The vertex_distance data is filled with the computed distances.
 pub fn computeVertexGeodesicDistancesFromSource(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,

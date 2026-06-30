@@ -29,6 +29,7 @@ const angle = @import("../models/surface/angle.zig");
 const area = @import("../models/surface/area.zig");
 const laplacian = @import("../models/surface/laplacian.zig");
 const geodesic = @import("../models/surface/geodesic.zig");
+const distance = @import("../models/surface/distance.zig");
 
 const ITData = struct {
     app_ctx: *AppContext,
@@ -329,6 +330,27 @@ const ITData = struct {
                 }
             }
         }
+    }
+
+    fn flipOutShortestGeodesic(itd: *ITData, vertex_set: *SurfaceMesh.CellSet) !void {
+        assert(vertex_set.cells.items.len == 2);
+        const start_v = vertex_set.cells.items[0];
+        const end_v = vertex_set.cells.items[1];
+        var path = try distance.shortestEdgePathBetweenVertices(
+            itd.app_ctx,
+            itd.extrinsic_surface_mesh,
+            start_v,
+            end_v,
+            itd.extrinsic_edge_length,
+        );
+        defer path.deinit(itd.app_ctx.allocator);
+        const shortest_path_set = try itd.extrinsic_surface_mesh.getOrAddCellSet(.edge, "shortest_path");
+        shortest_path_set.clear();
+        for (path.items) |d| {
+            try shortest_path_set.add(.{ .edge = d });
+        }
+        itd.app_ctx.surface_mesh_store.surfaceMeshCellSetUpdated(itd.extrinsic_surface_mesh, shortest_path_set);
+        itd.app_ctx.requestRedraw();
     }
 
     // flip the given edge and update the intrinsic geometry data accordingly
@@ -838,6 +860,10 @@ pub fn rightPanel(m: *Module) void {
     assert(smit.app_ctx.selected_model.modelType() == .surface_mesh);
     const sm = smit.app_ctx.selected_model.surface_mesh;
 
+    const UiData = struct {
+        var selected_vertex_set: ?*SurfaceMesh.CellSet = null;
+    };
+
     const style = c.ImGui_GetStyle();
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
@@ -889,6 +915,32 @@ pub fn rightPanel(m: *Module) void {
             itd.refineDelaunay(std.math.pi / 7.0) catch |err| {
                 std.debug.print("Error refining Delaunay: {}\n", .{err});
             };
+        }
+        {
+            c.ImGui_Text("Shortest geodesic vertex set:");
+            c.ImGui_PushID("shortest geodesic vertex set");
+            switch (imgui_utils.surfaceMeshCellSetComboBox(sm, .vertex, UiData.selected_vertex_set)) {
+                .unchanged => {},
+                .cleared => UiData.selected_vertex_set = null,
+                .changed => |cell_set| UiData.selected_vertex_set = cell_set,
+            }
+            c.ImGui_PopID();
+            const disabled = UiData.selected_vertex_set == null or
+                UiData.selected_vertex_set.?.cells.items.len != 2;
+            if (disabled) {
+                c.ImGui_BeginDisabled(true);
+            }
+            if (c.ImGui_ButtonEx("Flip out shortest geodesic", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                itd.flipOutShortestGeodesic(UiData.selected_vertex_set.?) catch |err| {
+                    std.debug.print("Error flipping out shortest geodesic: {}\n", .{err});
+                };
+            }
+            if (disabled) {
+                imgui_utils.tooltip(
+                    \\ Select a vertex set with exactly 2 vertices to flip out the shortest geodesic.
+                );
+                c.ImGui_EndDisabled();
+            }
         }
         if (c.ImGui_ButtonEx("Trace intrinsic edges", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
             itd.traceIntrinsicEdges() catch |err| {
