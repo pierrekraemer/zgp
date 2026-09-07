@@ -71,7 +71,7 @@ const SurfaceMeshRendererParameters = struct {
 
     draw_vertices: bool = true,
     draw_edges: bool = true,
-    draw_edges_as_cylinders: bool = true,
+    draw_edges_as_cylinders: bool = false,
     draw_faces: bool = true,
     draw_boundaries: bool = false,
 

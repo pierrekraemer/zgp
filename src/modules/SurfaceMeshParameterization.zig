@@ -860,6 +860,10 @@ pub fn deinit(smp: *SurfaceMeshParameterization) void {
     smp.surface_meshes_data.deinit(smp.app_ctx.allocator);
 }
 
+pub fn surfaceMeshParameterizationData(smp: *SurfaceMeshParameterization, surface_mesh: *SurfaceMesh) *ParameterizationData {
+    return smp.surface_meshes_data.getPtr(surface_mesh).?;
+}
+
 /// Part of the Module interface.
 /// Create and store a ParameterizationData for the created SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
