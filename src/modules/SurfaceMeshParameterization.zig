@@ -752,6 +752,27 @@ const ParameterizationData = struct {
                 current_patch_distance_to_boundary.valuePtrByIndex(v_index).* = std.math.sqrt(min_dist_squared);
             }
 
+            // re-center the patch's UV space on its farthest-from-the-boundary vertex instead of on the origin (sample) vertex
+            // and normalize the distance to boundary values accordingly, so that the distance at the origin is 1 and the distance on the boundary is 0
+            {
+                var farthest_v_index = origin_v_index;
+                var farthest_dist = current_patch_distance_to_boundary.valueByIndex(origin_v_index);
+                for (patch_vertex_indices.items) |v_index| {
+                    const d = current_patch_distance_to_boundary.valueByIndex(v_index);
+                    if (d > farthest_dist) {
+                        farthest_dist = d;
+                        farthest_v_index = v_index;
+                    }
+                }
+                const new_origin_uv = current_patch_uv.valueByIndex(farthest_v_index);
+                for (patch_vertex_indices.items) |v_index| {
+                    current_patch_uv.valuePtrByIndex(v_index).* = vec.sub2f(current_patch_uv.valueByIndex(v_index), new_origin_uv);
+                    // commented out version normalizes the distance smoothly to 0 at the boundary and 1 at the farthest vertex, even if the farthest vertex is not the origin vertex
+                    // not useful now that the origin of the patch is re-centered on the farthest vertex
+                    current_patch_distance_to_boundary.valuePtrByIndex(v_index).* /= farthest_dist; // / (current_patch_distance_to_boundary.valueByIndex(v_index) + vec.norm2f(current_patch_uv.valueByIndex(v_index)));
+                }
+            }
+
             // now that the UV coordinates and distance to boundary of the patch vertices are known, write them directly into the triangle_uvs
             // data of the patch faces, in the order induced by the canonical dart of each triangle
             for (patch_faces.items) |f| {
@@ -773,9 +794,6 @@ const ParameterizationData = struct {
                     current_patch_distance_to_boundary.valueByIndex(v1_index),
                     current_patch_distance_to_boundary.valueByIndex(v2_index),
                 };
-
-                // TODO: could maybe compute the location of the maximum distance to boundary point in the patch
-                // and translate the UV coordinates of the patch so that this point is at (0, 0) in the UV space
             }
         }
 
@@ -1076,10 +1094,9 @@ pub fn rightPanel(m: *Module) void {
                                 vertex_uv.valuePtrByIndex(v0_index).* = tri_uvs.uvs[idx][0];
                                 vertex_uv.valuePtrByIndex(v1_index).* = tri_uvs.uvs[idx][1];
                                 vertex_uv.valuePtrByIndex(v2_index).* = tri_uvs.uvs[idx][2];
-                                // the commented out normalization below would make the distance to boundary be in [0, 1], with 1 on the origin vertex and 0 on the boundary of the patch
-                                vertex_boundary_dist.valuePtrByIndex(v0_index).* = tri_uvs.distance_to_boundary[idx][0]; // / (tri_uvs.distance_to_boundary[idx][0] + vec.norm2f(tri_uvs.uvs[idx][0]));
-                                vertex_boundary_dist.valuePtrByIndex(v1_index).* = tri_uvs.distance_to_boundary[idx][1]; // / (tri_uvs.distance_to_boundary[idx][1] + vec.norm2f(tri_uvs.uvs[idx][1]));
-                                vertex_boundary_dist.valuePtrByIndex(v2_index).* = tri_uvs.distance_to_boundary[idx][2]; // / (tri_uvs.distance_to_boundary[idx][2] + vec.norm2f(tri_uvs.uvs[idx][2]));
+                                vertex_boundary_dist.valuePtrByIndex(v0_index).* = tri_uvs.distance_to_boundary[idx][0];
+                                vertex_boundary_dist.valuePtrByIndex(v1_index).* = tri_uvs.distance_to_boundary[idx][1];
+                                vertex_boundary_dist.valuePtrByIndex(v2_index).* = tri_uvs.distance_to_boundary[idx][2];
                             }
                         }
                     }
