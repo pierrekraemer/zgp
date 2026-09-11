@@ -562,7 +562,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         c.ImGui_Separator();
         for (modules.items) |module| {
             if (!shouldCallOnModule(module, &app_ctx)) continue;
-            if (module.vtable.rightPanel == null) continue; // check if the module has a rightPanel function
+            if (module.vtable.rightPanel == Module.defaultRightPanel) continue; // check if the module has a custom rightPanel function
             c.ImGui_PushIDPtr(module);
             defer c.ImGui_PopID();
             c.ImGui_PushStyleColor(c.ImGuiCol_Text, c.IM_COL32(25, 25, 25, 255));
