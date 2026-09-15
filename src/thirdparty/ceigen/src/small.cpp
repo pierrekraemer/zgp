@@ -33,4 +33,16 @@ extern "C"
         evals = solver.eigenvalues();
         evecs = solver.eigenvectors();
     }
+
+    void svd3d(const SCALAR (*mat)[9], SCALAR (*U)[9], SCALAR (*S)[3], SCALAR (*V)[9])
+    {
+        Eigen::Map<const Matrix3d> m(*mat);
+        Eigen::Map<Matrix3d> uMat(*U);
+        Eigen::Map<Vector3d> sVec(*S);
+        Eigen::Map<Matrix3d> vMat(*V);
+        Eigen::JacobiSVD<Matrix3d> svd(m, Eigen::ComputeFullU | Eigen::ComputeFullV);
+        uMat = svd.matrixU();
+        sVec = svd.singularValues();
+        vMat = svd.matrixV();
+    }
 }

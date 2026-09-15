@@ -30,6 +30,14 @@ pub fn eigenSolver(m: Mat3d) struct { Vec3d, Mat3d } {
     return .{ evals, evecs };
 }
 
+pub fn svd3d(m: Mat3d) struct { Mat3d, Vec3d, Mat3d } {
+    var U: Mat3d = undefined;
+    var S: Vec3d = undefined;
+    var V: Mat3d = undefined;
+    c.svd3d(@ptrCast(@constCast(&m)), @ptrCast(&U), @ptrCast(&S), @ptrCast(&V));
+    return .{ U, S, V };
+}
+
 pub const DenseMatrix = struct {
     matrix: ?*anyopaque = null,
 
@@ -111,5 +119,35 @@ pub const SparseMatrix = struct {
 
     pub fn solveSymmetricSparseLinearSystem(sm: SparseMatrix, b: []const Scalar, x: []Scalar) void {
         c.solveSymmetricSparseLinearSystem(sm.matrix.?, b.ptr, x.ptr, @intCast(b.len));
+    }
+};
+
+/// A pre-factorized symmetric sparse linear system solver.
+/// The matrix is factorized once at init time, then solve can be called
+/// multiple times with different right-hand sides.
+pub const FactorizedSparseMatrix = struct {
+    solver: ?*anyopaque = null,
+    size: Index = 0,
+
+    pub fn init(sm: SparseMatrix, size: Index) FactorizedSparseMatrix {
+        return .{
+            .solver = c.factorizeSymmetricSparseMatrix(sm.matrix.?),
+            .size = size,
+        };
+    }
+
+    pub fn deinit(fsm: *FactorizedSparseMatrix) void {
+        if (fsm.solver) |s| {
+            c.destroyFactorizedMatrix(s);
+            fsm.solver = null;
+        }
+    }
+
+    pub fn solve(fsm: FactorizedSparseMatrix, b: []const Scalar, x: []Scalar) void {
+        c.solveWithFactorizedMatrix(fsm.solver.?, b.ptr, x.ptr, fsm.size);
+    }
+
+    pub fn solve3(fsm: FactorizedSparseMatrix, b: []const Scalar, x: []Scalar) void {
+        c.solveWithFactorizedMatrixMultipleRHS(fsm.solver.?, b.ptr, x.ptr, fsm.size, 3);
     }
 };

@@ -20,7 +20,7 @@ const distance = @import("../models/surface/distance.zig");
 const DistanceData = struct {
     selected_vertex_set: ?*SurfaceMesh.CellSet = null,
     vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null,
-    face_distance_gradient: ?SurfaceMesh.CellData(.face, Vec3f) = null,
+    // face_distance_gradient: ?SurfaceMesh.CellData(.face, Vec3f) = null,
 };
 
 app_ctx: *AppContext,

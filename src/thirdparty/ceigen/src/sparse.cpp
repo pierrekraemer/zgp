@@ -2,6 +2,7 @@
 #include <eigen/Eigen/Sparse>
 
 using SparseMatrix = Eigen::SparseMatrix<SCALAR, Eigen::ColMajor, INDEX>;
+using DenseMatrix = Eigen::Matrix<SCALAR, Eigen::Dynamic, Eigen::Dynamic>;
 using Vector = Eigen::Matrix<SCALAR, Eigen::Dynamic, 1>;
 using Triplet = Eigen::Triplet<SCALAR, INDEX>;
 
@@ -61,5 +62,34 @@ extern "C"
     {
         SparseMatrix *sparseMat = static_cast<SparseMatrix *>(mat);
         delete sparseMat;
+    }
+
+    void *factorizeSymmetricSparseMatrix(const void *mat)
+    {
+        const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
+        auto *solver = new Eigen::SimplicialLDLT<SparseMatrix>(*sparseMat);
+        return solver;
+    }
+
+    void solveWithFactorizedMatrix(const void *solver, const SCALAR *b, SCALAR *x, INDEX size)
+    {
+        const auto *ldlt = static_cast<const Eigen::SimplicialLDLT<SparseMatrix> *>(solver);
+        Eigen::Map<const Vector> bVec(b, size);
+        Eigen::Map<Vector> xVec(x, size);
+        xVec = ldlt->solve(bVec);
+    }
+
+    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const SCALAR *b, SCALAR *x, INDEX size, INDEX nb_rhs)
+    {
+        const auto *ldlt = static_cast<const Eigen::SimplicialLDLT<SparseMatrix> *>(solver);
+        Eigen::Map<const DenseMatrix> bMat(b, size, nb_rhs);
+        Eigen::Map<DenseMatrix> xMat(const_cast<SCALAR *>(x), size, nb_rhs);
+        xMat = ldlt->solve(bMat);
+    }
+
+    void destroyFactorizedMatrix(void *solver)
+    {
+        auto *ldlt = static_cast<Eigen::SimplicialLDLT<SparseMatrix> *>(solver);
+        delete ldlt;
     }
 }

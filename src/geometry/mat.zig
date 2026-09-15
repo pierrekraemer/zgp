@@ -305,6 +305,38 @@ pub fn sub4d(a: Mat4d, b: Mat4d) Mat4d {
     };
 }
 
+pub fn transpose3f(m: Mat3f) Mat3f {
+    return .{
+        .{ m[0][0], m[1][0], m[2][0] },
+        .{ m[0][1], m[1][1], m[2][1] },
+        .{ m[0][2], m[1][2], m[2][2] },
+    };
+}
+pub fn transpose3d(m: Mat3d) Mat3d {
+    return .{
+        .{ m[0][0], m[1][0], m[2][0] },
+        .{ m[0][1], m[1][1], m[2][1] },
+        .{ m[0][2], m[1][2], m[2][2] },
+    };
+}
+
+pub fn transpose4f(m: Mat4f) Mat4f {
+    return .{
+        .{ m[0][0], m[1][0], m[2][0], m[3][0] },
+        .{ m[0][1], m[1][1], m[2][1], m[3][1] },
+        .{ m[0][2], m[1][2], m[2][2], m[3][2] },
+        .{ m[0][3], m[1][3], m[2][3], m[3][3] },
+    };
+}
+pub fn transpose4d(m: Mat4d) Mat4d {
+    return .{
+        .{ m[0][0], m[1][0], m[2][0], m[3][0] },
+        .{ m[0][1], m[1][1], m[2][1], m[3][1] },
+        .{ m[0][2], m[1][2], m[2][2], m[3][2] },
+        .{ m[0][3], m[1][3], m[2][3], m[3][3] },
+    };
+}
+
 pub fn lookAt(eyepos: Vec3f, eyedir: Vec3f, updir: Vec3f) Mat4f {
     // const eyedir = vec.sub3f(eyepos, focuspos);
     const dir = vec.mulScalar3f(eyedir, -1.0);

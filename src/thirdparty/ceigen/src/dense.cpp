@@ -1,4 +1,4 @@
-#include "sparse.h"
+#include "dense.h"
 #include <eigen/Eigen/Dense>
 
 using DenseMatrix = Eigen::Matrix<SCALAR, Eigen::Dynamic, Eigen::Dynamic>;
