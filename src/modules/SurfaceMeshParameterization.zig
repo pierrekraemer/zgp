@@ -26,6 +26,7 @@ const geometry_utils = @import("../geometry/utils.zig");
 
 const sampling = @import("../models/surface/sampling.zig");
 const distance = @import("../models/surface/distance.zig");
+const intrinsic_triangulation = @import("../models/surface/intrinsic_triangulation.zig");
 
 const ParameterizationData = struct {
     app_ctx: *AppContext,
@@ -33,9 +34,9 @@ const ParameterizationData = struct {
     // the underlying SurfaceMesh on which the parameterization is computed
     surface_mesh: *SurfaceMesh,
 
-    // intrinsic triangulation data of the underlying SurfaceMesh
+    // pointer to the IT context of the underlying SurfaceMesh
     // the Delaunay intrinsic triangulation is used to compute geodesic distances & tangent space shortest paths lifting
-    intrinsic_triangulation_data: *SurfaceMeshIntrinsicTriangulation.ITData,
+    it_ctx: ?*intrinsic_triangulation.ITContext = null,
 
     // samples are SurfacePoints that lie on the underlying SurfaceMesh (snapped to vertices, for now)
     // each sample gives rise to a local parameterization patch
@@ -247,21 +248,9 @@ const ParameterizationData = struct {
     fn connectSamples(
         pd: *ParameterizationData,
         edge_length: SurfaceMesh.CellData(.edge, f32),
-        corner_angle: SurfaceMesh.CellData(.corner, f32),
     ) !void {
         if (pd.samples == null) {
             return error.SamplesNotGenerated;
-        }
-
-        // if needed, initialize the intrinsic triangulation and flip edges to make it Delaunay
-        // WARNING: strong hypothesis that the underlying SurfaceMesh is not modified between successive calls to this function
-        if (!pd.intrinsic_triangulation_data.initialized) {
-            pd.intrinsic_triangulation_data.init(edge_length, corner_angle) catch |err| {
-                std.debug.print("Error during intrinsic triangulation initialization: {}\n", .{err});
-            };
-            pd.intrinsic_triangulation_data.flipToDelaunay() catch |err| {
-                std.debug.print("Error during intrinsic triangulation Delaunay flip: {}\n", .{err});
-            };
         }
 
         // create or clear the samples SurfaceMesh and its associated data
@@ -298,22 +287,22 @@ const ParameterizationData = struct {
         while (point_it.next()) |sample| {
             const sp = pd.sample_surface_point.value(sample);
             if (sp.type == .vertex) { // all samples are snapped to vertices, so this is always true
-                const it_v = pd.intrinsic_triangulation_data.extrinsic_vertex_intrinsic_vertex.value(sp.type.vertex);
+                const it_v = pd.it_ctx.?.extrinsic_vertex_intrinsic_vertex.value(sp.type.vertex);
                 try it_source_vertices.append(pd.app_ctx.allocator, it_v);
                 try source_vertex_sample.put(pd.app_ctx.allocator, pd.surface_mesh.cellIndex(sp.type.vertex), sample);
             } else unreachable; // all samples are snapped to vertices, so this should never happen
         }
 
         // compute the closest source vertex and distance to it for each vertex in the intrinsic triangulation
-        const it_closest_source_distance = try pd.intrinsic_triangulation_data.intrinsic_surface_mesh.addData(.vertex, f32, "it_closest_source_distance");
-        defer pd.intrinsic_triangulation_data.intrinsic_surface_mesh.removeData(.vertex, f32, it_closest_source_distance);
-        const it_closest_source_vertex = try pd.intrinsic_triangulation_data.intrinsic_surface_mesh.addData(.vertex, ?SurfaceMesh.Cell, "it_closest_source_vertex");
-        defer pd.intrinsic_triangulation_data.intrinsic_surface_mesh.removeData(.vertex, ?SurfaceMesh.Cell, it_closest_source_vertex);
+        const it_closest_source_distance = try pd.it_ctx.?.intrinsic_surface_mesh.addData(.vertex, f32, "it_closest_source_distance");
+        defer pd.it_ctx.?.intrinsic_surface_mesh.removeData(.vertex, f32, it_closest_source_distance);
+        const it_closest_source_vertex = try pd.it_ctx.?.intrinsic_surface_mesh.addData(.vertex, ?SurfaceMesh.Cell, "it_closest_source_vertex");
+        defer pd.it_ctx.?.intrinsic_surface_mesh.removeData(.vertex, ?SurfaceMesh.Cell, it_closest_source_vertex);
         try distance.multiSourceDijkstraDistancesAndSources(
             pd.app_ctx,
-            pd.intrinsic_triangulation_data.intrinsic_surface_mesh,
+            pd.it_ctx.?.intrinsic_surface_mesh,
             it_source_vertices.items,
-            pd.intrinsic_triangulation_data.intrinsic_edge_length,
+            pd.it_ctx.?.intrinsic_edge_length,
             it_closest_source_distance,
             it_closest_source_vertex,
         );
@@ -322,16 +311,16 @@ const ParameterizationData = struct {
         // copy back the closest source distance and corresponding sample color in the underlying SurfaceMesh
         const vertex_distance, _ = try pd.surface_mesh.getOrAddData(.vertex, f32, "closest_source_distance");
         const vertex_color, _ = try pd.surface_mesh.getOrAddData(.vertex, Vec3f, "closest_sample_color");
-        var it_v_it: SurfaceMesh.CellIterator = try .init(pd.intrinsic_triangulation_data.intrinsic_surface_mesh, .vertex);
+        var it_v_it: SurfaceMesh.CellIterator = try .init(pd.it_ctx.?.intrinsic_surface_mesh, .vertex);
         defer it_v_it.deinit();
         while (it_v_it.next()) |it_v| {
             // v is the vertex in the underlying SurfaceMesh corresponding to the intrinsic vertex it_v
-            const v = pd.intrinsic_triangulation_data.intrinsic_vertex_extrinsic_sp.value(it_v).type.vertex;
+            const v = pd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(it_v).type.vertex;
             vertex_distance.valuePtr(v).* = it_closest_source_distance.value(it_v);
             // if the closest source vertex of it_v is not defined, it means it was not reachable from any source vertex
             if (it_closest_source_vertex.value(it_v)) |it_sv| {
                 // sv is the vertex in the underlying SurfaceMesh corresponding to the intrinsic source vertex it_sv
-                const sv = pd.intrinsic_triangulation_data.intrinsic_vertex_extrinsic_sp.value(it_sv).type.vertex;
+                const sv = pd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(it_sv).type.vertex;
                 const sample = source_vertex_sample.get(pd.surface_mesh.cellIndex(sv)).?; // get the sample corresponding to the closest source vertex
                 vertex_color.valuePtr(v).* = pd.sample_color.value(sample);
             } else {
@@ -372,16 +361,16 @@ const ParameterizationData = struct {
         // - enumerate the edges of the encountered faces (i.e. pairs of samples)
         // - detect edges that are shared by more than 2 faces -> this usually corresponds to pinched edges in the samples SurfaceMesh due to a lack of samples in thin tubular regions of the underlying SurfaceMesh
         // - try to find a relevant place to add a new sample and start the process again
-        var it_f_it: SurfaceMesh.CellIterator = try .init(pd.intrinsic_triangulation_data.intrinsic_surface_mesh, .face);
+        var it_f_it: SurfaceMesh.CellIterator = try .init(pd.it_ctx.?.intrinsic_surface_mesh, .face);
         defer it_f_it.deinit();
         while (it_f_it.next()) |f| {
             const it_sv0 = it_closest_source_vertex.value(.{ .vertex = f.dart() });
-            const it_sv1 = it_closest_source_vertex.value(.{ .vertex = pd.intrinsic_triangulation_data.intrinsic_surface_mesh.phi1(f.dart()) });
-            const it_sv2 = it_closest_source_vertex.value(.{ .vertex = pd.intrinsic_triangulation_data.intrinsic_surface_mesh.phi_1(f.dart()) });
+            const it_sv1 = it_closest_source_vertex.value(.{ .vertex = pd.it_ctx.?.intrinsic_surface_mesh.phi1(f.dart()) });
+            const it_sv2 = it_closest_source_vertex.value(.{ .vertex = pd.it_ctx.?.intrinsic_surface_mesh.phi_1(f.dart()) });
             if (it_sv0 != null and it_sv1 != null and it_sv2 != null) {
-                const sv0 = pd.intrinsic_triangulation_data.intrinsic_vertex_extrinsic_sp.value(it_sv0.?).type.vertex; // get the corresponding vertex in the underlying SurfaceMesh
-                const sv1 = pd.intrinsic_triangulation_data.intrinsic_vertex_extrinsic_sp.value(it_sv1.?).type.vertex;
-                const sv2 = pd.intrinsic_triangulation_data.intrinsic_vertex_extrinsic_sp.value(it_sv2.?).type.vertex;
+                const sv0 = pd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(it_sv0.?).type.vertex; // get the corresponding vertex in the underlying SurfaceMesh
+                const sv1 = pd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(it_sv1.?).type.vertex;
+                const sv2 = pd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(it_sv2.?).type.vertex;
                 const s0 = source_vertex_sample.get(pd.surface_mesh.cellIndex(sv0)).?; // these vertices are source vertices, so they must have a corresponding sample
                 const s1 = source_vertex_sample.get(pd.surface_mesh.cellIndex(sv1)).?;
                 const s2 = source_vertex_sample.get(pd.surface_mesh.cellIndex(sv2)).?;
@@ -523,8 +512,8 @@ const ParameterizationData = struct {
 
         // this data is used to store the incoming dart for each vertex in the shortest path tree
         // a null value indicates a vertex that has not been reached yet
-        var incoming_dart = try pd.intrinsic_triangulation_data.intrinsic_surface_mesh.addData(.vertex, ?SurfaceMesh.Dart, "__incoming_dart");
-        defer pd.intrinsic_triangulation_data.intrinsic_surface_mesh.removeData(.vertex, ?SurfaceMesh.Dart, incoming_dart);
+        var incoming_dart = try pd.it_ctx.?.intrinsic_surface_mesh.addData(.vertex, ?SurfaceMesh.Dart, "__incoming_dart");
+        defer pd.it_ctx.?.intrinsic_surface_mesh.removeData(.vertex, ?SurfaceMesh.Dart, incoming_dart);
 
         // Priority queue type for darts of the SurfaceMesh to expand from, ordered by their distance from the origin vertex
         const DartInfo = struct {
@@ -583,7 +572,7 @@ const ParameterizationData = struct {
         while (ssm_v_it.next()) |ssm_v| {
             const sample = pd.ssm_vertex_sample.value(ssm_v);
             const sm_origin_v = pd.sample_surface_point.value(sample).type.vertex;
-            const it_origin_v = pd.intrinsic_triangulation_data.extrinsic_vertex_intrinsic_vertex.value(sm_origin_v);
+            const it_origin_v = pd.it_ctx.?.extrinsic_vertex_intrinsic_vertex.value(sm_origin_v);
             const origin_v_index = pd.surface_mesh.cellIndex(sm_origin_v);
 
             // collect the edges that delimit the patch of the underlying SurfaceMesh that will be parameterized around the origin vertex
@@ -663,16 +652,16 @@ const ParameterizationData = struct {
             // initialize the queue with the darts outgoing from the origin vertex
             dart_queue.clearRetainingCapacity();
             {
-                const origin_v_angle_sum = pd.intrinsic_triangulation_data.extrinsic_vertex_angle_sum.valueByIndex(origin_v_index);
-                var dart_it = pd.intrinsic_triangulation_data.intrinsic_surface_mesh.cellDartIterator(it_origin_v);
+                const origin_v_angle_sum = pd.it_ctx.?.extrinsic_vertex_angle_sum.valueByIndex(origin_v_index);
+                var dart_it = pd.it_ctx.?.intrinsic_surface_mesh.cellDartIterator(it_origin_v);
                 while (dart_it.next()) |d| {
                     try dart_queue.push(
                         pd.app_ctx.allocator,
                         .{
                             .dart = d,
-                            .distance = pd.intrinsic_triangulation_data.intrinsic_edge_length.value(.{ .edge = d }),
+                            .distance = pd.it_ctx.?.intrinsic_edge_length.value(.{ .edge = d }),
                             .uv = .{ 0.0, 0.0 },
-                            .global_angle = pd.intrinsic_triangulation_data.intrinsic_halfedge_extrinsic_sp_angle.value(.{ .halfedge = d }) / origin_v_angle_sum * std.math.tau,
+                            .global_angle = pd.it_ctx.?.intrinsic_halfedge_extrinsic_sp_angle.value(.{ .halfedge = d }) / origin_v_angle_sum * std.math.tau,
                         },
                     );
                 }
@@ -681,8 +670,8 @@ const ParameterizationData = struct {
 
             incoming_dart.data.fill(null);
             while (dart_queue.pop()) |d_info| {
-                const pointed_v: SurfaceMesh.Cell = .{ .vertex = pd.intrinsic_triangulation_data.intrinsic_surface_mesh.phi1(d_info.dart) };
-                const pointed_v_index = pd.intrinsic_triangulation_data.intrinsic_surface_mesh.cellIndex(pointed_v);
+                const pointed_v: SurfaceMesh.Cell = .{ .vertex = pd.it_ctx.?.intrinsic_surface_mesh.phi1(d_info.dart) };
+                const pointed_v_index = pd.it_ctx.?.intrinsic_surface_mesh.cellIndex(pointed_v);
                 // if the pointed vertex has already been reached, or is the origin vertex, skip it
                 if (incoming_dart.value(pointed_v) != null or pointed_v_index == origin_v_index) {
                     continue;
@@ -691,7 +680,7 @@ const ParameterizationData = struct {
                 incoming_dart.valuePtr(pointed_v).* = d_info.dart;
 
                 // the UV coordinate of pointed_v is the UV coordinate of v + the vector from v to pointed_v in the tangent space of the origin vertex
-                const l = pd.intrinsic_triangulation_data.intrinsic_edge_length.value(.{ .edge = d_info.dart });
+                const l = pd.it_ctx.?.intrinsic_edge_length.value(.{ .edge = d_info.dart });
                 const uv = vec.add2f(d_info.uv, .{
                     l * std.math.cos(d_info.global_angle),
                     l * std.math.sin(d_info.global_angle),
@@ -707,27 +696,27 @@ const ParameterizationData = struct {
                     }
                 }
                 // otherwise, enqueue the edges outgoing from pointed_v
-                var dart_it = pd.intrinsic_triangulation_data.intrinsic_surface_mesh.cellDartIterator(pointed_v);
+                var dart_it = pd.it_ctx.?.intrinsic_surface_mesh.cellDartIterator(pointed_v);
                 // a_prev is the angle of the edge from pointed_v to v (i.e. looking back in the shortest path towards the origin vertex)
                 // in the local tangent space of pointed_v
-                const pointed_v_angle_sum = pd.intrinsic_triangulation_data.extrinsic_vertex_angle_sum.valueByIndex(pointed_v_index);
-                const a_prev = pd.intrinsic_triangulation_data.intrinsic_halfedge_extrinsic_sp_angle.value(.{
-                    .halfedge = pd.intrinsic_triangulation_data.intrinsic_surface_mesh.phi2(d_info.dart),
+                const pointed_v_angle_sum = pd.it_ctx.?.extrinsic_vertex_angle_sum.valueByIndex(pointed_v_index);
+                const a_prev = pd.it_ctx.?.intrinsic_halfedge_extrinsic_sp_angle.value(.{
+                    .halfedge = pd.it_ctx.?.intrinsic_surface_mesh.phi2(d_info.dart),
                 }) / pointed_v_angle_sum * std.math.tau;
                 while (dart_it.next()) |out_d| {
-                    const nv: SurfaceMesh.Cell = .{ .vertex = pd.intrinsic_triangulation_data.intrinsic_surface_mesh.phi1(out_d) };
+                    const nv: SurfaceMesh.Cell = .{ .vertex = pd.it_ctx.?.intrinsic_surface_mesh.phi1(out_d) };
                     // if the neighbor vertex across the edge has already been reached, skip it
                     if (incoming_dart.value(nv) != null) {
                         continue;
                     }
                     // a is the angle of the edge from pointed_v to nv in the local tangent space of pointed_v
-                    const a = pd.intrinsic_triangulation_data.intrinsic_halfedge_extrinsic_sp_angle.value(.{ .halfedge = out_d }) / pointed_v_angle_sum * std.math.tau;
+                    const a = pd.it_ctx.?.intrinsic_halfedge_extrinsic_sp_angle.value(.{ .halfedge = out_d }) / pointed_v_angle_sum * std.math.tau;
                     const delta_a = a - a_prev; // this encodes the difference between where we go and where we come from
                     try dart_queue.push(
                         pd.app_ctx.allocator,
                         .{
                             .dart = out_d,
-                            .distance = d_info.distance + pd.intrinsic_triangulation_data.intrinsic_edge_length.value(.{ .edge = out_d }),
+                            .distance = d_info.distance + pd.it_ctx.?.intrinsic_edge_length.value(.{ .edge = out_d }),
                             .uv = uv,
                             // the global angle (i.e. angle in the tangent space of the origin vertex) for this outgoing dart
                             // is the global angle of the edge we come from + delta_a + PI (modulo 2*PI)
@@ -889,7 +878,6 @@ pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     smp.surface_meshes_data.put(smp.app_ctx.allocator, surface_mesh, .{
         .app_ctx = smp.app_ctx,
         .surface_mesh = surface_mesh,
-        .intrinsic_triangulation_data = smp.surface_mesh_intrinsic_triangulation.surfaceMeshIntrinsicTriangulationData(surface_mesh),
     }) catch |err| {
         std.debug.print("Failed to store ParameterizationData for new SurfaceMesh: {}\n", .{err});
         return;
@@ -902,10 +890,10 @@ pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
 pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smp: *SurfaceMeshParameterization = @alignCast(@fieldParentPtr("module", m));
     // first case: the destroyed SurfaceMesh is used as samples SurfaceMesh for a SurfaceMesh
-    var it = smp.surface_meshes_data.iterator();
-    while (it.next()) |entry| {
-        if (entry.value_ptr.samples_surface_mesh == surface_mesh) {
-            entry.value_ptr.samplesSurfaceMeshDestroyed() catch |err| {
+    var it = smp.surface_meshes_data.valueIterator();
+    while (it.next()) |pd| {
+        if (pd.samples_surface_mesh == surface_mesh) {
+            pd.samplesSurfaceMeshDestroyed() catch |err| {
                 std.debug.print("Failed to handle destroyed samples SurfaceMesh for SurfaceMesh: {}\n", .{err});
             };
             // we can return here because a samples SurfaceMesh cannot be itself the underlying SurfaceMesh of a ParameterizationData
@@ -926,10 +914,10 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
 /// If the destroyed PointCloud is used as samples for a SurfaceMesh, inform the associated ParameterizationData.
 pub fn pointCloudDestroyed(m: *Module, point_cloud: *PointCloud) void {
     const smp: *SurfaceMeshParameterization = @alignCast(@fieldParentPtr("module", m));
-    var it = smp.surface_meshes_data.iterator();
-    while (it.next()) |entry| {
-        if (entry.value_ptr.samples == point_cloud) {
-            entry.value_ptr.samplesDestroyed() catch |err| {
+    var it = smp.surface_meshes_data.valueIterator();
+    while (it.next()) |pd| {
+        if (pd.samples == point_cloud) {
+            pd.samplesDestroyed() catch |err| {
                 std.debug.print("Failed to handle destroyed samples PointCloud for SurfaceMesh: {}\n", .{err});
             };
             break;
@@ -1003,10 +991,23 @@ pub fn rightPanel(m: *Module) void {
             c.ImGui_BeginDisabled(true);
         }
         if (c.ImGui_ButtonEx("Connect samples", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            pd.connectSamples(
-                info.std_datas.edge_length.?,
-                info.std_datas.corner_angle.?,
-            ) catch |err| {
+            // if needed, initialize the intrinsic triangulation and flip edges to make it Delaunay
+            // WARNING: strong hypothesis that the underlying SurfaceMesh is not modified between successive calls
+            // otherwise, the intrinsic triangulation should be re-initialized and the Delaunay flip should be performed again
+            const itd = smp.surface_mesh_intrinsic_triangulation.surfaceMeshITData(sm);
+            if (itd.it_ctx == null) {
+                itd.initITContext(
+                    info.std_datas.edge_length.?,
+                    info.std_datas.corner_angle.?,
+                ) catch |err| {
+                    std.debug.print("Failed to initialize IT context: {}\n", .{err});
+                };
+                itd.it_ctx.?.flipToDelaunay() catch |err| {
+                    std.debug.print("Failed to flip to Delaunay: {}\n", .{err});
+                };
+            }
+            pd.it_ctx = &itd.it_ctx.?;
+            pd.connectSamples(info.std_datas.edge_length.?) catch |err| {
                 std.debug.print("Error during samples connectivity computation: {}\n", .{err});
             };
         }

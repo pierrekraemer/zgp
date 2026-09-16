@@ -21,6 +21,7 @@ const mat = @import("../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
 
 const arap = @import("../models/surface/arap.zig");
+const intrinsic_triangulation = @import("../models/surface/intrinsic_triangulation.zig");
 
 const DeformationMode = enum {
     SimpleTranslation,
@@ -28,10 +29,42 @@ const DeformationMode = enum {
 };
 
 const DeformationData = struct {
+    app_ctx: *AppContext,
+    surface_mesh: *SurfaceMesh,
+
     fixed_vertex_set: ?*SurfaceMesh.CellSet = null, // anchored vertices
     handle_vertex_set: ?*SurfaceMesh.CellSet = null, // handle vertices (moved by user)
-    arap_ctx: ?arap.ArapContext = null, // initialized ARAP context
-    intrinsic_triangulation_data: *SurfaceMeshIntrinsicTriangulation.ITData, // intrinsic triangulation data of the underlying SurfaceMesh
+
+    arap_ctx: ?arap.ARAPContext = null, // optional ARAP context
+
+    fn initARAPContext(
+        dd: *DeformationData,
+        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+        it_ctx: ?*intrinsic_triangulation.ITContext,
+    ) !void {
+        assert(dd.arap_ctx == null);
+        assert(vertex_position.surface_mesh == dd.surface_mesh);
+        assert(halfedge_cotan_weight.surface_mesh == dd.surface_mesh);
+        assert(dd.fixed_vertex_set != null and dd.fixed_vertex_set.?.cells.items.len > 0 and dd.fixed_vertex_set.?.surface_mesh == dd.surface_mesh);
+        assert(dd.handle_vertex_set != null and dd.handle_vertex_set.?.cells.items.len > 0 and dd.handle_vertex_set.?.surface_mesh == dd.surface_mesh);
+
+        dd.arap_ctx = try .init(
+            dd.app_ctx,
+            dd.surface_mesh,
+            vertex_position,
+            halfedge_cotan_weight,
+            dd.fixed_vertex_set.?,
+            dd.handle_vertex_set.?,
+            it_ctx,
+        );
+    }
+
+    fn deinit(dd: *DeformationData) void {
+        if (dd.arap_ctx) |*ctx| {
+            ctx.deinit();
+        }
+    }
 };
 
 app_ctx: *AppContext,
@@ -65,9 +98,7 @@ pub fn init(app_ctx: *AppContext, surface_mesh_intrinsic_triangulation: *Surface
 pub fn deinit(smd: *SurfaceMeshDeformation) void {
     var it = smd.surface_meshes_data.valueIterator();
     while (it.next()) |dd| {
-        if (dd.arap_ctx) |*ctx| {
-            ctx.deinit();
-        }
+        dd.deinit();
     }
     smd.surface_meshes_data.deinit(smd.app_ctx.allocator);
 }
@@ -77,7 +108,8 @@ pub fn deinit(smd: *SurfaceMeshDeformation) void {
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smd: *SurfaceMeshDeformation = @alignCast(@fieldParentPtr("module", m));
     smd.surface_meshes_data.put(smd.app_ctx.allocator, surface_mesh, .{
-        .intrinsic_triangulation_data = smd.surface_mesh_intrinsic_triangulation.surfaceMeshIntrinsicTriangulationData(surface_mesh),
+        .app_ctx = smd.app_ctx,
+        .surface_mesh = surface_mesh,
     }) catch |err| {
         std.debug.print("Failed to store DeformationData for new SurfaceMesh: {}\n", .{err});
         return;
@@ -89,9 +121,7 @@ pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
 pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smd: *SurfaceMeshDeformation = @alignCast(@fieldParentPtr("module", m));
     if (smd.surface_meshes_data.getPtr(surface_mesh)) |dd| {
-        if (dd.arap_ctx) |*ctx| {
-            ctx.deinit();
-        }
+        dd.deinit();
     }
     _ = smd.surface_meshes_data.remove(surface_mesh);
 }
@@ -237,31 +267,26 @@ pub fn rightPanel(m: *Module) void {
                 if (dd.arap_ctx != null) "ARAP initialized" else "Initialize ARAP",
                 c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 },
             )) {
+                const itd = smd.surface_mesh_intrinsic_triangulation.surfaceMeshITData(sm);
                 if (smd.use_intrinsic_delaunay) {
-                    // if needed, initialize the intrinsic triangulation and flip edges to make it Delaunay
-                    if (!dd.intrinsic_triangulation_data.initialized) {
-                        dd.intrinsic_triangulation_data.init(
+                    if (itd.it_ctx == null) {
+                        itd.initITContext(
                             info.std_datas.edge_length.?,
                             info.std_datas.corner_angle.?,
                         ) catch |err| {
-                            std.debug.print("Error during intrinsic triangulation initialization: {}\n", .{err});
+                            std.debug.print("Failed to initialize IT context: {}\n", .{err});
                         };
-                        dd.intrinsic_triangulation_data.flipToDelaunay() catch |err| {
-                            std.debug.print("Error during intrinsic triangulation Delaunay flip: {}\n", .{err});
+                        itd.it_ctx.?.flipToDelaunay() catch |err| {
+                            std.debug.print("Failed to flip to Delaunay: {}\n", .{err});
                         };
                     }
                 }
-                dd.arap_ctx = arap.ArapContext.init(
-                    smd.app_ctx.allocator,
-                    sm,
+                dd.initARAPContext(
                     info.std_datas.vertex_position.?,
                     info.std_datas.halfedge_cotan_weight.?,
-                    dd.fixed_vertex_set.?,
-                    dd.handle_vertex_set.?,
-                    if (smd.use_intrinsic_delaunay) dd.intrinsic_triangulation_data else null,
-                ) catch |err| blk: {
+                    if (smd.use_intrinsic_delaunay) &itd.it_ctx.? else null,
+                ) catch |err| {
                     std.debug.print("Failed to initialize ARAP: {}\n", .{err});
-                    break :blk null;
                 };
             }
             if (disabled) {

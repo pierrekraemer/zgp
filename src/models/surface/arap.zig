@@ -5,8 +5,6 @@ const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const invalid_index = @import("../../utils//data.zig").invalid_index;
 
-const SurfaceMeshIntrinsicTriangulation = @import("../../modules/SurfaceMeshIntrinsicTriangulation.zig");
-
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec3d = vec.Vec3d;
@@ -18,6 +16,7 @@ const SparseMatrix = eigen.SparseMatrix;
 const FactorizedSparseMatrix = eigen.FactorizedSparseMatrix;
 
 const laplacian = @import("laplacian.zig");
+const intrinsic_triangulation = @import("intrinsic_triangulation.zig");
 
 /// Compute the best-fit rotation for a vertex from its one-ring,
 /// using the SVD of the covariance matrix between rest and current edge vectors.
@@ -80,7 +79,7 @@ pub fn computeVertexOneRingRotation(
 }
 
 /// ARAP deformation context.
-pub const ArapContext = struct {
+pub const ARAPContext = struct {
     surface_mesh: *SurfaceMesh, // the original SurfaceMesh
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32), // defined on the original SurfaceMesh (given)
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f), // defined on the original SurfaceMesh (given)
@@ -90,9 +89,9 @@ pub const ArapContext = struct {
     nb_free: u32,
     free_vertex_index: SurfaceMesh.CellData(.vertex, u32), // defined on the original SurfaceMesh (generated)
 
-    // optional intrinsic triangulation data associated with the original SurfaceMesh
+    // optional pointer to an intrinsic triangulation context associated with the original SurfaceMesh
     // allows to compute on the intrinsic Delaunay triangulation if wanted
-    intrinsic_triangulation_data: ?*SurfaceMeshIntrinsicTriangulation.ITData,
+    it_ctx: ?*intrinsic_triangulation.ITContext,
 
     // if the intrinsic triangulation is used, its connectivity and halfedge cotan weights are used to compute the Laplacian and vertex rotations
     // and these two fields point to the intrinsic triangulation SurfaceMesh and its halfedge cotan weights
@@ -112,14 +111,14 @@ pub const ArapContext = struct {
     solve_mat: eigen.DenseMatrix, // preallocated buffer for the solution of the linear system (nb_free x 3)
 
     pub fn init(
-        allocator: std.mem.Allocator,
+        app_ctx: *AppContext,
         sm: *SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
         fixed_set: *SurfaceMesh.CellSet,
         handle_set: *SurfaceMesh.CellSet,
-        intrinsic_triangulation_data: ?*SurfaceMeshIntrinsicTriangulation.ITData, // defined if using intrinsic Delaunay triangulation, null otherwise
-    ) !ArapContext {
+        it_ctx: ?*intrinsic_triangulation.ITContext, // defined if using intrinsic Delaunay triangulation, null otherwise
+    ) !ARAPContext {
         // Create & initialize vertex rest positions
         var vertex_position_rest = try sm.addData(.vertex, Vec3f, "__arap_rest_positions");
         vertex_position_rest.data.copyFrom(vertex_position.data);
@@ -142,16 +141,16 @@ pub const ArapContext = struct {
             }
         }
 
-        assert((if (intrinsic_triangulation_data) |itd| itd.extrinsic_surface_mesh else sm) == sm); // ensure we are given the right intrinsic triangulation data
-        const compute_surface_mesh = if (intrinsic_triangulation_data) |itd| itd.intrinsic_surface_mesh else sm;
-        const compute_halfedge_cotan_weight = if (intrinsic_triangulation_data) |itd| itd.intrinsic_halfedge_cotan_weight else halfedge_cotan_weight;
+        assert((if (it_ctx) |ctx| ctx.extrinsic_surface_mesh else sm) == sm); // ensure we are given the right intrinsic triangulation context
+        const compute_surface_mesh = if (it_ctx) |ctx| ctx.intrinsic_surface_mesh else sm;
+        const compute_halfedge_cotan_weight = if (it_ctx) |ctx| ctx.intrinsic_halfedge_cotan_weight else halfedge_cotan_weight;
 
         // Build the Laplacian matrix for free vertices (nb_free x nb_free)
         // L_ii = -sum_j w_ij (for j being all neighbors, both free and constrained)
         // L_ij = w_ij (only if both i and j are free)
         const nb_edges = compute_surface_mesh.nbCells(.edge);
-        var triplets = try std.ArrayList(SparseMatrix.Triplet).initCapacity(allocator, 4 * nb_edges);
-        defer triplets.deinit(allocator);
+        var triplets = try std.ArrayList(SparseMatrix.Triplet).initCapacity(app_ctx.allocator, 4 * nb_edges);
+        defer triplets.deinit(app_ctx.allocator);
         var edge_it: SurfaceMesh.CellIterator = try .init(compute_surface_mesh, .edge);
         defer edge_it.deinit();
         while (edge_it.next()) |edge| {
@@ -191,7 +190,7 @@ pub const ArapContext = struct {
             .vertex_rotation = vertex_rotation,
             .nb_free = nb_free,
             .free_vertex_index = free_vertex_index,
-            .intrinsic_triangulation_data = intrinsic_triangulation_data,
+            .it_ctx = it_ctx,
             .compute_surface_mesh = compute_surface_mesh,
             .compute_halfedge_cotan_weight = compute_halfedge_cotan_weight,
             .factorized_L = factorized_L,
@@ -200,7 +199,7 @@ pub const ArapContext = struct {
         };
     }
 
-    pub fn deinit(ctx: *ArapContext) void {
+    pub fn deinit(ctx: *ARAPContext) void {
         ctx.solve_mat.deinit();
         ctx.rhs_mat.deinit();
         ctx.factorized_L.deinit();
@@ -211,7 +210,7 @@ pub const ArapContext = struct {
 
     /// Run the ARAP local/global solve & updates vertex_position
     pub fn solve(
-        ctx: *ArapContext,
+        ctx: *ARAPContext,
         app_ctx: *AppContext,
     ) !void {
         // === Local step: compute best-fit rotation for each vertex ===

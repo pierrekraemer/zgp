@@ -64,6 +64,7 @@ pub fn layoutTriangleVertex(pA: Vec2f, pB: Vec2f, lBC: f32, lCA: f32) Vec2f {
         ),
     );
 }
+
 /// Compute and return the barycentric coordinates of the given point p
 /// with respect to the triangle defined by the given three points a, b, c.
 pub fn barycentricCoordinates(p: Vec2f, a: Vec2f, b: Vec2f, c: Vec2f) Vec3f {
