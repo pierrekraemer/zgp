@@ -11,6 +11,7 @@ extern "C"
     void *createDenseMatrix(INDEX rows, INDEX cols);
     void destroyDenseMatrix(void *mat);
 
+    void getDenseMatrixRow(const void *mat, INDEX row, SCALAR *row_vals, INDEX size);
     void setDenseMatrixRow(void *mat, INDEX row, const SCALAR *row_vals, INDEX size);
     void solveDenseLeastSquares(const void *matA, const SCALAR *b, SCALAR *x, INDEX rows, INDEX cols);
 

@@ -19,6 +19,13 @@ extern "C"
         delete denseMat;
     }
 
+    void getDenseMatrixRow(const void *mat, INDEX row, SCALAR *row_vals, INDEX size)
+    {
+        const DenseMatrix *denseMat = static_cast<const DenseMatrix *>(mat);
+        Eigen::Map<Vector> rowVec(row_vals, size);
+        rowVec = denseMat->row(row).transpose();
+    }
+
     void setDenseMatrixRow(void *mat, INDEX row, const SCALAR *row_vals, INDEX size)
     {
         DenseMatrix *denseMat = static_cast<DenseMatrix *>(mat);

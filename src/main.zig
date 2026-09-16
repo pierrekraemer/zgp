@@ -183,7 +183,7 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     surface_mesh_curvature = .init(&app_ctx);
     surface_mesh_intrinsic_triangulation = .init(&app_ctx);
     surface_mesh_selection = .init(&app_ctx);
-    surface_mesh_deformation = .init(&app_ctx);
+    surface_mesh_deformation = .init(&app_ctx, &surface_mesh_intrinsic_triangulation);
     surface_mesh_connectivity = .init(&app_ctx, &surface_mesh_curvature);
     surface_mesh_sampling = .init(&app_ctx);
     surface_mesh_parameterization = .init(&app_ctx, &surface_mesh_intrinsic_triangulation);

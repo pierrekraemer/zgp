@@ -83,14 +83,28 @@ pub const ITData = struct {
     ) !void {
         itd.extrinsic_edge_length = extrinsic_edge_length;
         itd.extrinsic_corner_angle = extrinsic_corner_angle;
+
+        if (itd.initialized) {
+            itd.extrinsic_surface_mesh.removeData(.vertex, f32, itd.extrinsic_vertex_angle_sum);
+            itd.extrinsic_surface_mesh.removeData(.vertex, SurfaceMesh.Cell, itd.extrinsic_vertex_intrinsic_vertex);
+
+            var edge_it = SurfaceMesh.CellIterator.init(itd.intrinsic_surface_mesh, .edge) catch |err| {
+                std.debug.print("Error creating edge iterator in ITData deinit: {}\n", .{err});
+                return;
+            };
+            while (edge_it.next()) |e| {
+                itd.intrinsic_edge_trace.valuePtr(e).deinit(itd.app_ctx.allocator);
+            }
+            edge_it.deinit(); // this deinit is not deferred because it must be called before the intrinsic_surface_mesh is deinit and destroyed
+
+            itd.intrinsic_surface_mesh.deinit();
+            itd.app_ctx.allocator.destroy(itd.intrinsic_surface_mesh);
+        }
+
         // the 2 following data are initialized below during the intrinsic triangulation initialization
         itd.extrinsic_vertex_angle_sum = try itd.extrinsic_surface_mesh.addData(.vertex, f32, "angle_sum");
         itd.extrinsic_vertex_intrinsic_vertex = try itd.extrinsic_surface_mesh.addData(.vertex, SurfaceMesh.Cell, "intrinsic_vertex");
 
-        if (itd.initialized) {
-            itd.intrinsic_surface_mesh.deinit();
-            itd.app_ctx.allocator.destroy(itd.intrinsic_surface_mesh);
-        }
         itd.intrinsic_surface_mesh = try itd.extrinsic_surface_mesh.cloneWithoutCellData(itd.app_ctx.allocator);
         itd.intrinsic_edge_length = try itd.intrinsic_surface_mesh.addData(.edge, f32, "length");
         itd.intrinsic_corner_angle = try itd.intrinsic_surface_mesh.addData(.corner, f32, "corner_angle");
@@ -156,6 +170,9 @@ pub const ITData = struct {
 
     fn deinit(itd: *ITData) void {
         if (itd.initialized) {
+            itd.extrinsic_surface_mesh.removeData(.vertex, f32, itd.extrinsic_vertex_angle_sum);
+            itd.extrinsic_surface_mesh.removeData(.vertex, SurfaceMesh.Cell, itd.extrinsic_vertex_intrinsic_vertex);
+
             var edge_it = SurfaceMesh.CellIterator.init(itd.intrinsic_surface_mesh, .edge) catch |err| {
                 std.debug.print("Error creating edge iterator in ITData deinit: {}\n", .{err});
                 return;

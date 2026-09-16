@@ -79,12 +79,12 @@ extern "C"
         xVec = ldlt->solve(bVec);
     }
 
-    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const SCALAR *b, SCALAR *x, INDEX size, INDEX nb_rhs)
+    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const void *matb, void *matx, INDEX size, INDEX nb_rhs)
     {
         const auto *ldlt = static_cast<const Eigen::SimplicialLDLT<SparseMatrix> *>(solver);
-        Eigen::Map<const DenseMatrix> bMat(b, size, nb_rhs);
-        Eigen::Map<DenseMatrix> xMat(const_cast<SCALAR *>(x), size, nb_rhs);
-        xMat = ldlt->solve(bMat);
+        const DenseMatrix *bMat = static_cast<const DenseMatrix *>(matb);
+        DenseMatrix *xMat = static_cast<DenseMatrix *>(matx);
+        *xMat = ldlt->solve(*bMat);
     }
 
     void destroyFactorizedMatrix(void *solver)

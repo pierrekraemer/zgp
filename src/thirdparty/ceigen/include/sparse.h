@@ -21,7 +21,7 @@ extern "C"
 
     void *factorizeSymmetricSparseMatrix(const void *mat);
     void solveWithFactorizedMatrix(const void *solver, const SCALAR *b, SCALAR *x, INDEX size);
-    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const SCALAR *b, SCALAR *x, INDEX size, INDEX nb_rhs);
+    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const void *matb, void *matx, INDEX size, INDEX nb_rhs);
     void destroyFactorizedMatrix(void *solver);
 
 #ifdef __cplusplus

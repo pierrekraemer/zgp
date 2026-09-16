@@ -57,6 +57,10 @@ pub const DenseMatrix = struct {
         }
     }
 
+    pub fn getRow(dm: *DenseMatrix, row: Index, values: []Scalar) void {
+        c.getDenseMatrixRow(dm.matrix.?, row, values.ptr, @intCast(values.len));
+    }
+
     pub fn setRow(dm: *DenseMatrix, row: Index, values: []const Scalar) void {
         c.setDenseMatrixRow(dm.matrix.?, row, values.ptr, @intCast(values.len));
     }
@@ -147,7 +151,7 @@ pub const FactorizedSparseMatrix = struct {
         c.solveWithFactorizedMatrix(fsm.solver.?, b.ptr, x.ptr, fsm.size);
     }
 
-    pub fn solve3(fsm: FactorizedSparseMatrix, b: []const Scalar, x: []Scalar) void {
-        c.solveWithFactorizedMatrixMultipleRHS(fsm.solver.?, b.ptr, x.ptr, fsm.size, 3);
+    pub fn solveMultipleRHS(fsm: FactorizedSparseMatrix, b: DenseMatrix, x: DenseMatrix, nb_rhs: usize) void {
+        c.solveWithFactorizedMatrixMultipleRHS(fsm.solver.?, b.matrix.?, x.matrix.?, fsm.size, @intCast(nb_rhs));
     }
 };

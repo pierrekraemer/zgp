@@ -205,6 +205,14 @@ BVHTree<IdxType, Vec3fType>::bsplit(typename Node::ID node_id,
     std::array<AABB, BVHTREE_NUM_BINS> right_aabbs;
     std::vector<IdxType> bin(n);
 
+    auto bin_index = [](float center, float min, float max) -> char
+    {
+        float normalized = (center - min) / (max - min);
+        if (!(normalized > 0.0f))
+            return 0;
+        return static_cast<char>(std::min(normalized * (BVHTREE_NUM_BINS - 1), static_cast<float>(BVHTREE_NUM_BINS - 1)));
+    };
+
     float min_cost = inf;
     std::pair<IdxType, char> split;
     for (char d = 0; d < 3; ++d)
@@ -218,7 +226,7 @@ BVHTree<IdxType, Vec3fType>::bsplit(typename Node::ID node_id,
         for (std::size_t i = node.first; i < node.last; ++i)
         {
             AABB const &aabb = aabbs[indices[i]];
-            char idx = ((mid(aabb, d) - min) / (max - min)) * (BVHTREE_NUM_BINS - 1);
+            char idx = bin_index(mid(aabb, d), min, max);
             bins[idx].aabb += aabb;
             bins[idx].n += 1;
             bin[i - node.first] = idx;
@@ -264,7 +272,7 @@ BVHTree<IdxType, Vec3fType>::bsplit(typename Node::ID node_id,
     for (std::size_t i = node.first; i < node.last; ++i)
     {
         AABB const &aabb = aabbs[indices[i]];
-        char idx = ((mid(aabb, d) - min) / (max - min)) * (BVHTREE_NUM_BINS - 1);
+        char idx = bin_index(mid(aabb, d), min, max);
         bins[idx].aabb += aabb;
         bins[idx].n += 1;
         bin[i - node.first] = idx;

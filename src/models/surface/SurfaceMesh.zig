@@ -411,17 +411,24 @@ pub const CellMarker = struct {
 
     pub fn mark(cm: *CellMarker, c: Cell) void {
         assert(c.cellType() == cm.cell_type);
-        // assert(!cm.isMarked(c));
         cm.marker.valuePtr(cm.surface_mesh.cellIndex(c)).* = true;
+    }
+    pub fn markByIndex(cm: *CellMarker, index: u32) void {
+        cm.marker.valuePtr(index).* = true;
     }
     pub fn unmark(cm: *CellMarker, c: Cell) void {
         assert(c.cellType() == cm.cell_type);
-        // assert(cm.isMarked(c));
         cm.marker.valuePtr(cm.surface_mesh.cellIndex(c)).* = false;
+    }
+    pub fn unmarkByIndex(cm: *CellMarker, index: u32) void {
+        cm.marker.valuePtr(index).* = false;
     }
     pub fn isMarked(cm: *CellMarker, c: Cell) bool {
         assert(c.cellType() == cm.cell_type);
         return cm.marker.value(cm.surface_mesh.cellIndex(c));
+    }
+    pub fn isMarkedByIndex(cm: *CellMarker, index: u32) bool {
+        return cm.marker.value(index);
     }
     pub fn reset(cm: *CellMarker) void {
         cm.marker.fill(false);
@@ -563,9 +570,9 @@ pub const ParallelCellTaskRunner = struct {
         pctr.iterator.reset();
     }
 
-    fn runTaskOnBuffer(Task: type) fn (*const Task, []Cell) void {
+    fn runTaskOnBufferFunction(Task: type) fn (*Task, []Cell) void {
         return struct {
-            fn f(task: *const Task, buf: []Cell) void {
+            fn f(task: *Task, buf: []Cell) void {
                 for (buf) |cell| task.run(cell);
             }
         }.f;
@@ -584,8 +591,8 @@ pub const ParallelCellTaskRunner = struct {
             if (current_index_in_buffer == pctr.buffers[current_buf_group][current_buf_index].data.len) {
                 pctr.wg[current_buf_group].async(
                     app_ctx.io,
-                    runTaskOnBuffer(@TypeOf(task)),
-                    .{ &task, pctr.buffers[current_buf_group][current_buf_index].data },
+                    runTaskOnBufferFunction(@TypeOf(task)),
+                    .{ @constCast(&task), pctr.buffers[current_buf_group][current_buf_index].data },
                 );
                 current_buf_index += 1;
                 current_index_in_buffer = 0;
@@ -602,8 +609,8 @@ pub const ParallelCellTaskRunner = struct {
         if (current_index_in_buffer > 0) {
             pctr.wg[current_buf_group].async(
                 app_ctx.io,
-                runTaskOnBuffer(@TypeOf(task)),
-                .{ &task, pctr.buffers[current_buf_group][current_buf_index].data[0..current_index_in_buffer] },
+                runTaskOnBufferFunction(@TypeOf(task)),
+                .{ @constCast(&task), pctr.buffers[current_buf_group][current_buf_index].data[0..current_index_in_buffer] },
             );
         }
         try pctr.wg[0].await(app_ctx.io);
