@@ -31,8 +31,7 @@ const DeformationData = struct {
     fixed_vertex_set: ?*SurfaceMesh.CellSet = null, // anchored vertices
     handle_vertex_set: ?*SurfaceMesh.CellSet = null, // handle vertices (moved by user)
     arap_ctx: ?arap.ArapContext = null, // initialized ARAP context
-    // intrinsic triangulation data of the underlying SurfaceMesh
-    intrinsic_triangulation_data: *SurfaceMeshIntrinsicTriangulation.ITData,
+    intrinsic_triangulation_data: *SurfaceMeshIntrinsicTriangulation.ITData, // intrinsic triangulation data of the underlying SurfaceMesh
 };
 
 app_ctx: *AppContext,

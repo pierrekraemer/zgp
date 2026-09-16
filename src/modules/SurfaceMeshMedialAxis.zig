@@ -20,7 +20,7 @@ const Vec4f = vec.Vec4f;
 const bvh = @import("../geometry/bvh.zig");
 const SQEM = @import("../geometry/SQEM.zig");
 
-const medialAxis = @import("../models/surface/medialAxis.zig");
+const medial_axis = @import("../models/surface/medial_axis.zig");
 const sqem = @import("../models/surface/sqem.zig");
 
 const MedialAxisData = struct {
@@ -163,7 +163,7 @@ const MedialAxisData = struct {
         mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.sphere_error);
 
         // compute vertex shrinking balls
-        try medialAxis.computeVertexShrinkingBalls(
+        try medial_axis.computeVertexShrinkingBalls(
             mad.app_ctx,
             mad.surface_mesh,
             mad.surface_mesh_bvh,
@@ -346,7 +346,7 @@ const MedialAxisData = struct {
                     if (vec.dot3f(cp_dir, cp_normal) <= 0.0) {
                         cp_dir = vec.mulScalar3f(cp_dir, -1.0);
                     }
-                    const corrected_sphere = medialAxis.shrinkingBall(
+                    const corrected_sphere = medial_axis.shrinkingBall(
                         mad.surface_mesh_bvh,
                         vec.add3f(cp, vec.mulScalar3f(cp_dir, -1e-4)),
                         cp_dir,

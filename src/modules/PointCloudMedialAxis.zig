@@ -16,11 +16,11 @@ const IncidenceGraph = @import("../models/incidenceGraph/IncidenceGraph.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec4f = vec.Vec4f;
-const kdtree = @import("../geometry//kdtree.zig");
+const kdtree = @import("../geometry/kdtree.zig");
 const SQEM = @import("../geometry/SQEM.zig");
 
-const tangent_basis = @import("../models/point/tangentBasis.zig");
-const medialAxis = @import("../models/point/medialAxis.zig");
+const tangent_basis = @import("../models/point/tangent_basis.zig");
+const medial_axis = @import("../models/point/medial_axis.zig");
 const sqem = @import("../models/point/sqem.zig");
 
 const MedialAxisData = struct {
@@ -204,7 +204,7 @@ const MedialAxisData = struct {
         mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.sphere_error);
 
         // compute points shrinking balls
-        try medialAxis.computePointShrinkingBalls(
+        try medial_axis.computePointShrinkingBalls(
             mad.app_ctx,
             mad.point_cloud,
             mad.point_cloud_kdtree,
@@ -399,7 +399,7 @@ const MedialAxisData = struct {
                     if (vec.dot3f(cp_dir, cp_normal) <= 0.0) {
                         cp_dir = vec.mulScalar3f(cp_dir, -1.0);
                     }
-                    const corrected_sphere = medialAxis.shrinkingBall(
+                    const corrected_sphere = medial_axis.shrinkingBall(
                         mad.point_cloud_kdtree,
                         vec.add3f(cp_pos, vec.mulScalar3f(cp_dir, -1e-4)),
                         cp_dir,

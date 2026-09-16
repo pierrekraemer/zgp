@@ -18,7 +18,7 @@ pub fn generateConvexHull(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
-    // no convex hull for less than 3 points
+    // no convex hull for less than 4 points
     if (pc.nbPoints() < 4) {
         return error.NotEnoughPoints;
     }

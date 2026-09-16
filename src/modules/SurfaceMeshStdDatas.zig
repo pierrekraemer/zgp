@@ -25,7 +25,7 @@ const curvature = @import("../models/surface/curvature.zig");
 const laplacian = @import("../models/surface/laplacian.zig");
 const length = @import("../models/surface/length.zig");
 const normal = @import("../models/surface/normal.zig");
-const tangentBasis = @import("../models/surface/tangentBasis.zig");
+const tangent_basis = @import("../models/surface/tangent_basis.zig");
 
 app_ctx: *AppContext,
 module: Module = .{
@@ -406,6 +406,6 @@ fn computeVertexTangentBases(
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
 ) !void {
-    try tangentBasis.computeVertexTangentBases(app_ctx, sm, vertex_position, vertex_normal, vertex_tangent_basis);
+    try tangent_basis.computeVertexTangentBases(app_ctx, sm, vertex_position, vertex_normal, vertex_tangent_basis);
     app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, [2]Vec3f, vertex_tangent_basis);
 }
