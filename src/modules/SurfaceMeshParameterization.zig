@@ -34,9 +34,9 @@ const ParameterizationData = struct {
     // the underlying SurfaceMesh on which the parameterization is computed
     surface_mesh: *SurfaceMesh,
 
-    // pointer to the IT context of the underlying SurfaceMesh
+    // IT context of the underlying SurfaceMesh
     // the Delaunay intrinsic triangulation is used to compute geodesic distances & tangent space shortest paths lifting
-    it_ctx: ?*intrinsic_triangulation.ITContext = null,
+    it_ctx: ?intrinsic_triangulation.ITContext = null,
 
     // samples are SurfacePoints that lie on the underlying SurfaceMesh (snapped to vertices, for now)
     // each sample gives rise to a local parameterization patch
@@ -843,20 +843,16 @@ module: Module = .{
     },
 },
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, ParameterizationData) = .empty,
-// explicit dependency on IntrinsicTriangulation module
-surface_mesh_intrinsic_triangulation: *SurfaceMeshIntrinsicTriangulation,
 
-pub fn init(app_ctx: *AppContext, surface_mesh_intrinsic_triangulation: *SurfaceMeshIntrinsicTriangulation) SurfaceMeshParameterization {
+pub fn init(app_ctx: *AppContext) SurfaceMeshParameterization {
     return .{
         .app_ctx = app_ctx,
-        .surface_mesh_intrinsic_triangulation = surface_mesh_intrinsic_triangulation,
     };
 }
 
 pub fn deinit(smp: *SurfaceMeshParameterization) void {
-    var it = smp.surface_meshes_data.iterator();
-    while (it.next()) |entry| {
-        const pd = entry.value_ptr;
+    var it = smp.surface_meshes_data.valueIterator();
+    while (it.next()) |pd| {
         if (pd.samples_surface_mesh) |_| {
             var edge_path_it = pd.ssm_edge_path.data.iterator();
             while (edge_path_it.next()) |path| {
@@ -933,6 +929,8 @@ pub fn rightPanel(m: *Module) void {
 
     assert(smp.app_ctx.selected_model.modelType() == .surface_mesh);
     const sm = smp.app_ctx.selected_model.surface_mesh;
+    const pd = smp.surface_meshes_data.getPtr(sm).?;
+    const info = sm_store.surfaceMeshInfo(sm);
 
     const UiData = struct {
         var poisson_radius: f32 = 0.03;
@@ -943,9 +941,6 @@ pub fn rightPanel(m: *Module) void {
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
-
-    const info = sm_store.surfaceMeshInfo(sm);
-    const pd = smp.surface_meshes_data.getPtr(sm).?;
 
     {
         c.ImGui_SeparatorText("Samples generation");
@@ -991,22 +986,22 @@ pub fn rightPanel(m: *Module) void {
             c.ImGui_BeginDisabled(true);
         }
         if (c.ImGui_ButtonEx("Connect samples", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            // if needed, initialize the intrinsic triangulation and flip edges to make it Delaunay
+            // if needed, initialize the intrinsic triangulation context and flip edges to make it Delaunay
             // WARNING: strong hypothesis that the underlying SurfaceMesh is not modified between successive calls
             // otherwise, the intrinsic triangulation should be re-initialized and the Delaunay flip should be performed again
-            const itd = smp.surface_mesh_intrinsic_triangulation.surfaceMeshITData(sm);
-            if (itd.it_ctx == null) {
-                itd.initITContext(
+            if (pd.it_ctx == null) {
+                pd.it_ctx = intrinsic_triangulation.ITContext.init(
+                    smp.app_ctx,
+                    sm,
                     info.std_datas.edge_length.?,
                     info.std_datas.corner_angle.?,
-                ) catch |err| {
-                    std.debug.print("Failed to initialize IT context: {}\n", .{err});
-                };
-                itd.it_ctx.?.flipToDelaunay() catch |err| {
-                    std.debug.print("Failed to flip to Delaunay: {}\n", .{err});
-                };
+                ) catch null;
+                if (pd.it_ctx) |it_ctx| {
+                    it_ctx.flipToDelaunay() catch |err| {
+                        std.debug.print("Error during intrinsic triangulation Delaunay flip: {}\n", .{err});
+                    };
+                }
             }
-            pd.it_ctx = &itd.it_ctx.?;
             pd.connectSamples(info.std_datas.edge_length.?) catch |err| {
                 std.debug.print("Error during samples connectivity computation: {}\n", .{err});
             };

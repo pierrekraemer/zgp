@@ -10,15 +10,9 @@ const c = @import("c");
 const AppContext = @import("../main.zig").AppContext;
 const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
-const SurfaceMeshStdData = @import("../models/SurfaceMeshStore.zig").SurfaceMeshStdData;
-
-const SurfaceMeshIntrinsicTriangulation = @import("../modules/SurfaceMeshIntrinsicTriangulation.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
-const Vec4f = vec.Vec4f;
-const mat = @import("../geometry/mat.zig");
-const Mat4f = mat.Mat4f;
 
 const arap = @import("../models/surface/arap.zig");
 const intrinsic_triangulation = @import("../models/surface/intrinsic_triangulation.zig");
@@ -36,12 +30,13 @@ const DeformationData = struct {
     handle_vertex_set: ?*SurfaceMesh.CellSet = null, // handle vertices (moved by user)
 
     arap_ctx: ?arap.ARAPContext = null, // optional ARAP context
+    // maybe there will be other deformation contexts in the future, e.g. for other deformation methods
 
     fn initARAPContext(
         dd: *DeformationData,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-        it_ctx: ?*intrinsic_triangulation.ITContext,
+        it_ctx: ?intrinsic_triangulation.ITContext,
     ) !void {
         assert(dd.arap_ctx == null);
         assert(vertex_position.surface_mesh == dd.surface_mesh);
@@ -54,9 +49,9 @@ const DeformationData = struct {
             dd.surface_mesh,
             vertex_position,
             halfedge_cotan_weight,
+            it_ctx,
             dd.fixed_vertex_set.?,
             dd.handle_vertex_set.?,
-            it_ctx,
         );
     }
 
@@ -78,20 +73,16 @@ module: Module = .{
         .rightPanel = rightPanel,
     },
 },
-// explicit dependency on IntrinsicTriangulation module
-surface_mesh_intrinsic_triangulation: *SurfaceMeshIntrinsicTriangulation,
 
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, DeformationData) = .empty,
 deformation_mode: DeformationMode = .SimpleTranslation,
-arap_iterations: i32 = 5,
 use_intrinsic_delaunay: bool = false,
 dragging: bool = false,
 drag_z: f32 = 0,
 
-pub fn init(app_ctx: *AppContext, surface_mesh_intrinsic_triangulation: *SurfaceMeshIntrinsicTriangulation) SurfaceMeshDeformation {
+pub fn init(app_ctx: *AppContext) SurfaceMeshDeformation {
     return .{
         .app_ctx = app_ctx,
-        .surface_mesh_intrinsic_triangulation = surface_mesh_intrinsic_triangulation,
     };
 }
 
@@ -186,12 +177,10 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                         pos.* = vec.add3f(pos.*, tr);
                     }
                     if (smd.deformation_mode == .ARAP) {
-                        for (0..@intCast(smd.arap_iterations)) |_| {
-                            dd.arap_ctx.?.solve(smd.app_ctx) catch |err| {
-                                std.debug.print("Failed to solve ARAP: {}\n", .{err});
-                                break :blk false;
-                            };
-                        }
+                        dd.arap_ctx.?.solve(smd.app_ctx) catch |err| {
+                            std.debug.print("Failed to solve ARAP: {}\n", .{err});
+                            break :blk false;
+                        };
                     }
                     sm_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, info.std_datas.vertex_position.?);
                     smd.app_ctx.requestRedraw();
@@ -243,9 +232,6 @@ pub fn rightPanel(m: *Module) void {
         }
         c.ImGui_PopID();
 
-        c.ImGui_Text("ARAP iterations:");
-        _ = c.ImGui_SliderIntEx("", &smd.arap_iterations, 1, 20, "%d", c.ImGuiSliderFlags_AlwaysClamp);
-
         c.ImGui_Separator();
 
         // Initialize ARAP button
@@ -267,24 +253,15 @@ pub fn rightPanel(m: *Module) void {
                 if (dd.arap_ctx != null) "ARAP initialized" else "Initialize ARAP",
                 c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 },
             )) {
-                const itd = smd.surface_mesh_intrinsic_triangulation.surfaceMeshITData(sm);
-                if (smd.use_intrinsic_delaunay) {
-                    if (itd.it_ctx == null) {
-                        itd.initITContext(
-                            info.std_datas.edge_length.?,
-                            info.std_datas.corner_angle.?,
-                        ) catch |err| {
-                            std.debug.print("Failed to initialize IT context: {}\n", .{err});
-                        };
-                        itd.it_ctx.?.flipToDelaunay() catch |err| {
-                            std.debug.print("Failed to flip to Delaunay: {}\n", .{err});
-                        };
-                    }
-                }
                 dd.initARAPContext(
                     info.std_datas.vertex_position.?,
                     info.std_datas.halfedge_cotan_weight.?,
-                    if (smd.use_intrinsic_delaunay) &itd.it_ctx.? else null,
+                    if (smd.use_intrinsic_delaunay) intrinsic_triangulation.ITContext.init(
+                        smd.app_ctx,
+                        sm,
+                        info.std_datas.edge_length.?,
+                        info.std_datas.corner_angle.?,
+                    ) catch null else null,
                 ) catch |err| {
                     std.debug.print("Failed to initialize ARAP: {}\n", .{err});
                 };
@@ -303,6 +280,11 @@ pub fn rightPanel(m: *Module) void {
                 }
                 c.ImGui_EndDisabled();
             }
+        }
+
+        if (dd.arap_ctx) |_| {
+            c.ImGui_Text("ARAP iterations:");
+            _ = c.ImGui_SliderIntEx("", &dd.arap_ctx.?.nb_iterations, 1, 20, "%d", c.ImGuiSliderFlags_AlwaysClamp);
         }
 
         // Deinitialize ARAP button

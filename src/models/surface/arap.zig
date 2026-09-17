@@ -89,9 +89,9 @@ pub const ARAPContext = struct {
     nb_free: u32,
     free_vertex_index: SurfaceMesh.CellData(.vertex, u32), // defined on the original SurfaceMesh (generated)
 
-    // optional pointer to an intrinsic triangulation context associated with the original SurfaceMesh
-    // allows to compute on the intrinsic Delaunay triangulation if wanted
-    it_ctx: ?*intrinsic_triangulation.ITContext,
+    // optional intrinsic triangulation context
+    // allows to compute on the intrinsic Delaunay triangulation
+    it_ctx: ?intrinsic_triangulation.ITContext,
 
     // if the intrinsic triangulation is used, its connectivity and halfedge cotan weights are used to compute the Laplacian and vertex rotations
     // and these two fields point to the intrinsic triangulation SurfaceMesh and its halfedge cotan weights
@@ -110,14 +110,16 @@ pub const ARAPContext = struct {
     rhs_mat: eigen.DenseMatrix, // preallocated buffer for the right-hand side of the linear system (nb_free x 3)
     solve_mat: eigen.DenseMatrix, // preallocated buffer for the solution of the linear system (nb_free x 3)
 
+    nb_iterations: i32 = 5, // number of ARAP iterations to perform in a single solve() call
+
     pub fn init(
         app_ctx: *AppContext,
         sm: *SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+        it_ctx: ?intrinsic_triangulation.ITContext,
         fixed_set: *SurfaceMesh.CellSet,
         handle_set: *SurfaceMesh.CellSet,
-        it_ctx: ?*intrinsic_triangulation.ITContext, // defined if using intrinsic Delaunay triangulation, null otherwise
     ) !ARAPContext {
         // Create & initialize vertex rest positions
         var vertex_position_rest = try sm.addData(.vertex, Vec3f, "__arap_rest_positions");
@@ -141,7 +143,10 @@ pub const ARAPContext = struct {
             }
         }
 
-        assert((if (it_ctx) |ctx| ctx.extrinsic_surface_mesh else sm) == sm); // ensure we are given the right intrinsic triangulation context
+        if (it_ctx) |*ctx| {
+            assert(ctx.extrinsic_surface_mesh == sm);
+            try ctx.flipToDelaunay();
+        }
         const compute_surface_mesh = if (it_ctx) |ctx| ctx.intrinsic_surface_mesh else sm;
         const compute_halfedge_cotan_weight = if (it_ctx) |ctx| ctx.intrinsic_halfedge_cotan_weight else halfedge_cotan_weight;
 
@@ -200,6 +205,9 @@ pub const ARAPContext = struct {
     }
 
     pub fn deinit(ctx: *ARAPContext) void {
+        if (ctx.it_ctx) |*it_ctx| {
+            it_ctx.deinit();
+        }
         ctx.solve_mat.deinit();
         ctx.rhs_mat.deinit();
         ctx.factorized_L.deinit();
@@ -213,8 +221,6 @@ pub const ARAPContext = struct {
         ctx: *ARAPContext,
         app_ctx: *AppContext,
     ) !void {
-        // === Local step: compute best-fit rotation for each vertex ===
-
         const ComputeVertexRotationTask = struct {
             const ComputeVertexRotationTask = @This();
 
@@ -236,19 +242,24 @@ pub const ARAPContext = struct {
             }
         };
 
-        var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(ctx.compute_surface_mesh, .vertex);
-        defer pctr.deinit();
-        try pctr.run(app_ctx, ComputeVertexRotationTask{
-            .surface_mesh = ctx.compute_surface_mesh,
-            .halfedge_cotan_weight = ctx.compute_halfedge_cotan_weight,
-            .vertex_position_rest = ctx.vertex_position_rest,
-            .vertex_position = ctx.vertex_position,
-            .vertex_rotation = ctx.vertex_rotation,
-        });
+        const WriteSolvedPositionsTask = struct {
+            const WriteSolvedPositionsTask = @This();
 
-        // === Global step: solve for new positions ===
+            surface_mesh: *const SurfaceMesh,
+            free_vertex_index: SurfaceMesh.CellData(.vertex, u32),
+            vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+            solve_mat: eigen.DenseMatrix,
 
-        // prepare the right-hand side matrix (nb_free x 3)
+            pub fn run(t: *WriteSolvedPositionsTask, v: SurfaceMesh.Cell) void {
+                const v_idx = t.surface_mesh.cellIndex(v);
+                const fi = t.free_vertex_index.valueByIndex(v_idx);
+                if (fi == invalid_index) return; // constrained vertex
+                var solved_row: [3]eigen.Scalar = undefined;
+                t.solve_mat.getRow(@intCast(fi), &solved_row);
+                t.vertex_position.valuePtrByIndex(v_idx).* = vec.vec3fFromVec3d(.{ solved_row[0], solved_row[1], solved_row[2] });
+            }
+        };
+
         const SetupVertexRHSTask = struct {
             const SetupVertexRHSTask = @This();
 
@@ -306,45 +317,42 @@ pub const ARAPContext = struct {
             }
         };
 
-        pctr.reset();
-        try pctr.run(app_ctx, SetupVertexRHSTask{
-            .surface_mesh = ctx.compute_surface_mesh,
-            .halfedge_cotan_weight = ctx.compute_halfedge_cotan_weight,
-            .vertex_position_rest = ctx.vertex_position_rest,
-            .vertex_position = ctx.vertex_position,
-            .vertex_rotation = ctx.vertex_rotation,
-            .free_vertex_index = ctx.free_vertex_index,
-            .rhs_mat = ctx.rhs_mat,
-        });
+        var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(ctx.compute_surface_mesh, .vertex);
+        defer pctr.deinit();
 
-        // Solve L * x = rhs
-        ctx.factorized_L.solveMultipleRHS(ctx.rhs_mat, ctx.solve_mat, 3);
+        for (0..@intCast(ctx.nb_iterations)) |_| {
+            // compute best-fit rotation for each vertex
+            try pctr.run(app_ctx, ComputeVertexRotationTask{
+                .surface_mesh = ctx.compute_surface_mesh,
+                .halfedge_cotan_weight = ctx.compute_halfedge_cotan_weight,
+                .vertex_position_rest = ctx.vertex_position_rest,
+                .vertex_position = ctx.vertex_position,
+                .vertex_rotation = ctx.vertex_rotation,
+            });
 
-        // Write solved positions back
-        const WriteSolvedPositionsTask = struct {
-            const WriteSolvedPositionsTask = @This();
+            // prepare the right-hand side matrix (nb_free x 3)
+            pctr.reset();
+            try pctr.run(app_ctx, SetupVertexRHSTask{
+                .surface_mesh = ctx.compute_surface_mesh,
+                .halfedge_cotan_weight = ctx.compute_halfedge_cotan_weight,
+                .vertex_position_rest = ctx.vertex_position_rest,
+                .vertex_position = ctx.vertex_position,
+                .vertex_rotation = ctx.vertex_rotation,
+                .free_vertex_index = ctx.free_vertex_index,
+                .rhs_mat = ctx.rhs_mat,
+            });
 
-            surface_mesh: *const SurfaceMesh,
-            free_vertex_index: SurfaceMesh.CellData(.vertex, u32),
-            vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-            solve_mat: eigen.DenseMatrix,
+            // Solve L * x = rhs
+            ctx.factorized_L.solveMultipleRHS(ctx.rhs_mat, ctx.solve_mat, 3);
 
-            pub fn run(t: *WriteSolvedPositionsTask, v: SurfaceMesh.Cell) void {
-                const v_idx = t.surface_mesh.cellIndex(v);
-                const fi = t.free_vertex_index.valueByIndex(v_idx);
-                if (fi == invalid_index) return; // constrained vertex
-                var solved_row: [3]eigen.Scalar = undefined;
-                t.solve_mat.getRow(@intCast(fi), &solved_row);
-                t.vertex_position.valuePtrByIndex(v_idx).* = vec.vec3fFromVec3d(.{ solved_row[0], solved_row[1], solved_row[2] });
-            }
-        };
-
-        pctr.reset();
-        try pctr.run(app_ctx, WriteSolvedPositionsTask{
-            .surface_mesh = ctx.compute_surface_mesh,
-            .free_vertex_index = ctx.free_vertex_index,
-            .vertex_position = ctx.vertex_position,
-            .solve_mat = ctx.solve_mat,
-        });
+            // Write solved positions back
+            pctr.reset();
+            try pctr.run(app_ctx, WriteSolvedPositionsTask{
+                .surface_mesh = ctx.compute_surface_mesh,
+                .free_vertex_index = ctx.free_vertex_index,
+                .vertex_position = ctx.vertex_position,
+                .solve_mat = ctx.solve_mat,
+            });
+        }
     }
 };

@@ -359,7 +359,7 @@ pub const DataContainer = struct {
             return error.DataNameAlreadyExists;
         }
 
-        const owned_name = try dc.allocator.dupeZ(u8, name); // duplicate name to own the hashmap key
+        const owned_name = try dc.allocator.dupeSentinel(u8, name, 0); // duplicate name to own the hashmap key
         errdefer dc.allocator.free(owned_name);
 
         const data = try dc.allocator.create(Data(T));

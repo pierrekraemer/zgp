@@ -14,21 +14,10 @@ const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfacePoint = @import("../models/surface/SurfacePoint.zig");
 const IncidenceGraph = @import("../models/incidenceGraph/IncidenceGraph.zig");
 
-const Data = @import("../utils/data.zig").Data;
-const DataGen = @import("../utils/data.zig").DataGen;
-
 const vec = @import("../geometry/vec.zig");
-const Vec2f = vec.Vec2f;
 const Vec3f = vec.Vec3f;
-const geometry_utils = @import("../geometry/utils.zig");
 
 const intrinsic_triangulation = @import("../models/surface/intrinsic_triangulation.zig");
-const length = @import("../models/surface/length.zig");
-const angle = @import("../models/surface/angle.zig");
-const area = @import("../models/surface/area.zig");
-const laplacian = @import("../models/surface/laplacian.zig");
-const geodesic = @import("../models/surface/geodesic.zig");
-const distance = @import("../models/surface/distance.zig");
 
 pub const ITData = struct {
     app_ctx: *AppContext,
@@ -63,82 +52,6 @@ pub const ITData = struct {
             ctx.deinit();
         }
         // the incidence graph is owned by the IncidenceGraphStore, it can stay alive
-    }
-
-    fn traceIntrinsicEdges(itd: *ITData, extrinsic_vertex_position: SurfaceMesh.CellData(.vertex, Vec3f)) !void {
-        if (itd.intrinsic_edges_ig == null) {
-            itd.intrinsic_edges_ig = try itd.app_ctx.incidence_graph_store.createIncidenceGraph("intrinsic_edges");
-            itd.ig_vertex_position = try itd.intrinsic_edges_ig.?.addData(.vertex, Vec3f, "position");
-            itd.app_ctx.incidence_graph_store.setIncidenceGraphStdData(itd.intrinsic_edges_ig.?, .{ .vertex_position = itd.ig_vertex_position });
-            itd.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(itd.intrinsic_edges_ig.?);
-        }
-
-        // clear the intrinsic edges incidence graph
-        itd.intrinsic_edges_ig.?.clearRetainingCapacity();
-
-        if (itd.it_ctx == null) {
-            return error.IntrinsicTriangulationNotInitialized;
-        }
-
-        var edge_it: SurfaceMesh.CellIterator = try .init(itd.it_ctx.?.intrinsic_surface_mesh, .edge);
-        defer edge_it.deinit();
-        while (edge_it.next()) |e| {
-            const d = e.dart();
-
-            const src_sp = itd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(.{ .vertex = d });
-            const dst_sp = itd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(.{ .vertex = itd.it_ctx.?.intrinsic_surface_mesh.phi2(d) });
-
-            // original edges trace trivially
-            if (itd.it_ctx.?.intrinsic_edge_is_original.value(e)) {
-                try itd.it_ctx.?.intrinsic_edge_trace.valuePtr(e).append(itd.app_ctx.allocator, src_sp);
-                try itd.it_ctx.?.intrinsic_edge_trace.valuePtr(e).append(itd.app_ctx.allocator, dst_sp);
-
-                // add the vertices and edge to the common subdivision incidence graph
-                const p1 = src_sp.readData(Vec3f, .vertex, extrinsic_vertex_position);
-                const p2 = dst_sp.readData(Vec3f, .vertex, extrinsic_vertex_position);
-                const igv1 = try itd.intrinsic_edges_ig.?.addVertex();
-                const igv2 = try itd.intrinsic_edges_ig.?.addVertex();
-                itd.ig_vertex_position.valuePtr(igv1).* = p1;
-                itd.ig_vertex_position.valuePtr(igv2).* = p2;
-                _ = try itd.intrinsic_edges_ig.?.addEdge(igv1, igv2);
-
-                continue;
-            }
-
-            // trace the intrinsic edge on the extrinsic mesh
-            _ = try geodesic.traceGeodesic(
-                itd.app_ctx,
-                itd.it_ctx.?.extrinsic_surface_mesh,
-                src_sp,
-                itd.it_ctx.?.intrinsic_halfedge_extrinsic_sp_angle.value(.{ .halfedge = d }),
-                itd.it_ctx.?.intrinsic_edge_length.value(e),
-                itd.it_ctx.?.extrinsic_corner_angle,
-                itd.it_ctx.?.extrinsic_edge_length,
-                itd.it_ctx.?.intrinsic_edge_trace.valuePtr(e),
-            );
-
-            // TODO: trim the trace to remove spurious SurfacePoints that are on the edges
-            // incident to the destination vertex of the intrinsic edge
-            // and snap the last SurfacePoint to the destination vertex of the intrinsic edge
-
-            // add the vertices and edges of the trace to the common subdivision incidence graph
-            var previous_sp: ?SurfacePoint = null;
-            var previous_igv: ?IncidenceGraph.Cell = null;
-            for (itd.it_ctx.?.intrinsic_edge_trace.value(e).items) |sp| {
-                const pos = sp.readData(Vec3f, .vertex, extrinsic_vertex_position);
-                const igv = try itd.intrinsic_edges_ig.?.addVertex();
-                itd.ig_vertex_position.valuePtr(igv).* = pos;
-                if (previous_sp) |_| {
-                    _ = try itd.intrinsic_edges_ig.?.addEdge(igv, previous_igv.?);
-                }
-                previous_sp = sp;
-                previous_igv = igv;
-            }
-        }
-
-        itd.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(itd.intrinsic_edges_ig.?, .vertex, Vec3f, itd.ig_vertex_position);
-        itd.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(itd.intrinsic_edges_ig.?);
-        itd.app_ctx.requestRedraw();
     }
 };
 
