@@ -115,19 +115,19 @@ pub fn init(sm: *SurfaceMesh, allocator: std.mem.Allocator, cell_buffer_pool: *B
 pub fn deinit(sm: *SurfaceMesh) void {
     var vertex_sets_it = sm.vertex_sets.iterator();
     while (vertex_sets_it.next()) |entry| {
-        const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addCellSet)
+        const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeSentinel in addCellSet)
         sm.allocator.free(name); // free the name
         entry.value_ptr.deinit();
     }
     var edge_sets_it = sm.edge_sets.iterator();
     while (edge_sets_it.next()) |entry| {
-        const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addCellSet)
+        const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeSentinel in addCellSet)
         sm.allocator.free(name); // free the name
         entry.value_ptr.deinit();
     }
     var face_sets_it = sm.face_sets.iterator();
     while (face_sets_it.next()) |entry| {
-        const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addCellSet)
+        const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeSentinel in addCellSet)
         sm.allocator.free(name); // free the name
         entry.value_ptr.deinit();
     }
@@ -816,7 +816,7 @@ pub fn addCellSet(sm: *SurfaceMesh, cell_type: CellType, name: []const u8) !*Cel
         return error.CellSetNameAlreadyExists;
     }
 
-    const owned_name = try sm.allocator.dupeZ(u8, name); // duplicate name to own the hashmap key
+    const owned_name = try sm.allocator.dupeSentinel(u8, name, 0); // duplicate name to own the hashmap key
     errdefer sm.allocator.free(owned_name);
 
     try cell_sets.put(sm.allocator, owned_name, try .init(sm, cell_type, owned_name));
@@ -856,7 +856,7 @@ pub fn removeCellSet(sm: *SurfaceMesh, cell_type: CellType, cell_set: *CellSet) 
     };
     cell_set.deinit();
     if (cell_sets.remove(cell_set.name)) {
-        const name: [:0]const u8 = @ptrCast(cell_set.name); // the name is a null-terminated string (dupeZ in addData)
+        const name: [:0]const u8 = @ptrCast(cell_set.name); // the name is a null-terminated string (dupeSentinel in addCellSet)
         sm.allocator.free(name); // free the name
     }
 }

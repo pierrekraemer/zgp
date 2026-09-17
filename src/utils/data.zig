@@ -305,7 +305,7 @@ pub const DataContainer = struct {
             // which includes the internal is_active & nb_refs data, which are then recovered
             var src_it = src.datas.iterator();
             while (src_it.next()) |src_entry| {
-                const dst_owned_name: [:0]const u8 = try dst.allocator.dupeZ(u8, src_entry.key_ptr.*); // duplicate name to own the hashmap key
+                const dst_owned_name: [:0]const u8 = try dst.allocator.dupeSentinel(u8, src_entry.key_ptr.*, 0); // duplicate name to own the hashmap key
                 errdefer dst.allocator.free(dst_owned_name);
                 const dst_data_gen = try src_entry.value_ptr.*.clone(dst_owned_name, dst); // clone the src DataGen, which also clones the Data(T)
                 errdefer dst_data_gen.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
@@ -328,7 +328,7 @@ pub const DataContainer = struct {
     pub fn deinit(dc: *DataContainer) void {
         var it = dc.datas.iterator();
         while (it.next()) |entry| {
-            const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeZ in addData)
+            const name: [:0]const u8 = @ptrCast(entry.key_ptr.*); // the name is a null-terminated string (dupeSentinel in addData)
             dc.allocator.free(name); // free the name
             entry.value_ptr.*.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
         }
@@ -394,7 +394,7 @@ pub const DataContainer = struct {
     pub fn removeData(dc: *DataContainer, data_gen: *DataGen) void {
         assert(data_gen.container == dc);
         if (dc.datas.remove(data_gen.name)) {
-            const name: [:0]const u8 = @ptrCast(data_gen.name); // the name is a null-terminated string (dupeZ in addData)
+            const name: [:0]const u8 = @ptrCast(data_gen.name); // the name is a null-terminated string (dupeSentinel in addData)
             dc.allocator.free(name); // free the name
             data_gen.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
         }

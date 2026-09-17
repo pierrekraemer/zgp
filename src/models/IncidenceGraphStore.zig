@@ -103,7 +103,7 @@ pub fn deinit(igs: *IncidenceGraphStore) void {
     igs.incidence_graphs_info.deinit(igs.allocator);
 
     for (igs.incidence_graphs.keys(), igs.incidence_graphs.values()) |name, ig| {
-        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeZ in createIncidenceGraph)
+        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeSentinel in registerIncidenceGraph)
         igs.allocator.free(nameZ); // free the name
         ig.deinit();
         igs.allocator.destroy(ig); // destroy the IncidenceGraph
@@ -136,8 +136,19 @@ pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*Incid
     try ig.init(igs.allocator, &igs.cell_buffer_pool);
     errdefer ig.deinit();
 
+    // register the IncidenceGraph in the IncidenceGraphStore to make it available in the UI and for other modules
+    try igs.registerIncidenceGraph(name, ig);
+
+    return ig;
+}
+
+pub fn registerIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8, ig: *IncidenceGraph) !void {
+    if (igs.incidence_graphs.contains(name)) {
+        return error.ModelNameAlreadyExists;
+    }
+
     // duplicate name and store the IncidenceGraph pointer in the map
-    const owned_name = try igs.allocator.dupeZ(u8, name);
+    const owned_name = try igs.allocator.dupeSentinel(u8, name, 0); // duplicate the name with a null-terminator
     errdefer igs.allocator.free(owned_name);
     try igs.incidence_graphs.put(igs.allocator, owned_name, ig);
     errdefer _ = igs.incidence_graphs.swapRemove(owned_name);
@@ -148,11 +159,17 @@ pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*Incid
     for (igs.listeners.items) |module| {
         module.incidenceGraphCreated(ig);
     }
-
-    return ig;
 }
 
 pub fn destroyIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) void {
+    // unregister the IncidenceGraph from the IncidenceGraphStore
+    igs.unregisterIncidenceGraph(ig);
+
+    ig.deinit();
+    igs.allocator.destroy(ig); // destroy the IncidenceGraph
+}
+
+pub fn unregisterIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) void {
     const name = igs.incidenceGraphName(ig) orelse {
         zgp_log.err("Could not find name for IncidenceGraph to destroy it", .{});
         return;
@@ -176,9 +193,6 @@ pub fn destroyIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) voi
 
     _ = igs.incidence_graphs.swapRemove(name);
     igs.allocator.free(name); // free the name
-
-    ig.deinit();
-    igs.allocator.destroy(ig); // destroy the IncidenceGraph
 }
 
 pub fn incidenceGraphDataUpdated(
@@ -255,7 +269,7 @@ pub fn incidenceGraphInfo(igs: *IncidenceGraphStore, ig: *const IncidenceGraph) 
 pub fn incidenceGraphName(igs: *IncidenceGraphStore, ig: *const IncidenceGraph) ?[:0]const u8 {
     for (igs.incidence_graphs.keys(), igs.incidence_graphs.values()) |name, ig_ptr| {
         if (ig_ptr == ig) {
-            return @ptrCast(name); // the name is a null-terminated string (dupeZ in createIncidenceGraph)
+            return @ptrCast(name); // the name is a null-terminated string (dupeSentinel in registerIncidenceGraph)
         }
     }
     return null;

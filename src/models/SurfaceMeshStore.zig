@@ -124,7 +124,7 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
     sms.surface_meshes_info.deinit(sms.allocator);
 
     for (sms.surface_meshes.keys(), sms.surface_meshes.values()) |name, sm| {
-        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeZ in createSurfaceMesh)
+        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeSentinel in registerSurfaceMesh)
         sms.allocator.free(nameZ); // free the name
         sm.deinit();
         sms.allocator.destroy(sm); // destroy the SurfaceMesh
@@ -175,7 +175,7 @@ pub fn registerSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8, sm: *Surfac
     }
 
     // duplicate name and store the SurfaceMesh pointer in the map
-    const owned_name = try sms.allocator.dupeZ(u8, name);
+    const owned_name = try sms.allocator.dupeSentinel(u8, name, 0); // duplicate the name with a null-terminator
     errdefer sms.allocator.free(owned_name);
     try sms.surface_meshes.put(sms.allocator, owned_name, sm);
     errdefer _ = sms.surface_meshes.swapRemove(owned_name);
@@ -381,7 +381,7 @@ pub fn surfaceMeshInfo(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) *SurfaceM
 pub fn surfaceMeshName(sms: *SurfaceMeshStore, sm: *const SurfaceMesh) ?[:0]const u8 {
     for (sms.surface_meshes.keys(), sms.surface_meshes.values()) |name, sm_ptr| {
         if (sm_ptr == sm) {
-            return @ptrCast(name); // the name is a null-terminated string (dupeZ in createSurfaceMesh)
+            return @ptrCast(name); // the name is a null-terminated string (dupeSentinel in registerSurfaceMesh)
         }
     }
     return null;

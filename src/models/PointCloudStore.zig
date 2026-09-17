@@ -103,7 +103,7 @@ pub fn deinit(pcs: *PointCloudStore) void {
     pcs.point_clouds_info.deinit(pcs.allocator);
 
     for (pcs.point_clouds.keys(), pcs.point_clouds.values()) |name, pc| {
-        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeZ in createPointCloud)
+        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeSentinel in registerPointCloud)
         pcs.allocator.free(nameZ); // free the name
         pc.deinit();
         pcs.allocator.destroy(pc); // destroy the PointCloud
@@ -136,8 +136,19 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     try pc.init(pcs.allocator, &pcs.point_buffer_pool);
     errdefer pc.deinit();
 
+    // register the PointCloud in the PointCloudStore to make it available in the UI and for other modules
+    try pcs.registerPointCloud(name, pc);
+
+    return pc;
+}
+
+pub fn registerPointCloud(pcs: *PointCloudStore, name: []const u8, pc: *PointCloud) !void {
+    if (pcs.point_clouds.contains(name)) {
+        return error.ModelNameAlreadyExists;
+    }
+
     // duplicate name and store the PointCloud pointer in the map
-    const owned_name = try pcs.allocator.dupeZ(u8, name);
+    const owned_name = try pcs.allocator.dupeSentinel(u8, name, 0); // duplicate the name with a null-terminator
     errdefer pcs.allocator.free(owned_name);
     try pcs.point_clouds.put(pcs.allocator, owned_name, pc);
     errdefer _ = pcs.point_clouds.swapRemove(owned_name);
@@ -148,11 +159,17 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     for (pcs.listeners.items) |module| {
         module.pointCloudCreated(pc);
     }
-
-    return pc;
 }
 
 pub fn destroyPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
+    // unregister the PointCloud from the PointCloudStore
+    pcs.unregisterPointCloud(pc);
+
+    pc.deinit();
+    pcs.allocator.destroy(pc); // destroy the PointCloud
+}
+
+pub fn unregisterPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
     const name = pcs.pointCloudName(pc) orelse {
         zgp_log.err("Could not find name for PointCloud to destroy it", .{});
         return;
@@ -176,9 +193,6 @@ pub fn destroyPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
 
     _ = pcs.point_clouds.swapRemove(name);
     pcs.allocator.free(name); // free the name
-
-    pc.deinit();
-    pcs.allocator.destroy(pc); // destroy the PointCloud
 }
 
 pub fn pointCloudDataUpdated(
@@ -245,7 +259,7 @@ pub fn pointCloudInfo(pcs: *PointCloudStore, pc: *const PointCloud) *PointCloudI
 pub fn pointCloudName(pcs: *PointCloudStore, pc: *const PointCloud) ?[:0]const u8 {
     for (pcs.point_clouds.keys(), pcs.point_clouds.values()) |name, pc_ptr| {
         if (pc_ptr == pc) {
-            return @ptrCast(name); // the name is a null-terminated string (dupeZ in createPointCloud)
+            return @ptrCast(name); // the name is a null-terminated string (dupeSentinel in registerPointCloud)
         }
     }
     return null;
