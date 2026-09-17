@@ -16,8 +16,6 @@ const SurfacePoint = @import("../models/surface/SurfacePoint.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
 const invalid_index = @import("../utils/data.zig").invalid_index;
 
-const SurfaceMeshIntrinsicTriangulation = @import("../modules/SurfaceMeshIntrinsicTriangulation.zig");
-
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec2f = vec.Vec2f;

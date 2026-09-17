@@ -143,7 +143,6 @@ var incidence_graph_renderer: IncidenceGraphRenderer = undefined;
 var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
 var surface_mesh_distance: SurfaceMeshDistance = undefined;
 var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
-// var surface_mesh_intrinsic_triangulation: SurfaceMeshIntrinsicTriangulation = undefined;
 var surface_mesh_selection: SurfaceMeshSelection = undefined;
 var surface_mesh_deformation: SurfaceMeshDeformation = undefined;
 var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
@@ -181,7 +180,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     vector_per_vertex_renderer = .init(&app_ctx);
     surface_mesh_distance = .init(&app_ctx);
     surface_mesh_curvature = .init(&app_ctx);
-    // surface_mesh_intrinsic_triangulation = .init(&app_ctx);
     surface_mesh_selection = .init(&app_ctx);
     surface_mesh_deformation = .init(&app_ctx);
     surface_mesh_connectivity = .init(&app_ctx, &surface_mesh_curvature);
@@ -200,7 +198,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer vector_per_vertex_renderer.deinit();
     errdefer surface_mesh_distance.deinit();
     errdefer surface_mesh_curvature.deinit();
-    // errdefer surface_mesh_intrinsic_triangulation.deinit();
     errdefer surface_mesh_selection.deinit();
     errdefer surface_mesh_deformation.deinit();
     errdefer surface_mesh_connectivity.deinit();
@@ -219,7 +216,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(app_ctx.allocator, &vector_per_vertex_renderer.module);
     try modules.append(app_ctx.allocator, &surface_mesh_distance.module);
     try modules.append(app_ctx.allocator, &surface_mesh_curvature.module);
-    // try modules.append(app_ctx.allocator, &surface_mesh_intrinsic_triangulation.module);
     try modules.append(app_ctx.allocator, &surface_mesh_selection.module);
     try modules.append(app_ctx.allocator, &surface_mesh_deformation.module);
     try modules.append(app_ctx.allocator, &surface_mesh_connectivity.module);
@@ -244,7 +240,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try app_ctx.surface_mesh_store.addListener(&vector_per_vertex_renderer.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_distance.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_curvature.module);
-    // try app_ctx.surface_mesh_store.addListener(&surface_mesh_intrinsic_triangulation.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_selection.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_deformation.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_connectivity.module);
@@ -664,7 +659,6 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
     vector_per_vertex_renderer.deinit();
     surface_mesh_distance.deinit();
     surface_mesh_curvature.deinit();
-    // surface_mesh_intrinsic_triangulation.deinit();
     surface_mesh_selection.deinit();
     surface_mesh_deformation.deinit();
     surface_mesh_connectivity.deinit();
