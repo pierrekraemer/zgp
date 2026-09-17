@@ -84,10 +84,10 @@ pub const ARAPContext = struct {
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32), // defined on the original SurfaceMesh (given)
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f), // defined on the original SurfaceMesh (given)
 
-    vertex_position_rest: SurfaceMesh.CellData(.vertex, Vec3f), // defined on the original SurfaceMesh (generated)
-    vertex_rotation: SurfaceMesh.CellData(.vertex, Mat3f), // defined on the original SurfaceMesh (generated)
+    vertex_position_rest: SurfaceMesh.CellData(.vertex, Vec3f), // defined on the original SurfaceMesh (created)
+    vertex_rotation: SurfaceMesh.CellData(.vertex, Mat3f), // defined on the original SurfaceMesh (created)
     nb_free: u32,
-    free_vertex_index: SurfaceMesh.CellData(.vertex, u32), // defined on the original SurfaceMesh (generated)
+    free_vertex_index: SurfaceMesh.CellData(.vertex, u32), // defined on the original SurfaceMesh (created)
 
     // optional intrinsic triangulation context
     // allows to compute on the intrinsic Delaunay triangulation
@@ -204,21 +204,21 @@ pub const ARAPContext = struct {
         };
     }
 
-    pub fn deinit(ctx: *ARAPContext) void {
-        if (ctx.it_ctx) |*it_ctx| {
+    pub fn deinit(arap_ctx: *ARAPContext) void {
+        if (arap_ctx.it_ctx) |*it_ctx| {
             it_ctx.deinit();
         }
-        ctx.solve_mat.deinit();
-        ctx.rhs_mat.deinit();
-        ctx.factorized_L.deinit();
-        ctx.surface_mesh.removeData(.vertex, u32, ctx.free_vertex_index);
-        ctx.surface_mesh.removeData(.vertex, Mat3f, ctx.vertex_rotation);
-        ctx.surface_mesh.removeData(.vertex, Vec3f, ctx.vertex_position_rest);
+        arap_ctx.solve_mat.deinit();
+        arap_ctx.rhs_mat.deinit();
+        arap_ctx.factorized_L.deinit();
+        arap_ctx.surface_mesh.removeData(.vertex, u32, arap_ctx.free_vertex_index);
+        arap_ctx.surface_mesh.removeData(.vertex, Mat3f, arap_ctx.vertex_rotation);
+        arap_ctx.surface_mesh.removeData(.vertex, Vec3f, arap_ctx.vertex_position_rest);
     }
 
     /// Run the ARAP local/global solve & updates vertex_position
     pub fn solve(
-        ctx: *ARAPContext,
+        arap_ctx: *ARAPContext,
         app_ctx: *AppContext,
     ) !void {
         const ComputeVertexRotationTask = struct {
@@ -317,41 +317,41 @@ pub const ARAPContext = struct {
             }
         };
 
-        var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(ctx.compute_surface_mesh, .vertex);
+        var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(arap_ctx.compute_surface_mesh, .vertex);
         defer pctr.deinit();
 
-        for (0..@intCast(ctx.nb_iterations)) |_| {
+        for (0..@intCast(arap_ctx.nb_iterations)) |_| {
             // compute best-fit rotation for each vertex
             try pctr.run(app_ctx, ComputeVertexRotationTask{
-                .surface_mesh = ctx.compute_surface_mesh,
-                .halfedge_cotan_weight = ctx.compute_halfedge_cotan_weight,
-                .vertex_position_rest = ctx.vertex_position_rest,
-                .vertex_position = ctx.vertex_position,
-                .vertex_rotation = ctx.vertex_rotation,
+                .surface_mesh = arap_ctx.compute_surface_mesh,
+                .halfedge_cotan_weight = arap_ctx.compute_halfedge_cotan_weight,
+                .vertex_position_rest = arap_ctx.vertex_position_rest,
+                .vertex_position = arap_ctx.vertex_position,
+                .vertex_rotation = arap_ctx.vertex_rotation,
             });
 
             // prepare the right-hand side matrix (nb_free x 3)
             pctr.reset();
             try pctr.run(app_ctx, SetupVertexRHSTask{
-                .surface_mesh = ctx.compute_surface_mesh,
-                .halfedge_cotan_weight = ctx.compute_halfedge_cotan_weight,
-                .vertex_position_rest = ctx.vertex_position_rest,
-                .vertex_position = ctx.vertex_position,
-                .vertex_rotation = ctx.vertex_rotation,
-                .free_vertex_index = ctx.free_vertex_index,
-                .rhs_mat = ctx.rhs_mat,
+                .surface_mesh = arap_ctx.compute_surface_mesh,
+                .halfedge_cotan_weight = arap_ctx.compute_halfedge_cotan_weight,
+                .vertex_position_rest = arap_ctx.vertex_position_rest,
+                .vertex_position = arap_ctx.vertex_position,
+                .vertex_rotation = arap_ctx.vertex_rotation,
+                .free_vertex_index = arap_ctx.free_vertex_index,
+                .rhs_mat = arap_ctx.rhs_mat,
             });
 
             // Solve L * x = rhs
-            ctx.factorized_L.solveMultipleRHS(ctx.rhs_mat, ctx.solve_mat, 3);
+            arap_ctx.factorized_L.solveMultipleRHS(arap_ctx.rhs_mat, arap_ctx.solve_mat, 3);
 
             // Write solved positions back
             pctr.reset();
             try pctr.run(app_ctx, WriteSolvedPositionsTask{
-                .surface_mesh = ctx.compute_surface_mesh,
-                .free_vertex_index = ctx.free_vertex_index,
-                .vertex_position = ctx.vertex_position,
-                .solve_mat = ctx.solve_mat,
+                .surface_mesh = arap_ctx.compute_surface_mesh,
+                .free_vertex_index = arap_ctx.free_vertex_index,
+                .vertex_position = arap_ctx.vertex_position,
+                .solve_mat = arap_ctx.solve_mat,
             });
         }
     }

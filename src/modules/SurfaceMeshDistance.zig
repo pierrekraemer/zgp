@@ -18,9 +18,52 @@ const Vec3f = vec.Vec3f;
 const distance = @import("../models/surface/distance.zig");
 
 const DistanceData = struct {
+    app_ctx: *AppContext,
+    surface_mesh: *SurfaceMesh,
+
     selected_vertex_set: ?*SurfaceMesh.CellSet = null,
     vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null,
-    // face_distance_gradient: ?SurfaceMesh.CellData(.face, Vec3f) = null,
+
+    hm_ctx: ?distance.HeatMethodContext = null, // optional Heat Method context
+    // maybe there will be other distance computation contexts in the future, e.g. for other distance computation methods
+
+    fn initHeatMethodContext(
+        dd: *DistanceData,
+        diffusion_time: f32,
+        halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        vertex_area: SurfaceMesh.CellData(.vertex, f32),
+        edge_length: SurfaceMesh.CellData(.edge, f32),
+        face_area: SurfaceMesh.CellData(.face, f32),
+        face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    ) !void {
+        assert(dd.hm_ctx == null);
+        assert(diffusion_time > 0.0);
+        assert(halfedge_cotan_weight.surface_mesh == dd.surface_mesh);
+        assert(vertex_position.surface_mesh == dd.surface_mesh);
+        assert(vertex_area.surface_mesh == dd.surface_mesh);
+        assert(edge_length.surface_mesh == dd.surface_mesh);
+        assert(face_area.surface_mesh == dd.surface_mesh);
+        assert(face_normal.surface_mesh == dd.surface_mesh);
+
+        dd.hm_ctx = try .init(
+            dd.app_ctx,
+            dd.surface_mesh,
+            halfedge_cotan_weight,
+            vertex_position,
+            vertex_area,
+            edge_length,
+            face_area,
+            face_normal,
+            diffusion_time,
+        );
+    }
+
+    fn deinit(dd: *DistanceData) void {
+        if (dd.hm_ctx) |*hm_ctx| {
+            hm_ctx.deinit();
+        }
+    }
 };
 
 app_ctx: *AppContext,
@@ -42,6 +85,10 @@ pub fn init(app_ctx: *AppContext) SurfaceMeshDistance {
 }
 
 pub fn deinit(smd: *SurfaceMeshDistance) void {
+    var it = smd.surface_meshes_data.valueIterator();
+    while (it.next()) |dd| {
+        dd.deinit();
+    }
     smd.surface_meshes_data.deinit(smd.app_ctx.allocator);
 }
 
@@ -49,7 +96,10 @@ pub fn deinit(smd: *SurfaceMeshDistance) void {
 /// Create and store a DistanceData for the created SurfaceMesh.
 pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smd: *SurfaceMeshDistance = @alignCast(@fieldParentPtr("module", m));
-    smd.surface_meshes_data.put(smd.app_ctx.allocator, surface_mesh, .{}) catch |err| {
+    smd.surface_meshes_data.put(smd.app_ctx.allocator, surface_mesh, .{
+        .app_ctx = smd.app_ctx,
+        .surface_mesh = surface_mesh,
+    }) catch |err| {
         std.debug.print("Failed to store DistanceData for new SurfaceMesh: {}\n", .{err});
         return;
     };
@@ -59,42 +109,10 @@ pub fn surfaceMeshCreated(m: *Module, surface_mesh: *SurfaceMesh) void {
 /// Remove the DistanceData associated to the destroyed SurfaceMesh.
 pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
     const smd: *SurfaceMeshDistance = @alignCast(@fieldParentPtr("module", m));
+    if (smd.surface_meshes_data.getPtr(surface_mesh)) |dd| {
+        dd.deinit();
+    }
     _ = smd.surface_meshes_data.remove(surface_mesh);
-}
-
-fn computeVertexGeodesicDistancesFromSource(
-    smd: *SurfaceMeshDistance,
-    sm: *SurfaceMesh,
-    source_vertices: []SurfaceMesh.Cell,
-    diffusion_time: f32,
-    halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    vertex_distance: SurfaceMesh.CellData(.vertex, f32),
-) !void {
-    const t = std.Io.Timestamp.now(smd.app_ctx.io, .real);
-
-    try distance.computeVertexGeodesicDistancesFromSource(
-        smd.app_ctx,
-        sm,
-        source_vertices,
-        diffusion_time,
-        halfedge_cotan_weight,
-        vertex_position,
-        vertex_area,
-        edge_length,
-        face_area,
-        face_normal,
-        vertex_distance,
-    );
-    smd.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_distance);
-    smd.app_ctx.requestRedraw();
-
-    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smd.app_ctx.io, .real).nanoseconds);
-    zgp_log.info("Geodesic distance computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 }
 
 /// Part of the Module interface.
@@ -106,6 +124,7 @@ pub fn rightClickMenu(m: *Module) void {
     assert(smd.app_ctx.selected_model.modelType() == .surface_mesh);
     const sm = smd.app_ctx.selected_model.surface_mesh;
     const dd = smd.surface_meshes_data.getPtr(sm).?;
+    const info = sm_store.surfaceMeshInfo(sm);
 
     const UiData = struct {
         var diffusion_time: f32 = 1.0;
@@ -119,12 +138,11 @@ pub fn rightClickMenu(m: *Module) void {
     if (c.ImGui_BeginMenu(m.name.ptr)) {
         defer c.ImGui_EndMenu();
 
-        const info = sm_store.surfaceMeshInfo(sm);
-
         if (c.ImGui_BeginMenu("Geodesic Distance")) {
             defer c.ImGui_EndMenu();
-            c.ImGui_Text("Vertex set:");
-            c.ImGui_PushID("vertex set");
+
+            c.ImGui_Text("Source vertex set:");
+            c.ImGui_PushID("Source vertex set");
             switch (imgui_utils.surfaceMeshCellSetComboBox(sm, .vertex, dd.selected_vertex_set)) {
                 .unchanged => {},
                 .cleared => dd.selected_vertex_set = null,
@@ -151,54 +169,119 @@ pub fn rightClickMenu(m: *Module) void {
                 }
             }
 
-            c.ImGui_Text("Diffusion time");
-            c.ImGui_PushID("Diffusion time");
-            _ = c.ImGui_SliderFloatEx("", &UiData.diffusion_time, 1.0, 100.0, "%.1f", c.ImGuiSliderFlags_Logarithmic);
-            c.ImGui_PopID();
+            c.ImGui_SeparatorText("Heat Method");
 
-            const disabled =
-                dd.selected_vertex_set == null or
-                dd.selected_vertex_set.?.cells.items.len == 0 or
-                info.std_datas.halfedge_cotan_weight == null or
-                info.std_datas.vertex_position == null or
-                info.std_datas.vertex_area == null or
-                info.std_datas.edge_length == null or
-                info.std_datas.face_area == null or
-                info.std_datas.face_normal == null or
-                dd.vertex_distance == null;
-            if (disabled) {
-                c.ImGui_BeginDisabled(true);
+            // Initialize Heat Method button
+            {
+                const disabled =
+                    info.std_datas.halfedge_cotan_weight == null or
+                    info.std_datas.vertex_position == null or
+                    info.std_datas.vertex_area == null or
+                    info.std_datas.edge_length == null or
+                    info.std_datas.face_area == null or
+                    info.std_datas.face_normal == null or
+                    dd.hm_ctx != null;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                c.ImGui_Text("Diffusion time");
+                c.ImGui_PushID("Diffusion time");
+                _ = c.ImGui_SliderFloatEx("", &UiData.diffusion_time, 1.0, 100.0, "%.1f", c.ImGuiSliderFlags_Logarithmic);
+                c.ImGui_PopID();
+                if (c.ImGui_ButtonEx(
+                    if (dd.hm_ctx != null) "Heat Method initialized" else "Initialize Heat Method",
+                    c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 },
+                )) {
+                    const t = std.Io.Timestamp.now(smd.app_ctx.io, .real);
+
+                    dd.initHeatMethodContext(
+                        UiData.diffusion_time,
+                        info.std_datas.halfedge_cotan_weight.?,
+                        info.std_datas.vertex_position.?,
+                        info.std_datas.vertex_area.?,
+                        info.std_datas.edge_length.?,
+                        info.std_datas.face_area.?,
+                        info.std_datas.face_normal.?,
+                    ) catch |err| {
+                        std.debug.print("Failed to initialize Heat Method: {}\n", .{err});
+                    };
+
+                    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smd.app_ctx.io, .real).nanoseconds);
+                    zgp_log.info("Heat Method initialized in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+                }
+                if (disabled) {
+                    if (dd.hm_ctx != null) {
+                        imgui_utils.tooltip(
+                            \\ Heat Method is already initialized.
+                            \\ To change the diffusion time, deinitialize the Heat Method first.
+                        );
+                    } else {
+                        imgui_utils.tooltip(
+                            \\ Following data should be available:
+                            \\ - std halfedge_cotan_weight
+                            \\ - std vertex_position
+                            \\ - std vertex_area
+                            \\ - std edge_length
+                            \\ - std face_area
+                            \\ - std face_normal
+                        );
+                    }
+                    c.ImGui_EndDisabled();
+                }
             }
-            if (c.ImGui_ButtonEx("Compute geodesic distance", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                smd.computeVertexGeodesicDistancesFromSource(
-                    sm,
-                    dd.selected_vertex_set.?.cells.items,
-                    UiData.diffusion_time,
-                    info.std_datas.halfedge_cotan_weight.?,
-                    info.std_datas.vertex_position.?,
-                    info.std_datas.vertex_area.?,
-                    info.std_datas.edge_length.?,
-                    info.std_datas.face_area.?,
-                    info.std_datas.face_normal.?,
-                    dd.vertex_distance.?,
-                ) catch |err| {
-                    std.debug.print("Error computing geodesic distance: {}\n", .{err});
-                };
+
+            // Deinitialize Heat Method button
+            {
+                const disabled = dd.hm_ctx == null;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_ButtonEx("Deinitialize Heat Method", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                    if (dd.hm_ctx) |*hm_ctx| {
+                        hm_ctx.deinit();
+                        dd.hm_ctx = null;
+                    }
+                }
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
             }
-            if (disabled) {
-                imgui_utils.tooltip(
-                    \\ Requires:
-                    \\ - at least 1 vertex in the selected vertex set.
-                    \\ Following data should be available:
-                    \\ - std halfedge_cotan_weight
-                    \\ - std vertex_position
-                    \\ - std vertex_area
-                    \\ - std edge_length
-                    \\ - std face_area
-                    \\ - std face_normal
-                    \\ - selected vertex distance data
-                );
-                c.ImGui_EndDisabled();
+
+            c.ImGui_Separator();
+
+            // Compute geodesic distance button
+            if (dd.hm_ctx != null) {
+                const disabled =
+                    dd.selected_vertex_set == null or
+                    dd.selected_vertex_set.?.cells.items.len == 0 or
+                    dd.vertex_distance == null;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_ButtonEx("Compute geodesic distance", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+                    const t = std.Io.Timestamp.now(smd.app_ctx.io, .real);
+
+                    dd.hm_ctx.?.computeGeodesicDistancesFromSource(
+                        dd.selected_vertex_set.?.cells.items,
+                        dd.vertex_distance.?,
+                    ) catch |err| {
+                        std.debug.print("Failed to compute geodesic distance: {}\n", .{err});
+                    };
+                    smd.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, dd.vertex_distance.?);
+                    smd.app_ctx.requestRedraw();
+
+                    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smd.app_ctx.io, .real).nanoseconds);
+                    zgp_log.info("Geodesic distance computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+                }
+                if (disabled) {
+                    imgui_utils.tooltip(
+                        \\ Requires:
+                        \\ - at least 1 vertex in the selected vertex set.
+                        \\ Following data should be available:
+                        \\ - selected vertex distance data
+                    );
+                    c.ImGui_EndDisabled();
+                }
             }
         }
     }

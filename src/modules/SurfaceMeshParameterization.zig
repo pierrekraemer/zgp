@@ -440,18 +440,11 @@ const ParameterizationData = struct {
         // underlying SurfaceMesh region enclosed by the 3 shortest edge paths of each face of the samples SurfaceMesh
         var edge_marker = try SurfaceMesh.CellMarker.init(pd.surface_mesh, .edge);
         defer edge_marker.deinit();
-        // as we are running many shortest path computations, we can reuse the same ShortestEdgePathContext for all of them
-        // (avoids allocating and deallocating the incoming_dart data and the dart_queue for each edge)
-        const incoming_dart = try pd.surface_mesh.addData(.vertex, ?SurfaceMesh.Dart, "__incoming_dart");
-        defer pd.surface_mesh.removeData(.vertex, ?SurfaceMesh.Dart, incoming_dart);
-        var queue: distance.ShortestEdgePathDartQueue = .empty;
-        defer queue.deinit(pd.app_ctx.allocator);
-        const shortest_edge_path_ctx: distance.ShortestEdgePathContext = .{
-            .surface_mesh = pd.surface_mesh,
-            .edge_weight = edge_length,
-            .incoming_dart = incoming_dart,
-            .dart_queue = &queue,
-        };
+
+        // ShortestEdgePathContext for computation of shortest edge paths in the underlying SurfaceMesh
+        var sep_ctx: distance.ShortestEdgePathContext = try .init(pd.surface_mesh, edge_length);
+        defer sep_ctx.deinit(pd.app_ctx.allocator);
+
         var ssm_e_it = try SurfaceMesh.CellIterator.init(pd.samples_surface_mesh.?, .edge);
         defer ssm_e_it.deinit();
         while (ssm_e_it.next()) |e| {
@@ -459,11 +452,10 @@ const ParameterizationData = struct {
             const s_end = pd.ssm_vertex_sample.value(.{ .vertex = pd.samples_surface_mesh.?.phi1(e.dart()) });
             const start_v: SurfaceMesh.Cell = pd.sample_surface_point.value(s_start).type.vertex;
             const end_v: SurfaceMesh.Cell = pd.sample_surface_point.value(s_end).type.vertex;
-            const path = try distance.shortestEdgePathBetweenVerticesWithContext(
-                pd.app_ctx,
+            const path = try sep_ctx.shortestEdgePathBetweenVertices(
+                pd.app_ctx.allocator,
                 start_v,
                 end_v,
-                shortest_edge_path_ctx,
             );
             for (path.items) |d| {
                 try shortest_paths_set.add(.{ .edge = d });

@@ -384,12 +384,6 @@ pub const ITContext = struct {
     // === FLIP-OUT SHORTEST GEODESIC ALGORITHM ===
     // ============================================
 
-    const FlipOutShortestGeodesicContext = struct {
-        shortest_edge_path_ctx: distance.ShortestEdgePathContext,
-        joint_queue_index: SurfaceMesh.CellData(.halfedge, ?usize),
-        joint_queue: *JointQueue,
-    };
-
     // Priority queue type for joints of the path, ordered by their ascending minimum wedge angle (to flip out the most "bent" joints first)
     const JointQueueContext = struct {
         joint_queue_index: SurfaceMesh.CellData(.halfedge, ?usize),
@@ -471,233 +465,222 @@ pub const ITContext = struct {
         }
     };
 
-    // performs intrinsic edge flips to shorten the path between the two given intrinsic vertices
-    // TODO: manage boundary (for now, assumes that the path is not on the boundary)
-    pub fn flipOutShortestGeodesic(
+    const FlipOutShortestGeodesicContext = struct {
         it_ctx: *ITContext,
-        int_v_start: SurfaceMesh.Cell,
-        int_v_end: SurfaceMesh.Cell,
-        new_path: ?*std.ArrayList(SurfaceMesh.Dart), // if provided, filled with the new path after shortening
-        performed_flips: ?*std.ArrayList(SurfaceMesh.Cell), // if provided, filled with the edges that were flipped during the shortening process
-    ) !void {
-        // shortest edge path context data
-        const incoming_dart = try it_ctx.intrinsic_surface_mesh.addData(.vertex, ?SurfaceMesh.Dart, "__incoming_dart");
-        defer it_ctx.intrinsic_surface_mesh.removeData(.vertex, ?SurfaceMesh.Dart, incoming_dart);
-        var dart_queue: distance.ShortestEdgePathDartQueue = .empty;
-        defer dart_queue.deinit(it_ctx.app_ctx.allocator);
-        // flip out shortest geodesic context data
-        const joint_queue_index = try it_ctx.intrinsic_surface_mesh.addData(.halfedge, ?usize, "__joint_queue_index");
-        defer it_ctx.intrinsic_surface_mesh.removeData(.halfedge, ?usize, joint_queue_index);
-        var joint_queue: JointQueue = .initContext(.{
-            .joint_queue_index = joint_queue_index,
-        });
-        defer joint_queue.deinit(it_ctx.app_ctx.allocator);
+        sep_ctx: distance.ShortestEdgePathContext,
+        joint_queue_index: SurfaceMesh.CellData(.halfedge, ?usize),
+        joint_queue: JointQueue,
 
-        try flipOutShortestGeodesicWithContext(
-            it_ctx,
-            int_v_start,
-            int_v_end,
-            new_path,
-            performed_flips,
-            .{
-                .shortest_edge_path_ctx = .{
-                    .surface_mesh = it_ctx.intrinsic_surface_mesh,
-                    .edge_weight = it_ctx.intrinsic_edge_length,
-                    .incoming_dart = incoming_dart,
-                    .dart_queue = &dart_queue,
-                },
+        pub fn init(it_ctx: *ITContext) FlipOutShortestGeodesicContext {
+            const joint_queue_index = try it_ctx.intrinsic_surface_mesh.addData(.halfedge, ?usize, "__joint_queue_index");
+            const joint_queue: JointQueue = .initContext(.{
                 .joint_queue_index = joint_queue_index,
-                .joint_queue = &joint_queue,
-            },
-        );
-    }
+            });
+            const sep_ctx: distance.ShortestEdgePathContext = .init(it_ctx.intrinsic_surface_mesh, it_ctx.intrinsic_edge_length);
 
-    pub fn flipOutShortestGeodesicWithContext(
-        it_ctx: *ITContext,
-        int_v_start: SurfaceMesh.Cell,
-        int_v_end: SurfaceMesh.Cell,
-        new_path: ?*std.ArrayList(SurfaceMesh.Dart), // if provided, filled with the new path after shortening
-        performed_flips: ?*std.ArrayList(SurfaceMesh.Cell), // if provided, filled with the edges that were flipped during the shortening process
-        flipout_ctx: FlipOutShortestGeodesicContext,
-    ) !void {
-        flipout_ctx.joint_queue_index.data.fill(null);
-
-        if (performed_flips) |p| {
-            p.clearRetainingCapacity();
+            return .{
+                .it_ctx = it_ctx,
+                .sep_ctx = sep_ctx,
+                .joint_queue_index = joint_queue_index,
+                .joint_queue = joint_queue,
+            };
         }
 
-        // compute the shortest edge path between the two intrinsic vertices
-        var path = try distance.shortestEdgePathBetweenVerticesWithContext(
-            it_ctx.app_ctx,
-            int_v_start,
-            int_v_end,
-            flipout_ctx.shortest_edge_path_ctx,
-        );
-        defer path.deinit(it_ctx.app_ctx.allocator);
-        if (path.items.len == 0) {
-            return error.NoPathFoundBetweenVertices;
+        pub fn deinit(flipout_ctx: *FlipOutShortestGeodesicContext) void {
+            flipout_ctx.sep_ctx.deinit();
+            flipout_ctx.joint_queue.deinit(flipout_ctx.it_ctx.app_ctx.allocator);
+            flipout_ctx.it_ctx.intrinsic_surface_mesh.removeData(.halfedge, ?usize, flipout_ctx.joint_queue_index);
         }
-        if (path.items.len == 1) {
-            // the two vertices are connected by a single edge, so the path cannot be shortened
-            if (new_path) |p| {
+
+        // performs intrinsic edge flips to shorten the path between the two given intrinsic vertices
+        // TODO: manage boundary (for now, assumes that the path is not on the boundary)
+        pub fn flipOutShortestGeodesic(
+            flipout_ctx: *FlipOutShortestGeodesicContext,
+            int_v_start: SurfaceMesh.Cell,
+            int_v_end: SurfaceMesh.Cell,
+            new_path: ?*std.ArrayList(SurfaceMesh.Dart), // if provided, filled with the new path after shortening
+            performed_flips: ?*std.ArrayList(SurfaceMesh.Cell), // if provided, filled with the edges that were flipped during the shortening process)
+        ) !void {
+            flipout_ctx.joint_queue_index.data.fill(null);
+
+            if (performed_flips) |p| {
                 p.clearRetainingCapacity();
-                try p.append(it_ctx.app_ctx.allocator, path.items[0]);
-            }
-            return;
-        }
-
-        // initialize the joint queue with the joints of the path
-        for (path.items, 0..) |d, idx| {
-            if (idx == 0) continue; // skip the first Dart of the path, as it is not a joint
-            const prev_d = path.items[idx - 1];
-            const next_d = if (idx + 1 < path.items.len) path.items[idx + 1] else null;
-            // assert the consistency of the path (the vertex of d must be the same as the vertex of phi1(prev_d))
-            assert(it_ctx.intrinsic_surface_mesh.cellIndex(.{ .vertex = d }) == it_ctx.intrinsic_surface_mesh.cellIndex(.{ .vertex = it_ctx.intrinsic_surface_mesh.phi1(prev_d) }));
-            try JointQueueUtils.addJointToQueue(it_ctx, flipout_ctx.joint_queue, d, prev_d, next_d);
-        }
-
-        // maintenance of these variables is only useful for the final new_path construction
-        var first_path_dart = path.items[0];
-        var first_joint_dart: ?SurfaceMesh.Dart = path.items[1]; // the first Dart of the path is not a joint, so the first joint is the second Dart of the path
-
-        while (flipout_ctx.joint_queue.items.len > 0) {
-            // // check path global consistency (following the info found in the queue)
-            // var nb_joints: u32 = 0;
-            // var cur_dart: ?SurfaceMesh.Dart = first_joint_dart;
-            // var prev_dart: SurfaceMesh.Dart = first_path_dart;
-            // while (cur_dart) |d| {
-            //     const cur_joint_index = joint_queue_index.value(.{ .halfedge = d });
-            //     assert(cur_joint_index != null);
-            //     const joint = queue.items[cur_joint_index.?];
-            //     assert(joint.dart == d);
-            //     assert(joint.prev_dart == prev_dart);
-            //     assert(itc.intrinsic_surface_mesh.cellIndex(.{ .vertex = joint.dart }) == itc.intrinsic_surface_mesh.cellIndex(.{ .vertex = itc.intrinsic_surface_mesh.phi1(joint.prev_dart) }));
-            //     nb_joints += 1;
-            //     prev_dart = cur_dart.?;
-            //     cur_dart = joint.next_dart;
-            // }
-            // assert(nb_joints == queue.items.len);
-
-            // if all the joints left in the queue are non-flippable, then the path is locally shortest and we can stop
-            const no_flippable_joint = for (flipout_ctx.joint_queue.items) |joint| {
-                if (joint.flippable) break false;
-            } else true;
-            if (no_flippable_joint) {
-                std.debug.print("No flippable joint left in the queue, path is locally shortest with {} joints left\n", .{flipout_ctx.joint_queue.items.len});
-                break;
             }
 
-            const joint = flipout_ctx.joint_queue.pop().?;
-            flipout_ctx.joint_queue_index.valuePtr(.{ .halfedge = joint.dart }).* = null; // the joint is no longer in the priority queue
-            assert(joint.flippable); // if there is still at least one flippable joint in the queue, it must be the one with the smallest minimum angle
+            const it_ctx = flipout_ctx.it_ctx;
 
-            // the flip out is performed CW in the min angle wedge, so consider the joint in the other orientation if the min angle wedge is on the right side of the path
-            // (the new path will be reversed when inserting the new subpath after the flips)
-            const cw_dart, const cw_prev_dart = if (joint.min_angle_side == .left)
-                .{ joint.dart, joint.prev_dart }
-            else
-                .{ it_ctx.intrinsic_surface_mesh.phi2(joint.prev_dart), it_ctx.intrinsic_surface_mesh.phi2(joint.dart) };
-
-            var cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(cw_prev_dart);
-            while (cw_cur_dart != cw_dart) {
-                // check if the edge can flip (i.e. not a boundary edge and incident vertices of degree > 2)
-                if (!it_ctx.intrinsic_surface_mesh.canFlipEdge(.{ .edge = cw_cur_dart })) {
-                    cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(it_ctx.intrinsic_surface_mesh.phi2(cw_cur_dart));
-                    continue;
+            // compute the shortest edge path between the two intrinsic vertices
+            var path = try flipout_ctx.sep_ctx.shortestEdgePathBetweenVertices(
+                flipout_ctx.it_ctx.app_ctx.allocator,
+                int_v_start,
+                int_v_end,
+            );
+            defer path.deinit(it_ctx.app_ctx.allocator);
+            if (path.items.len == 0) {
+                return error.NoPathFoundBetweenVertices;
+            }
+            if (path.items.len == 1) {
+                // the two vertices are connected by a single edge, so the path cannot be shortened
+                if (new_path) |p| {
+                    p.clearRetainingCapacity();
+                    try p.append(it_ctx.app_ctx.allocator, path.items[0]);
                 }
-                // do not flip if the edge is not in a convex quadrilateral (i.e. if the sum of the two corner angles opposite to the joint is greater than or equal to π)
-                if (it_ctx.intrinsic_corner_angle.value(.{ .corner = it_ctx.intrinsic_surface_mesh.phi1(cw_cur_dart) }) + it_ctx.intrinsic_corner_angle.value(.{ .corner = it_ctx.intrinsic_surface_mesh.phi2(cw_cur_dart) }) >= std.math.pi - geometry_utils.epsilon) {
-                    cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(it_ctx.intrinsic_surface_mesh.phi2(cw_cur_dart));
-                    continue;
-                }
-                it_ctx.flipEdge(.{ .edge = cw_cur_dart });
-                if (performed_flips) |p| {
-                    try p.append(it_ctx.app_ctx.allocator, .{ .edge = cw_cur_dart });
-                }
-                cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi_1(cw_cur_dart);
+                return;
             }
 
-            // build the new subpath
-            var new_subpath: std.ArrayList(SurfaceMesh.Dart) = .empty;
-            defer new_subpath.deinit(it_ctx.app_ctx.allocator);
-            cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(cw_prev_dart);
-            while (true) : ({
-                if (cw_cur_dart == cw_dart) break;
-                cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(it_ctx.intrinsic_surface_mesh.phi2(cw_cur_dart));
-            }) {
-                try new_subpath.append(it_ctx.app_ctx.allocator, it_ctx.intrinsic_surface_mesh.phi2(it_ctx.intrinsic_surface_mesh.phi1(cw_cur_dart)));
-            }
-            // reverse the new subpath if the min angle wedge was on the right side of the path (so that it can be inserted in the correct orientation)
-            if (joint.min_angle_side == .right) {
-                std.mem.reverse(SurfaceMesh.Dart, new_subpath.items);
-                for (new_subpath.items) |*d| {
-                    d.* = it_ctx.intrinsic_surface_mesh.phi2(d.*);
-                }
-            }
-            assert(new_subpath.items.len > 0); // the new subpath must contain at least one Dart
-
-            if (first_joint_dart != null and first_joint_dart.? == joint.dart) {
-                first_path_dart = new_subpath.items[0];
-                first_joint_dart = if (new_subpath.items.len > 1) new_subpath.items[1] else joint.next_dart;
-            } else if (first_joint_dart != null and first_joint_dart.? == joint.prev_dart) {
-                // the previous joint was the first joint and has been removed from the queue;
-                // the first dart of the new subpath takes its place as the new first joint
-                first_joint_dart = new_subpath.items[0];
-                // first_path_dart doesn't change: prev_prev_dart != null here, so new_subpath[0] is added as a joint
-            }
-
-            // update the joint queue (the current joint has already been removed from the queue)
-
-            // the previous joint (if it exists) must be removed from the queue
-            // it will be replaced by the first new joint of the new subpath (with updated min angle, side and flippable status)
-            // we first need to get its previous Dart in the path (the Dart that precedes joint.prev_dart) to be able to add the first new joint to the queue
-            var prev_prev_dart: ?SurfaceMesh.Dart = null;
-            // if joint.prev_dart is the first Dart of the path (i.e. joint is the first joint), joint.prev_dart is not a joint and prev_prev_dart will remain null
-            if (flipout_ctx.joint_queue_index.value(.{ .halfedge = joint.prev_dart })) |index| {
-                prev_prev_dart = flipout_ctx.joint_queue.items[index].prev_dart;
-                // the joint at prev_prev_dart (if it's in the queue) still has next_dart pointing to the to-be-removed joint.prev_dart;
-                // update it in-place to the first dart of the new subpath (next_dart is not part of the priority comparison so the heap is unaffected)
-                if (flipout_ctx.joint_queue_index.value(.{ .halfedge = prev_prev_dart.? })) |ppd_idx| {
-                    flipout_ctx.joint_queue.items[ppd_idx].next_dart = new_subpath.items[0];
-                }
-                _ = flipout_ctx.joint_queue.popIndex(index);
-                flipout_ctx.joint_queue_index.valuePtr(.{ .halfedge = joint.prev_dart }).* = null;
-            }
-            for (new_subpath.items, 0..) |d, idx| {
-                if (idx == 0 and prev_prev_dart == null) continue; // the first Dart of the new subpath is the first Dart of the path, so it is not a joint
-                const prev_d: SurfaceMesh.Dart = if (idx == 0) prev_prev_dart.? else new_subpath.items[idx - 1];
-                const next_d = if (idx + 1 < new_subpath.items.len) new_subpath.items[idx + 1] else joint.next_dart;
+            // initialize the joint queue with the joints of the path
+            for (path.items, 0..) |d, idx| {
+                if (idx == 0) continue; // skip the first Dart of the path, as it is not a joint
+                const prev_d = path.items[idx - 1];
+                const next_d = if (idx + 1 < path.items.len) path.items[idx + 1] else null;
                 // assert the consistency of the path (the vertex of d must be the same as the vertex of phi1(prev_d))
                 assert(it_ctx.intrinsic_surface_mesh.cellIndex(.{ .vertex = d }) == it_ctx.intrinsic_surface_mesh.cellIndex(.{ .vertex = it_ctx.intrinsic_surface_mesh.phi1(prev_d) }));
                 try JointQueueUtils.addJointToQueue(it_ctx, flipout_ctx.joint_queue, d, prev_d, next_d);
             }
-            // the next joint (if it exists) must be removed from the queue and added again (with updated prev_dart, min angle, side and flippable status)
-            if (joint.next_dart) |next_dart| {
-                const next_joint_index = flipout_ctx.joint_queue_index.value(.{ .halfedge = next_dart });
-                assert(next_joint_index != null); // if the current joint has a next dart, the corresponding next joint must be in the queue
-                const next_joint = flipout_ctx.joint_queue.items[next_joint_index.?];
-                _ = flipout_ctx.joint_queue.popIndex(next_joint_index.?);
-                flipout_ctx.joint_queue_index.valuePtr(.{ .halfedge = next_dart }).* = null;
-                const next_prev_d = new_subpath.items[new_subpath.items.len - 1]; // the previous Dart of the next joint is now the last Dart of the new subpath
-                const next_next_d = next_joint.next_dart; // the next Dart of the next joint is not affected by the flips, so it remains the same (potentially null if the next joint was the last joint of the path)
-                // assert the consistency of the path (the vertex of next_dart must be the same as the vertex of phi1(next_prev_d))
-                assert(it_ctx.intrinsic_surface_mesh.cellIndex(.{ .vertex = next_dart }) == it_ctx.intrinsic_surface_mesh.cellIndex(.{ .vertex = it_ctx.intrinsic_surface_mesh.phi1(next_prev_d) }));
-                try JointQueueUtils.addJointToQueue(it_ctx, flipout_ctx.joint_queue, next_dart, next_prev_d, next_next_d);
-            }
-        }
 
-        if (new_path) |p| {
-            p.clearRetainingCapacity();
-            try p.append(it_ctx.app_ctx.allocator, first_path_dart);
-            var cur_dart: ?SurfaceMesh.Dart = first_joint_dart;
-            while (cur_dart) |d| {
-                try p.append(it_ctx.app_ctx.allocator, d);
-                const cur_joint_index = flipout_ctx.joint_queue_index.value(.{ .halfedge = d });
-                const joint = flipout_ctx.joint_queue.items[cur_joint_index.?];
-                cur_dart = joint.next_dart;
+            // maintenance of these variables is only useful for the final new_path construction
+            var first_path_dart = path.items[0];
+            var first_joint_dart: ?SurfaceMesh.Dart = path.items[1]; // the first Dart of the path is not a joint, so the first joint is the second Dart of the path
+
+            while (flipout_ctx.joint_queue.items.len > 0) {
+                // // check path global consistency (following the info found in the queue)
+                // var nb_joints: u32 = 0;
+                // var cur_dart: ?SurfaceMesh.Dart = first_joint_dart;
+                // var prev_dart: SurfaceMesh.Dart = first_path_dart;
+                // while (cur_dart) |d| {
+                //     const cur_joint_index = joint_queue_index.value(.{ .halfedge = d });
+                //     assert(cur_joint_index != null);
+                //     const joint = queue.items[cur_joint_index.?];
+                //     assert(joint.dart == d);
+                //     assert(joint.prev_dart == prev_dart);
+                //     assert(itc.intrinsic_surface_mesh.cellIndex(.{ .vertex = joint.dart }) == itc.intrinsic_surface_mesh.cellIndex(.{ .vertex = itc.intrinsic_surface_mesh.phi1(joint.prev_dart) }));
+                //     nb_joints += 1;
+                //     prev_dart = cur_dart.?;
+                //     cur_dart = joint.next_dart;
+                // }
+                // assert(nb_joints == queue.items.len);
+
+                // if all the joints left in the queue are non-flippable, then the path is locally shortest and we can stop
+                const no_flippable_joint = for (flipout_ctx.joint_queue.items) |joint| {
+                    if (joint.flippable) break false;
+                } else true;
+                if (no_flippable_joint) {
+                    std.debug.print("No flippable joint left in the queue, path is locally shortest with {} joints left\n", .{flipout_ctx.joint_queue.items.len});
+                    break;
+                }
+
+                const joint = flipout_ctx.joint_queue.pop().?;
+                flipout_ctx.joint_queue_index.valuePtr(.{ .halfedge = joint.dart }).* = null; // the joint is no longer in the priority queue
+                assert(joint.flippable); // if there is still at least one flippable joint in the queue, it must be the one with the smallest minimum angle
+
+                // the flip out is performed CW in the min angle wedge, so consider the joint in the other orientation if the min angle wedge is on the right side of the path
+                // (the new path will be reversed when inserting the new subpath after the flips)
+                const cw_dart, const cw_prev_dart = if (joint.min_angle_side == .left)
+                    .{ joint.dart, joint.prev_dart }
+                else
+                    .{ it_ctx.intrinsic_surface_mesh.phi2(joint.prev_dart), it_ctx.intrinsic_surface_mesh.phi2(joint.dart) };
+
+                var cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(cw_prev_dart);
+                while (cw_cur_dart != cw_dart) {
+                    // check if the edge can flip (i.e. not a boundary edge and incident vertices of degree > 2)
+                    if (!it_ctx.intrinsic_surface_mesh.canFlipEdge(.{ .edge = cw_cur_dart })) {
+                        cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(it_ctx.intrinsic_surface_mesh.phi2(cw_cur_dart));
+                        continue;
+                    }
+                    // do not flip if the edge is not in a convex quadrilateral (i.e. if the sum of the two corner angles opposite to the joint is greater than or equal to π)
+                    if (it_ctx.intrinsic_corner_angle.value(.{ .corner = it_ctx.intrinsic_surface_mesh.phi1(cw_cur_dart) }) + it_ctx.intrinsic_corner_angle.value(.{ .corner = it_ctx.intrinsic_surface_mesh.phi2(cw_cur_dart) }) >= std.math.pi - geometry_utils.epsilon) {
+                        cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(it_ctx.intrinsic_surface_mesh.phi2(cw_cur_dart));
+                        continue;
+                    }
+                    it_ctx.flipEdge(.{ .edge = cw_cur_dart });
+                    if (performed_flips) |p| {
+                        try p.append(it_ctx.app_ctx.allocator, .{ .edge = cw_cur_dart });
+                    }
+                    cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi_1(cw_cur_dart);
+                }
+
+                // build the new subpath
+                var new_subpath: std.ArrayList(SurfaceMesh.Dart) = .empty;
+                defer new_subpath.deinit(it_ctx.app_ctx.allocator);
+                cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(cw_prev_dart);
+                while (true) : ({
+                    if (cw_cur_dart == cw_dart) break;
+                    cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(it_ctx.intrinsic_surface_mesh.phi2(cw_cur_dart));
+                }) {
+                    try new_subpath.append(it_ctx.app_ctx.allocator, it_ctx.intrinsic_surface_mesh.phi2(it_ctx.intrinsic_surface_mesh.phi1(cw_cur_dart)));
+                }
+                // reverse the new subpath if the min angle wedge was on the right side of the path (so that it can be inserted in the correct orientation)
+                if (joint.min_angle_side == .right) {
+                    std.mem.reverse(SurfaceMesh.Dart, new_subpath.items);
+                    for (new_subpath.items) |*d| {
+                        d.* = it_ctx.intrinsic_surface_mesh.phi2(d.*);
+                    }
+                }
+                assert(new_subpath.items.len > 0); // the new subpath must contain at least one Dart
+
+                if (first_joint_dart != null and first_joint_dart.? == joint.dart) {
+                    first_path_dart = new_subpath.items[0];
+                    first_joint_dart = if (new_subpath.items.len > 1) new_subpath.items[1] else joint.next_dart;
+                } else if (first_joint_dart != null and first_joint_dart.? == joint.prev_dart) {
+                    // the previous joint was the first joint and has been removed from the queue;
+                    // the first dart of the new subpath takes its place as the new first joint
+                    first_joint_dart = new_subpath.items[0];
+                    // first_path_dart doesn't change: prev_prev_dart != null here, so new_subpath[0] is added as a joint
+                }
+
+                // update the joint queue (the current joint has already been removed from the queue)
+
+                // the previous joint (if it exists) must be removed from the queue
+                // it will be replaced by the first new joint of the new subpath (with updated min angle, side and flippable status)
+                // we first need to get its previous Dart in the path (the Dart that precedes joint.prev_dart) to be able to add the first new joint to the queue
+                var prev_prev_dart: ?SurfaceMesh.Dart = null;
+                // if joint.prev_dart is the first Dart of the path (i.e. joint is the first joint), joint.prev_dart is not a joint and prev_prev_dart will remain null
+                if (flipout_ctx.joint_queue_index.value(.{ .halfedge = joint.prev_dart })) |index| {
+                    prev_prev_dart = flipout_ctx.joint_queue.items[index].prev_dart;
+                    // the joint at prev_prev_dart (if it's in the queue) still has next_dart pointing to the to-be-removed joint.prev_dart;
+                    // update it in-place to the first dart of the new subpath (next_dart is not part of the priority comparison so the heap is unaffected)
+                    if (flipout_ctx.joint_queue_index.value(.{ .halfedge = prev_prev_dart.? })) |ppd_idx| {
+                        flipout_ctx.joint_queue.items[ppd_idx].next_dart = new_subpath.items[0];
+                    }
+                    _ = flipout_ctx.joint_queue.popIndex(index);
+                    flipout_ctx.joint_queue_index.valuePtr(.{ .halfedge = joint.prev_dart }).* = null;
+                }
+                for (new_subpath.items, 0..) |d, idx| {
+                    if (idx == 0 and prev_prev_dart == null) continue; // the first Dart of the new subpath is the first Dart of the path, so it is not a joint
+                    const prev_d: SurfaceMesh.Dart = if (idx == 0) prev_prev_dart.? else new_subpath.items[idx - 1];
+                    const next_d = if (idx + 1 < new_subpath.items.len) new_subpath.items[idx + 1] else joint.next_dart;
+                    // assert the consistency of the path (the vertex of d must be the same as the vertex of phi1(prev_d))
+                    assert(it_ctx.intrinsic_surface_mesh.cellIndex(.{ .vertex = d }) == it_ctx.intrinsic_surface_mesh.cellIndex(.{ .vertex = it_ctx.intrinsic_surface_mesh.phi1(prev_d) }));
+                    try JointQueueUtils.addJointToQueue(it_ctx, flipout_ctx.joint_queue, d, prev_d, next_d);
+                }
+                // the next joint (if it exists) must be removed from the queue and added again (with updated prev_dart, min angle, side and flippable status)
+                if (joint.next_dart) |next_dart| {
+                    const next_joint_index = flipout_ctx.joint_queue_index.value(.{ .halfedge = next_dart });
+                    assert(next_joint_index != null); // if the current joint has a next dart, the corresponding next joint must be in the queue
+                    const next_joint = flipout_ctx.joint_queue.items[next_joint_index.?];
+                    _ = flipout_ctx.joint_queue.popIndex(next_joint_index.?);
+                    flipout_ctx.joint_queue_index.valuePtr(.{ .halfedge = next_dart }).* = null;
+                    const next_prev_d = new_subpath.items[new_subpath.items.len - 1]; // the previous Dart of the next joint is now the last Dart of the new subpath
+                    const next_next_d = next_joint.next_dart; // the next Dart of the next joint is not affected by the flips, so it remains the same (potentially null if the next joint was the last joint of the path)
+                    // assert the consistency of the path (the vertex of next_dart must be the same as the vertex of phi1(next_prev_d))
+                    assert(it_ctx.intrinsic_surface_mesh.cellIndex(.{ .vertex = next_dart }) == it_ctx.intrinsic_surface_mesh.cellIndex(.{ .vertex = it_ctx.intrinsic_surface_mesh.phi1(next_prev_d) }));
+                    try JointQueueUtils.addJointToQueue(it_ctx, flipout_ctx.joint_queue, next_dart, next_prev_d, next_next_d);
+                }
+            }
+
+            if (new_path) |p| {
+                p.clearRetainingCapacity();
+                try p.append(it_ctx.app_ctx.allocator, first_path_dart);
+                var cur_dart: ?SurfaceMesh.Dart = first_joint_dart;
+                while (cur_dart) |d| {
+                    try p.append(it_ctx.app_ctx.allocator, d);
+                    const cur_joint_index = flipout_ctx.joint_queue_index.value(.{ .halfedge = d });
+                    const joint = flipout_ctx.joint_queue.items[cur_joint_index.?];
+                    cur_dart = joint.next_dart;
+                }
             }
         }
-    }
+    };
 
     // =====================================
     // === DELAUNAY REFINEMENT ALGORITHM ===

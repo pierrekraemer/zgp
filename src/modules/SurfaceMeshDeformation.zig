@@ -56,8 +56,8 @@ const DeformationData = struct {
     }
 
     fn deinit(dd: *DeformationData) void {
-        if (dd.arap_ctx) |*ctx| {
-            ctx.deinit();
+        if (dd.arap_ctx) |*arap_ctx| {
+            arap_ctx.deinit();
         }
     }
 };
@@ -73,7 +73,6 @@ module: Module = .{
         .rightPanel = rightPanel,
     },
 },
-
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, DeformationData) = .empty,
 deformation_mode: DeformationMode = .SimpleTranslation,
 use_intrinsic_delaunay: bool = false,
@@ -282,7 +281,7 @@ pub fn rightPanel(m: *Module) void {
             }
         }
 
-        if (dd.arap_ctx) |_| {
+        if (dd.arap_ctx != null) {
             c.ImGui_Text("ARAP iterations:");
             _ = c.ImGui_SliderIntEx("", &dd.arap_ctx.?.nb_iterations, 1, 20, "%d", c.ImGuiSliderFlags_AlwaysClamp);
         }
@@ -294,8 +293,8 @@ pub fn rightPanel(m: *Module) void {
                 c.ImGui_BeginDisabled(true);
             }
             if (c.ImGui_ButtonEx("Deinitialize ARAP", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                if (dd.arap_ctx) |*ctx| {
-                    ctx.deinit();
+                if (dd.arap_ctx) |*arap_ctx| {
+                    arap_ctx.deinit();
                     dd.arap_ctx = null;
                 }
             }
