@@ -14,25 +14,26 @@ const FactorizedSparseMatrix = eigen.FactorizedSparseMatrix;
 
 const laplacian = @import("laplacian.zig");
 const gradient = @import("gradient.zig");
-
-// Priority queue type for darts of the SurfaceMesh to expand from, ordered by increasing distance
-const ShortestEdgePathDartInfo = struct {
-    dart: SurfaceMesh.Dart,
-    distance: f32,
-    pub fn cmp(_: void, a: ShortestEdgePathDartInfo, b: ShortestEdgePathDartInfo) std.math.Order {
-        const distance_order = std.math.order(a.distance, b.distance);
-        if (distance_order != .eq) return distance_order;
-        // tie-breaker: use Dart indices to have a deterministic order
-        return std.math.order(a.dart, b.dart);
-    }
-};
-pub const ShortestEdgePathDartQueue = std.PriorityQueue(ShortestEdgePathDartInfo, void, ShortestEdgePathDartInfo.cmp);
+const intrinsic_triangulation = @import("intrinsic_triangulation.zig");
 
 pub const ShortestEdgePathContext = struct {
     surface_mesh: *SurfaceMesh,
     edge_weight: SurfaceMesh.CellData(.edge, f32),
     incoming_dart: SurfaceMesh.CellData(.vertex, ?SurfaceMesh.Dart),
     dart_queue: ShortestEdgePathDartQueue,
+
+    // Priority queue type for darts of the SurfaceMesh to expand from, ordered by increasing distance
+    const ShortestEdgePathDartInfo = struct {
+        dart: SurfaceMesh.Dart,
+        distance: f32,
+        pub fn cmp(_: void, a: ShortestEdgePathDartInfo, b: ShortestEdgePathDartInfo) std.math.Order {
+            const distance_order = std.math.order(a.distance, b.distance);
+            if (distance_order != .eq) return distance_order;
+            // tie-breaker: use Dart indices to have a deterministic order
+            return std.math.order(a.dart, b.dart);
+        }
+    };
+    pub const ShortestEdgePathDartQueue = std.PriorityQueue(ShortestEdgePathDartInfo, void, ShortestEdgePathDartInfo.cmp);
 
     pub fn init(
         surface_mesh: *SurfaceMesh,
@@ -220,6 +221,7 @@ pub const HeatMethodContext = struct {
         face_area: SurfaceMesh.CellData(.face, f32),
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
         diffusion_time: f32,
+        // it_ctx: ?intrinsic_triangulation.ITContext,
     ) !HeatMethodContext {
         // Create consecutive indices for vertices
         var vertex_index = try sm.addData(.vertex, u32, "__heat_method_vertex_index");

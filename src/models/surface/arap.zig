@@ -81,26 +81,23 @@ pub fn computeVertexOneRingRotation(
 /// ARAP deformation context.
 pub const ARAPContext = struct {
     surface_mesh: *SurfaceMesh, // the original SurfaceMesh
-    halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32), // defined on the original SurfaceMesh (given)
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f), // defined on the original SurfaceMesh (given)
+    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f), // defined on the original SurfaceMesh, updated by the ARAP solver
 
-    vertex_position_rest: SurfaceMesh.CellData(.vertex, Vec3f), // defined on the original SurfaceMesh (created)
-    vertex_rotation: SurfaceMesh.CellData(.vertex, Mat3f), // defined on the original SurfaceMesh (created)
+    vertex_position_rest: SurfaceMesh.CellData(.vertex, Vec3f), // created on the original SurfaceMesh
+    vertex_rotation: SurfaceMesh.CellData(.vertex, Mat3f), // created on the original SurfaceMesh
     nb_free: u32,
-    free_vertex_index: SurfaceMesh.CellData(.vertex, u32), // defined on the original SurfaceMesh (created)
+    free_vertex_index: SurfaceMesh.CellData(.vertex, u32), // created on the original SurfaceMesh
 
-    // optional intrinsic triangulation context
-    // allows to compute on the intrinsic Delaunay triangulation
-    it_ctx: ?intrinsic_triangulation.ITContext,
-
-    // if the intrinsic triangulation is used, its connectivity and halfedge cotan weights are used to compute the Laplacian and vertex rotations
-    // and these two fields point to the intrinsic triangulation SurfaceMesh and its halfedge cotan weights
-    // otherwise they point to the original SurfaceMesh and its halfedge cotan weights
+    // if an IT context is provided upon init (supposed to be Delaunay),
+    // its connectivity and halfedge cotan weights are used to compute the Laplacian and vertex rotations
+    // the following two fields thus either point to the IT SurfaceMesh and its halfedge cotan weights
+    // or to the original SurfaceMesh and its halfedge cotan weights
     compute_surface_mesh: *SurfaceMesh,
     compute_halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
 
     // WARNING!
-    // the intrinsic mesh never adds/removes vertices (only Delaunay flips are performed on it), so vertex indices are shared between the two meshes
+    // - if provided, the IT context should not be deinitialized while the ARAP context is still alive
+    // - the intrinsic mesh never adds/removes vertices (only Delaunay flips are performed on it), so vertex indices are shared between the two meshes
     // access to vertex data that is defined on the extrinsic mesh from Cells (i.e. Darts) obtained while walking connectivity on the intrinsic mesh can be done,
     // but only via `valueByIndex`/`valuePtrByIndex` using the indices obtained by cellIndex on the intrinsic mesh
     // rather than via `value`/`valuePtr`, which would silently re-derive the index associated with the Dart on the original mesh which may have changed due to Delaunay flips
@@ -117,9 +114,9 @@ pub const ARAPContext = struct {
         sm: *SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-        it_ctx: ?intrinsic_triangulation.ITContext,
         fixed_set: *SurfaceMesh.CellSet,
         handle_set: *SurfaceMesh.CellSet,
+        it_ctx: ?intrinsic_triangulation.ITContext,
     ) !ARAPContext {
         // Create & initialize vertex rest positions
         var vertex_position_rest = try sm.addData(.vertex, Vec3f, "__arap_rest_positions");
@@ -143,9 +140,9 @@ pub const ARAPContext = struct {
             }
         }
 
-        if (it_ctx) |*ctx| {
+        if (it_ctx) |ctx| {
             assert(ctx.extrinsic_surface_mesh == sm);
-            try ctx.flipToDelaunay();
+            // assert(ctx.is_delaunay); // TODO: not available for now
         }
         const compute_surface_mesh = if (it_ctx) |ctx| ctx.intrinsic_surface_mesh else sm;
         const compute_halfedge_cotan_weight = if (it_ctx) |ctx| ctx.intrinsic_halfedge_cotan_weight else halfedge_cotan_weight;
@@ -189,13 +186,11 @@ pub const ARAPContext = struct {
 
         return .{
             .surface_mesh = sm,
-            .halfedge_cotan_weight = halfedge_cotan_weight,
             .vertex_position = vertex_position,
             .vertex_position_rest = vertex_position_rest,
             .vertex_rotation = vertex_rotation,
             .nb_free = nb_free,
             .free_vertex_index = free_vertex_index,
-            .it_ctx = it_ctx,
             .compute_surface_mesh = compute_surface_mesh,
             .compute_halfedge_cotan_weight = compute_halfedge_cotan_weight,
             .factorized_L = factorized_L,
@@ -205,9 +200,6 @@ pub const ARAPContext = struct {
     }
 
     pub fn deinit(arap_ctx: *ARAPContext) void {
-        if (arap_ctx.it_ctx) |*it_ctx| {
-            it_ctx.deinit();
-        }
         arap_ctx.solve_mat.deinit();
         arap_ctx.rhs_mat.deinit();
         arap_ctx.factorized_L.deinit();

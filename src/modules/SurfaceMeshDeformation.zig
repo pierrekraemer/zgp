@@ -32,11 +32,15 @@ const DeformationData = struct {
     arap_ctx: ?arap.ARAPContext = null, // optional ARAP context
     // maybe there will be other deformation contexts in the future, e.g. for other deformation methods
 
+    it_ctx: ?intrinsic_triangulation.ITContext = null, // optional intrinsic triangulation context
+
     fn initARAPContext(
         dd: *DeformationData,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-        it_ctx: ?intrinsic_triangulation.ITContext,
+        use_intrinsic_delaunay: bool,
+        edge_length: ?SurfaceMesh.CellData(.edge, f32),
+        corner_angle: ?SurfaceMesh.CellData(.corner, f32),
     ) !void {
         assert(dd.arap_ctx == null);
         assert(vertex_position.surface_mesh == dd.surface_mesh);
@@ -44,20 +48,35 @@ const DeformationData = struct {
         assert(dd.fixed_vertex_set != null and dd.fixed_vertex_set.?.cells.items.len > 0 and dd.fixed_vertex_set.?.surface_mesh == dd.surface_mesh);
         assert(dd.handle_vertex_set != null and dd.handle_vertex_set.?.cells.items.len > 0 and dd.handle_vertex_set.?.surface_mesh == dd.surface_mesh);
 
+        if (use_intrinsic_delaunay and edge_length != null and corner_angle != null) {
+            dd.it_ctx = intrinsic_triangulation.ITContext.init(
+                dd.app_ctx,
+                dd.surface_mesh,
+                edge_length.?,
+                corner_angle.?,
+            ) catch null;
+            if (dd.it_ctx) |*it_ctx| {
+                try it_ctx.flipToDelaunay();
+            }
+        }
+
         dd.arap_ctx = try .init(
             dd.app_ctx,
             dd.surface_mesh,
             vertex_position,
             halfedge_cotan_weight,
-            it_ctx,
             dd.fixed_vertex_set.?,
             dd.handle_vertex_set.?,
+            dd.it_ctx,
         );
     }
 
     fn deinit(dd: *DeformationData) void {
         if (dd.arap_ctx) |*arap_ctx| {
             arap_ctx.deinit();
+        }
+        if (dd.it_ctx) |*it_ctx| {
+            it_ctx.deinit();
         }
     }
 };
@@ -255,12 +274,9 @@ pub fn rightPanel(m: *Module) void {
                 dd.initARAPContext(
                     info.std_datas.vertex_position.?,
                     info.std_datas.halfedge_cotan_weight.?,
-                    if (smd.use_intrinsic_delaunay) intrinsic_triangulation.ITContext.init(
-                        smd.app_ctx,
-                        sm,
-                        info.std_datas.edge_length.?,
-                        info.std_datas.corner_angle.?,
-                    ) catch null else null,
+                    smd.use_intrinsic_delaunay,
+                    info.std_datas.edge_length,
+                    info.std_datas.corner_angle,
                 ) catch |err| {
                     std.debug.print("Failed to initialize ARAP: {}\n", .{err});
                 };
