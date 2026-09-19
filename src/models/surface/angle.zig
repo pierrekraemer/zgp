@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -28,7 +27,7 @@ pub fn cornerAngle(
 /// Compute the angles of all corners of the given SurfaceMesh
 /// and store them in the given corner_angle data.
 pub fn computeCornerAngles(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
@@ -51,7 +50,7 @@ pub fn computeCornerAngles(
 
     var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .corner);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .corner_angle = corner_angle,
@@ -59,7 +58,6 @@ pub fn computeCornerAngles(
 
     // single-threaded version for the record
 
-    // _ = app_ctx;
     // var corner_it = try SurfaceMesh.CellIterator(.corner).init(sm);
     // defer corner_it.deinit();
     // while (corner_it.next()) |corner| {
@@ -89,7 +87,7 @@ pub fn cornerAngleIntrinsic(
 /// and store them in the given corner_angle data.
 /// This version uses intrinsic geometry (edge lengths) instead of extrinsic vertex positions.
 pub fn computeCornerAnglesIntrinsic(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
     edge_length: SurfaceMesh.CellData(.edge, f32),
     corner_angle: SurfaceMesh.CellData(.corner, f32),
@@ -112,7 +110,7 @@ pub fn computeCornerAnglesIntrinsic(
 
     var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .corner);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .edge_length = edge_length,
         .corner_angle = corner_angle,
@@ -152,7 +150,7 @@ pub fn edgeDihedralAngle(
 /// and store them in the given edge_dihedral_angle data.
 /// Face normals are assumed to be normalized.
 pub fn computeEdgeDihedralAngles(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
@@ -178,7 +176,7 @@ pub fn computeEdgeDihedralAngles(
 
     var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .edge);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .face_normal = face_normal,

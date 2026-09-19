@@ -127,7 +127,7 @@ pub const ShortestEdgePathContext = struct {
 /// The vertex_distance data is filled with the computed distances.
 /// The vertex_source data is filled with the closest source vertex for each vertex.
 pub fn multiSourceDijkstraDistancesAndSources(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
     source_vertices: []SurfaceMesh.Cell,
     edge_weight: SurfaceMesh.CellData(.edge, f32),
@@ -158,13 +158,13 @@ pub fn multiSourceDijkstraDistancesAndSources(
     const VertexQueue = std.PriorityQueue(VertexInfo, VertexQueueContext, VertexInfo.cmp);
 
     var queue: VertexQueue = .initContext(.{ .surface_mesh = sm });
-    defer queue.deinit(app_ctx.allocator);
+    defer queue.deinit(allocator);
 
     // initialize the queue with the source vertices
     for (source_vertices) |v| {
         vertex_distance.valuePtr(v).* = 0.0;
         vertex_source.valuePtr(v).* = v;
-        try queue.push(app_ctx.allocator, .{ .vertex = v, .distance = 0.0 });
+        try queue.push(allocator, .{ .vertex = v, .distance = 0.0 });
     }
 
     while (queue.pop()) |v_info| {
@@ -181,7 +181,7 @@ pub fn multiSourceDijkstraDistancesAndSources(
             if (new_distance < vertex_distance.value(nv)) {
                 vertex_distance.valuePtr(nv).* = new_distance;
                 vertex_source.valuePtr(nv).* = vertex_source.value(v);
-                try queue.push(app_ctx.allocator, .{ .vertex = nv, .distance = new_distance });
+                try queue.push(allocator, .{ .vertex = nv, .distance = new_distance });
             }
         }
     }
@@ -189,7 +189,9 @@ pub fn multiSourceDijkstraDistancesAndSources(
 
 /// Context for computing geodesic distances on a SurfaceMesh using the heat method.
 pub const HeatMethodContext = struct {
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
+    io: std.Io,
+
     surface_mesh: *SurfaceMesh,
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -212,7 +214,8 @@ pub const HeatMethodContext = struct {
     dist: std.ArrayList(eigen.Scalar), // preallocated vector for distance values after solving the Poisson equation
 
     pub fn init(
-        app_ctx: *AppContext,
+        allocator: std.mem.Allocator,
+        io: std.Io,
         sm: *SurfaceMesh,
         halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -241,8 +244,8 @@ pub const HeatMethodContext = struct {
 
         // setup Laplacian matrix Lc
         const nb_edges = sm.nbCells(.edge);
-        var triplets = try std.ArrayList(SparseMatrix.Triplet).initCapacity(app_ctx.allocator, 4 * nb_edges);
-        defer triplets.deinit(app_ctx.allocator);
+        var triplets = try std.ArrayList(SparseMatrix.Triplet).initCapacity(allocator, 4 * nb_edges);
+        defer triplets.deinit(allocator);
         var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
         defer edge_it.deinit();
         while (edge_it.next()) |edge| {
@@ -265,8 +268,8 @@ pub const HeatMethodContext = struct {
 
         // setup mass-matrix A (vertex areas)
         var massCoeffs: std.ArrayList(eigen.Scalar) = .empty;
-        defer massCoeffs.deinit(app_ctx.allocator);
-        try massCoeffs.resize(app_ctx.allocator, nb_vertices);
+        defer massCoeffs.deinit(allocator);
+        try massCoeffs.resize(allocator, nb_vertices);
         vertex_it.reset();
         while (vertex_it.next()) |v| {
             const idx = vertex_index.value(v);
@@ -288,16 +291,17 @@ pub const HeatMethodContext = struct {
         const factorized_H: FactorizedSparseMatrix = .init(H, @intCast(nb_vertices));
 
         var heat_0: std.ArrayList(eigen.Scalar) = .empty;
-        try heat_0.resize(app_ctx.allocator, nb_vertices);
+        try heat_0.resize(allocator, nb_vertices);
         var heat_t: std.ArrayList(eigen.Scalar) = .empty;
-        try heat_t.resize(app_ctx.allocator, nb_vertices);
+        try heat_t.resize(allocator, nb_vertices);
         var div: std.ArrayList(eigen.Scalar) = .empty;
-        try div.resize(app_ctx.allocator, nb_vertices);
+        try div.resize(allocator, nb_vertices);
         var dist: std.ArrayList(eigen.Scalar) = .empty;
-        try dist.resize(app_ctx.allocator, nb_vertices);
+        try dist.resize(allocator, nb_vertices);
 
         return .{
-            .app_ctx = app_ctx,
+            .allocator = allocator,
+            .io = io,
             .surface_mesh = sm,
             .halfedge_cotan_weight = halfedge_cotan_weight,
             .vertex_position = vertex_position,
@@ -321,10 +325,10 @@ pub const HeatMethodContext = struct {
     pub fn deinit(hm_ctx: *HeatMethodContext) void {
         hm_ctx.factorized_L.deinit();
         hm_ctx.factorized_H.deinit();
-        hm_ctx.heat_0.deinit(hm_ctx.app_ctx.allocator);
-        hm_ctx.heat_t.deinit(hm_ctx.app_ctx.allocator);
-        hm_ctx.div.deinit(hm_ctx.app_ctx.allocator);
-        hm_ctx.dist.deinit(hm_ctx.app_ctx.allocator);
+        hm_ctx.heat_0.deinit(hm_ctx.allocator);
+        hm_ctx.heat_t.deinit(hm_ctx.allocator);
+        hm_ctx.div.deinit(hm_ctx.allocator);
+        hm_ctx.dist.deinit(hm_ctx.allocator);
         hm_ctx.surface_mesh.removeData(.vertex, f64, hm_ctx.vertex_heat_grad_div);
         hm_ctx.surface_mesh.removeData(.face, Vec3d, hm_ctx.face_heat_grad);
         hm_ctx.surface_mesh.removeData(.vertex, f64, hm_ctx.vertex_heat);
@@ -358,7 +362,7 @@ pub const HeatMethodContext = struct {
 
         // compute the gradient of heat_t on each face
         try gradient.computeScalarFieldFaceGradients(
-            hm_ctx.app_ctx,
+            hm_ctx.io,
             hm_ctx.surface_mesh,
             hm_ctx.vertex_position,
             hm_ctx.vertex_heat,
@@ -378,7 +382,7 @@ pub const HeatMethodContext = struct {
 
         // compute the divergence of the face gradients at each vertex
         try gradient.computeVectorFieldVertexDivergences(
-            hm_ctx.app_ctx,
+            hm_ctx.io,
             hm_ctx.surface_mesh,
             hm_ctx.halfedge_cotan_weight,
             hm_ctx.vertex_position,

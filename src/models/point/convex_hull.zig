@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
 const PointCloud = @import("../point/PointCloud.zig");
 const SurfaceMesh = @import("../surface/SurfaceMesh.zig");
 
@@ -12,7 +11,7 @@ const geometry_utils = @import("../../geometry/utils.zig");
 /// Given a PointCloud, fills the given SurfaceMesh with the convex hull of the point cloud.
 /// The given SurfaceMesh is supposed to be empty.
 pub fn generateConvexHull(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
     pc: *const PointCloud,
     point_position: PointCloud.CellData(Vec3f),
     sm: *SurfaceMesh,
@@ -129,7 +128,7 @@ pub fn generateConvexHull(
     defer {
         var it = face_points_on_positive_side.data.iterator();
         while (it.next()) |list| {
-            list.deinit(app_ctx.allocator);
+            list.deinit(allocator);
         }
         sm.removeData(.face, std.ArrayList(u32), face_points_on_positive_side);
     }
@@ -156,7 +155,7 @@ pub fn generateConvexHull(
                 point_position.value(p),
             );
             if (dist > 0.0) {
-                try face_points_on_positive_side.valuePtr(f).append(app_ctx.allocator, p);
+                try face_points_on_positive_side.valuePtr(f).append(allocator, p);
                 if (dist > face_most_distant_point_dist.value(f)) {
                     face_most_distant_point_dist.valuePtr(f).* = dist;
                     face_most_distant_point_index.valuePtr(f).* = p;
@@ -168,11 +167,11 @@ pub fn generateConvexHull(
 
     // initialize active faces list (faces with points on their exterior side)
     var active_faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
-    defer active_faces.deinit(app_ctx.allocator);
+    defer active_faces.deinit(allocator);
     face_it.reset();
     while (face_it.next()) |f| {
         if (face_points_on_positive_side.value(f).items.len > 0) {
-            try active_faces.append(app_ctx.allocator, f);
+            try active_faces.append(allocator, f);
         }
     }
 
@@ -183,17 +182,17 @@ pub fn generateConvexHull(
         const active_point = point_position.value(active_point_index);
 
         // create the list of horizon halfedges
-        var horizon_darts, var visible_faces = try buildHorizon(sm, vertex_position, active_point, f, app_ctx.allocator);
-        defer horizon_darts.deinit(app_ctx.allocator);
-        defer visible_faces.deinit(app_ctx.allocator);
+        var horizon_darts, var visible_faces = try buildHorizon(allocator, sm, vertex_position, active_point, f);
+        defer horizon_darts.deinit(allocator);
+        defer visible_faces.deinit(allocator);
 
         // save visible faces points
         var visible_points: std.ArrayList(u32) = .empty;
-        defer visible_points.deinit(app_ctx.allocator);
+        defer visible_points.deinit(allocator);
         for (visible_faces.items) |vf| {
             var vp = face_points_on_positive_side.value(vf);
-            try visible_points.appendSlice(app_ctx.allocator, vp.items);
-            vp.deinit(app_ctx.allocator);
+            try visible_points.appendSlice(allocator, vp.items);
+            vp.deinit(allocator);
         }
 
         // remove faces & fill hole with new umbrella
@@ -227,7 +226,7 @@ pub fn generateConvexHull(
                     point_position.value(p),
                 );
                 if (dist > 0.0) {
-                    try face_points_on_positive_side.valuePtr(uf).append(app_ctx.allocator, p);
+                    try face_points_on_positive_side.valuePtr(uf).append(allocator, p);
                     if (dist > face_most_distant_point_dist.value(uf)) {
                         face_most_distant_point_dist.valuePtr(uf).* = dist;
                         face_most_distant_point_index.valuePtr(uf).* = p;
@@ -242,18 +241,19 @@ pub fn generateConvexHull(
         while (dart_it.next()) |d| {
             const uf: SurfaceMesh.Cell = .{ .face = d };
             if (face_points_on_positive_side.value(uf).items.len > 0) {
-                try active_faces.append(app_ctx.allocator, uf);
+                try active_faces.append(allocator, uf);
             }
         }
     }
 }
 
+// caller owns the returned lists and must deinit them
 fn buildHorizon(
+    allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     point: Vec3f,
     face: SurfaceMesh.Cell,
-    allocator: std.mem.Allocator,
 ) !struct {
     std.ArrayList(SurfaceMesh.Dart), // horizon darts
     std.ArrayList(SurfaceMesh.Cell), // visible faces

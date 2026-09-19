@@ -50,7 +50,9 @@ const DeformationData = struct {
 
         if (use_intrinsic_delaunay and edge_length != null and corner_angle != null) {
             dd.it_ctx = intrinsic_triangulation.ITContext.init(
-                dd.app_ctx,
+                dd.app_ctx.allocator,
+                dd.app_ctx.io,
+                dd.app_ctx.rng.random(),
                 dd.surface_mesh,
                 edge_length.?,
                 corner_angle.?,
@@ -61,7 +63,8 @@ const DeformationData = struct {
         }
 
         dd.arap_ctx = try .init(
-            dd.app_ctx,
+            dd.app_ctx.allocator,
+            dd.app_ctx.io,
             dd.surface_mesh,
             vertex_position,
             halfedge_cotan_weight,
@@ -195,7 +198,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                         pos.* = vec.add3f(pos.*, tr);
                     }
                     if (smd.deformation_mode == .ARAP) {
-                        dd.arap_ctx.?.solve(smd.app_ctx) catch |err| {
+                        dd.arap_ctx.?.solve() catch |err| {
                             std.debug.print("Failed to solve ARAP: {}\n", .{err});
                             break :blk false;
                         };

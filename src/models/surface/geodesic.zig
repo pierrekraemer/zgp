@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const zgp_log = std.log.scoped(.zgp);
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const SurfacePoint = @import("SurfacePoint.zig");
 
@@ -40,7 +39,7 @@ fn raySegmentIntersect(p: Vec2f, dir: Vec2f, a: Vec2f, b: Vec2f) ?struct { f32, 
 /// - the final angle (in the tangent space of the destination SurfacePoint)
 /// - the remaining length (should be zero if the geodesic is fully traced)
 pub fn traceGeodesic(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
     sm: *const SurfaceMesh,
     src_sp: SurfacePoint,
     angle: f32,
@@ -63,7 +62,7 @@ pub fn traceGeodesic(
     var remaining_length = length;
 
     if (trace) |t| {
-        try t.append(app_ctx.allocator, current_sp);
+        try t.append(allocator, current_sp);
     }
 
     while (remaining_length > geometry_utils.epsilon) {
@@ -165,7 +164,7 @@ pub fn traceGeodesic(
                         },
                     };
                     if (trace) |t| {
-                        try t.append(app_ctx.allocator, current_sp);
+                        try t.append(allocator, current_sp);
                     }
                     continue; // will stop the loop since remaining_length is now 0
                 } else {
@@ -185,7 +184,7 @@ pub fn traceGeodesic(
                     };
                     if (trace) |t| {
                         // an edge SurfacePoint is added to the trace
-                        try t.append(app_ctx.allocator, .{
+                        try t.append(allocator, .{
                             .surface_mesh = sm,
                             .type = .{
                                 .edge = .{

@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
 const PointCloud = @import("PointCloud.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -36,7 +35,7 @@ pub fn pointSQEM(
 /// Compute the SQEMs of all points of the given PointCloud
 /// and store them in the given point_sqem data.
 pub fn computePointSQEMs(
-    app_ctx: *AppContext,
+    io: std.Io,
     pc: *PointCloud,
     point_position: PointCloud.CellData(Vec3f),
     point_normal: PointCloud.CellData(Vec3f),
@@ -69,7 +68,7 @@ pub fn computePointSQEMs(
 
     var pctr: PointCloud.ParallelPointTaskRunner = try .init(pc);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .point_position = point_position,
         .point_normal = point_normal,
         // .point_area = point_area,

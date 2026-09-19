@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
 const PointCloud = @import("PointCloud.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -11,7 +10,7 @@ const geometry_utils = @import("../../geometry/utils.zig");
 /// Compute the tangent bases of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_tangent_basis data.
 pub fn computePointTangentBases(
-    app_ctx: *AppContext,
+    io: std.Io,
     pc: *PointCloud,
     point_normal: PointCloud.CellData(Vec3f),
     point_tangent_basis: PointCloud.CellData([2]Vec3f),
@@ -30,7 +29,7 @@ pub fn computePointTangentBases(
 
     var pctr: PointCloud.ParallelPointTaskRunner = try .init(pc);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .point_cloud = pc,
         .point_normal = point_normal,
         .point_tangent_basis = point_tangent_basis,

@@ -10,16 +10,16 @@ const Vec3f = vec.Vec3f;
 /// Triangulate the polygonal faces of the given SurfaceMesh.
 /// TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan.
 pub fn triangulateFaces(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
 ) !void {
-    var face_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(app_ctx.allocator, sm.nbCells(.face));
-    defer face_buffer.deinit(app_ctx.allocator);
+    var face_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(allocator, sm.nbCells(.face));
+    defer face_buffer.deinit(allocator);
     var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
     defer face_it.deinit();
     while (face_it.next()) |f| {
         if (sm.codegree(f) > 3) {
-            try face_buffer.append(app_ctx.allocator, f);
+            try face_buffer.append(allocator, f);
         }
     }
     for (face_buffer.items) |f| {
@@ -39,16 +39,16 @@ pub fn triangulateFaces(
 /// Cut all edges of the given SurfaceMesh.
 /// The positions of the new vertices is the edge midpoints.
 pub fn cutAllEdges(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
-    var edge_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(app_ctx.allocator, sm.nbCells(.edge));
-    defer edge_buffer.deinit(app_ctx.allocator);
+    var edge_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(allocator, sm.nbCells(.edge));
+    defer edge_buffer.deinit(allocator);
     var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
     defer edge_it.deinit();
     while (edge_it.next()) |e| {
-        try edge_buffer.append(app_ctx.allocator, e);
+        try edge_buffer.append(allocator, e);
     }
     for (edge_buffer.items) |e| {
         const new_pos = vec.mulScalar3f(

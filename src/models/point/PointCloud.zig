@@ -124,7 +124,7 @@ pub const ParallelPointTaskRunner = struct {
     }
 
     // The `task` must expose a `run(self: *Self, point: Point) void` function
-    pub fn run(pptr: *ParallelPointTaskRunner, app_ctx: *AppContext, task: anytype) !void {
+    pub fn run(pptr: *ParallelPointTaskRunner, io: std.Io, task: anytype) !void {
         var current_buf_group: usize = 0;
         var current_buf_index: usize = 0;
         var current_index_in_buffer: usize = 0;
@@ -135,7 +135,7 @@ pub const ParallelPointTaskRunner = struct {
             // if the current buffer is full, run the task on it and switch to the next buffer of the current buffer group
             if (current_index_in_buffer == pptr.buffers[current_buf_group][current_buf_index].data.len) {
                 pptr.wg[current_buf_group].async(
-                    app_ctx.io,
+                    io,
                     runTaskOnBuffer(@TypeOf(task)),
                     .{ &task, pptr.buffers[current_buf_group][current_buf_index].data },
                 );
@@ -146,20 +146,20 @@ pub const ParallelPointTaskRunner = struct {
             if (current_buf_index == pptr.buffers[current_buf_group].len) {
                 current_buf_group = (current_buf_group + 1) % 2;
                 // threads working on this buffer group are waited on before we can reuse the buffers of this group
-                try pptr.wg[current_buf_group].await(app_ctx.io);
+                try pptr.wg[current_buf_group].await(io);
                 current_buf_index = 0;
             }
         }
         // run the task on the last potentially partially filled buffer and wait for the threads to finish
         if (current_index_in_buffer > 0) {
             pptr.wg[current_buf_group].async(
-                app_ctx.io,
+                io,
                 runTaskOnBuffer(@TypeOf(task)),
                 .{ &task, pptr.buffers[current_buf_group][current_buf_index].data[0..current_index_in_buffer] },
             );
         }
-        try pptr.wg[0].await(app_ctx.io);
-        try pptr.wg[1].await(app_ctx.io);
+        try pptr.wg[0].await(io);
+        try pptr.wg[1].await(io);
     }
 };
 

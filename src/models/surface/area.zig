@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -37,7 +36,7 @@ pub fn faceArea(
 /// Compute the areas of all faces of the given SurfaceMesh
 /// and store them in the given face_area data.
 pub fn computeFaceAreas(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
@@ -60,7 +59,7 @@ pub fn computeFaceAreas(
 
     var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .face);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .face_area = face_area,
@@ -68,7 +67,6 @@ pub fn computeFaceAreas(
 
     // single-threaded version for the record
 
-    // _ = app_ctx;
     // var it: SurfaceMesh.CellIterator = try .init(sm, .face);
     // defer it.deinit();
     // while (it.next()) |face| {
@@ -99,7 +97,7 @@ pub fn faceAreaIntrinsic(
 /// and store them in the given face_area data.
 /// This version uses intrinsic geometry (edge lengths) instead of extrinsic vertex positions.
 pub fn computeFaceAreasIntrinsic(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
     edge_length: SurfaceMesh.CellData(.edge, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
@@ -122,7 +120,7 @@ pub fn computeFaceAreasIntrinsic(
 
     var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .face);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .edge_length = edge_length,
         .face_area = face_area,
@@ -155,7 +153,6 @@ pub fn vertexArea(
 /// Each face f contributes 1/codegree(f) of its area to the area of its incident vertices.
 /// Executed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance)
 pub fn computeVertexAreas(
-    _: *AppContext,
     sm: *SurfaceMesh,
     face_area: SurfaceMesh.CellData(.face, f32),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),

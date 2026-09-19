@@ -4,7 +4,6 @@ const zgp_log = std.log.scoped(.zgp);
 
 const PriorityQueue = @import("../../utils/PriorityQueue.zig").PriorityQueue;
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const SurfacePoint = @import("SurfacePoint.zig");
 const IncidenceGraph = @import("../incidenceGraph/IncidenceGraph.zig");
@@ -21,7 +20,8 @@ const distance = @import("distance.zig");
 const geodesic = @import("geodesic.zig");
 
 pub const ITContext = struct {
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
+    io: std.Io,
 
     // the extrinsic SurfaceMesh is the triangular mesh on which the intrinsic triangulation is built
     // it is considered as read-only, and its geometry is not modified by the intrinsic triangulation module
@@ -61,17 +61,19 @@ pub const ITContext = struct {
     intrinsic_edge_trace: SurfaceMesh.CellData(.edge, std.ArrayList(SurfacePoint)) = undefined,
 
     pub fn init(
-        app_ctx: *AppContext,
+        allocator: std.mem.Allocator,
+        io: std.Io,
+        random: std.Random,
         extrinsic_surface_mesh: *SurfaceMesh,
         extrinsic_edge_length: SurfaceMesh.CellData(.edge, f32),
         extrinsic_corner_angle: SurfaceMesh.CellData(.corner, f32),
     ) !ITContext {
         // the 2 following data are created on the extrinsic SurfaceMesh
         // as multiple ITContext can be created for the same extrinsic SurfaceMesh, unique names must be generated for each ITContext
-        const extrinsic_vertex_angle_sum = try extrinsic_surface_mesh.addDataWithUniqueRandomName(&app_ctx.rng, .vertex, f32, "angle_sum");
-        const extrinsic_vertex_intrinsic_vertex = try extrinsic_surface_mesh.addDataWithUniqueRandomName(&app_ctx.rng, .vertex, SurfaceMesh.Cell, "intrinsic_vertex");
+        const extrinsic_vertex_angle_sum = try extrinsic_surface_mesh.addDataWithUniqueRandomName(random, .vertex, f32, "angle_sum");
+        const extrinsic_vertex_intrinsic_vertex = try extrinsic_surface_mesh.addDataWithUniqueRandomName(random, .vertex, SurfaceMesh.Cell, "intrinsic_vertex");
 
-        const intrinsic_surface_mesh = try extrinsic_surface_mesh.cloneWithoutCellData(app_ctx.allocator);
+        const intrinsic_surface_mesh = try extrinsic_surface_mesh.cloneWithoutCellData(allocator);
         const intrinsic_edge_length = try intrinsic_surface_mesh.addData(.edge, f32, "length");
         const intrinsic_corner_angle = try intrinsic_surface_mesh.addData(.corner, f32, "corner_angle");
         const intrinsic_face_area = try intrinsic_surface_mesh.addData(.face, f32, "area");
@@ -85,11 +87,11 @@ pub const ITContext = struct {
         // WARNING: direct raw data copy is only possible because the indices coincide after cloning
         intrinsic_edge_length.data.copyFrom(extrinsic_edge_length.data);
         // compute intrinsic corner angles (could be copied from extrinsic corner angles)
-        try angle.computeCornerAnglesIntrinsic(app_ctx, intrinsic_surface_mesh, intrinsic_edge_length, intrinsic_corner_angle);
+        try angle.computeCornerAnglesIntrinsic(io, intrinsic_surface_mesh, intrinsic_edge_length, intrinsic_corner_angle);
         // compute intrinsic face areas
-        try area.computeFaceAreasIntrinsic(app_ctx, intrinsic_surface_mesh, intrinsic_edge_length, intrinsic_face_area);
+        try area.computeFaceAreasIntrinsic(io, intrinsic_surface_mesh, intrinsic_edge_length, intrinsic_face_area);
         // compute intrinsic halfedge cotan weights
-        try laplacian.computeHalfedgeCotanWeightsIntrinsic(app_ctx, intrinsic_surface_mesh, intrinsic_edge_length, intrinsic_face_area, intrinsic_halfedge_cotan_weight);
+        try laplacian.computeHalfedgeCotanWeightsIntrinsic(io, intrinsic_surface_mesh, intrinsic_edge_length, intrinsic_face_area, intrinsic_halfedge_cotan_weight);
 
         // initialize extrinsic to intrinsic vertex mapping & intrinsic vertex extrinsic SurfacePoint (all are initially of vertex type, i.e. sit on extrinsic vertices)
         // initialize intrinsic halfedge extrinsic SurfacePoint angle (expressed in the underlying SurfacePoint tangent space)
@@ -124,7 +126,8 @@ pub const ITContext = struct {
         }
 
         return .{
-            .app_ctx = app_ctx,
+            .allocator = allocator,
+            .io = io,
 
             .extrinsic_surface_mesh = extrinsic_surface_mesh,
             .extrinsic_edge_length = extrinsic_edge_length,
@@ -150,12 +153,12 @@ pub const ITContext = struct {
             return;
         };
         while (edge_it.next()) |e| {
-            it_ctx.intrinsic_edge_trace.valuePtr(e).deinit(it_ctx.app_ctx.allocator);
+            it_ctx.intrinsic_edge_trace.valuePtr(e).deinit(it_ctx.allocator);
         }
         edge_it.deinit(); // this deinit is not deferred because it must be called before the intrinsic_surface_mesh is deinit and destroyed
 
         it_ctx.intrinsic_surface_mesh.deinit();
-        it_ctx.app_ctx.allocator.destroy(it_ctx.intrinsic_surface_mesh);
+        it_ctx.allocator.destroy(it_ctx.intrinsic_surface_mesh);
 
         it_ctx.extrinsic_surface_mesh.removeData(.vertex, f32, it_ctx.extrinsic_vertex_angle_sum);
         it_ctx.extrinsic_surface_mesh.removeData(.vertex, SurfaceMesh.Cell, it_ctx.extrinsic_vertex_intrinsic_vertex);
@@ -253,8 +256,8 @@ pub const ITContext = struct {
 
             // original edges trace trivially
             if (it_ctx.intrinsic_edge_is_original.value(e)) {
-                try it_ctx.intrinsic_edge_trace.valuePtr(e).append(it_ctx.app_ctx.allocator, src_sp);
-                try it_ctx.intrinsic_edge_trace.valuePtr(e).append(it_ctx.app_ctx.allocator, dst_sp);
+                try it_ctx.intrinsic_edge_trace.valuePtr(e).append(it_ctx.allocator, src_sp);
+                try it_ctx.intrinsic_edge_trace.valuePtr(e).append(it_ctx.allocator, dst_sp);
 
                 // add the vertices and edge to the common subdivision incidence graph
                 const p1 = src_sp.readData(Vec3f, .vertex, extrinsic_vertex_position);
@@ -270,7 +273,7 @@ pub const ITContext = struct {
 
             // trace the intrinsic edge on the extrinsic mesh
             _ = try geodesic.traceGeodesic(
-                it_ctx.app_ctx,
+                it_ctx.allocator,
                 it_ctx.extrinsic_surface_mesh,
                 src_sp,
                 it_ctx.intrinsic_halfedge_extrinsic_sp_angle.value(.{ .halfedge = d }),
@@ -305,12 +308,12 @@ pub const ITContext = struct {
     // ==================================
 
     pub fn flipToDelaunay(it_ctx: *const ITContext) !void {
-        var edges_queue: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(it_ctx.app_ctx.allocator, it_ctx.intrinsic_surface_mesh.nbCells(.edge));
-        defer edges_queue.deinit(it_ctx.app_ctx.allocator);
+        var edges_queue: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(it_ctx.allocator, it_ctx.intrinsic_surface_mesh.nbCells(.edge));
+        defer edges_queue.deinit(it_ctx.allocator);
         var edge_it: SurfaceMesh.CellIterator = try .init(it_ctx.intrinsic_surface_mesh, .edge);
         defer edge_it.deinit();
         while (edge_it.next()) |e| {
-            try edges_queue.append(it_ctx.app_ctx.allocator, e); // all edges are initially added to the queue
+            try edges_queue.append(it_ctx.allocator, e); // all edges are initially added to the queue
         }
         try flipEdgesToDelaunay(it_ctx, &edges_queue, null);
     }
@@ -371,7 +374,7 @@ pub const ITContext = struct {
             };
             for (edges) |edge| {
                 if (!edge_in_queue.isMarked(edge)) {
-                    try edges_queue.append(it_ctx.app_ctx.allocator, edge);
+                    try edges_queue.append(it_ctx.allocator, edge);
                     edge_in_queue.mark(edge);
                 }
             }
@@ -434,7 +437,7 @@ pub const ITContext = struct {
                 // the min angle wedge should contain at least one other edge between the incoming and outgoing halfedges of the joint (otherwise the joint is not flippable)
                 // TODO: should also check that no edge in the min angle wedge is part of the path, otherwise the joint is not flippable
                 const flippable = d != it_ctx.intrinsic_surface_mesh.phi1(prev_d);
-                try queue.push(it_ctx.app_ctx.allocator, .{
+                try queue.push(it_ctx.allocator, .{
                     .dart = d,
                     .prev_dart = prev_d,
                     .next_dart = next_d,
@@ -444,7 +447,7 @@ pub const ITContext = struct {
                 });
             } else if (right_angle < left_angle and right_angle < std.math.pi - geometry_utils.epsilon) {
                 const flippable = d != it_ctx.intrinsic_surface_mesh.phi2(it_ctx.intrinsic_surface_mesh.phi_1(it_ctx.intrinsic_surface_mesh.phi2(prev_d)));
-                try queue.push(it_ctx.app_ctx.allocator, .{
+                try queue.push(it_ctx.allocator, .{
                     .dart = d,
                     .prev_dart = prev_d,
                     .next_dart = next_d,
@@ -453,7 +456,7 @@ pub const ITContext = struct {
                     .flippable = flippable,
                 });
             } else {
-                try queue.push(it_ctx.app_ctx.allocator, .{
+                try queue.push(it_ctx.allocator, .{
                     .dart = d,
                     .prev_dart = prev_d,
                     .next_dart = next_d,
@@ -488,7 +491,7 @@ pub const ITContext = struct {
 
         pub fn deinit(flipout_ctx: *FlipOutShortestGeodesicContext) void {
             flipout_ctx.sep_ctx.deinit();
-            flipout_ctx.joint_queue.deinit(flipout_ctx.it_ctx.app_ctx.allocator);
+            flipout_ctx.joint_queue.deinit(flipout_ctx.it_ctx.allocator);
             flipout_ctx.it_ctx.intrinsic_surface_mesh.removeData(.halfedge, ?usize, flipout_ctx.joint_queue_index);
         }
 
@@ -511,11 +514,11 @@ pub const ITContext = struct {
 
             // compute the shortest edge path between the two intrinsic vertices
             var path = try flipout_ctx.sep_ctx.shortestEdgePathBetweenVertices(
-                flipout_ctx.it_ctx.app_ctx.allocator,
+                flipout_ctx.it_ctx.allocator,
                 int_v_start,
                 int_v_end,
             );
-            defer path.deinit(it_ctx.app_ctx.allocator);
+            defer path.deinit(it_ctx.allocator);
             if (path.items.len == 0) {
                 return error.NoPathFoundBetweenVertices;
             }
@@ -523,7 +526,7 @@ pub const ITContext = struct {
                 // the two vertices are connected by a single edge, so the path cannot be shortened
                 if (new_path) |p| {
                     p.clearRetainingCapacity();
-                    try p.append(it_ctx.app_ctx.allocator, path.items[0]);
+                    try p.append(it_ctx.allocator, path.items[0]);
                 }
                 return;
             }
@@ -594,20 +597,20 @@ pub const ITContext = struct {
                     }
                     it_ctx.flipEdge(.{ .edge = cw_cur_dart });
                     if (performed_flips) |p| {
-                        try p.append(it_ctx.app_ctx.allocator, .{ .edge = cw_cur_dart });
+                        try p.append(it_ctx.allocator, .{ .edge = cw_cur_dart });
                     }
                     cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi_1(cw_cur_dart);
                 }
 
                 // build the new subpath
                 var new_subpath: std.ArrayList(SurfaceMesh.Dart) = .empty;
-                defer new_subpath.deinit(it_ctx.app_ctx.allocator);
+                defer new_subpath.deinit(it_ctx.allocator);
                 cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(cw_prev_dart);
                 while (true) : ({
                     if (cw_cur_dart == cw_dart) break;
                     cw_cur_dart = it_ctx.intrinsic_surface_mesh.phi1(it_ctx.intrinsic_surface_mesh.phi2(cw_cur_dart));
                 }) {
-                    try new_subpath.append(it_ctx.app_ctx.allocator, it_ctx.intrinsic_surface_mesh.phi2(it_ctx.intrinsic_surface_mesh.phi1(cw_cur_dart)));
+                    try new_subpath.append(it_ctx.allocator, it_ctx.intrinsic_surface_mesh.phi2(it_ctx.intrinsic_surface_mesh.phi1(cw_cur_dart)));
                 }
                 // reverse the new subpath if the min angle wedge was on the right side of the path (so that it can be inserted in the correct orientation)
                 if (joint.min_angle_side == .right) {
@@ -670,10 +673,10 @@ pub const ITContext = struct {
 
             if (new_path) |p| {
                 p.clearRetainingCapacity();
-                try p.append(it_ctx.app_ctx.allocator, first_path_dart);
+                try p.append(it_ctx.allocator, first_path_dart);
                 var cur_dart: ?SurfaceMesh.Dart = first_joint_dart;
                 while (cur_dart) |d| {
-                    try p.append(it_ctx.app_ctx.allocator, d);
+                    try p.append(it_ctx.allocator, d);
                     const cur_joint_index = flipout_ctx.joint_queue_index.value(.{ .halfedge = d });
                     const joint = flipout_ctx.joint_queue.items[cur_joint_index.?];
                     cur_dart = joint.next_dart;
@@ -708,12 +711,12 @@ pub const ITContext = struct {
     }
 
     pub fn refineDelaunay(it_ctx: *ITContext, angle_threshold: f32) !void {
-        var flip_edge_queue: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(it_ctx.app_ctx.allocator, it_ctx.intrinsic_surface_mesh.nbCells(.edge));
-        defer flip_edge_queue.deinit(it_ctx.app_ctx.allocator);
+        var flip_edge_queue: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(it_ctx.allocator, it_ctx.intrinsic_surface_mesh.nbCells(.edge));
+        defer flip_edge_queue.deinit(it_ctx.allocator);
         var edge_it: SurfaceMesh.CellIterator = try .init(it_ctx.intrinsic_surface_mesh, .edge);
         defer edge_it.deinit();
         while (edge_it.next()) |e| {
-            try flip_edge_queue.append(it_ctx.app_ctx.allocator, e);
+            try flip_edge_queue.append(it_ctx.allocator, e);
         }
 
         // check that no triangle has near zero area
@@ -764,7 +767,7 @@ pub const ITContext = struct {
             .surface_mesh = it_ctx.intrinsic_surface_mesh,
             .face_queue_index = refine_triangle_pq_index,
         });
-        defer refine_triangle_pq.deinit(it_ctx.app_ctx.allocator);
+        defer refine_triangle_pq.deinit(it_ctx.allocator);
 
         const rho_threshold = 1.0 / (2.0 * std.math.sin(angle_threshold));
         const rho_threshold_sq = rho_threshold * rho_threshold;
@@ -774,7 +777,7 @@ pub const ITContext = struct {
         while (face_it.next()) |f| {
             const rho_sq = it_ctx.triangleCircumradiusToShortestEdgeRatioSquared(f);
             if (std.math.isFinite(rho_sq) and rho_sq > rho_threshold_sq) {
-                try refine_triangle_pq.push(it_ctx.app_ctx.allocator, .{ .face = f, .rho_sq = rho_sq });
+                try refine_triangle_pq.push(it_ctx.allocator, .{ .face = f, .rho_sq = rho_sq });
             }
         }
 
@@ -813,13 +816,13 @@ pub const ITContext = struct {
                 assert(rc.pq_index.value(f1) == null);
                 const rho_sq_f1 = rc.it_ctx.triangleCircumradiusToShortestEdgeRatioSquared(f1);
                 if (std.math.isFinite(rho_sq_f1) and rho_sq_f1 > rc.rho_threshold_sq) {
-                    rc.pq.push(rc.it_ctx.app_ctx.allocator, .{ .face = f1, .rho_sq = rho_sq_f1 }) catch {};
+                    rc.pq.push(rc.it_ctx.allocator, .{ .face = f1, .rho_sq = rho_sq_f1 }) catch {};
                 }
                 const f2: SurfaceMesh.Cell = .{ .face = rc.it_ctx.intrinsic_surface_mesh.phi2(d) };
                 assert(rc.pq_index.value(f2) == null);
                 const rho_sq_f2 = rc.it_ctx.triangleCircumradiusToShortestEdgeRatioSquared(f2);
                 if (std.math.isFinite(rho_sq_f2) and rho_sq_f2 > rc.rho_threshold_sq) {
-                    rc.pq.push(rc.it_ctx.app_ctx.allocator, .{ .face = f2, .rho_sq = rho_sq_f2 }) catch {};
+                    rc.pq.push(rc.it_ctx.allocator, .{ .face = f2, .rho_sq = rho_sq_f2 }) catch {};
                 }
             }
         };
@@ -860,10 +863,10 @@ pub const ITContext = struct {
                 const rho_sq = it_ctx.triangleCircumradiusToShortestEdgeRatioSquared(new_tri);
                 // add the new triangle to the priority queue if it meets the refinement criterion
                 if (std.math.isFinite(rho_sq) and rho_sq > rho_threshold_sq) {
-                    try refine_triangle_pq.push(it_ctx.app_ctx.allocator, .{ .face = new_tri, .rho_sq = rho_sq });
+                    try refine_triangle_pq.push(it_ctx.allocator, .{ .face = new_tri, .rho_sq = rho_sq });
                 }
                 // add the edge of the new triangle opposite to the central vertex to the edge flip queue
-                try flip_edge_queue.append(it_ctx.app_ctx.allocator, .{ .edge = it_ctx.intrinsic_surface_mesh.phi1(cv_d) });
+                try flip_edge_queue.append(it_ctx.allocator, .{ .edge = it_ctx.intrinsic_surface_mesh.phi1(cv_d) });
             }
 
             // flip edges to Delaunay after refining the triangle
@@ -925,7 +928,7 @@ pub const ITContext = struct {
 
         // trace on the intrinsic mesh from the barycenter of the triangle to the circumcenter
         const circumcenter_sp_int, _, _ = try geodesic.traceGeodesic(
-            it_ctx.app_ctx,
+            it_ctx.allocator,
             it_ctx.intrinsic_surface_mesh,
             .{
                 .surface_mesh = it_ctx.intrinsic_surface_mesh,
@@ -1054,7 +1057,7 @@ pub const ITContext = struct {
 
         // trace the first new intrinsic edge on the extrinsic mesh
         const circumcenter_sp_ext, const last_entry_angle, _ = try geodesic.traceGeodesic(
-            it_ctx.app_ctx,
+            it_ctx.allocator,
             it_ctx.extrinsic_surface_mesh,
             dst_sp0,
             dst_dir_angle,

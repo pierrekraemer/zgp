@@ -3,7 +3,6 @@ const assert = std.debug.assert;
 
 const PriorityQueue = @import("../../utils/PriorityQueue.zig").PriorityQueue;
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -57,16 +56,17 @@ fn edgeCollapsePositionAndQuadric(
 /// Decimate the given SurfaceMesh using the QEM edge collapse approach.
 /// (see qem.zig for details on the quadrics computation)
 pub fn decimateQEM(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
     nb_vertices_to_remove: u32,
 ) !void {
-    try subdivision.triangulateFaces(app_ctx, sm);
+    try subdivision.triangulateFaces(allocator, sm);
 
     // Priority queue type for edge collapse, ordered by the ascending cost of collapsing the edge
     const EdgeQueueContext = struct {
+        allocator: std.mem.Allocator,
         surface_mesh: *const SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
@@ -88,7 +88,7 @@ pub fn decimateQEM(
     };
     const EdgeQueue = PriorityQueue(EdgeInfo, EdgeQueueContext, EdgeInfo.cmp, EdgeInfo.setEdgeIndexInQueue);
     const EdgeQueueUtil = struct {
-        fn addEdgeToQueue(allocator: std.mem.Allocator, queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
+        fn addEdgeToQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
             assert(edge.cellType() == .edge);
             const p, const q = edgeCollapsePositionAndQuadric(
                 queue.context.surface_mesh,
@@ -98,7 +98,7 @@ pub fn decimateQEM(
             );
             const p_hom: Vec4f = .{ p[0], p[1], p[2], 1.0 };
             // cost = p^T * Q * p
-            try queue.push(allocator, .{
+            try queue.push(queue.context.allocator, .{
                 .edge = edge,
                 .cost = vec.dot4f(p_hom, mat.mulVec4f(q, p_hom)),
             });
@@ -110,11 +110,11 @@ pub fn decimateQEM(
             }
             queue.context.edge_queue_index.valuePtr(edge).* = null;
         }
-        fn updateEdgeInQueue(allocator: std.mem.Allocator, queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
+        fn updateEdgeInQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) !void {
             assert(edge.cellType() == .edge);
             removeEdgeFromQueue(queue, edge);
             if (queue.context.surface_mesh.canCollapseEdge(edge)) {
-                try addEdgeToQueue(allocator, queue, edge);
+                try addEdgeToQueue(queue, edge);
             }
         }
     };
@@ -124,19 +124,20 @@ pub fn decimateQEM(
     edge_queue_index.data.fill(null);
 
     var queue: EdgeQueue = .initContext(.{
+        .allocator = allocator,
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_qem = vertex_qem,
         .edge_queue_index = edge_queue_index,
     });
-    defer queue.deinit(app_ctx.allocator);
+    defer queue.deinit(allocator);
 
     // initialize the queue with all topologically collapsible edges
     var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
     defer edge_it.deinit();
     while (edge_it.next()) |edge| {
         if (sm.canCollapseEdge(edge)) {
-            try EdgeQueueUtil.addEdgeToQueue(app_ctx.allocator, &queue, edge);
+            try EdgeQueueUtil.addEdgeToQueue(&queue, edge);
         }
     }
 
@@ -173,14 +174,14 @@ pub fn decimateQEM(
 
         var dart_it = sm.cellDartIterator(v); // v.dart() == d_12
         while (dart_it.next()) |dv| {
-            try EdgeQueueUtil.updateEdgeInQueue(app_ctx.allocator, &queue, .{ .edge = dv });
-            try EdgeQueueUtil.updateEdgeInQueue(app_ctx.allocator, &queue, .{ .edge = sm.phi1(dv) });
+            try EdgeQueueUtil.updateEdgeInQueue(&queue, .{ .edge = dv });
+            try EdgeQueueUtil.updateEdgeInQueue(&queue, .{ .edge = sm.phi1(dv) });
             if (dv == d_12 or dv == dd_12) {
                 var d_it = sm.phi1(sm.phi2(sm.phi1(dv)));
                 const d_stop = sm.phi2(dv);
                 while (d_it != d_stop) : (d_it = sm.phi1(sm.phi2(d_it))) {
-                    try EdgeQueueUtil.updateEdgeInQueue(app_ctx.allocator, &queue, .{ .edge = d_it });
-                    try EdgeQueueUtil.updateEdgeInQueue(app_ctx.allocator, &queue, .{ .edge = sm.phi1(d_it) });
+                    try EdgeQueueUtil.updateEdgeInQueue(&queue, .{ .edge = d_it });
+                    try EdgeQueueUtil.updateEdgeInQueue(&queue, .{ .edge = sm.phi1(d_it) });
                 }
             }
         }

@@ -1,6 +1,5 @@
 const std = @import("std");
 
-const AppContext = @import("../../main.zig").AppContext;
 const PointCloud = @import("PointCloud.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -53,7 +52,7 @@ pub fn shrinkingBall(
 
 /// Compute the shrinking balls for all points of the given PointCloud
 pub fn computePointShrinkingBalls(
-    app_ctx: *AppContext,
+    io: std.Io,
     pc: *PointCloud,
     pc_kdtree: *kdtree.PointsKDTree,
     point_position: PointCloud.CellData(Vec3f),
@@ -81,7 +80,7 @@ pub fn computePointShrinkingBalls(
 
     var pctr: PointCloud.ParallelPointTaskRunner = try .init(pc);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .point_cloud = pc,
         .pc_kdtree = pc_kdtree,
         .point_position = point_position,

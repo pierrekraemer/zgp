@@ -1,6 +1,5 @@
 const std = @import("std");
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -55,7 +54,7 @@ pub fn shrinkingBall(
 
 /// Compute the shrinking balls for all vertices of the given SurfaceMesh
 pub fn computeVertexShrinkingBalls(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
     sm_bvh: *bvh.TrianglesBVH,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
@@ -83,7 +82,7 @@ pub fn computeVertexShrinkingBalls(
 
     var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .sm_bvh = sm_bvh,
         .vertex_position = vertex_position,

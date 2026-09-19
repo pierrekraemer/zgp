@@ -137,7 +137,8 @@ const ParameterizationData = struct {
         const t = std.Io.Timestamp.now(pd.app_ctx.io, .real);
 
         try sampling.poissonDiskSamplePointsOnSurface(
-            pd.app_ctx,
+            pd.app_ctx.allocator,
+            pd.app_ctx.rng.random(),
             pd.surface_mesh,
             sm_bvh,
             vertex_position,
@@ -297,7 +298,7 @@ const ParameterizationData = struct {
         const it_closest_source_vertex = try pd.it_ctx.?.intrinsic_surface_mesh.addData(.vertex, ?SurfaceMesh.Cell, "it_closest_source_vertex");
         defer pd.it_ctx.?.intrinsic_surface_mesh.removeData(.vertex, ?SurfaceMesh.Cell, it_closest_source_vertex);
         try distance.multiSourceDijkstraDistancesAndSources(
-            pd.app_ctx,
+            pd.app_ctx.allocator,
             pd.it_ctx.?.intrinsic_surface_mesh,
             it_source_vertices.items,
             pd.it_ctx.?.intrinsic_edge_length,
@@ -981,7 +982,9 @@ pub fn rightPanel(m: *Module) void {
             // otherwise, the intrinsic triangulation should be re-initialized and the Delaunay flip should be performed again
             if (pd.it_ctx == null) {
                 pd.it_ctx = intrinsic_triangulation.ITContext.init(
-                    smp.app_ctx,
+                    smp.app_ctx.allocator,
+                    smp.app_ctx.io,
+                    smp.app_ctx.rng.random(),
                     sm,
                     info.std_datas.edge_length.?,
                     info.std_datas.corner_angle.?,

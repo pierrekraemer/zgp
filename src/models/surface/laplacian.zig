@@ -1,8 +1,8 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
+
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
@@ -35,7 +35,7 @@ pub fn halfedgeCotanWeight(
 /// Compute the cotan weights of all halfedges of the given SurfaceMesh
 /// and store them in the given halfedge_cotan_weight data.
 pub fn computeHalfedgeCotanWeights(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
@@ -58,7 +58,7 @@ pub fn computeHalfedgeCotanWeights(
 
     var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .halfedge);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .halfedge_cotan_weight = halfedge_cotan_weight,
@@ -94,7 +94,7 @@ pub fn halfedgeCotanWeightIntrinsic(
 /// and store them in the given halfedge_cotan_weight data.
 /// This version uses intrinsic geometry (edge lengths and face areas) instead of extrinsic vertex positions.
 pub fn computeHalfedgeCotanWeightsIntrinsic(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
     edge_length: SurfaceMesh.CellData(.edge, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
@@ -120,7 +120,7 @@ pub fn computeHalfedgeCotanWeightsIntrinsic(
 
     var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .halfedge);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .edge_length = edge_length,
         .face_area = face_area,

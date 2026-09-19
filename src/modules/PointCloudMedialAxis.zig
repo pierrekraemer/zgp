@@ -135,7 +135,7 @@ const MedialAxisData = struct {
         }
 
         try tangent_basis.computePointTangentBases(
-            mad.app_ctx,
+            mad.app_ctx.io,
             mad.point_cloud,
             mad.point_normal,
             mad.point_tangent_basis,
@@ -171,7 +171,7 @@ const MedialAxisData = struct {
         // TODO?
 
         try sqem.computePointSQEMs(
-            mad.app_ctx,
+            mad.app_ctx.io,
             mad.point_cloud,
             mad.point_position,
             mad.point_normal,
@@ -205,7 +205,7 @@ const MedialAxisData = struct {
 
         // compute points shrinking balls
         try medial_axis.computePointShrinkingBalls(
-            mad.app_ctx,
+            mad.app_ctx.io,
             mad.point_cloud,
             mad.point_cloud_kdtree,
             mad.point_position,
@@ -269,7 +269,7 @@ const MedialAxisData = struct {
         line_quadric_epsilon: f32,
     ) !void {
         try sqem.computePointSQEMs(
-            mad.app_ctx,
+            mad.app_ctx.io,
             mad.point_cloud,
             mad.point_position,
             mad.point_normal,

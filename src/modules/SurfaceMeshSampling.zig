@@ -83,7 +83,7 @@ const SamplingData = struct {
 
         var pctr: PointCloud.ParallelPointTaskRunner = try .init(sd.samples);
         defer pctr.deinit();
-        try pctr.run(sd.app_ctx, Task{
+        try pctr.run(sd.app_ctx.io, Task{
             .surface_point = sd.sample_surface_point,
             .src_data = src_data,
             .dst_data = dst_data,
@@ -170,7 +170,7 @@ fn uniformSampling(
 
     const t = std.Io.Timestamp.now(sms.app_ctx.io, .real);
     try sampling.uniformlySamplePointsOnSurface(
-        sms.app_ctx,
+        sms.app_ctx.rng.random(),
         sm,
         vertex_position,
         face_area,
@@ -202,7 +202,8 @@ fn poissonDiskSampling(
 
     const t = std.Io.Timestamp.now(sms.app_ctx.io, .real);
     try sampling.poissonDiskSamplePointsOnSurface(
-        sms.app_ctx,
+        sms.app_ctx.allocator,
+        sms.app_ctx.rng.random(),
         sm,
         sm_bvh,
         vertex_position,

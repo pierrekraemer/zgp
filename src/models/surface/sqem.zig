@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -42,7 +41,7 @@ pub fn vertexSQEM(
 /// Compute the SQEMs of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_sqem data.
 pub fn computeVertexSQEMs(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
@@ -80,7 +79,7 @@ pub fn computeVertexSQEMs(
 
     var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_area = vertex_area,

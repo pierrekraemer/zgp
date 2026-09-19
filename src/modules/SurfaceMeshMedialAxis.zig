@@ -129,7 +129,7 @@ const MedialAxisData = struct {
         }
 
         try sqem.computeVertexSQEMs(
-            mad.app_ctx,
+            mad.app_ctx.io,
             mad.surface_mesh,
             mad.vertex_position,
             mad.vertex_area,
@@ -164,7 +164,7 @@ const MedialAxisData = struct {
 
         // compute vertex shrinking balls
         try medial_axis.computeVertexShrinkingBalls(
-            mad.app_ctx,
+            mad.app_ctx.io,
             mad.surface_mesh,
             mad.surface_mesh_bvh,
             mad.vertex_position,
@@ -219,7 +219,7 @@ const MedialAxisData = struct {
         line_quadric_epsilon: f32,
     ) !void {
         try sqem.computeVertexSQEMs(
-            mad.app_ctx,
+            mad.app_ctx.io,
             mad.surface_mesh,
             mad.vertex_position,
             mad.vertex_area,

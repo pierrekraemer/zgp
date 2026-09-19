@@ -3,7 +3,6 @@ const assert = std.debug.assert;
 
 const PriorityQueue = @import("../../utils/PriorityQueue.zig").PriorityQueue;
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -48,7 +47,8 @@ fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
 /// => Adaptive Remeshing for Real-Time Mesh Deformation (https://hal.science/hal-01295339/file/EGshort2013_Dunyach_et_al.pdf)
 /// The given dependent datas will be updated accordingly after remeshing.
 pub fn isotropicRemeshing(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
+    io: std.Io,
     sm: *SurfaceMesh,
     sm_bvh: *bvh.TrianglesBVH,
     edge_length_factor: f32,
@@ -64,7 +64,7 @@ pub fn isotropicRemeshing(
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_curvature: curvature.SurfaceMeshCurvatureDatas,
 ) !void {
-    try subdivision.triangulateFaces(app_ctx, sm);
+    try subdivision.triangulateFaces(allocator, sm);
 
     var mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
     const length_goal = mean_edge_length * edge_length_factor;
@@ -162,7 +162,7 @@ pub fn isotropicRemeshing(
         .surface_mesh = sm,
         .edge_queue_index = cut_edge_queue_index,
     });
-    defer cut_edge_queue.deinit(app_ctx.allocator);
+    defer cut_edge_queue.deinit(allocator);
 
     var collapse_edge_queue_index = try sm.addData(.edge, ?usize, "__collapse_edge_queue_index");
     defer sm.removeData(.edge, ?usize, collapse_edge_queue_index);
@@ -170,7 +170,7 @@ pub fn isotropicRemeshing(
         .surface_mesh = sm,
         .edge_queue_index = collapse_edge_queue_index,
     });
-    defer collapse_edge_queue.deinit(app_ctx.allocator);
+    defer collapse_edge_queue.deinit(allocator);
 
     // 2 iterations are performed in the adaptive case:
     // - 1st iteration is uniform
@@ -180,8 +180,8 @@ pub fn isotropicRemeshing(
         if (!adaptive and iteration > 0) break;
 
         // remove "flat" degree-3 vertices
-        try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
-        try angle.computeEdgeDihedralAngles(app_ctx, sm, vertex_position, face_normal, edge_dihedral_angle);
+        try normal.computeFaceNormals(io, sm, vertex_position, face_normal);
+        try angle.computeEdgeDihedralAngles(io, sm, vertex_position, face_normal, edge_dihedral_angle);
         vertex_it.reset();
         while (vertex_it.nextSafe()) |vertex| {
             if (sm.degree(vertex) != 3 or feature_vertex.isMarked(vertex) or sm.isIncidentToBoundary(vertex)) {
@@ -213,7 +213,7 @@ pub fn isotropicRemeshing(
                 vertex_sizing_field.value(.{ .vertex = dd }),
             ) else length_goal;
             if (l > length_goal_edge * 1.33) {
-                try cut_edge_queue.push(app_ctx.allocator, .{ .edge = edge, .length = l });
+                try cut_edge_queue.push(allocator, .{ .edge = edge, .length = l });
             }
         }
         while (cut_edge_queue.items.len > 0) {
@@ -239,8 +239,8 @@ pub fn isotropicRemeshing(
             edge_length.valuePtr(.{ .edge = d }).* = new_length;
             edge_length.valuePtr(.{ .edge = dd }).* = new_length;
             if (new_length > length_goal * 1.33) {
-                try cut_edge_queue.push(app_ctx.allocator, .{ .edge = .{ .edge = d }, .length = new_length });
-                try cut_edge_queue.push(app_ctx.allocator, .{ .edge = .{ .edge = dd }, .length = new_length });
+                try cut_edge_queue.push(allocator, .{ .edge = .{ .edge = d }, .length = new_length });
+                try cut_edge_queue.push(allocator, .{ .edge = .{ .edge = dd }, .length = new_length });
             }
             if (adaptive and iteration > 0) {
                 vertex_sizing_field.valuePtr(v).* = 0.5 * (vertex_sizing_field.value(.{ .vertex = d }) +
@@ -254,7 +254,7 @@ pub fn isotropicRemeshing(
                 const l = length.edgeLength(sm, e, vertex_position);
                 edge_length.valuePtr(e).* = l;
                 if (l > length_goal * 1.33) {
-                    try cut_edge_queue.push(app_ctx.allocator, .{ .edge = e, .length = l });
+                    try cut_edge_queue.push(allocator, .{ .edge = e, .length = l });
                 }
             }
             if (!sm.isBoundaryDart(dd1)) {
@@ -262,7 +262,7 @@ pub fn isotropicRemeshing(
                 const l = length.edgeLength(sm, e, vertex_position);
                 edge_length.valuePtr(e).* = l;
                 if (l > length_goal * 1.33) {
-                    try cut_edge_queue.push(app_ctx.allocator, .{ .edge = e, .length = l });
+                    try cut_edge_queue.push(allocator, .{ .edge = e, .length = l });
                 }
             }
         }
@@ -281,7 +281,7 @@ pub fn isotropicRemeshing(
                 vertex_sizing_field.value(v2),
             ) else length_goal;
             if (l < length_goal_edge * 0.75) {
-                try collapse_edge_queue.push(app_ctx.allocator, .{ .edge = edge, .length = l });
+                try collapse_edge_queue.push(allocator, .{ .edge = edge, .length = l });
             }
         }
         while (collapse_edge_queue.items.len > 0) {
@@ -356,7 +356,7 @@ pub fn isotropicRemeshing(
                     vertex_sizing_field.value(ev2),
                 ) else length_goal;
                 if (el < length_goal_edge * 0.75) {
-                    try collapse_edge_queue.push(app_ctx.allocator, .{ .edge = e, .length = el });
+                    try collapse_edge_queue.push(allocator, .{ .edge = e, .length = el });
                 }
             }
         }
@@ -375,12 +375,12 @@ pub fn isotropicRemeshing(
 
         // tangential relaxation
         // first, update datas needed for relaxation after remeshing operations
-        try length.computeEdgeLengths(app_ctx, sm, vertex_position, edge_length);
-        try angle.computeCornerAngles(app_ctx, sm, vertex_position, corner_angle);
-        try area.computeFaceAreas(app_ctx, sm, vertex_position, face_area);
-        try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
-        try area.computeVertexAreas(app_ctx, sm, face_area, vertex_area);
-        try normal.computeVertexNormals(app_ctx, sm, corner_angle, face_normal, vertex_normal);
+        try length.computeEdgeLengths(sm, vertex_position, edge_length);
+        try angle.computeCornerAngles(io, sm, vertex_position, corner_angle);
+        try area.computeFaceAreas(io, sm, vertex_position, face_area);
+        try normal.computeFaceNormals(io, sm, vertex_position, face_normal);
+        try area.computeVertexAreas(sm, face_area, vertex_area);
+        try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
         vertex_it.reset();
         while (vertex_it.next()) |vertex| {
             if (sm.isIncidentToBoundary(vertex) or (preserve_features and feature_vertex.isMarked(vertex))) {
@@ -440,14 +440,14 @@ pub fn isotropicRemeshing(
         // in the adaptive case, compute a curvature-based sizing field at the end of iterations 0
         if (adaptive and (iteration == 0)) {
             // first, update data needed for sizing field computation
-            try length.computeEdgeLengths(app_ctx, sm, vertex_position, edge_length);
-            try angle.computeCornerAngles(app_ctx, sm, vertex_position, corner_angle);
-            try area.computeFaceAreas(app_ctx, sm, vertex_position, face_area);
-            try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
-            try angle.computeEdgeDihedralAngles(app_ctx, sm, vertex_position, face_normal, edge_dihedral_angle);
-            try area.computeVertexAreas(app_ctx, sm, face_area, vertex_area);
-            try normal.computeVertexNormals(app_ctx, sm, corner_angle, face_normal, vertex_normal);
-            try curvature.computeVertexCurvatures(app_ctx, sm, vertex_position, vertex_normal, edge_dihedral_angle, edge_length, face_area, vertex_curvature);
+            try length.computeEdgeLengths(sm, vertex_position, edge_length);
+            try angle.computeCornerAngles(io, sm, vertex_position, corner_angle);
+            try area.computeFaceAreas(io, sm, vertex_position, face_area);
+            try normal.computeFaceNormals(io, sm, vertex_position, face_normal);
+            try angle.computeEdgeDihedralAngles(io, sm, vertex_position, face_normal, edge_dihedral_angle);
+            try area.computeVertexAreas(sm, face_area, vertex_area);
+            try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
+            try curvature.computeVertexCurvatures(io, sm, vertex_position, vertex_normal, edge_dihedral_angle, edge_length, face_area, vertex_curvature);
             mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
             const approx_tolerance = mean_edge_length * 0.035; // TODO: this value could be tuned
             vertex_it.reset();
@@ -466,14 +466,14 @@ pub fn isotropicRemeshing(
     }
 
     // update all given dependent datas one last time after remeshing
-    // try length.computeEdgeLengths(app_ctx, sm, vertex_position, edge_length);
-    // try angle.computeCornerAngles(app_ctx, sm, vertex_position, corner_angle);
-    // try area.computeFaceAreas(app_ctx, sm, vertex_position, face_area);
-    // try normal.computeFaceNormals(app_ctx, sm, vertex_position, face_normal);
-    // try angle.computeEdgeDihedralAngles(app_ctx, sm, vertex_position, face_normal, edge_dihedral_angle);
-    // try area.computeVertexAreas(app_ctx, sm, face_area, vertex_area);
-    // try normal.computeVertexNormals(app_ctx, sm, corner_angle, face_normal, vertex_normal);
+    // try length.computeEdgeLengths(sm, vertex_position, edge_length);
+    // try angle.computeCornerAngles(io, sm, vertex_position, corner_angle);
+    // try area.computeFaceAreas(io, sm, vertex_position, face_area);
+    // try normal.computeFaceNormals(io, sm, vertex_position, face_normal);
+    // try angle.computeEdgeDihedralAngles(io, sm, vertex_position, face_normal, edge_dihedral_angle);
+    // try area.computeVertexAreas(sm, face_area, vertex_area);
+    // try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
     // if (adaptive) {
-    //     try curvature.computeVertexCurvatures(app_ctx, sm, vertex_position, vertex_normal, edge_dihedral_angle, edge_length, face_area, vertex_curvature);
+    //     try curvature.computeVertexCurvatures(io, sm, vertex_position, vertex_normal, edge_dihedral_angle, edge_length, face_area, vertex_curvature);
     // }
 }
