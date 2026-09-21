@@ -479,7 +479,10 @@ pub const ITContext = struct {
             const joint_queue: JointQueue = .initContext(.{
                 .joint_queue_index = joint_queue_index,
             });
-            const sep_ctx: distance.ShortestEdgePathContext = .init(it_ctx.intrinsic_surface_mesh, it_ctx.intrinsic_edge_length);
+            const sep_ctx: distance.ShortestEdgePathContext = .init(
+                it_ctx.intrinsic_surface_mesh,
+                it_ctx.intrinsic_edge_length,
+            );
 
             return .{
                 .it_ctx = it_ctx,

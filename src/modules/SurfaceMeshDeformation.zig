@@ -49,6 +49,10 @@ const DeformationData = struct {
         assert(dd.handle_vertex_set != null and dd.handle_vertex_set.?.cells.items.len > 0 and dd.handle_vertex_set.?.surface_mesh == dd.surface_mesh);
 
         if (use_intrinsic_delaunay and edge_length != null and corner_angle != null) {
+            assert(dd.it_ctx == null);
+            assert(edge_length.?.surface_mesh == dd.surface_mesh);
+            assert(corner_angle.?.surface_mesh == dd.surface_mesh);
+
             dd.it_ctx = intrinsic_triangulation.ITContext.init(
                 dd.app_ctx.allocator,
                 dd.app_ctx.io,
@@ -77,9 +81,11 @@ const DeformationData = struct {
     fn deinit(dd: *DeformationData) void {
         if (dd.arap_ctx) |*arap_ctx| {
             arap_ctx.deinit();
+            dd.arap_ctx = null;
         }
         if (dd.it_ctx) |*it_ctx| {
             it_ctx.deinit();
+            dd.it_ctx = null;
         }
     }
 };

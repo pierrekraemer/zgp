@@ -63,6 +63,7 @@ const DistanceData = struct {
     fn deinit(dd: *DistanceData) void {
         if (dd.hm_ctx) |*hm_ctx| {
             hm_ctx.deinit();
+            dd.hm_ctx = null;
         }
     }
 };
