@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
 const PointCloud = @import("PointCloud.zig");
 const IncidenceGraph = @import("../incidenceGraph/IncidenceGraph.zig");
@@ -106,7 +107,7 @@ pub const VMASContext = struct {
     // created data
     point_knn: PointCloud.CellData(std.ArrayList(PointCloud.Point)),
     point_tangent_basis: PointCloud.CellData([2]Vec3f),
-    // point_area: PointCloud.CellData(f32),
+    // point_area: PointCloud.CellData(f32), // or point weight
     point_sqem: PointCloud.CellData(SQEM),
     point_shrinking_ball: PointCloud.CellData(?Vec4f),
     point_sphere: PointCloud.CellData(?PointCloud.Point),
@@ -124,6 +125,8 @@ pub const VMASContext = struct {
     // created data
     skeleton_vertex_position: IncidenceGraph.CellData(.vertex, Vec3f),
 
+    // initialize a new VMASContext for the given PointCloud
+    // the provided spheres PointCloud and skeleton IncidenceGraph will be cleared and filled with new data
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
@@ -199,27 +202,6 @@ pub const VMASContext = struct {
             point_shrinking_ball,
         );
 
-        // create the first medial sphere
-        const center: Vec3f = .{ 0.0, 0.0, 0.0 };
-        const radius: f32 = 0.01;
-        const s1 = try spheres.addPoint();
-        sphere_center.valuePtr(s1).* = center;
-        sphere_radius.valuePtr(s1).* = radius;
-        sphere_cluster.valuePtr(s1).* = .empty;
-        sphere_error.valuePtr(s1).* = 0.0;
-        sphere_neighbor_spheres.valuePtr(s1).* = .empty;
-
-        // and initialize its cluster
-        p_it.reset();
-        while (p_it.next()) |p| {
-            try sphere_cluster.valuePtr(s1).append(allocator, p);
-            point_sphere.valuePtr(p).* = s1;
-            const p_sqem = point_sqem.valuePtr(p);
-            const dist = p_sqem.eval(.{ center[0], center[1], center[2], radius });
-            point_sphere_error.valuePtr(p).* = dist;
-            sphere_error.valuePtr(s1).* += dist;
-        }
-
         return .{
             .allocator = allocator,
             .io = io,
@@ -249,6 +231,9 @@ pub const VMASContext = struct {
         };
     }
 
+    // deinitialize the VMASContext
+    // the position & radius data of the spheres PointCloud and the vertex position data of the skeleton IncidenceGraph are not destroyed
+    // TODO: maybe take a boolean argument to decide whether to destroy them or not?
     pub fn deinit(vmas_ctx: *VMASContext) void {
         // remove PointCloud data
         // first deinit ArrayLists in point_knn data
@@ -273,9 +258,44 @@ pub const VMASContext = struct {
         vmas_ctx.spheres.removeData(std.ArrayList(PointCloud.Point), vmas_ctx.sphere_cluster);
         vmas_ctx.spheres.removeData(f32, vmas_ctx.sphere_error);
         vmas_ctx.spheres.removeData(std.AutoArrayHashMapUnmanaged(PointCloud.Point, void), vmas_ctx.sphere_neighbor_spheres);
-        // do not destroy the spheres PointCloud itself and its position and radius data
+        // do not destroy the position and radius data of the spheres PointCloud
 
-        // do not destroy the skeleton IncidenceGraph itself and its vertex position and radius data
+        // do not destroy the vertex position data of the skeleton IncidenceGraph
+    }
+
+    pub fn createFirstSphere(vmas_ctx: *VMASContext) !void {
+        assert(vmas_ctx.spheres.nbPoints() == 0);
+
+        // create the first medial sphere
+        const center: Vec3f = .{ 0.0, 0.0, 0.0 };
+        const radius: f32 = 0.01;
+        const s1 = try vmas_ctx.spheres.addPoint();
+        vmas_ctx.sphere_center.valuePtr(s1).* = center;
+        vmas_ctx.sphere_radius.valuePtr(s1).* = radius;
+        vmas_ctx.sphere_cluster.valuePtr(s1).* = .empty;
+        vmas_ctx.sphere_error.valuePtr(s1).* = 0.0;
+        vmas_ctx.sphere_neighbor_spheres.valuePtr(s1).* = .empty;
+
+        // and initialize its cluster
+        var p_it = vmas_ctx.point_cloud.pointIterator();
+        while (p_it.next()) |p| {
+            try vmas_ctx.sphere_cluster.valuePtr(s1).append(vmas_ctx.allocator, p);
+            vmas_ctx.point_sphere.valuePtr(p).* = s1;
+            const p_sqem = vmas_ctx.point_sqem.valuePtr(p);
+            const dist = p_sqem.eval(.{ center[0], center[1], center[2], radius });
+            vmas_ctx.point_sphere_error.valuePtr(p).* = dist;
+            vmas_ctx.sphere_error.valuePtr(s1).* += dist;
+        }
+    }
+
+    pub fn clearRetainingCapacity(vmas_ctx: *VMASContext) void {
+        var s_it = vmas_ctx.spheres.pointIterator();
+        while (s_it.next()) |s| {
+            vmas_ctx.sphere_cluster.valuePtr(s).deinit(vmas_ctx.allocator);
+            vmas_ctx.sphere_neighbor_spheres.valuePtr(s).deinit(vmas_ctx.allocator);
+        }
+        vmas_ctx.spheres.clearRetainingCapacity();
+        vmas_ctx.skeleton.clearRetainingCapacity();
     }
 
     pub fn updatePointSQEMs(vmas_ctx: *VMASContext, line_quadric_epsilon: f32) !void {
@@ -326,7 +346,7 @@ pub const VMASContext = struct {
                         min_sphere = osn;
                     }
                 }
-            } else { // if there is no sphere assigned to this vertex, search all spheres
+            } else { // if there is no sphere assigned to this point, search all spheres
                 s_it.reset();
                 while (s_it.next()) |s| {
                     const sc = vmas_ctx.sphere_center.value(s);
@@ -383,21 +403,18 @@ pub const VMASContext = struct {
         var s_it = vmas_ctx.spheres.pointIterator();
 
         while (nb_iterations < max_iterations) {
-            s_it.reset();
-
             // compute the optimal spheres for each cluster
+            s_it.reset();
             while (s_it.next()) |s| {
-                // add the SQEM contributions of all vertices in the cluster
+                // add the SQEM contributions of all points in the cluster
                 const cluster = vmas_ctx.sphere_cluster.valuePtr(s);
                 var cluster_sqem: SQEM = .zero;
-                for (cluster.items) |v| {
-                    cluster_sqem.add(vmas_ctx.point_sqem.valuePtr(v));
+                for (cluster.items) |p| {
+                    cluster_sqem.add(vmas_ctx.point_sqem.valuePtr(p));
                 }
                 // compute the optimal sphere
                 const optimized_sphere = cluster_sqem.optimalSphere();
                 if (optimized_sphere) |opt_s| {
-                    vmas_ctx.sphere_center.valuePtr(s).* = .{ opt_s[0], opt_s[1], opt_s[2] };
-                    vmas_ctx.sphere_radius.valuePtr(s).* = opt_s[3];
                     // correct the optimal sphere on the medial axis
                     const s_center = .{ opt_s[0], opt_s[1], opt_s[2] };
                     const cp = vmas_ctx.point_cloud_kdtree.nearestNeighborIndex(s_center) orelse continue;
@@ -415,6 +432,9 @@ pub const VMASContext = struct {
                     if (corrected_sphere) |cs| {
                         vmas_ctx.sphere_center.valuePtr(s).* = .{ cs[0], cs[1], cs[2] };
                         vmas_ctx.sphere_radius.valuePtr(s).* = cs[3];
+                    } else {
+                        vmas_ctx.sphere_center.valuePtr(s).* = .{ opt_s[0], opt_s[1], opt_s[2] };
+                        vmas_ctx.sphere_radius.valuePtr(s).* = opt_s[3];
                     }
                 }
             }

@@ -37,7 +37,7 @@ const MedialAxisData = struct {
         line_quadric_epsilon: f32,
     ) !void {
         assert(mad.vmas_ctx == null);
-        assert(point_cloud_kdtree.point_cloud == mad.point_cloud);
+        assert(point_cloud_kdtree.point_cloud == mad.point_cloud and point_cloud_kdtree.initialized);
         assert(point_position.point_cloud == mad.point_cloud);
         assert(point_normal.point_cloud == mad.point_cloud);
 
@@ -172,6 +172,21 @@ pub fn rightPanel(m: *Module) void {
             ) catch |err| {
                 std.debug.print("Failed to initialize VMAS for PointCloud: {}\n", .{err});
             };
+            if (mad.vmas_ctx) |*vmas_ctx| {
+                vmas_ctx.createFirstSphere() catch |err| {
+                    std.debug.print("Failed to create first medial sphere for PointCloud: {}\n", .{err});
+                };
+
+                mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, vmas_ctx.sphere_center);
+                mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, vmas_ctx.sphere_radius);
+                mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, vmas_ctx.sphere_error);
+                mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres);
+                mad.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(mad.skeleton, .vertex, Vec3f, vmas_ctx.skeleton_vertex_position);
+                mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
+                // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
+                // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
+                mad.app_ctx.requestRedraw();
+            }
         }
         if (disabled) {
             if (mad.vmas_ctx != null) {
@@ -181,30 +196,30 @@ pub fn rightPanel(m: *Module) void {
                     \\ Requires:
                     \\ - kdtree
                     \\ Following data should be available:
-                    \\ - std vertex_position
-                    \\ - std vertex_normal
+                    \\ - std position
+                    \\ - std normal
                 );
             }
             c.ImGui_EndDisabled();
         }
     }
 
-    if (mad.vmas_ctx != null) {
+    if (mad.vmas_ctx) |*vmas_ctx| {
         if (c.ImGui_ButtonEx("Recompute SQEMs", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            mad.vmas_ctx.?.updatePointSQEMs(UiData.line_quadric_epsilon) catch |err| {
+            vmas_ctx.updatePointSQEMs(UiData.line_quadric_epsilon) catch |err| {
                 std.debug.print("Failed to recompute Medial Axis SQEMs for PointCloud: {}\n", .{err});
             };
-            mad.vmas_ctx.?.updateSpheres() catch |err| {
+            vmas_ctx.updateSpheres() catch |err| {
                 std.debug.print("Failed to update Medial Axis spheres for PointCloud: {}\n", .{err});
             };
-            mad.vmas_ctx.?.updateSkeleton() catch |err| {
+            vmas_ctx.updateSkeleton() catch |err| {
                 std.debug.print("Failed to update Medial Axis skeleton for PointCloud: {}\n", .{err});
             };
-            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.vmas_ctx.?.sphere_center);
-            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.vmas_ctx.?.sphere_radius);
-            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.vmas_ctx.?.sphere_error);
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, vmas_ctx.sphere_center);
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, vmas_ctx.sphere_radius);
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, vmas_ctx.sphere_error);
             mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres);
-            mad.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(mad.skeleton, .vertex, Vec3f, mad.vmas_ctx.?.skeleton_vertex_position);
+            mad.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(mad.skeleton, .vertex, Vec3f, vmas_ctx.skeleton_vertex_position);
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
@@ -212,81 +227,76 @@ pub fn rightPanel(m: *Module) void {
         }
 
         if (c.ImGui_ButtonEx("Update spheres", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            mad.vmas_ctx.?.updateSpheres() catch |err| {
+            vmas_ctx.updateSpheres() catch |err| {
                 std.debug.print("Failed to update Medial Axis spheres for PointCloud: {}\n", .{err});
             };
-            mad.vmas_ctx.?.updateSkeleton() catch |err| {
+            vmas_ctx.updateSkeleton() catch |err| {
                 std.debug.print("Failed to update Medial Axis skeleton for PointCloud: {}\n", .{err});
             };
-            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.vmas_ctx.?.sphere_center);
-            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.vmas_ctx.?.sphere_radius);
-            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.vmas_ctx.?.sphere_error);
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, vmas_ctx.sphere_center);
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, vmas_ctx.sphere_radius);
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, vmas_ctx.sphere_error);
             mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres);
-            mad.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(mad.skeleton, .vertex, Vec3f, mad.vmas_ctx.?.skeleton_vertex_position);
+            mad.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(mad.skeleton, .vertex, Vec3f, vmas_ctx.skeleton_vertex_position);
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
             mad.app_ctx.requestRedraw();
         }
+
         if (c.ImGui_ButtonEx("Split worst sphere", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            if (mad.vmas_ctx.?.worstSphere()) |s| {
-                mad.vmas_ctx.?.splitSphere(s) catch |err| {
+            if (vmas_ctx.worstSphere()) |s| {
+                vmas_ctx.splitSphere(s) catch |err| {
                     std.debug.print("Failed to split worst Medial Axis sphere for PointCloud: {}\n", .{err});
                 };
-                mad.vmas_ctx.?.updateSkeleton() catch |err| {
+                vmas_ctx.updateSkeleton() catch |err| {
                     std.debug.print("Failed to update Medial Axis skeleton for PointCloud: {}\n", .{err});
                 };
-                mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.vmas_ctx.?.sphere_center);
-                mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.vmas_ctx.?.sphere_radius);
-                mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.vmas_ctx.?.sphere_error);
+                mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, vmas_ctx.sphere_center);
+                mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, vmas_ctx.sphere_radius);
+                mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, vmas_ctx.sphere_error);
                 mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres);
-                mad.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(mad.skeleton, .vertex, Vec3f, mad.vmas_ctx.?.skeleton_vertex_position);
+                mad.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(mad.skeleton, .vertex, Vec3f, vmas_ctx.skeleton_vertex_position);
                 mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
                 mad.app_ctx.requestRedraw();
             }
         }
-        // _ = c.ImGui_InputInt("Number of spheres", @ptrCast(&UiData.nb_spheres));
-        // if (c.ImGui_ButtonEx("Build skeleton from scratch", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-        //     const t = std.Io.Timestamp.now(pcma.app_ctx.io, .real);
+        _ = c.ImGui_InputInt("Number of spheres", @ptrCast(&UiData.nb_spheres));
+        if (c.ImGui_ButtonEx("Build skeleton from scratch", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
+            const t = std.Io.Timestamp.now(pcma.app_ctx.io, .real);
 
-        //     mad.init(
-        //         &info.kdtree,
-        //         info.std_datas.position.?,
-        //         info.std_datas.normal.?,
-        //         UiData.line_quadric_epsilon,
-        //     ) catch |err| {
-        //         std.debug.print("Failed to initialize Medial Axis data for PointCloud: {}\n", .{err});
-        //         return;
-        //     };
-        //     for (1..UiData.nb_spheres) |_| {
-        //         mad.splitWorstSphere() catch |err| {
-        //             std.debug.print("Failed to split worse Medial Axis sphere for PointCloud: {}\n", .{err});
-        //             break;
-        //         };
-        //         mad.updateSpheres() catch |err| {
-        //             std.debug.print("Failed to update Medial Axis spheres for PointCloud: {}\n", .{err});
-        //             break;
-        //         };
-        //     }
-        //     mad.updateSkeleton() catch |err| {
-        //         std.debug.print("Failed to update Medial Axis skeleton for PointCloud: {}\n", .{err});
-        //     };
-        //     mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.sphere_center);
-        //     mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.sphere_radius);
-        //     mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, mad.sphere_error);
-        //     mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, mad.sphere_color);
-        //     mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres);
-        //     mad.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(mad.skeleton, .vertex, Vec3f, mad.skeleton_vertex_position);
-        //     mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
-        //     mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
-        //     mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-        //     mad.app_ctx.requestRedraw();
+            vmas_ctx.clearRetainingCapacity();
+            vmas_ctx.createFirstSphere() catch |err| {
+                std.debug.print("Failed to create first medial sphere for PointCloud: {}\n", .{err});
+            };
+            for (0..UiData.nb_spheres) |_| {
+                if (vmas_ctx.worstSphere()) |s| {
+                    vmas_ctx.splitSphere(s) catch |err| {
+                        std.debug.print("Failed to split worst Medial Axis sphere for PointCloud: {}\n", .{err});
+                    };
+                    vmas_ctx.updateSpheres() catch |err| {
+                        std.debug.print("Failed to update Medial Axis spheres for PointCloud: {}\n", .{err});
+                    };
+                }
+            }
+            vmas_ctx.updateSkeleton() catch |err| {
+                std.debug.print("Failed to update Medial Axis skeleton for PointCloud: {}\n", .{err});
+            };
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, Vec3f, vmas_ctx.sphere_center);
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, vmas_ctx.sphere_radius);
+            mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.spheres, f32, vmas_ctx.sphere_error);
+            mad.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(mad.spheres);
+            mad.app_ctx.incidence_graph_store.incidenceGraphDataUpdated(mad.skeleton, .vertex, Vec3f, vmas_ctx.skeleton_vertex_position);
+            mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
+            // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
+            // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
+            mad.app_ctx.requestRedraw();
 
-        //     const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, pcma.app_ctx.io, .real).nanoseconds);
-        //     zgp_log.info("Medial Axis skeleton computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
-        // }
+            const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, pcma.app_ctx.io, .real).nanoseconds);
+            zgp_log.info("Medial Axis skeleton computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+        }
     }
 
     c.ImGui_Separator();
@@ -297,12 +307,16 @@ pub fn rightPanel(m: *Module) void {
         if (disabled) {
             c.ImGui_BeginDisabled(true);
         }
+        c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(255, 128, 128, 200));
+        c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(255, 128, 128, 255));
+        c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(255, 128, 128, 128));
         if (c.ImGui_ButtonEx("Deinitialize VMAS", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
             if (mad.vmas_ctx) |*vmas_ctx| {
                 vmas_ctx.deinit();
                 mad.vmas_ctx = null;
             }
         }
+        c.ImGui_PopStyleColorEx(3);
         if (disabled) {
             c.ImGui_EndDisabled();
         }

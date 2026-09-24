@@ -252,7 +252,7 @@ pub fn rightClickMenu(m: *Module) void {
             c.ImGui_Separator();
 
             // Compute geodesic distance button
-            if (dd.hm_ctx != null) {
+            if (dd.hm_ctx) |*hm_ctx| {
                 const disabled =
                     dd.selected_vertex_set == null or
                     dd.selected_vertex_set.?.cells.items.len == 0 or
@@ -263,7 +263,7 @@ pub fn rightClickMenu(m: *Module) void {
                 if (c.ImGui_ButtonEx("Compute geodesic distance", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                     const t = std.Io.Timestamp.now(smd.app_ctx.io, .real);
 
-                    dd.hm_ctx.?.computeGeodesicDistancesFromSource(
+                    hm_ctx.computeGeodesicDistancesFromSource(
                         dd.selected_vertex_set.?.cells.items,
                         dd.vertex_distance.?,
                     ) catch |err| {

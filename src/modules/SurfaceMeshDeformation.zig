@@ -306,9 +306,9 @@ pub fn rightPanel(m: *Module) void {
             }
         }
 
-        if (dd.arap_ctx != null) {
+        if (dd.arap_ctx) |*arap_ctx| {
             c.ImGui_Text("ARAP iterations:");
-            _ = c.ImGui_SliderIntEx("", &dd.arap_ctx.?.nb_iterations, 1, 20, "%d", c.ImGuiSliderFlags_AlwaysClamp);
+            _ = c.ImGui_SliderIntEx("", &arap_ctx.nb_iterations, 1, 20, "%d", c.ImGuiSliderFlags_AlwaysClamp);
         }
 
         // Deinitialize ARAP button
