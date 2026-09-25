@@ -164,11 +164,11 @@ pub fn Data(comptime T: type) type {
             var max = min;
             var it = self.constIterator();
             while (it.next()) |element| {
-                if (compareFn(context, element.*, min) == .lt) {
-                    min = element.*;
+                if (compareFn(context, element.value_ptr.*, min) == .lt) {
+                    min = element.value_ptr.*;
                 }
-                if (compareFn(context, element.*, max) == .gt) {
-                    max = element.*;
+                if (compareFn(context, element.value_ptr.*, max) == .gt) {
+                    max = element.value_ptr.*;
                 }
             }
             return .{ min, max };
@@ -226,15 +226,19 @@ pub fn Data(comptime T: type) type {
         pub const Iterator = BaseIterator(*Self, *T);
         pub const ConstIterator = BaseIterator(*const Self, *const T);
         fn BaseIterator(comptime SelfPtr: type, comptime ElementPtr: type) type {
+            const Element = struct {
+                value_ptr: ElementPtr,
+                idx: u32,
+            };
             return struct {
                 data: SelfPtr,
                 index: u32,
-                pub fn next(it: *@This()) ?ElementPtr {
+                pub fn next(it: *@This()) ?Element {
                     if (it.index == it.data.data_gen.container.lastIndex()) {
                         return null;
                     }
                     defer it.index = it.data.data_gen.container.nextIndex(it.index);
-                    return &it.data.data.items[it.index];
+                    return .{ .value_ptr = &it.data.data.items[it.index], .idx = it.index };
                 }
                 pub fn reset(it: *@This()) void {
                     it.index = it.data.data_gen.container.firstIndex();

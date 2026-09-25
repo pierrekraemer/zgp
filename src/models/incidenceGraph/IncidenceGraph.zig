@@ -59,20 +59,20 @@ pub fn init(ig: *IncidenceGraph, allocator: std.mem.Allocator, cell_buffer_pool:
 
 pub fn deinit(ig: *IncidenceGraph) void {
     var it = ig.vertex_incident_edges.iterator();
-    while (it.next()) |entry| {
-        entry.deinit(ig.allocator);
+    while (it.next()) |elem| {
+        elem.value_ptr.deinit(ig.allocator);
     }
     it = ig.edge_incident_faces.iterator();
-    while (it.next()) |entry| {
-        entry.deinit(ig.allocator);
+    while (it.next()) |elem| {
+        elem.value_ptr.deinit(ig.allocator);
     }
     it = ig.face_incident_edges.iterator();
-    while (it.next()) |entry| {
-        entry.deinit(ig.allocator);
+    while (it.next()) |elem| {
+        elem.value_ptr.deinit(ig.allocator);
     }
     var dir_it = ig.face_incident_edges_dir.iterator();
-    while (dir_it.next()) |entry| {
-        entry.deinit(ig.allocator);
+    while (dir_it.next()) |elem| {
+        elem.value_ptr.deinit(ig.allocator);
     }
     ig.vertex_data.deinit();
     ig.edge_data.deinit();
@@ -81,20 +81,20 @@ pub fn deinit(ig: *IncidenceGraph) void {
 
 pub fn clearRetainingCapacity(ig: *IncidenceGraph) void {
     var it = ig.vertex_incident_edges.iterator();
-    while (it.next()) |entry| {
-        entry.deinit(ig.allocator);
+    while (it.next()) |elem| {
+        elem.value_ptr.deinit(ig.allocator);
     }
     it = ig.edge_incident_faces.iterator();
-    while (it.next()) |entry| {
-        entry.deinit(ig.allocator);
+    while (it.next()) |elem| {
+        elem.value_ptr.deinit(ig.allocator);
     }
     it = ig.face_incident_edges.iterator();
-    while (it.next()) |entry| {
-        entry.deinit(ig.allocator);
+    while (it.next()) |elem| {
+        elem.value_ptr.deinit(ig.allocator);
     }
     var dir_it = ig.face_incident_edges_dir.iterator();
-    while (dir_it.next()) |entry| {
-        entry.deinit(ig.allocator);
+    while (dir_it.next()) |elem| {
+        elem.value_ptr.deinit(ig.allocator);
     }
     ig.vertex_data.clearRetainingCapacity();
     ig.edge_data.clearRetainingCapacity();

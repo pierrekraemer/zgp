@@ -255,8 +255,8 @@ const ParameterizationData = struct {
         // create or clear the samples SurfaceMesh and its associated data
         if (pd.samples_surface_mesh) |ssm| {
             var edge_path_it = pd.ssm_edge_path.data.iterator();
-            while (edge_path_it.next()) |path| {
-                path.deinit(pd.app_ctx.allocator);
+            while (edge_path_it.next()) |elem| {
+                elem.value_ptr.deinit(pd.app_ctx.allocator);
             }
             ssm.clearRetainingCapacity();
         } else {
@@ -812,8 +812,8 @@ const ParameterizationData = struct {
     // this function is called when the samples SurfaceMesh is destroyed
     fn samplesSurfaceMeshDestroyed(pd: *ParameterizationData) !void {
         var edge_path_it = pd.ssm_edge_path.data.iterator();
-        while (edge_path_it.next()) |path| {
-            path.deinit(pd.app_ctx.allocator);
+        while (edge_path_it.next()) |elem| {
+            elem.value_ptr.deinit(pd.app_ctx.allocator);
         }
         pd.samples_surface_mesh = null;
         pd.ssm_vertex_position = undefined;
@@ -846,8 +846,8 @@ pub fn deinit(smp: *SurfaceMeshParameterization) void {
     while (it.next()) |pd| {
         if (pd.samples_surface_mesh) |_| {
             var edge_path_it = pd.ssm_edge_path.data.iterator();
-            while (edge_path_it.next()) |path| {
-                path.deinit(smp.app_ctx.allocator);
+            while (edge_path_it.next()) |elem| {
+                elem.value_ptr.deinit(smp.app_ctx.allocator);
             }
         }
     }

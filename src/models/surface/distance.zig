@@ -373,9 +373,9 @@ pub const HeatMethodContext = struct {
 
         // negate and normalize the face gradients
         var grad_it = hm_ctx.face_heat_grad.data.iterator();
-        while (grad_it.next()) |grad| {
-            grad.* = vec.mulScalar3d(
-                vec.normalized3d(grad.*),
+        while (grad_it.next()) |elem| {
+            elem.value_ptr.* = vec.mulScalar3d(
+                vec.normalized3d(elem.value_ptr.*),
                 -1.0,
             );
         }

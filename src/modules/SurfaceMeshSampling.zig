@@ -148,10 +148,10 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
 /// Deinit the SamplingData associated to the destroyed PointCloud.
 pub fn pointCloudDestroyed(m: *Module, point_cloud: *PointCloud) void {
     const sms: *SurfaceMeshSampling = @alignCast(@fieldParentPtr("module", m));
-    var it = sms.surface_meshes_data.iterator();
-    while (it.next()) |entry| {
-        if (entry.value_ptr.samples == point_cloud) {
-            entry.value_ptr.deinit();
+    var it = sms.surface_meshes_data.valueIterator();
+    while (it.next()) |sd| {
+        if (sd.samples == point_cloud) {
+            sd.deinit();
             break;
         }
     }

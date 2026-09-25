@@ -8,9 +8,12 @@ pub const Vec2d = [2]f64;
 pub const Vec3d = [3]f64;
 pub const Vec4d = [4]f64;
 
-// pub fn nbComponents(comptime Vec: type) usize {
-//     return @typeInfo(Vec).array.len;
-// }
+// ------------------------------- SIMD ------------------------------- //
+
+pub const SimdVec4f = @Vector(4, f32);
+pub const SimdVec4d = @Vector(4, f64);
+
+// -------------------------------------------------------------------- //
 
 pub const zero2f: Vec2f = @splat(0);
 pub const zero3f: Vec3f = @splat(0);
@@ -32,6 +35,27 @@ pub fn vec4fFromVec4d(v: Vec4d) Vec4f {
 pub fn vec4dFromVec4f(v: Vec4f) Vec4d {
     return .{ @floatCast(v[0]), @floatCast(v[1]), @floatCast(v[2]), @floatCast(v[3]) };
 }
+
+// ------------------------------- SIMD ------------------------------- //
+
+pub fn simdFromVec3f(v: Vec3f) SimdVec4f {
+    return .{ v[0], v[1], v[2], 0.0 };
+}
+pub fn simdFromVec3d(v: Vec3d) SimdVec4d {
+    return .{ v[0], v[1], v[2], 0.0 };
+}
+
+pub fn simdToVec3f(v: SimdVec4f) Vec3f {
+    return .{ v[0], v[1], v[2] };
+}
+pub fn simdToVec3d(v: SimdVec4d) Vec3d {
+    return .{ v[0], v[1], v[2] };
+}
+
+// Vec4f and Vec4d coerce naturally to SimdVec4f and SimdVec4d, resp.
+// so there are no helper functions for them.
+
+// -------------------------------------------------------------------- //
 
 pub fn splat2f(scalar: f32) Vec2f {
     return @splat(scalar);
@@ -299,6 +323,17 @@ pub fn dot4d(a: Vec4d, b: Vec4d) f64 {
     return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
 }
 
+// ------------------------------- SIMD ------------------------------- //
+
+pub fn simdDot4f(a: SimdVec4f, b: SimdVec4f) f32 {
+    return @reduce(.Add, a * b);
+}
+pub fn simdDot4d(a: SimdVec4d, b: SimdVec4d) f64 {
+    return @reduce(.Add, a * b);
+}
+
+// -------------------------------------------------------------------- //
+
 pub fn squaredNorm2f(v: Vec2f) f32 {
     return dot2f(v, v);
 }
@@ -388,3 +423,22 @@ pub fn cross3d(a: Vec3d, b: Vec3d) Vec3d {
         a[0] * b[1] - a[1] * b[0],
     };
 }
+
+// ------------------------------- SIMD ------------------------------- //
+
+pub fn simdCross4f(a: SimdVec4f, b: SimdVec4f) SimdVec4f {
+    const a_yzx = @shuffle(f32, a, undefined, @Vector(4, i32){ 1, 2, 0, 3 });
+    const b_yzx = @shuffle(f32, b, undefined, @Vector(4, i32){ 1, 2, 0, 3 });
+    const a_zxy = @shuffle(f32, a, undefined, @Vector(4, i32){ 2, 0, 1, 3 });
+    const b_zxy = @shuffle(f32, b, undefined, @Vector(4, i32){ 2, 0, 1, 3 });
+    return (a_yzx * b_zxy) - (a_zxy * b_yzx);
+}
+pub fn simdCross4d(a: SimdVec4d, b: SimdVec4d) SimdVec4d {
+    const a_yzx = @shuffle(f32, a, undefined, @Vector(4, i32){ 1, 2, 0, 3 });
+    const b_yzx = @shuffle(f32, b, undefined, @Vector(4, i32){ 1, 2, 0, 3 });
+    const a_zxy = @shuffle(f32, a, undefined, @Vector(4, i32){ 2, 0, 1, 3 });
+    const b_zxy = @shuffle(f32, b, undefined, @Vector(4, i32){ 2, 0, 1, 3 });
+    return (a_yzx * b_zxy) - (a_zxy * b_yzx);
+}
+
+// -------------------------------------------------------------------- //

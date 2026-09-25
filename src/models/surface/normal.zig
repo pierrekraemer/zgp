@@ -124,8 +124,8 @@ pub fn computeVertexNormals(
         }
     }
     var it = vertex_normal.data.iterator();
-    while (it.next()) |n| {
-        n.* = vec.normalized3f(n.*);
+    while (it.next()) |elem| {
+        elem.value_ptr.* = vec.normalized3f(elem.value_ptr.*);
     }
 
     // const Task = struct {

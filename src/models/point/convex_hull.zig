@@ -27,8 +27,8 @@ pub fn generateConvexHull(
         var points: [4]Vec3f = undefined;
         var it = point_position.data.constIterator();
         var idx: u32 = 0;
-        while (it.next()) |p| : (idx += 1) {
-            points[idx] = p.*;
+        while (it.next()) |elem| : (idx += 1) {
+            points[idx] = elem.value_ptr.*;
         }
         var ids: [4]u32 = .{ 0, 1, 2, 3 };
         if (geometry_utils.planeOrientation(points[0], points[1], points[2], points[3]) == .over) {
@@ -127,8 +127,8 @@ pub fn generateConvexHull(
     var face_points_on_positive_side = try sm.addData(.face, std.ArrayList(u32), "points_on_positive_side");
     defer {
         var it = face_points_on_positive_side.data.iterator();
-        while (it.next()) |list| {
-            list.deinit(allocator);
+        while (it.next()) |elem| {
+            elem.value_ptr.deinit(allocator);
         }
         sm.removeData(.face, std.ArrayList(u32), face_points_on_positive_side);
     }

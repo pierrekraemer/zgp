@@ -43,13 +43,13 @@ const DeformationData = struct {
         corner_angle: ?SurfaceMesh.CellData(.corner, f32),
     ) !void {
         assert(dd.arap_ctx == null);
+        assert(dd.it_ctx == null);
         assert(vertex_position.surface_mesh == dd.surface_mesh);
         assert(halfedge_cotan_weight.surface_mesh == dd.surface_mesh);
         assert(dd.fixed_vertex_set != null and dd.fixed_vertex_set.?.cells.items.len > 0 and dd.fixed_vertex_set.?.surface_mesh == dd.surface_mesh);
         assert(dd.handle_vertex_set != null and dd.handle_vertex_set.?.cells.items.len > 0 and dd.handle_vertex_set.?.surface_mesh == dd.surface_mesh);
 
         if (use_intrinsic_delaunay and edge_length != null and corner_angle != null) {
-            assert(dd.it_ctx == null);
             assert(edge_length.?.surface_mesh == dd.surface_mesh);
             assert(corner_angle.?.surface_mesh == dd.surface_mesh);
 
@@ -318,10 +318,7 @@ pub fn rightPanel(m: *Module) void {
                 c.ImGui_BeginDisabled(true);
             }
             if (c.ImGui_ButtonEx("Deinitialize ARAP", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                if (dd.arap_ctx) |*arap_ctx| {
-                    arap_ctx.deinit();
-                    dd.arap_ctx = null;
-                }
+                dd.deinit();
             }
             if (disabled) {
                 c.ImGui_EndDisabled();

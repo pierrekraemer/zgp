@@ -159,9 +159,9 @@ pub fn boundingBox(data: *const Data(Vec3f)) struct { Vec3f, Vec3f } {
     var bb_min = vec.splat3f(std.math.floatMax(f32));
     var bb_max = vec.splat3f(std.math.floatMin(f32));
     var it = data.constIterator();
-    while (it.next()) |pos| {
-        bb_min = vec.componentwiseMin3f(bb_min, pos.*);
-        bb_max = vec.componentwiseMax3f(bb_max, pos.*);
+    while (it.next()) |elem| {
+        bb_min = vec.componentwiseMin3f(bb_min, elem.value_ptr.*);
+        bb_max = vec.componentwiseMax3f(bb_max, elem.value_ptr.*);
     }
     return .{ bb_min, bb_max };
 }
@@ -174,30 +174,30 @@ pub fn extremePoints(data: *const Data(Vec3f)) [6]Vec3f {
     var bb_max = vec.splat3f(std.math.floatMin(f32));
     var result: [6]Vec3f = undefined;
     var it = data.constIterator();
-    while (it.next()) |pos| {
-        if (pos[0] < bb_min[0]) {
-            bb_min[0] = pos[0];
-            result[0] = pos.*;
+    while (it.next()) |elem| {
+        if (elem.value_ptr[0] < bb_min[0]) {
+            bb_min[0] = elem.value_ptr[0];
+            result[0] = elem.value_ptr.*;
         }
-        if (pos[0] > bb_max[0]) {
-            bb_max[0] = pos[0];
-            result[1] = pos.*;
+        if (elem.value_ptr[0] > bb_max[0]) {
+            bb_max[0] = elem.value_ptr[0];
+            result[1] = elem.value_ptr.*;
         }
-        if (pos[1] < bb_min[1]) {
-            bb_min[1] = pos[1];
-            result[2] = pos.*;
+        if (elem.value_ptr[1] < bb_min[1]) {
+            bb_min[1] = elem.value_ptr[1];
+            result[2] = elem.value_ptr.*;
         }
-        if (pos[1] > bb_max[1]) {
-            bb_max[1] = pos[1];
-            result[3] = pos.*;
+        if (elem.value_ptr[1] > bb_max[1]) {
+            bb_max[1] = elem.value_ptr[1];
+            result[3] = elem.value_ptr.*;
         }
-        if (pos[2] < bb_min[2]) {
-            bb_min[2] = pos[2];
-            result[4] = pos.*;
+        if (elem.value_ptr[2] < bb_min[2]) {
+            bb_min[2] = elem.value_ptr[2];
+            result[4] = elem.value_ptr.*;
         }
-        if (pos[2] > bb_max[2]) {
-            bb_max[2] = pos[2];
-            result[5] = pos.*;
+        if (elem.value_ptr[2] > bb_max[2]) {
+            bb_max[2] = elem.value_ptr[2];
+            result[5] = elem.value_ptr.*;
         }
     }
     return result;
@@ -206,8 +206,8 @@ pub fn extremePoints(data: *const Data(Vec3f)) [6]Vec3f {
 /// Scale the given data points by the given scalar factor.
 pub fn scale(data: *Data(Vec3f), s: f32) void {
     var it = data.iterator();
-    while (it.next()) |pos| {
-        pos.* = vec.mulScalar3f(pos.*, s);
+    while (it.next()) |elem| {
+        elem.value_ptr.* = vec.mulScalar3f(elem.value_ptr.*, s);
     }
 }
 
@@ -230,12 +230,12 @@ pub fn meanValue(comptime T: type, data: *const Data(T)) T {
         return sum; // return zero if no elements
     }
     var it = data.constIterator();
-    while (it.next()) |v| {
+    while (it.next()) |elem| {
         switch (@typeInfo(T)) {
-            .float, .int => sum += v.*,
+            .float, .int => sum += elem.value_ptr.*,
             .array => {
                 inline for (0..@typeInfo(T).array.len) |i| {
-                    sum[i] += v.*[i];
+                    sum[i] += elem.value_ptr.*[i];
                 }
             },
             else => unreachable,
@@ -259,7 +259,7 @@ pub fn centerAround(data: *Data(Vec3f), v: Vec3f) void {
     const c = meanValue(Vec3f, data);
     const offset = vec.sub3f(v, c);
     var it = data.iterator();
-    while (it.next()) |pos| {
-        pos.* = vec.add3f(pos.*, offset);
+    while (it.next()) |elem| {
+        elem.value_ptr.* = vec.add3f(elem.value_ptr.*, offset);
     }
 }

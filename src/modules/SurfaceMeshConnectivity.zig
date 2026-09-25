@@ -125,22 +125,14 @@ fn decimate(
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
-    const vertex_qem = try sm.addData(.vertex, Mat4f, "__vertex_qem");
-    defer sm.removeData(.vertex, Mat4f, vertex_qem);
-    try qem.computeVertexQEMs(
+    try decimation.decimateQEM(
+        smc.app_ctx.allocator,
         sm,
         vertex_position,
         vertex_area,
         vertex_tangent_basis,
         face_area,
         face_normal,
-        vertex_qem,
-    );
-    try decimation.decimateQEM(
-        smc.app_ctx.allocator,
-        sm,
-        vertex_position,
-        vertex_qem,
         nb_vertices_to_remove,
     );
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);

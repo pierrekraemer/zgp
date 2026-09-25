@@ -103,9 +103,9 @@ pub fn init(app_ctx: *AppContext) SurfaceMeshSelection {
 }
 
 pub fn deinit(sms: *SurfaceMeshSelection) void {
-    var smdata_it = sms.surface_meshes_data.iterator();
-    while (smdata_it.next()) |entry| {
-        entry.value_ptr.deinit();
+    var smdata_it = sms.surface_meshes_data.valueIterator();
+    while (smdata_it.next()) |sd| {
+        sd.deinit();
     }
     sms.surface_meshes_data.deinit(sms.app_ctx.allocator);
 }

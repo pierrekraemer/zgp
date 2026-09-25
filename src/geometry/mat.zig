@@ -8,12 +8,21 @@ const Vec4f = vec.Vec4f;
 const Vec3d = vec.Vec3d;
 const Vec4d = vec.Vec4d;
 
-/// 4x4 matrix
 /// All operations consider the matrix to be in column-major order.
 pub const Mat3f = [3]Vec3f;
 pub const Mat4f = [4]Vec4f;
 pub const Mat3d = [3]Vec3d;
 pub const Mat4d = [4]Vec4d;
+
+// ------------------------------- SIMD ------------------------------- //
+
+const SimdVec4f = vec.SimdVec4f;
+const SimdVec4d = vec.SimdVec4d;
+
+pub const SimdMat4f = [4]SimdVec4f;
+pub const SimdMat4d = [4]SimdVec4d;
+
+// -------------------------------------------------------------------- //
 
 pub const identity3f: Mat3f = .{
     .{ 1.0, 0.0, 0.0 },
@@ -145,6 +154,25 @@ pub fn mulVec4d(m: Mat4d, v: Vec4d) Vec4d {
     };
 }
 
+// ------------------------------- SIMD ------------------------------- //
+
+pub fn simdMulVec4f(m: SimdMat4f, v: SimdVec4f) SimdVec4f {
+    const x = m[0] * @as(SimdVec4f, @splat(v[0]));
+    const y = m[1] * @as(SimdVec4f, @splat(v[1]));
+    const z = m[2] * @as(SimdVec4f, @splat(v[2]));
+    const w = m[3] * @as(SimdVec4f, @splat(v[3]));
+    return x + y + z + w;
+}
+pub fn simdMulVec4d(m: SimdMat4d, v: SimdVec4d) SimdVec4d {
+    const x = m[0] * @as(SimdVec4d, @splat(v[0]));
+    const y = m[1] * @as(SimdVec4d, @splat(v[1]));
+    const z = m[2] * @as(SimdVec4d, @splat(v[2]));
+    const w = m[3] * @as(SimdVec4d, @splat(v[3]));
+    return x + y + z + w;
+}
+
+// -------------------------------------------------------------------- //
+
 pub fn preMulVec3f(v: Vec3f, m: Mat3f) Vec3f {
     return .{
         m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2],
@@ -209,6 +237,19 @@ pub fn mulScalar4d(m: Mat4d, s: f64) Mat4d {
     };
 }
 
+// ------------------------------- SIMD ------------------------------- //
+
+pub fn simdMulScalar4f(a: SimdMat4f, s: f32) SimdMat4f {
+    const vs: vec.SimdVec4f = @splat(s);
+    return .{ a[0] * vs, a[1] * vs, a[2] * vs, a[3] * vs };
+}
+pub fn simdMulScalar4d(a: SimdMat4d, s: f64) SimdMat4d {
+    const vs: vec.SimdVec4d = @splat(s);
+    return .{ a[0] * vs, a[1] * vs, a[2] * vs, a[3] * vs };
+}
+
+// -------------------------------------------------------------------- //
+
 pub fn outerProduct3f(v1: Vec3f, v2: Vec3f) Mat3f {
     return .{
         .{ v1[0] * v2[0], v1[1] * v2[0], v1[2] * v2[0] },
@@ -241,6 +282,27 @@ pub fn outerProduct4d(v1: Vec4d, v2: Vec4d) Mat4d {
     };
 }
 
+// ------------------------------- SIMD ------------------------------- //
+
+pub fn simdOuterProduct4f(a: SimdVec4f, b: SimdVec4f) SimdMat4f {
+    return .{
+        a * @as(SimdVec4f, @splat(b[0])),
+        a * @as(SimdVec4f, @splat(b[1])),
+        a * @as(SimdVec4f, @splat(b[2])),
+        a * @as(SimdVec4f, @splat(b[3])),
+    };
+}
+pub fn simdOuterProduct4d(a: SimdVec4d, b: SimdVec4d) SimdMat4d {
+    return .{
+        a * @as(SimdVec4d, @splat(b[0])),
+        a * @as(SimdVec4d, @splat(b[1])),
+        a * @as(SimdVec4d, @splat(b[2])),
+        a * @as(SimdVec4d, @splat(b[3])),
+    };
+}
+
+// -------------------------------------------------------------------- //
+
 pub fn add3f(a: Mat3f, b: Mat3f) Mat3f {
     return .{
         .{ a[0][0] + b[0][0], a[0][1] + b[0][1], a[0][2] + b[0][2] },
@@ -272,6 +334,27 @@ pub fn add4d(a: Mat4d, b: Mat4d) Mat4d {
         .{ a[3][0] + b[3][0], a[3][1] + b[3][1], a[3][2] + b[3][2], a[3][3] + b[3][3] },
     };
 }
+
+// ------------------------------- SIMD ------------------------------- //
+
+pub fn simdAdd4f(a: SimdMat4f, b: SimdMat4f) SimdMat4f {
+    return .{
+        a[0] + b[0],
+        a[1] + b[1],
+        a[2] + b[2],
+        a[3] + b[3],
+    };
+}
+pub fn simdAdd4d(a: SimdMat4d, b: SimdMat4d) SimdMat4d {
+    return .{
+        a[0] + b[0],
+        a[1] + b[1],
+        a[2] + b[2],
+        a[3] + b[3],
+    };
+}
+
+// -------------------------------------------------------------------- //
 
 pub fn sub3f(a: Mat3f, b: Mat3f) Mat3f {
     return .{
