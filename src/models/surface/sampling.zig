@@ -41,7 +41,7 @@ pub fn uniformlySamplePointsOnSurface(
         const r2 = random.float(f32);
         const sqrt_r1 = @sqrt(r1);
         const bcoords: Vec3f = .{ 1.0 - sqrt_r1, sqrt_r1 * (1.0 - r2), sqrt_r1 * r2 };
-        const face_index: u32 = @intCast(random.weightedIndex(f32, face_area.data.data.items));
+        const face_index: u32 = @intCast(random.weightedIndex(f32, face_area.data.storage.items));
         const sp: SurfacePoint = .{
             .surface_mesh = sm,
             .type = .{

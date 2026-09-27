@@ -7,7 +7,6 @@ const SurfaceMesh = @import("SurfaceMesh.zig");
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec3d = vec.Vec3d;
-const geometry_utils = @import("../../geometry/utils.zig");
 const eigen = @import("../../geometry/eigen.zig");
 const SparseMatrix = eigen.SparseMatrix;
 const FactorizedSparseMatrix = eigen.FactorizedSparseMatrix;
@@ -279,7 +278,7 @@ pub const HeatMethodContext = struct {
         defer A.deinit();
 
         // compute time step t = mean_edge_length^2
-        const mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
+        const mean_edge_length = edge_length.data.meanValue();
         const t = mean_edge_length * mean_edge_length * diffusion_time;
 
         // compute H = A - t * Lc

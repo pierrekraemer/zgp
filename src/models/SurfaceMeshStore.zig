@@ -233,7 +233,7 @@ pub fn surfaceMeshDataUpdated(
     // if it exists, update the VBO with the data
     const maybe_vbo = sms.data_vbo.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
-        vbo.fillFrom(T, data.data);
+        vbo.fillFrom(T, data.data.storage.items);
     }
 
     // update the last known data update time
@@ -350,7 +350,7 @@ pub fn dataVBO(
     };
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
-        vbo.value_ptr.fillFrom(T, data.data); // on VBO creation, fill it with the data
+        vbo.value_ptr.fillFrom(T, data.data.storage.items); // on VBO creation, fill it with the data
     }
     return vbo.value_ptr.*;
 }

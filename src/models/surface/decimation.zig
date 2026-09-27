@@ -31,7 +31,7 @@ const QEMDecimationContext = struct {
         const vertex_position_simd = try sm.addData(.vertex, SimdVec4f, "__position_simd");
         var it = vertex_position.data.constIterator();
         while (it.next()) |elem| {
-            vertex_position_simd.data.data.items[elem.idx] = vec.simdFromVec3f(elem.value_ptr.*);
+            vertex_position_simd.data.valuePtr(elem.idx).* = vec.simdFromVec3f(elem.value_ptr.*);
         }
 
         const vertex_qem_simd = try sm.addData(.vertex, SimdMat4f, "__qem_simd");
@@ -60,7 +60,7 @@ const QEMDecimationContext = struct {
     pub fn writeBack(qem_ctx: *QEMDecimationContext, vertex_position: SurfaceMesh.CellData(.vertex, Vec3f)) !void {
         var it = qem_ctx.vertex_position_simd.data.constIterator();
         while (it.next()) |elem| {
-            vertex_position.data.data.items[elem.idx] = vec.simdToVec3f(elem.value_ptr.*);
+            vertex_position.data.valuePtr(elem.idx).* = vec.simdToVec3f(elem.value_ptr.*);
         }
     }
 

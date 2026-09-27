@@ -220,52 +220,9 @@ pub fn scale(data: *Data(Vec3f), s: f32) void {
     }
 }
 
-/// Compute and return the mean value of the given data.
-/// Supports float, int, or array of float/int types.
-pub fn meanValue(comptime T: type, data: *const Data(T)) T {
-    var sum: T = switch (@typeInfo(T)) {
-        .float, .int => 0,
-        .array => blk: {
-            const elem_info = @typeInfo(@typeInfo(T).array.child);
-            if (elem_info != .float and elem_info != .int) {
-                @compileError("meanValue only supports float, int, or array of float/int types");
-            }
-            break :blk @splat(0);
-        },
-        else => @compileError("meanValue only supports float, int, or array of float/int types"),
-    };
-    const nb_elements: usize = data.nbElements();
-    if (nb_elements == 0) {
-        return sum; // return zero if no elements
-    }
-    var it = data.constIterator();
-    while (it.next()) |elem| {
-        switch (@typeInfo(T)) {
-            .float, .int => sum += elem.value_ptr.*,
-            .array => {
-                inline for (0..@typeInfo(T).array.len) |i| {
-                    sum[i] += elem.value_ptr.*[i];
-                }
-            },
-            else => unreachable,
-        }
-    }
-    return switch (@typeInfo(T)) {
-        .float => sum / @as(T, @floatFromInt(nb_elements)),
-        .int => sum / @as(T, @intCast(nb_elements)),
-        .array => blk: {
-            inline for (0..@typeInfo(T).array.len) |i| {
-                sum[i] = sum[i] / @as(@TypeOf(sum[i]), @floatFromInt(nb_elements));
-            }
-            break :blk sum;
-        },
-        else => unreachable,
-    };
-}
-
 /// Translate the given data points to center around the given point.
 pub fn centerAround(data: *Data(Vec3f), v: Vec3f) void {
-    const c = meanValue(Vec3f, data);
+    const c = data.meanValue();
     const offset = vec.sub3f(v, c);
     var it = data.iterator();
     while (it.next()) |elem| {

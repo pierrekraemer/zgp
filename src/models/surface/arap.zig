@@ -142,7 +142,7 @@ pub const ARAPContext = struct {
         const vertex_position_rest = try sm.addData(.vertex, SimdVec4f, "__arap_rest_position_simd");
         var it = vertex_position.data.constIterator();
         while (it.next()) |elem| {
-            vertex_position_rest.data.data.items[elem.idx] = vec.simdFromVec3f(elem.value_ptr.*);
+            vertex_position_rest.data.valuePtr(elem.idx).* = vec.simdFromVec3f(elem.value_ptr.*);
         }
         // Create & initialize vertex rotation matrices (stored as quaternions in SimdVec4f)
         var vertex_rotation = try sm.addData(.vertex, SimdVec4f, "__arap_vertex_rotation_simd");

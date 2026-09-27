@@ -152,7 +152,7 @@ pub fn pointCloudDataComboBox(
             c.ImGui_SetItemDefaultFocus();
         }
 
-        var data_it = point_cloud.point_data.typedIterator(T);
+        var data_it = point_cloud.point_data.typedDataIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
@@ -209,7 +209,7 @@ pub fn surfaceMeshCellDataComboBox(
         }
 
         var data_container = surface_mesh.dataContainerPtr(cell_type);
-        var data_it = data_container.typedIterator(T);
+        var data_it = data_container.typedDataIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
@@ -320,7 +320,7 @@ pub fn incidenceGraphCellDataComboBox(
         }
 
         var data_container = incidence_graph.dataContainerPtr(cell_type);
-        var data_it = data_container.typedIterator(T);
+        var data_it = data_container.typedDataIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {

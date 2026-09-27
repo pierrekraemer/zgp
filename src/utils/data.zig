@@ -37,7 +37,7 @@ pub fn Data(comptime T: type) type {
         const Self = @This();
 
         data_gen: DataGen,
-        data: std.ArrayList(T),
+        storage: std.ArrayList(T),
 
         pub fn init(self: *Self, name: []const u8, container: *DataContainer) void {
             self.data_gen = .{
@@ -51,30 +51,30 @@ pub fn Data(comptime T: type) type {
                     .clone = clone,
                 },
             };
-            self.data = .empty;
+            self.storage = .empty;
         }
 
         /// Part of the DataGen interface.
         pub fn deinit(data_gen: *DataGen) void {
             const self: *Data(T) = @alignCast(@fieldParentPtr("data_gen", data_gen));
-            self.data.deinit(self.data_gen.container.allocator);
+            self.storage.deinit(self.data_gen.container.allocator);
             self.data_gen.container.allocator.destroy(self); // created in DataContainer.addData
         }
 
         /// Part of the DataGen interface.
         pub fn ensureSize(data_gen: *DataGen, size: usize) !void {
             const self: *Data(T) = @alignCast(@fieldParentPtr("data_gen", data_gen));
-            if (self.data.items.len >= size) {
+            if (self.storage.items.len >= size) {
                 return;
             }
-            try self.data.ensureTotalCapacity(self.data_gen.container.allocator, size);
-            _ = self.data.addManyAsSliceAssumeCapacity(size -| self.data.items.len);
+            try self.storage.ensureTotalCapacity(self.data_gen.container.allocator, size);
+            _ = self.storage.addManyAsSliceAssumeCapacity(size -| self.storage.items.len);
         }
 
         /// Part of the DataGen interface.
         pub fn clearRetainingCapacity(data_gen: *DataGen) void {
             const self: *Data(T) = @alignCast(@fieldParentPtr("data_gen", data_gen));
-            self.data.clearRetainingCapacity();
+            self.storage.clearRetainingCapacity();
         }
 
         /// Part of the DataGen interface.
@@ -82,7 +82,7 @@ pub fn Data(comptime T: type) type {
             const self: *const Data(T) = @alignCast(@fieldParentPtr("data_gen", data_gen));
             const cloned_data = try container.allocator.create(Data(T));
             cloned_data.init(name, container);
-            cloned_data.data = try self.data.clone(container.allocator);
+            cloned_data.storage = try self.storage.clone(container.allocator);
             return &cloned_data.data_gen;
         }
 
@@ -95,21 +95,21 @@ pub fn Data(comptime T: type) type {
         }
 
         pub fn valuePtr(self: anytype, index: u32) ValuePtrType(@TypeOf(self)) {
-            return &self.data.items[index];
+            return &self.storage.items[index];
         }
 
         pub fn value(self: *Self, index: u32) T {
-            return self.data.items[index];
+            return self.storage.items[index];
         }
 
         pub fn fill(self: *Self, val: T) void {
-            for (self.data.items) |*element| {
+            for (self.storage.items) |*element| {
                 element.* = val;
             }
         }
 
         pub fn fillInactive(self: *Self, val: T) void {
-            for (self.data.items, 0..) |*element, index| {
+            for (self.storage.items, 0..) |*element, index| {
                 if (!self.data_gen.container.isActiveIndexAssumeSize(@intCast(index))) {
                     element.* = val;
                 }
@@ -118,109 +118,8 @@ pub fn Data(comptime T: type) type {
 
         pub fn copyFrom(self: *Self, src: *const Self) void {
             assert(self.data_gen.type_id == src.data_gen.type_id);
-            assert(self.data.items.len == src.data.items.len);
-            @memcpy(self.data.items, src.data.items);
-        }
-
-        pub fn minValue(
-            self: *Self,
-            context: anytype,
-            comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
-        ) T {
-            assert(self.nbElements() > 0);
-            var best = self.value(self.data_gen.container.firstIndex());
-            var it = self.constIterator();
-            while (it.next()) |element| {
-                if (compareFn(context, element.*, best) == .lt) {
-                    best = element.*;
-                }
-            }
-            return best;
-        }
-
-        pub fn maxValue(
-            self: *Self,
-            context: anytype,
-            comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
-        ) T {
-            assert(self.nbElements() > 0);
-            var best = self.value(self.data_gen.container.firstIndex());
-            var it = self.constIterator();
-            while (it.next()) |element| {
-                if (compareFn(context, element.*, best) == .gt) {
-                    best = element.*;
-                }
-            }
-            return best;
-        }
-
-        pub fn minMaxValues(
-            self: *Self,
-            context: anytype,
-            comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
-        ) struct { T, T } {
-            assert(self.nbElements() > 0);
-            var min = self.value(self.data_gen.container.firstIndex());
-            var max = min;
-            var it = self.constIterator();
-            while (it.next()) |element| {
-                if (compareFn(context, element.value_ptr.*, min) == .lt) {
-                    min = element.value_ptr.*;
-                }
-                if (compareFn(context, element.value_ptr.*, max) == .gt) {
-                    max = element.value_ptr.*;
-                }
-            }
-            return .{ min, max };
-        }
-
-        /// Return the number of elements in the raw data storage.
-        /// This is different from nbElements() which returns the number of elements
-        /// corresponding to active indices in the DataContainer.
-        pub fn rawLength(self: *const Self) usize {
-            return self.data.items.len;
-        }
-
-        /// Return the size in bytes of the raw data stored in this Data.
-        pub fn rawSize(self: *const Self) usize {
-            return self.data.items.len * @sizeOf(T);
-        }
-
-        pub const RawIterator = BaseRawIterator(*Self, *T);
-        pub const ConstRawIterator = BaseRawIterator(*const Self, *const T);
-        fn BaseRawIterator(comptime SelfPtr: type, comptime ElementPtr: type) type {
-            return struct {
-                data: SelfPtr,
-                index: u32,
-                pub fn next(it: *@This()) ?ElementPtr {
-                    if (it.index == it.data.data.items.len) {
-                        return null;
-                    }
-                    defer it.index = it.index + 1;
-                    return &it.data.data.items[it.index];
-                }
-                pub fn reset(it: *@This()) void {
-                    it.index = 0;
-                }
-            };
-        }
-
-        pub fn rawIterator(self: *Self) RawIterator {
-            return .{
-                .data = self,
-                .index = 0,
-            };
-        }
-
-        pub fn rawConstIterator(self: *const Self) ConstRawIterator {
-            return .{
-                .data = self,
-                .index = 0,
-            };
-        }
-
-        pub fn nbElements(self: *const Self) usize {
-            return self.data_gen.container.nbElements();
+            assert(self.storage.items.len == src.storage.items.len);
+            @memcpy(self.storage.items, src.storage.items);
         }
 
         pub const Iterator = BaseIterator(*Self, *T);
@@ -238,7 +137,7 @@ pub fn Data(comptime T: type) type {
                         return null;
                     }
                     defer it.index = it.data.data_gen.container.nextIndex(it.index);
-                    return .{ .value_ptr = &it.data.data.items[it.index], .idx = it.index };
+                    return .{ .value_ptr = &it.data.storage.items[it.index], .idx = it.index };
                 }
                 pub fn reset(it: *@This()) void {
                     it.index = it.data.data_gen.container.firstIndex();
@@ -257,6 +156,99 @@ pub fn Data(comptime T: type) type {
             return .{
                 .data = self,
                 .index = self.data_gen.container.firstIndex(),
+            };
+        }
+
+        pub fn minValue(
+            self: *Self,
+            context: anytype,
+            comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
+        ) T {
+            assert(self.data_gen.container.nbElements() > 0);
+            var best = self.value(self.data_gen.container.firstIndex());
+            var it = self.constIterator();
+            while (it.next()) |element| {
+                if (compareFn(context, element.*, best) == .lt) {
+                    best = element.*;
+                }
+            }
+            return best;
+        }
+
+        pub fn maxValue(
+            self: *Self,
+            context: anytype,
+            comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
+        ) T {
+            assert(self.data_gen.container.nbElements() > 0);
+            var best = self.value(self.data_gen.container.firstIndex());
+            var it = self.constIterator();
+            while (it.next()) |element| {
+                if (compareFn(context, element.*, best) == .gt) {
+                    best = element.*;
+                }
+            }
+            return best;
+        }
+
+        pub fn minMaxValues(
+            self: *Self,
+            context: anytype,
+            comptime compareFn: fn (ctx: @TypeOf(context), a: T, b: T) std.math.Order,
+        ) struct { T, T } {
+            assert(self.data_gen.container.nbElements() > 0);
+            var min = self.value(self.data_gen.container.firstIndex());
+            var max = min;
+            var it = self.constIterator();
+            while (it.next()) |element| {
+                if (compareFn(context, element.value_ptr.*, min) == .lt) {
+                    min = element.value_ptr.*;
+                }
+                if (compareFn(context, element.value_ptr.*, max) == .gt) {
+                    max = element.value_ptr.*;
+                }
+            }
+            return .{ min, max };
+        }
+
+        pub fn meanValue(self: *const Self) T {
+            var sum: T = switch (@typeInfo(T)) {
+                .float, .int => 0,
+                .array => blk: {
+                    const elem_info = @typeInfo(@typeInfo(T).array.child);
+                    if (elem_info != .float and elem_info != .int) {
+                        @compileError("meanValue only supports float, int, or array of float/int types");
+                    }
+                    break :blk @splat(0);
+                },
+                else => @compileError("meanValue only supports float, int, or array of float/int types"),
+            };
+            const nb_elements: usize = self.data_gen.container.nbElements();
+            if (nb_elements == 0) {
+                return sum; // return zero if no elements
+            }
+            var it = self.constIterator();
+            while (it.next()) |elem| {
+                switch (@typeInfo(T)) {
+                    .float, .int => sum += elem.value_ptr.*,
+                    .array => {
+                        inline for (0..@typeInfo(T).array.len) |i| {
+                            sum[i] += elem.value_ptr.*[i];
+                        }
+                    },
+                    else => unreachable,
+                }
+            }
+            return switch (@typeInfo(T)) {
+                .float => sum / @as(T, @floatFromInt(nb_elements)),
+                .int => sum / @as(T, @intCast(nb_elements)),
+                .array => blk: {
+                    inline for (0..@typeInfo(T).array.len) |i| {
+                        sum[i] = sum[i] / @as(@TypeOf(sum[i]), @floatFromInt(nb_elements));
+                    }
+                    break :blk sum;
+                },
+                else => unreachable,
             };
         }
     };
@@ -405,29 +397,28 @@ pub const DataContainer = struct {
     }
 
     const DataGenIterator = struct {
-        iterator: std.StringHashMapUnmanaged(*DataGen).Iterator,
+        value_iterator: std.StringHashMapUnmanaged(*DataGen).ValueIterator,
         pub fn next(it: *@This()) ?*DataGen {
-            if (it.iterator.next()) |entry| {
-                return entry.value_ptr.*;
+            if (it.value_iterator.next()) |value_ptr| {
+                return value_ptr.*;
             }
             return null;
         }
     };
 
-    pub fn iterator(dc: *const DataContainer) DataGenIterator {
+    pub fn dataIterator(dc: *const DataContainer) DataGenIterator {
         return .{
-            .iterator = dc.datas.iterator(),
+            .value_iterator = dc.datas.valueIterator(),
         };
     }
 
     fn DataIterator(comptime T: type) type {
         return struct {
-            iterator: std.StringHashMapUnmanaged(*DataGen).Iterator,
+            value_iterator: std.StringHashMapUnmanaged(*DataGen).ValueIterator,
             pub fn next(it: *@This()) ?*Data(T) {
-                while (it.iterator.next()) |entry| {
-                    const data_gen = entry.value_ptr.*;
-                    if (data_gen.type_id == comptime typeId(T)) {
-                        return @alignCast(@fieldParentPtr("data_gen", data_gen));
+                while (it.value_iterator.next()) |value_ptr| {
+                    if (value_ptr.*.type_id == comptime typeId(T)) {
+                        return @alignCast(@fieldParentPtr("data_gen", value_ptr.*));
                     }
                 }
                 return null;
@@ -435,9 +426,31 @@ pub const DataContainer = struct {
         };
     }
 
-    pub fn typedIterator(dc: *const DataContainer, comptime T: type) DataIterator(T) {
+    pub fn typedDataIterator(dc: *const DataContainer, comptime T: type) DataIterator(T) {
         return .{
-            .iterator = dc.datas.iterator(),
+            .value_iterator = dc.datas.valueIterator(),
+        };
+    }
+
+    const IndexIterator = struct {
+        dc: *DataContainer,
+        index: u32,
+        pub fn next(it: *IndexIterator) ?u32 {
+            if (it.index == it.dc.lastIndex()) {
+                return null;
+            }
+            defer it.index = it.dc.nextIndex(it.index);
+            return it.index;
+        }
+        pub fn reset(it: *IndexIterator) void {
+            it.index = it.dc.firstIndex();
+        }
+    };
+
+    pub fn indexIterator(dc: *const DataContainer) IndexIterator {
+        return .{
+            .dc = dc,
+            .index = dc.firstIndex(),
         };
     }
 

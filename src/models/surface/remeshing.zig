@@ -7,7 +7,6 @@ const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
-const geometry_utils = @import("../../geometry/utils.zig");
 
 const length = @import("length.zig");
 const angle = @import("angle.zig");
@@ -66,7 +65,7 @@ pub fn isotropicRemeshing(
 ) !void {
     try subdivision.triangulateFaces(allocator, sm);
 
-    var mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
+    var mean_edge_length = edge_length.data.meanValue();
     const length_goal = mean_edge_length * edge_length_factor;
 
     var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
@@ -448,7 +447,7 @@ pub fn isotropicRemeshing(
             try area.computeVertexAreas(sm, face_area, vertex_area);
             try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
             try curvature.computeVertexCurvatures(io, sm, vertex_position, vertex_normal, edge_dihedral_angle, edge_length, face_area, vertex_curvature);
-            mean_edge_length = geometry_utils.meanValue(f32, edge_length.data);
+            mean_edge_length = edge_length.data.meanValue();
             const approx_tolerance = mean_edge_length * 0.035; // TODO: this value could be tuned
             vertex_it.reset();
             while (vertex_it.next()) |vertex| {
