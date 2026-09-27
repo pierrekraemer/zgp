@@ -84,6 +84,27 @@ pub fn mat4dFromMat4f(m: Mat4f) Mat4d {
     };
 }
 
+// ------------------------------- SIMD ------------------------------- //
+
+pub fn simdFromMat3f(m: Mat3f) SimdMat4f {
+    return .{
+        vec.simdFromVec3f(m[0]),
+        vec.simdFromVec3f(m[1]),
+        vec.simdFromVec3f(m[2]),
+        .{ 0.0, 0.0, 0.0, 1.0 },
+    };
+}
+pub fn simdFromMat3d(m: Mat3d) SimdMat4d {
+    return .{
+        vec.simdFromVec3d(m[0]),
+        vec.simdFromVec3d(m[1]),
+        vec.simdFromVec3d(m[2]),
+        .{ 0.0, 0.0, 0.0, 1.0 },
+    };
+}
+
+// -------------------------------------------------------------------- //
+
 pub fn mul3f(a: Mat3f, b: Mat3f) Mat3f {
     var result: Mat3f = undefined;
     for (0..3) |i| {

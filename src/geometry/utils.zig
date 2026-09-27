@@ -5,6 +5,7 @@ const Data = @import("../utils/data.zig").Data;
 const vec = @import("../geometry/vec.zig");
 const Vec2f = vec.Vec2f;
 const Vec3f = vec.Vec3f;
+const SimdVec4f = vec.SimdVec4f;
 
 pub const epsilon: f32 = 1e-5;
 
@@ -127,6 +128,14 @@ pub fn planeOrientation(a: Vec3f, b: Vec3f, c: Vec3f, p: Vec3f) PlaneOrientation
     } else {
         return .over;
     }
+}
+
+/// Rotate a vector by a quaternion.
+pub fn rotateVectorByQuaternion(quat: SimdVec4f, vector: SimdVec4f) SimdVec4f {
+    const qw: SimdVec4f = @splat(quat[0]);
+    const qv: SimdVec4f = .{ quat[1], quat[2], quat[3], 0.0 };
+    const t_vec = vec.simdCross4f(qv, vector) + qw * vector;
+    return vector + vec.simdCross4f(qv, t_vec) * @as(SimdVec4f, @splat(2.0));
 }
 
 /// Return a vector where the component of v along unitDir has been removed.

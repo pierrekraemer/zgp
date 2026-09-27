@@ -7,9 +7,12 @@ const invalid_index = @import("../../utils//data.zig").invalid_index;
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec3d = vec.Vec3d;
+const SimdVec4f = vec.SimdVec4f;
 const mat = @import("../../geometry/mat.zig");
 const Mat3f = mat.Mat3f;
 const Mat3d = mat.Mat3d;
+const SimdMat4f = mat.SimdMat4f;
+const geometry_utils = @import("../../geometry/utils.zig");
 const eigen = @import("../../geometry/eigen.zig");
 const SparseMatrix = eigen.SparseMatrix;
 const FactorizedSparseMatrix = eigen.FactorizedSparseMatrix;
@@ -17,64 +20,79 @@ const FactorizedSparseMatrix = eigen.FactorizedSparseMatrix;
 const laplacian = @import("laplacian.zig");
 const intrinsic_triangulation = @import("intrinsic_triangulation.zig");
 
-/// Compute the best-fit rotation for a vertex from its one-ring,
-/// using the SVD of the covariance matrix between rest and current edge vectors.
-/// Returns the 3x3 rotation matrix R_i.
+/// Compute the best-fit rotation for a vertex from its one-ring using Horn's method (no SVD).
+/// Returns the optimal rotation as a unit quaternion.
 pub fn computeVertexOneRingRotation(
     sm: *const SurfaceMesh,
     v: SurfaceMesh.Cell,
+    previous_rotation: SimdVec4f,
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-    vertex_position_rest: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position_rest: SurfaceMesh.CellData(.vertex, SimdVec4f),
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-) Mat3f {
+) SimdVec4f {
     assert(v.cellType() == .vertex);
 
     // Build the covariance matrix S = sum_j w_ij * e_ij_rest * e_ij_current^T
-    var S: Mat3d = mat.zero3d;
-
+    var S: SimdMat4f = .{ @splat(0.0), @splat(0.0), @splat(0.0), @splat(0.0) };
     const v_idx = sm.cellIndex(v);
-
     const p_rest = vertex_position_rest.valueByIndex(v_idx);
-    const p_current = vertex_position.valueByIndex(v_idx);
-
+    const p_current = vec.simdFromVec3f(vertex_position.valueByIndex(v_idx));
     var dart_it = sm.cellDartIterator(v);
     while (dart_it.next()) |d| {
         const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
         const nv_idx = sm.cellIndex(nv);
-
+        const nv_current = vec.simdFromVec3f(vertex_position.valueByIndex(nv_idx));
         // edge vectors in rest and current poses
-        const e_rest = vec.vec3dFromVec3f(vec.sub3f(
-            vertex_position_rest.valueByIndex(nv_idx),
-            p_rest,
-        ));
-        const e_current = vec.vec3dFromVec3f(vec.sub3f(
-            vertex_position.valueByIndex(nv_idx),
-            p_current,
-        ));
-
+        const e_rest = vertex_position_rest.valueByIndex(nv_idx) - p_rest;
+        const e_current = nv_current - p_current;
         // cotan weight of the edge (sum of both halfedge cotan weights)
-        const w: f64 = @floatCast(laplacian.edgeCotanWeight(sm, .{ .edge = d }, halfedge_cotan_weight));
-
+        const w = laplacian.edgeCotanWeight(sm, .{ .edge = d }, halfedge_cotan_weight);
         // S += w * e_rest * e_current^T
-        S = mat.add3d(S, mat.mulScalar3d(mat.outerProduct3d(e_rest, e_current), w));
+        S = mat.simdAdd4f(S, mat.simdMulScalar4f(mat.simdOuterProduct4f(e_rest, e_current), w));
     }
 
-    // SVD: S = U * diag(sigma) * V^T
-    var U, _, const V = eigen.svd3d(S);
-
-    // Handle reflections: if det(V * U^T) < 0, negate the column of U corresponding to the smallest singular value
-    // Compute det(V * U^T) by computing det(V) * det(U) (for column-major Mat3d, det = col0 . (col1 x col2))
-    const det_U = vec.dot3d(U[0], vec.cross3d(U[1], U[2]));
-    const det_V = vec.dot3d(V[0], vec.cross3d(V[1], V[2]));
-    if (det_U * det_V < 0) {
-        // Singular values are sorted in decreasing order by Eigen's JacobiSVD (smallest singular value is in column 2)
-        U[2] = vec.mulScalar3d(U[2], -1.0);
+    // Horn's Absolute Orientation Method:
+    // The dominant eigenvector of N is the unit quaternion representing the optimal rotation.
+    // S is column-major so S_ij = S[j][i]
+    var N = SimdMat4f{
+        SimdVec4f{ S[0][0] + S[1][1] + S[2][2], S[2][1] - S[1][2], S[0][2] - S[2][0], S[1][0] - S[0][1] },
+        SimdVec4f{ S[2][1] - S[1][2], S[0][0] - S[1][1] - S[2][2], S[1][0] + S[0][1], S[0][2] + S[2][0] },
+        SimdVec4f{ S[0][2] - S[2][0], S[1][0] + S[0][1], -S[0][0] + S[1][1] - S[2][2], S[2][1] + S[1][2] },
+        SimdVec4f{ S[1][0] - S[0][1], S[0][2] + S[2][0], S[2][1] + S[1][2], -S[0][0] - S[1][1] + S[2][2] },
+    };
+    // Shift N to make it positive definite (prevents power iteration from oscillating to negative eigenvalues)
+    // Use the L1 matrix norm (max absolute column sum) as a safe upper bound on the spectral radius (Gershgorin Circle Theorem).
+    const c0 = @reduce(.Add, @abs(N[0]));
+    const c1 = @reduce(.Add, @abs(N[1]));
+    const c2 = @reduce(.Add, @abs(N[2]));
+    const c3 = @reduce(.Add, @abs(N[3]));
+    const max_eval_bound = @max(@max(c0, c1), @max(c2, c3));
+    if (max_eval_bound < 1e-8) return previous_rotation;
+    // Pre-normalize N so its eigenvalues are strictly between [-1, 1],
+    // then shift the diagonal by 1.0 so eigenvalues are strictly in [0, 2].
+    // This prevents f32 overflow, eliminating the need to normalize the vector inside the loop.
+    const inv_shift = @as(SimdVec4f, @splat(1.0 / max_eval_bound));
+    N[0] = N[0] * inv_shift;
+    N[1] = N[1] * inv_shift;
+    N[2] = N[2] * inv_shift;
+    N[3] = N[3] * inv_shift;
+    N[0][0] += 1.0;
+    N[1][1] += 1.0;
+    N[2][2] += 1.0;
+    N[3][3] += 1.0;
+    var q = previous_rotation; // already guaranteed to be a valid unit quaternion
+    // 3 iterations of Power Iteration
+    inline for (0..3) |_| {
+        q = mat.simdMulVec4f(N, q);
     }
-
-    // R = V * U^T
-    const R = mat.mul3d(V, mat.transpose3d(U));
-
-    return mat.mat3fFromMat3d(R);
+    // Normalize just once at the end
+    const len2 = vec.simdDot4f(q, q);
+    if (len2 > 1e-16) {
+        q = q * @as(SimdVec4f, @splat(1.0 / @sqrt(len2)));
+    } else {
+        q = previous_rotation;
+    }
+    return q;
 }
 
 /// ARAP deformation context.
@@ -84,13 +102,13 @@ pub const ARAPContext = struct {
     surface_mesh: *SurfaceMesh, // the original SurfaceMesh
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f), // defined on the original SurfaceMesh, updated by the ARAP solver
 
-    vertex_position_rest: SurfaceMesh.CellData(.vertex, Vec3f), // created on the original SurfaceMesh
-    vertex_rotation: SurfaceMesh.CellData(.vertex, Mat3f), // created on the original SurfaceMesh
+    vertex_position_rest: SurfaceMesh.CellData(.vertex, SimdVec4f), // created on the original SurfaceMesh
+    vertex_rotation: SurfaceMesh.CellData(.vertex, SimdVec4f), // created on the original SurfaceMesh
     nb_free: u32,
     free_vertex_index: SurfaceMesh.CellData(.vertex, u32), // created on the original SurfaceMesh
 
-    // if an IT context is provided upon init (supposed to be Delaunay),
-    // its connectivity and halfedge cotan weights are used to compute the Laplacian and vertex rotations
+    // if an IT context is provided upon init, it is supposed to be Delaunay,
+    // and its connectivity and halfedge cotan weights are used to compute the Laplacian and vertex rotations;
     // the following two fields thus either point to the IT SurfaceMesh and its halfedge cotan weights
     // or to the original SurfaceMesh and its halfedge cotan weights
     compute_surface_mesh: *SurfaceMesh,
@@ -120,13 +138,15 @@ pub const ARAPContext = struct {
         handle_set: *SurfaceMesh.CellSet,
         it_ctx: ?intrinsic_triangulation.ITContext,
     ) !ARAPContext {
-        // Create & initialize vertex rest positions
-        var vertex_position_rest = try sm.addData(.vertex, Vec3f, "__arap_rest_positions");
-        vertex_position_rest.data.copyFrom(vertex_position.data);
-
-        // Create & initialize vertex rotation matrices
-        var vertex_rotation = try sm.addData(.vertex, Mat3f, "__arap_vertex_rotation");
-        vertex_rotation.data.fill(mat.identity3f);
+        // Create & initialize vertex rest positions (stored as SimdVec4f)
+        const vertex_position_rest = try sm.addData(.vertex, SimdVec4f, "__arap_rest_position_simd");
+        var it = vertex_position.data.constIterator();
+        while (it.next()) |elem| {
+            vertex_position_rest.data.data.items[elem.idx] = vec.simdFromVec3f(elem.value_ptr.*);
+        }
+        // Create & initialize vertex rotation matrices (stored as quaternions in SimdVec4f)
+        var vertex_rotation = try sm.addData(.vertex, SimdVec4f, "__arap_vertex_rotation_simd");
+        vertex_rotation.data.fill(.{ 1.0, 0.0, 0.0, 0.0 });
 
         // Create consecutive indices for free vertices
         var free_vertex_index = try sm.addData(.vertex, u32, "__arap_free_vertex_index");
@@ -182,7 +202,7 @@ pub const ARAPContext = struct {
         defer L.deinit();
         const factorized_L: FactorizedSparseMatrix = .init(L, @intCast(nb_free));
 
-        // allocate buffers for the right-hand side and solution matrices (nb_free x 3)
+        // pre-allocate buffers for the right-hand side and solution matrices (nb_free x 3)
         const rhs_mat: eigen.DenseMatrix = .init(@intCast(nb_free), 3);
         const solve_mat: eigen.DenseMatrix = .init(@intCast(nb_free), 3);
 
@@ -207,8 +227,8 @@ pub const ARAPContext = struct {
         arap_ctx.rhs_mat.deinit();
         arap_ctx.factorized_L.deinit();
         arap_ctx.surface_mesh.removeData(.vertex, u32, arap_ctx.free_vertex_index);
-        arap_ctx.surface_mesh.removeData(.vertex, Mat3f, arap_ctx.vertex_rotation);
-        arap_ctx.surface_mesh.removeData(.vertex, Vec3f, arap_ctx.vertex_position_rest);
+        arap_ctx.surface_mesh.removeData(.vertex, SimdVec4f, arap_ctx.vertex_rotation);
+        arap_ctx.surface_mesh.removeData(.vertex, SimdVec4f, arap_ctx.vertex_position_rest);
     }
 
     /// Run the ARAP local/global solve & updates vertex_position
@@ -218,15 +238,16 @@ pub const ARAPContext = struct {
 
             surface_mesh: *const SurfaceMesh,
             halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-            vertex_position_rest: SurfaceMesh.CellData(.vertex, Vec3f),
+            vertex_position_rest: SurfaceMesh.CellData(.vertex, SimdVec4f),
             vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-            vertex_rotation: SurfaceMesh.CellData(.vertex, Mat3f),
+            vertex_rotation: SurfaceMesh.CellData(.vertex, SimdVec4f),
 
             pub fn run(t: *const ComputeVertexRotationTask, v: SurfaceMesh.Cell) void {
-                const v_idx = t.surface_mesh.cellIndex(v);
-                t.vertex_rotation.valuePtrByIndex(v_idx).* = computeVertexOneRingRotation(
+                const v_rotation = t.vertex_rotation.valuePtr(v);
+                v_rotation.* = computeVertexOneRingRotation(
                     t.surface_mesh,
                     v,
+                    v_rotation.*,
                     t.halfedge_cotan_weight,
                     t.vertex_position_rest,
                     t.vertex_position,
@@ -239,9 +260,9 @@ pub const ARAPContext = struct {
 
             surface_mesh: *const SurfaceMesh,
             halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-            vertex_position_rest: SurfaceMesh.CellData(.vertex, Vec3f),
+            vertex_position_rest: SurfaceMesh.CellData(.vertex, SimdVec4f),
             vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-            vertex_rotation: SurfaceMesh.CellData(.vertex, Mat3f),
+            vertex_rotation: SurfaceMesh.CellData(.vertex, SimdVec4f),
             free_vertex_index: SurfaceMesh.CellData(.vertex, u32),
             rhs_mat: eigen.DenseMatrix,
 
@@ -250,7 +271,7 @@ pub const ARAPContext = struct {
                 const fi = t.free_vertex_index.valueByIndex(v_idx);
                 if (fi == invalid_index) return; // constrained vertex
 
-                var rhs_val: Vec3d = vec.zero3d;
+                var rhs_val: SimdVec4f = vec.zero4f;
 
                 // iterate over one-ring neighbors
                 var dart_it = t.surface_mesh.cellDartIterator(v);
@@ -258,36 +279,26 @@ pub const ARAPContext = struct {
                     const vn: SurfaceMesh.Cell = .{ .vertex = t.surface_mesh.phi1(d) };
                     const vn_idx = t.surface_mesh.cellIndex(vn);
 
-                    const w_ij: eigen.Scalar = @floatCast(laplacian.edgeCotanWeight(t.surface_mesh, .{ .edge = d }, t.halfedge_cotan_weight));
+                    const w_ij = laplacian.edgeCotanWeight(t.surface_mesh, .{ .edge = d }, t.halfedge_cotan_weight);
 
                     // Rest edge vector
-                    const e_rest = vec.sub3f(
-                        t.vertex_position_rest.valueByIndex(vn_idx),
-                        t.vertex_position_rest.valueByIndex(v_idx),
-                    );
-
+                    const e_rest: SimdVec4f = t.vertex_position_rest.valueByIndex(vn_idx) - t.vertex_position_rest.valueByIndex(v_idx);
                     // Rotated edge: (R_i + R_j) / 2 * e_rest
-                    const rotated_e = mat.mulVec3f(
-                        mat.mulScalar3f(
-                            mat.add3f(t.vertex_rotation.valueByIndex(v_idx), t.vertex_rotation.valueByIndex(vn_idx)),
-                            0.5,
-                        ),
-                        e_rest,
-                    );
-
-                    rhs_val = vec.add3d(rhs_val, vec.mulScalar3d(vec.vec3dFromVec3f(rotated_e), w_ij));
+                    const rotated_e_i = geometry_utils.rotateVectorByQuaternion(t.vertex_rotation.valueByIndex(v_idx), e_rest);
+                    const rotated_e_j = geometry_utils.rotateVectorByQuaternion(t.vertex_rotation.valueByIndex(vn_idx), e_rest);
+                    const rotated_e = (rotated_e_i + rotated_e_j) * @as(SimdVec4f, @splat(0.5 * w_ij));
+                    rhs_val += rotated_e;
 
                     // if neighbor is constrained, move its contribution to the RHS
                     // L_ij = w_ij, so: rhs -= L_ij * p_j => rhs -= w_ij * p_j
                     if (t.free_vertex_index.valueByIndex(vn_idx) == invalid_index) {
-                        rhs_val = vec.sub3d(rhs_val, vec.mulScalar3d(
-                            vec.vec3dFromVec3f(t.vertex_position.valueByIndex(vn_idx)),
-                            w_ij,
-                        ));
+                        rhs_val -= vec.simdFromVec3f(t.vertex_position.valueByIndex(vn_idx)) * @as(SimdVec4f, @splat(w_ij));
                     }
                 }
 
-                t.rhs_mat.setRow(@intCast(fi), &rhs_val);
+                // set the right-hand side for this free vertex
+                const rhs_array: [3]f64 = .{ @floatCast(rhs_val[0]), @floatCast(rhs_val[1]), @floatCast(rhs_val[2]) };
+                t.rhs_mat.setRow(@intCast(fi), &rhs_array);
             }
         };
 
