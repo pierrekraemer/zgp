@@ -38,14 +38,12 @@ pub fn computeVertexTangentBases(
     vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
 
-        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), vertex: SurfaceMesh.Cell) void {
             t.vertex_tangent_basis.valuePtr(vertex).* = vertexTangentBasis(
                 t.surface_mesh,
                 vertex,
@@ -55,7 +53,7 @@ pub fn computeVertexTangentBases(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner(.vertex) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,

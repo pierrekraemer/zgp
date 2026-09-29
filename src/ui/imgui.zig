@@ -225,10 +225,10 @@ pub fn surfaceMeshCellDataComboBox(
 
 pub fn surfaceMeshCellSetComboBox(
     surface_mesh: *const SurfaceMesh,
-    cell_type: SurfaceMesh.CellType,
-    selected_cell_set: ?*SurfaceMesh.CellSet,
-) SelectionResult(*SurfaceMesh.CellSet) {
-    if (c.ImGui_BeginCombo("", if (selected_cell_set) |cell_set| cell_set.name.ptr else "-- none --", 0)) {
+    comptime cell_type: SurfaceMesh.CellType,
+    selected_cell_set: ?*SurfaceMesh.CellSet(cell_type),
+) SelectionResult(*SurfaceMesh.CellSet(cell_type)) {
+    if (c.ImGui_BeginCombo("", if (selected_cell_set) |cell_set| cell_set.cell_set_gen.name.ptr else "-- none --", 0)) {
         defer c.ImGui_EndCombo();
         const is_none_selected = selected_cell_set == null;
         if (c.ImGui_SelectableEx("-- none --", is_none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
@@ -238,17 +238,11 @@ pub fn surfaceMeshCellSetComboBox(
             c.ImGui_SetItemDefaultFocus();
         }
 
-        const cell_sets = switch (cell_type) {
-            .vertex => &surface_mesh.vertex_sets,
-            .edge => &surface_mesh.edge_sets,
-            .face => &surface_mesh.face_sets,
-            else => unreachable,
-        };
-        var cell_set_it = cell_sets.iterator();
-        while (cell_set_it.next()) |entry| {
-            const cell_set = entry.value_ptr;
+        const cell_sets = surface_mesh.cellSetContainerPtr(cell_type);
+        var cell_set_it = cell_sets.valueIterator();
+        while (cell_set_it.next()) |cell_set| {
             const is_selected = if (selected_cell_set) |scs| scs == cell_set else false;
-            if (c.ImGui_SelectableEx(cell_set.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+            if (c.ImGui_SelectableEx(cell_set.cell_set_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 return .{ .changed = cell_set };
             }
             if (is_selected) {

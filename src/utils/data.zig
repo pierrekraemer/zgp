@@ -159,6 +159,39 @@ pub fn Data(comptime T: type) type {
             };
         }
 
+        pub const ValueIterator = BaseValueIterator(*Self, *T);
+        pub const ConstValueIterator = BaseValueIterator(*const Self, *const T);
+        fn BaseValueIterator(comptime SelfPtr: type, comptime ElementPtr: type) type {
+            return struct {
+                data: SelfPtr,
+                index: u32,
+                pub fn next(it: *@This()) ?ElementPtr {
+                    if (it.index == it.data.data_gen.container.lastIndex()) {
+                        return null;
+                    }
+                    defer it.index = it.data.data_gen.container.nextIndex(it.index);
+                    return &it.data.storage.items[it.index];
+                }
+                pub fn reset(it: *@This()) void {
+                    it.index = it.data.data_gen.container.firstIndex();
+                }
+            };
+        }
+
+        pub fn valueIterator(self: *Self) ValueIterator {
+            return .{
+                .data = self,
+                .index = self.data_gen.container.firstIndex(),
+            };
+        }
+
+        pub fn constValueIterator(self: *const Self) ConstValueIterator {
+            return .{
+                .data = self,
+                .index = self.data_gen.container.firstIndex(),
+            };
+        }
+
         pub fn minValue(
             self: *Self,
             context: anytype,
@@ -432,8 +465,8 @@ pub const DataContainer = struct {
         };
     }
 
-    const IndexIterator = struct {
-        dc: *DataContainer,
+    pub const IndexIterator = struct {
+        dc: *const DataContainer,
         index: u32,
         pub fn next(it: *IndexIterator) ?u32 {
             if (it.index == it.dc.lastIndex()) {
@@ -441,6 +474,14 @@ pub const DataContainer = struct {
             }
             defer it.index = it.dc.nextIndex(it.index);
             return it.index;
+        }
+        // nextSafe checks if the current index is still valid (in case it was invalidated during the iteration)
+        // if it is not valid, it first moves to the next valid index, before calling next()
+        pub fn nextSafe(it: *IndexIterator) ?u32 {
+            if (!it.dc.isActiveIndex(it.index)) {
+                it.index = it.dc.nextIndex(it.index);
+            }
+            return it.next();
         }
         pub fn reset(it: *IndexIterator) void {
             it.index = it.dc.firstIndex();
@@ -455,7 +496,7 @@ pub const DataContainer = struct {
     }
 
     // TODO: should probably better be thread-safe!
-    pub fn getMarker(dc: *DataContainer) !*Data(bool) {
+    pub fn acquireMarker(dc: *DataContainer) !*Data(bool) {
         if (dc.available_markers.pop()) |marker| {
             marker.fill(false); // reset the marker to false before reuse
             return marker;
@@ -479,7 +520,7 @@ pub const DataContainer = struct {
         };
     }
 
-    pub fn getIndex(dc: *DataContainer) !u32 {
+    pub fn acquireIndex(dc: *DataContainer) !u32 {
         const index = if (dc.nb_inactive_indices > 0) blk: {
             const index = dc.first_inactive_index;
             assert(!dc.is_active.value(index));

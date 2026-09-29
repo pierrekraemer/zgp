@@ -110,9 +110,9 @@ pub fn deinit(igs: *IncidenceGraphStore) void {
     }
     igs.incidence_graphs.deinit(igs.allocator);
 
-    var vbo_it = igs.data_vbo.iterator();
-    while (vbo_it.next()) |entry| {
-        entry.value_ptr.deinit();
+    var vbo_it = igs.data_vbo.valueIterator();
+    while (vbo_it.next()) |vbo| {
+        vbo.deinit();
     }
     igs.data_vbo.deinit(igs.allocator);
 

@@ -67,15 +67,13 @@ pub fn computeVertexShrinkingBalls(
     vertex_shrinking_ball: SurfaceMesh.CellData(.vertex, ?Vec4f),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         sm_bvh: *bvh.TrianglesBVH,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_shrinking_ball: SurfaceMesh.CellData(.vertex, ?Vec4f),
 
-        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), vertex: SurfaceMesh.Cell) void {
             const n = t.vertex_normal.value(vertex);
             t.vertex_shrinking_ball.valuePtr(vertex).* = shrinkingBall(
                 t.sm_bvh,
@@ -85,7 +83,7 @@ pub fn computeVertexShrinkingBalls(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner(.vertex) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -253,8 +251,7 @@ pub const VMASContext = struct {
         vmas_ctx.sphere_neighbor_spheres.valuePtr(s1).* = .empty;
 
         // and initialize its cluster
-        var v_it = try SurfaceMesh.CellIterator.init(vmas_ctx.surface_mesh, .vertex);
-        defer v_it.deinit();
+        var v_it = vmas_ctx.surface_mesh.cellIterator(.vertex);
         while (v_it.next()) |v| {
             try vmas_ctx.sphere_cluster.valuePtr(s1).append(vmas_ctx.allocator, v);
             vmas_ctx.vertex_sphere.valuePtr(v).* = s1;
@@ -297,8 +294,7 @@ pub const VMASContext = struct {
             vmas_ctx.sphere_error.valuePtr(s).* = 0.0;
         }
         // compute new clusters
-        var v_it: SurfaceMesh.CellIterator = try .init(vmas_ctx.surface_mesh, .vertex);
-        defer v_it.deinit();
+        var v_it = vmas_ctx.surface_mesh.cellIterator(.vertex);
         while (v_it.next()) |v| {
             const v_sqem = vmas_ctx.vertex_sqem.valuePtr(v);
             var min_distance = std.math.floatMax(f32);
@@ -360,8 +356,7 @@ pub const VMASContext = struct {
         while (s_it.next()) |s| {
             vmas_ctx.sphere_neighbor_spheres.valuePtr(s).clearRetainingCapacity();
         }
-        var e_it: SurfaceMesh.CellIterator = try .init(vmas_ctx.surface_mesh, .edge);
-        defer e_it.deinit();
+        var e_it = vmas_ctx.surface_mesh.cellIterator(.edge);
         while (e_it.next()) |e| {
             const s1 = vmas_ctx.vertex_sphere.value(.{ .vertex = e.dart() });
             const s2 = vmas_ctx.vertex_sphere.value(.{ .vertex = vmas_ctx.surface_mesh.phi1(e.dart()) });

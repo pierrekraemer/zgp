@@ -181,8 +181,7 @@ pub fn decimateQEM(
     defer queue.deinit(allocator);
 
     // initialize the queue with all topologically collapsible edges
-    var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
-    defer edge_it.deinit();
+    var edge_it = sm.cellIterator(.edge);
     while (edge_it.next()) |edge| {
         if (sm.canCollapseEdge(edge)) {
             try EdgeQueueUtil.addEdgeToQueue(&queue, edge, allocator);

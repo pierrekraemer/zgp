@@ -40,7 +40,7 @@ const VTable = struct {
     surfaceMeshConnectivityUpdated: *const fn (m: *Module, surface_mesh: *SurfaceMesh) void = defaultSurfaceMeshConnectivityUpdated,
     surfaceMeshStdDataChanged: *const fn (m: *Module, surface_mesh: *SurfaceMesh, std_data: SurfaceMeshStdData) void = defaultSurfaceMeshStdDataChanged,
     surfaceMeshDataUpdated: *const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void = defaultSurfaceMeshDataUpdated,
-    surfaceMeshCellSetUpdated: *const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_set: *const SurfaceMesh.CellSet) void = defaultSurfaceMeshCellSetUpdated,
+    surfaceMeshCellSetUpdated: *const fn (m: *Module, surface_mesh: *SurfaceMesh, cell_type: SurfaceMesh.CellType, cell_set_gen: *const SurfaceMesh.CellSetGen) void = defaultSurfaceMeshCellSetUpdated,
 
     // IncidenceGraphStore events
     incidenceGraphCreated: *const fn (m: *Module, incidence_graph: *IncidenceGraph) void = defaultIncidenceGraphCreated,
@@ -106,9 +106,9 @@ pub fn defaultSurfaceMeshDataUpdated(_: *Module, _: *SurfaceMesh, _: SurfaceMesh
 pub fn surfaceMeshDataUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, data_gen: *const DataGen) void {
     m.vtable.surfaceMeshDataUpdated(m, sm, cell_type, data_gen);
 }
-pub fn defaultSurfaceMeshCellSetUpdated(_: *Module, _: *SurfaceMesh, _: *const SurfaceMesh.CellSet) void {}
-pub fn surfaceMeshCellSetUpdated(m: *Module, sm: *SurfaceMesh, cell_set: *const SurfaceMesh.CellSet) void {
-    m.vtable.surfaceMeshCellSetUpdated(m, sm, cell_set);
+pub fn defaultSurfaceMeshCellSetUpdated(_: *Module, _: *SurfaceMesh, _: SurfaceMesh.CellType, _: *const SurfaceMesh.CellSetGen) void {}
+pub fn surfaceMeshCellSetUpdated(m: *Module, sm: *SurfaceMesh, cell_type: SurfaceMesh.CellType, cell_set_gen: *const SurfaceMesh.CellSetGen) void {
+    m.vtable.surfaceMeshCellSetUpdated(m, sm, cell_type, cell_set_gen);
 }
 
 pub fn defaultIncidenceGraphCreated(_: *Module, _: *IncidenceGraph) void {}

@@ -186,29 +186,25 @@ pub fn cellIterator(ig: *IncidenceGraph, cell_type: CellType) CellIterator {
 /// It provides functions to access the data associated with a given cell or its index.
 pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
     return struct {
-        const Self = @This();
         pub const CellType = cell_type;
         pub const DataType = T;
 
         incidence_graph: *const IncidenceGraph,
         data: *Data(T),
 
-        pub fn value(self: Self, c: Cell) T {
+        pub fn value(cd: @This(), c: Cell) T {
             assert(c.cellType() == cell_type);
-            return self.data.value(c.index());
+            return cd.data.value(c.index());
         }
-
-        pub fn valuePtr(self: Self, c: Cell) *T {
+        pub fn valuePtr(cd: @This(), c: Cell) *T {
             assert(c.cellType() == cell_type);
-            return self.data.valuePtr(c.index());
+            return cd.data.valuePtr(c.index());
         }
-
-        pub fn name(self: Self) []const u8 {
-            return self.data.data_gen.name;
+        pub fn name(cd: @This()) []const u8 {
+            return cd.data.data_gen.name;
         }
-
-        pub fn gen(self: Self) *DataGen {
-            return &self.data.data_gen;
+        pub fn gen(cd: @This()) *DataGen {
+            return &cd.data.data_gen;
         }
     };
 }
@@ -288,7 +284,7 @@ pub fn codegree(ig: *const IncidenceGraph, cell: Cell) u32 {
 }
 
 pub fn addVertex(ig: *IncidenceGraph) !Cell {
-    const idx = try ig.vertex_data.getIndex();
+    const idx = try ig.vertex_data.acquireIndex();
     ig.vertex_incident_edges.valuePtr(idx).* = .empty;
     return .{ .vertex = idx };
 }
@@ -296,7 +292,7 @@ pub fn addVertex(ig: *IncidenceGraph) !Cell {
 pub fn addEdge(ig: *IncidenceGraph, v0: Cell, v1: Cell) !Cell {
     assert(v0.cellType() == .vertex);
     assert(v1.cellType() == .vertex);
-    const idx = try ig.edge_data.getIndex();
+    const idx = try ig.edge_data.acquireIndex();
     ig.edge_incident_vertices.valuePtr(idx).* = .{ v0.index(), v1.index() };
     ig.edge_incident_faces.valuePtr(idx).* = .empty;
     try ig.vertex_incident_edges.valuePtr(v0.index()).append(ig.allocator, idx);
@@ -305,7 +301,7 @@ pub fn addEdge(ig: *IncidenceGraph, v0: Cell, v1: Cell) !Cell {
 }
 
 pub fn addFace(ig: *IncidenceGraph, edges: []const Cell) !Cell {
-    const idx = try ig.face_data.getIndex();
+    const idx = try ig.face_data.acquireIndex();
     var fie: *std.ArrayList(CellIndex) = ig.face_incident_edges.valuePtr(idx);
     var fied: *std.ArrayList(bool) = ig.face_incident_edges_dir.valuePtr(idx);
     fie.* = .empty;

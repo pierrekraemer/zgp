@@ -227,8 +227,7 @@ pub const HeatMethodContext = struct {
     ) !HeatMethodContext {
         // Create consecutive indices for vertices
         var vertex_index = try sm.addData(.vertex, u32, "__heat_method_vertex_index");
-        var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
-        defer vertex_it.deinit();
+        var vertex_it = sm.cellIterator(.vertex);
         var nb_vertices: u32 = 0;
         while (vertex_it.next()) |v| : (nb_vertices += 1) {
             vertex_index.valuePtr(v).* = nb_vertices;
@@ -245,8 +244,7 @@ pub const HeatMethodContext = struct {
         const nb_edges = sm.nbCells(.edge);
         var triplets = try std.ArrayList(SparseMatrix.Triplet).initCapacity(allocator, 4 * nb_edges);
         defer triplets.deinit(allocator);
-        var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
-        defer edge_it.deinit();
+        var edge_it = sm.cellIterator(.edge);
         while (edge_it.next()) |edge| {
             const d = edge.dart();
             const dd = sm.phi2(d);
@@ -352,8 +350,7 @@ pub const HeatMethodContext = struct {
         hm_ctx.factorized_H.solve(hm_ctx.heat_0.items, hm_ctx.heat_t.items);
 
         // store heat_t in a vertex data
-        var vertex_it: SurfaceMesh.CellIterator = try .init(hm_ctx.surface_mesh, .vertex);
-        defer vertex_it.deinit();
+        var vertex_it = hm_ctx.surface_mesh.cellIterator(.vertex);
         while (vertex_it.next()) |v| {
             const idx = hm_ctx.vertex_index.value(v);
             hm_ctx.vertex_heat.valuePtr(v).* = hm_ctx.heat_t.items[idx];
@@ -371,10 +368,10 @@ pub const HeatMethodContext = struct {
         );
 
         // negate and normalize the face gradients
-        var grad_it = hm_ctx.face_heat_grad.data.iterator();
-        while (grad_it.next()) |elem| {
-            elem.value_ptr.* = vec.mulScalar3d(
-                vec.normalized3d(elem.value_ptr.*),
+        var grad_it = hm_ctx.face_heat_grad.data.valueIterator();
+        while (grad_it.next()) |g| {
+            g.* = vec.mulScalar3d(
+                vec.normalized3d(g.*),
                 -1.0,
             );
         }

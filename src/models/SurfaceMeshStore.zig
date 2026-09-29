@@ -93,7 +93,7 @@ data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
 // each CellSet can be associated with an IBO
 // once an IBO has been requested for a CellSet (in cellSetIBO function) it is stored in this map
 // and updated upon calls to surfaceMeshCellSetUpdated function
-cell_set_ibo: std.AutoHashMapUnmanaged(*const SurfaceMesh.CellSet, IBO),
+cell_set_ibo: std.AutoHashMapUnmanaged(*const SurfaceMesh.CellSetGen, IBO),
 // stores the last update time for each DataGen
 // updated upon calls to surfaceMeshDataUpdated
 data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.Io.Timestamp),
@@ -131,15 +131,15 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
     }
     sms.surface_meshes.deinit(sms.allocator);
 
-    var vbo_it = sms.data_vbo.iterator();
-    while (vbo_it.next()) |entry| {
-        entry.value_ptr.deinit();
+    var vbo_it = sms.data_vbo.valueIterator();
+    while (vbo_it.next()) |vbo| {
+        vbo.deinit();
     }
     sms.data_vbo.deinit(sms.allocator);
 
-    var cell_set_ibo_it = sms.cell_set_ibo.iterator();
-    while (cell_set_ibo_it.next()) |entry| {
-        entry.value_ptr.deinit();
+    var cell_set_ibo_it = sms.cell_set_ibo.valueIterator();
+    while (cell_set_ibo_it.next()) |ibo| {
+        ibo.deinit();
     }
     sms.cell_set_ibo.deinit(sms.allocator);
 
@@ -290,26 +290,26 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
     };
 
     // update the cells sets
-    var vertex_sets_it = sm.vertex_sets.iterator();
-    while (vertex_sets_it.next()) |entry| {
-        entry.value_ptr.update() catch |err| {
+    var vertex_sets_it = sm.vertex_sets.valueIterator();
+    while (vertex_sets_it.next()) |cs| {
+        cs.update() catch |err| {
             zgp_log.err("Failed to update vertex set for SurfaceMesh: {}", .{err});
         };
-        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr);
+        sms.surfaceMeshCellSetUpdated(sm, .vertex, cs);
     }
-    var edge_sets_it = sm.edge_sets.iterator();
-    while (edge_sets_it.next()) |entry| {
-        entry.value_ptr.update() catch |err| {
+    var edge_sets_it = sm.edge_sets.valueIterator();
+    while (edge_sets_it.next()) |cs| {
+        cs.update() catch |err| {
             zgp_log.err("Failed to update edge set for SurfaceMesh: {}", .{err});
         };
-        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr);
+        sms.surfaceMeshCellSetUpdated(sm, .edge, cs);
     }
-    var face_sets_it = sm.face_sets.iterator();
-    while (face_sets_it.next()) |entry| {
-        entry.value_ptr.update() catch |err| {
+    var face_sets_it = sm.face_sets.valueIterator();
+    while (face_sets_it.next()) |cs| {
+        cs.update() catch |err| {
             zgp_log.err("Failed to update face set for SurfaceMesh: {}", .{err});
         };
-        sms.surfaceMeshCellSetUpdated(sm, entry.value_ptr);
+        sms.surfaceMeshCellSetUpdated(sm, .face, cs);
     }
 
     // dispatch call to listeners
@@ -321,12 +321,13 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
 pub fn surfaceMeshCellSetUpdated(
     sms: *SurfaceMeshStore,
     sm: *SurfaceMesh,
-    cell_set: *const SurfaceMesh.CellSet,
+    comptime cell_type: SurfaceMesh.CellType,
+    cell_set: *const SurfaceMesh.CellSet(cell_type),
 ) void {
     // if it exists, update the IBO with the data
-    const maybe_ibo = sms.cell_set_ibo.getPtr(cell_set);
+    const maybe_ibo = sms.cell_set_ibo.getPtr(cell_set.gen());
     if (maybe_ibo) |ibo| {
-        ibo.fillFromSurfaceMeshCellSlice(sm, cell_set.cells.items, sms.allocator) catch |err| {
+        ibo.fillFromSurfaceMeshCellSlice(sm, cell_set.cell_set_gen.cells.items, sms.allocator) catch |err| {
             zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
             return;
         };
@@ -334,7 +335,7 @@ pub fn surfaceMeshCellSetUpdated(
 
     // dispatch call to listeners
     for (sms.listeners.items) |module| {
-        module.surfaceMeshCellSetUpdated(sm, cell_set);
+        module.surfaceMeshCellSetUpdated(sm, cell_type, cell_set.gen());
     }
 }
 
@@ -355,14 +356,18 @@ pub fn dataVBO(
     return vbo.value_ptr.*;
 }
 
-pub fn cellSetIBO(sms: *SurfaceMeshStore, cell_set: *const SurfaceMesh.CellSet) IBO {
-    const ibo = sms.cell_set_ibo.getOrPut(sms.allocator, cell_set) catch |err| {
+pub fn cellSetIBO(
+    sms: *SurfaceMeshStore,
+    comptime cell_type: SurfaceMesh.CellType,
+    cell_set: *const SurfaceMesh.CellSet(cell_type),
+) IBO {
+    const ibo = sms.cell_set_ibo.getOrPut(sms.allocator, cell_set.gen()) catch |err| {
         zgp_log.err("Failed to get or add IBO in the registry: {}", .{err});
         return IBO.init(); // return a dummy IBO
     };
     if (!ibo.found_existing) {
         ibo.value_ptr.* = IBO.init();
-        ibo.value_ptr.fillFromSurfaceMeshCellSlice(cell_set.surface_mesh, cell_set.cells.items, sms.allocator) catch |err| {
+        ibo.value_ptr.fillFromSurfaceMeshCellSlice(cell_set.cell_set_gen.surface_mesh, cell_set.cell_set_gen.cells.items, sms.allocator) catch |err| {
             zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
             return IBO.init(); // return a dummy IBO
         };
@@ -717,9 +722,9 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
     defer darts_array_lists_arena.deinit();
 
     for (import_data.vertices_position.items) |pos| {
-        const vertex_index = try sm.getDataIndex(.vertex);
+        const vertex_index = try sm.acquireCellIndex(.vertex);
         vertex_position.valuePtrByIndex(vertex_index).* = pos;
-        darts_of_vertex.valuePtrByIndex(vertex_index).* = .empty;
+        darts_of_vertex.valuePtrByIndex(vertex_index).* = try .initCapacity(darts_array_lists_arena.allocator(), 8);
     }
 
     var i: u32 = 0;
@@ -727,7 +732,6 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
         const face = try sm.addUnboundedFace(face_nb_vertices);
         var d = face.dart();
         for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
-            // sm.dart_vertex_index.valuePtr(d).* = index;
             sm.setDartCellIndex(d, .vertex, index);
             try darts_of_vertex.valuePtrByIndex(index).append(darts_array_lists_arena.allocator(), d);
             d = sm.phi1(d);
@@ -762,7 +766,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
         zgp_log.info("closed {d} boundary faces", .{nb_boundary_faces});
     }
 
-    // vertices were already indexed above
+    try sm.indexCells(.vertex); // only effect of this call is to set indices for the potentially created boundary dart
     try sm.indexCells(.edge);
     try sm.indexCells(.face);
 

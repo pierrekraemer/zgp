@@ -42,13 +42,11 @@ pub fn computeFaceAreas(
     face_area: SurfaceMesh.CellData(.face, f32),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         face_area: SurfaceMesh.CellData(.face, f32),
 
-        pub fn run(t: *const Task, face: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), face: SurfaceMesh.Cell) void {
             t.face_area.valuePtr(face).* = faceArea(
                 t.surface_mesh,
                 face,
@@ -57,21 +55,13 @@ pub fn computeFaceAreas(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .face);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner(.face) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .face_area = face_area,
     });
-
-    // single-threaded version for the record
-
-    // var it: SurfaceMesh.CellIterator = try .init(sm, .face);
-    // defer it.deinit();
-    // while (it.next()) |face| {
-    //     task.run(face);
-    // }
 }
 
 /// Compute and return the area of the given face.
@@ -103,13 +93,11 @@ pub fn computeFaceAreasIntrinsic(
     face_area: SurfaceMesh.CellData(.face, f32),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         edge_length: SurfaceMesh.CellData(.edge, f32),
         face_area: SurfaceMesh.CellData(.face, f32),
 
-        pub fn run(t: *const Task, face: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), face: SurfaceMesh.Cell) void {
             t.face_area.valuePtr(face).* = faceAreaIntrinsic(
                 t.surface_mesh,
                 face,
@@ -118,7 +106,7 @@ pub fn computeFaceAreasIntrinsic(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .face);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner(.face) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -158,8 +146,7 @@ pub fn computeVertexAreas(
     vertex_area: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
     vertex_area.data.fill(0.0);
-    var it: SurfaceMesh.CellIterator = try .init(sm, .face);
-    defer it.deinit();
+    var it = sm.cellIterator(.face);
     while (it.next()) |face| {
         const cd: f32 = @floatFromInt(sm.codegree(face));
         const a = face_area.value(face) / cd;

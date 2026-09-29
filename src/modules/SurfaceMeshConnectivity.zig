@@ -155,8 +155,7 @@ fn generateConvexHull(
     try pc.init(smc.app_ctx.allocator, &smc.app_ctx.point_cloud_store.point_buffer_pool);
     defer pc.deinit();
     const point_position = try pc.addData(Vec3f, "position");
-    var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
-    defer vertex_it.deinit();
+    var vertex_it = sm.cellIterator(.vertex);
     while (vertex_it.next()) |vertex| {
         const p = try pc.addPoint();
         point_position.valuePtr(p).* = vertex_position.valuePtr(vertex).*;

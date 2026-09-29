@@ -184,15 +184,13 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
     defer cell_indices.deinit(allocator);
     switch (cell_type) {
         .vertex => {
-            var v_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
-            defer v_it.deinit();
+            var v_it = sm.cellIterator(.vertex);
             while (v_it.next()) |v| {
                 try indices.append(allocator, sm.cellIndex(v));
             }
         },
         .edge => {
-            var e_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
-            defer e_it.deinit();
+            var e_it = sm.cellIterator(.edge);
             while (e_it.next()) |e| {
                 const d = e.dart();
                 const d1 = sm.phi1(d);
@@ -203,8 +201,7 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
             }
         },
         .face => {
-            var f_it: SurfaceMesh.CellIterator = try .init(sm, .face);
-            defer f_it.deinit();
+            var f_it = sm.cellIterator(.face);
             while (f_it.next()) |f| {
                 // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
                 var dart_it = sm.cellDartIterator(f);
@@ -226,15 +223,19 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
             }
         },
         .boundary => {
-            var b_it: SurfaceMesh.CellIterator = try .init(sm, .boundary);
-            defer b_it.deinit();
-            while (b_it.next()) |b| {
-                var dart_it = sm.cellDartIterator(b);
-                while (dart_it.next()) |d| {
-                    try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
-                    try indices.append(allocator, sm.cellIndex(.{ .vertex = sm.phi1(d) }));
+            var dm = try SurfaceMesh.DartMarker.init(sm);
+            defer dm.deinit();
+            var it = sm.dartIterator();
+            while (it.next()) |d| {
+                if (sm.isBoundaryDart(d) and !dm.isMarked(d)) {
+                    dm.markCell(.{ .face = d });
+                }
+                var dart_it = sm.cellDartIterator(.{ .boundary = d });
+                while (dart_it.next()) |bd| {
+                    try indices.append(allocator, sm.cellIndex(.{ .vertex = bd }));
+                    try indices.append(allocator, sm.cellIndex(.{ .vertex = sm.phi1(bd) }));
                     // boundary line primitive is associated to its edge index
-                    try cell_indices.append(allocator, sm.cellIndex(.{ .edge = d }));
+                    try cell_indices.append(allocator, sm.cellIndex(.{ .edge = bd }));
                 }
             }
         },

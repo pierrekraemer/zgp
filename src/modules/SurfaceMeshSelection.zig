@@ -34,10 +34,13 @@ const SelectionData = struct {
     line_cylinder_shader_parameters: LineCylinder.Parameters,
     tri_flat_shader_parameters: TriFlat.Parameters,
 
-    selected_cell_set: ?*SurfaceMesh.CellSet = null,
+    selected_vertex_set: ?*SurfaceMesh.CellSet(.vertex) = null,
+    selected_edge_set: ?*SurfaceMesh.CellSet(.edge) = null,
+    selected_face_set: ?*SurfaceMesh.CellSet(.face) = null,
 
-    // TODO: could also store the current selecting cell type on a per SurfaceMesh basis
-    // to be able to restore it when the selected model changes
+    selecting_cell_type: SurfaceMesh.CellType = .vertex,
+    selection_mode: SelectionMode = .single,
+    selection_radius: f32 = 0.05,
 
     pub fn init() SelectionData {
         var p = PointSphere.Parameters.init();
@@ -88,10 +91,7 @@ module: Module = .{
 },
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, SelectionData) = .empty,
 
-selection_mode: SelectionMode = .single,
-selection_radius: f32 = 0.05,
 selecting: bool = false,
-selecting_cell_type: SurfaceMesh.CellType = .vertex,
 hovered_cell: ?SurfaceMesh.Cell = null,
 hovered_cell_ibo: IBO,
 
@@ -161,16 +161,6 @@ pub fn selectedModelChanged(m: *Module) void {
     sms.selecting = false;
     sms.hovered_cell = null;
     sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{});
-    if (sms.app_ctx.selected_model.modelType() == .surface_mesh) {
-        const sm = sms.app_ctx.selected_model.surface_mesh;
-        const sd = sms.surface_meshes_data.getPtr(sm).?;
-        // if the previously selected CellSet for this SurfaceMesh is not compatible with the currently selected cell type, deselect it
-        if (sd.selected_cell_set) |selected_cell_set| {
-            if (sms.selecting_cell_type != selected_cell_set.cell_type) {
-                sd.selected_cell_set = null;
-            }
-        }
-    }
 }
 
 /// Part of the Module interface.
@@ -183,30 +173,30 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     if (sms.app_ctx.selected_model.modelType() != .surface_mesh) return;
     const sm = sms.app_ctx.selected_model.surface_mesh;
     const sd = sms.surface_meshes_data.getPtr(sm).?;
-    if (sd.selected_cell_set == null) return;
 
-    if (sd.selected_cell_set.?.cells.items.len > 0) {
-        switch (sd.selected_cell_set.?.cell_type) {
-            .vertex => {
-                sd.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
-                sd.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-                sd.point_sphere_shader_parameters.draw(sm_store.cellSetIBO(sd.selected_cell_set.?));
-            },
-            .edge => {
-                sd.line_cylinder_shader_parameters.model_view_matrix = @bitCast(view_matrix);
-                sd.line_cylinder_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-                sd.line_cylinder_shader_parameters.draw(sm_store.cellSetIBO(sd.selected_cell_set.?));
-            },
-            .face => {
-                gl.Enable(gl.POLYGON_OFFSET_FILL);
-                gl.PolygonOffset(1.0, 0.0);
-                sd.tri_flat_shader_parameters.model_view_matrix = @bitCast(view_matrix);
-                sd.tri_flat_shader_parameters.projection_matrix = @bitCast(projection_matrix);
-                sd.tri_flat_shader_parameters.draw(sm_store.cellSetIBO(sd.selected_cell_set.?));
-                gl.Disable(gl.POLYGON_OFFSET_FILL);
-            },
-            else => unreachable,
-        }
+    switch (sd.selecting_cell_type) {
+        .vertex => {
+            if (sd.selected_vertex_set == null) return;
+            sd.point_sphere_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+            sd.point_sphere_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+            sd.point_sphere_shader_parameters.draw(sm_store.cellSetIBO(.vertex, sd.selected_vertex_set.?));
+        },
+        .edge => {
+            if (sd.selected_edge_set == null) return;
+            sd.line_cylinder_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+            sd.line_cylinder_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+            sd.line_cylinder_shader_parameters.draw(sm_store.cellSetIBO(.edge, sd.selected_edge_set.?));
+        },
+        .face => {
+            if (sd.selected_face_set == null) return;
+            gl.Enable(gl.POLYGON_OFFSET_FILL);
+            gl.PolygonOffset(1.0, 0.0);
+            sd.tri_flat_shader_parameters.model_view_matrix = @bitCast(view_matrix);
+            sd.tri_flat_shader_parameters.projection_matrix = @bitCast(projection_matrix);
+            sd.tri_flat_shader_parameters.draw(sm_store.cellSetIBO(.face, sd.selected_face_set.?));
+            gl.Disable(gl.POLYGON_OFFSET_FILL);
+        },
+        else => unreachable,
     }
 
     // draw currently hovered cell
@@ -217,12 +207,12 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
         switch (cell_type) {
             .vertex => {
                 const sphere_radius_backup = sd.point_sphere_shader_parameters.sphere_radius;
-                switch (sms.selection_mode) {
+                switch (sd.selection_mode) {
                     .single => sd.point_sphere_shader_parameters.sphere_radius *= 1.1,
-                    .within_sphere => sd.point_sphere_shader_parameters.sphere_radius = sms.selection_radius,
+                    .within_sphere => sd.point_sphere_shader_parameters.sphere_radius = sd.selection_radius,
                 }
                 const sphere_color_backup = sd.point_sphere_shader_parameters.sphere_color;
-                const sphere_color_basis = switch (sms.selecting_cell_type) {
+                const sphere_color_basis = switch (sd.selecting_cell_type) {
                     .vertex => sd.point_sphere_shader_parameters.sphere_color,
                     .edge => sd.line_cylinder_shader_parameters.cylinder_color,
                     .face => sd.tri_flat_shader_parameters.vertex_color,
@@ -299,7 +289,13 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
     assert(sms.app_ctx.selected_model.modelType() == .surface_mesh);
     const sm = sms.app_ctx.selected_model.surface_mesh;
     const sd = sms.surface_meshes_data.getPtr(sm).?;
-    if (sd.selected_cell_set == null) return false;
+
+    switch (sd.selecting_cell_type) {
+        .vertex => if (sd.selected_vertex_set == null) return false,
+        .edge => if (sd.selected_edge_set == null) return false,
+        .face => if (sd.selected_face_set == null) return false,
+        else => unreachable,
+    }
 
     return sw: switch (event.type) {
         c.SDL_EVENT_KEY_DOWN => blk: {
@@ -332,12 +328,12 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
         c.SDL_EVENT_MOUSE_MOTION => blk: {
             if (sms.selecting) {
                 const info = sm_store.surfaceMeshInfo(sm);
-                // TODO: fallback to brute-force search if the BVH is not available
+                // TODO: fallback to brute-force search if the BVH is not available?
                 if (info.bvh.initialized) {
                     const ray = view.viewToWorldRay(event.motion.x, event.motion.y);
-                    switch (sms.selection_mode) {
+                    switch (sd.selection_mode) {
                         .single => {
-                            switch (sms.selecting_cell_type) {
+                            switch (sd.selecting_cell_type) {
                                 .vertex => {
                                     sms.hovered_cell = info.bvh.intersectedVertex(ray);
                                 },
@@ -376,18 +372,37 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                         if (sms.hovered_cell) |cell| {
                             const modState = c.SDL_GetModState();
                             const action: SelectionAction = if (modState & c.SDL_KMOD_SHIFT != 0) .remove else .add;
-                            switch (sms.selection_mode) {
+                            switch (sd.selection_mode) {
                                 .single => {
                                     switch (action) {
-                                        .add => {
-                                            sd.selected_cell_set.?.add(cell) catch |err| {
+                                        .add => switch (sd.selecting_cell_type) {
+                                            .vertex => sd.selected_vertex_set.?.add(cell) catch |err| {
                                                 std.debug.print("Failed to add vertex to vertex_set: {}\n", .{err});
                                                 break :blk false;
-                                            };
+                                            },
+                                            .edge => sd.selected_edge_set.?.add(cell) catch |err| {
+                                                std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
+                                                break :blk false;
+                                            },
+                                            .face => sd.selected_face_set.?.add(cell) catch |err| {
+                                                std.debug.print("Failed to add face to face_set: {}\n", .{err});
+                                                break :blk false;
+                                            },
+                                            else => unreachable,
                                         },
-                                        .remove => sd.selected_cell_set.?.remove(cell),
+                                        .remove => switch (sd.selecting_cell_type) {
+                                            .vertex => sd.selected_vertex_set.?.remove(cell),
+                                            .edge => sd.selected_edge_set.?.remove(cell),
+                                            .face => sd.selected_face_set.?.remove(cell),
+                                            else => unreachable,
+                                        },
                                     }
-                                    sm_store.surfaceMeshCellSetUpdated(sm, sd.selected_cell_set.?);
+                                    switch (sd.selecting_cell_type) {
+                                        .vertex => sm_store.surfaceMeshCellSetUpdated(sm, .vertex, sd.selected_vertex_set.?),
+                                        .edge => sm_store.surfaceMeshCellSetUpdated(sm, .edge, sd.selected_edge_set.?),
+                                        .face => sm_store.surfaceMeshCellSetUpdated(sm, .face, sd.selected_face_set.?),
+                                        else => unreachable,
+                                    }
                                     sms.app_ctx.requestRedraw();
                                 },
                                 .within_sphere => {
@@ -399,32 +414,57 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                                         defer edges.deinit(sm.allocator);
                                         var faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
                                         defer faces.deinit(sm.allocator);
-                                        selection.cellsWithinSphereAroundVertex(sm, cell, sms.selection_radius, vertex_position, &vertices, &edges, &faces) catch |err| {
+                                        selection.cellsWithinSphereAroundVertex(sm, cell, sd.selection_radius, vertex_position, &vertices, &edges, &faces) catch |err| {
                                             std.debug.print("Failed to select cells within sphere: {}\\n", .{err});
                                             break :blk false;
                                         };
-                                        const cells_in_sphere = switch (sms.selecting_cell_type) {
+                                        const cells_in_sphere = switch (sd.selecting_cell_type) {
                                             .vertex => vertices.items,
                                             .edge => edges.items,
                                             .face => faces.items,
                                             else => unreachable,
                                         };
                                         switch (action) {
-                                            .add => {
-                                                for (cells_in_sphere) |cell_in_sphere| {
-                                                    sd.selected_cell_set.?.add(cell_in_sphere) catch |err| {
+                                            .add => switch (sd.selecting_cell_type) {
+                                                .vertex => for (cells_in_sphere) |cell_in_sphere| {
+                                                    sd.selected_vertex_set.?.add(cell_in_sphere) catch |err| {
                                                         std.debug.print("Failed to add vertex to vertex_set: {}\n", .{err});
                                                         break :blk false;
                                                     };
-                                                }
+                                                },
+                                                .edge => for (cells_in_sphere) |cell_in_sphere| {
+                                                    sd.selected_edge_set.?.add(cell_in_sphere) catch |err| {
+                                                        std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
+                                                        break :blk false;
+                                                    };
+                                                },
+                                                .face => for (cells_in_sphere) |cell_in_sphere| {
+                                                    sd.selected_face_set.?.add(cell_in_sphere) catch |err| {
+                                                        std.debug.print("Failed to add face to face_set: {}\n", .{err});
+                                                        break :blk false;
+                                                    };
+                                                },
+                                                else => unreachable,
                                             },
-                                            .remove => {
-                                                for (cells_in_sphere) |cell_in_sphere| {
-                                                    sd.selected_cell_set.?.remove(cell_in_sphere);
-                                                }
+                                            .remove => switch (sd.selecting_cell_type) {
+                                                .vertex => for (cells_in_sphere) |cell_in_sphere| {
+                                                    sd.selected_vertex_set.?.remove(cell_in_sphere);
+                                                },
+                                                .edge => for (cells_in_sphere) |cell_in_sphere| {
+                                                    sd.selected_edge_set.?.remove(cell_in_sphere);
+                                                },
+                                                .face => for (cells_in_sphere) |cell_in_sphere| {
+                                                    sd.selected_face_set.?.remove(cell_in_sphere);
+                                                },
+                                                else => unreachable,
                                             },
                                         }
-                                        sm_store.surfaceMeshCellSetUpdated(sm, sd.selected_cell_set.?);
+                                        switch (sd.selecting_cell_type) {
+                                            .vertex => sm_store.surfaceMeshCellSetUpdated(sm, .vertex, sd.selected_vertex_set.?),
+                                            .edge => sm_store.surfaceMeshCellSetUpdated(sm, .edge, sd.selected_edge_set.?),
+                                            .face => sm_store.surfaceMeshCellSetUpdated(sm, .face, sd.selected_face_set.?),
+                                            else => unreachable,
+                                        }
                                         sms.app_ctx.requestRedraw();
                                     }
                                 },
@@ -438,8 +478,8 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
             break :blk false;
         },
         c.SDL_EVENT_MOUSE_WHEEL => blk: {
-            if (sms.selecting and sms.selection_mode == .within_sphere) {
-                sms.selection_radius += event.wheel.y * 0.001;
+            if (sms.selecting and sd.selection_mode == .within_sphere) {
+                sd.selection_radius += event.wheel.y * 0.001;
                 sms.app_ctx.requestRedraw();
                 break :blk true;
             }
@@ -457,6 +497,8 @@ pub fn rightPanel(m: *Module) void {
 
     assert(sms.app_ctx.selected_model.modelType() == .surface_mesh);
     const sm = sms.app_ctx.selected_model.surface_mesh;
+    const info = sm_store.surfaceMeshInfo(sm);
+    const sd = sms.surface_meshes_data.getPtr(sm).?;
 
     const UiData = struct {
         var cell_set_name_buf: [32]u8 = @splat(0);
@@ -466,9 +508,6 @@ pub fn rightPanel(m: *Module) void {
 
     c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
     defer c.ImGui_PopItemWidth();
-
-    const sd = sms.surface_meshes_data.getPtr(sm).?;
-    const info = sm_store.surfaceMeshInfo(sm);
 
     if (!info.bvh.initialized) {
         c.ImGui_TextWrapped("A BVH must exist on the SurfaceMesh to select cells");
@@ -484,30 +523,36 @@ pub fn rightPanel(m: *Module) void {
     c.ImGui_NewLine();
     inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
         c.ImGui_SameLine();
-        if (c.ImGui_RadioButton(@tagName(cell_type), sms.selecting_cell_type == cell_type)) {
-            sms.selecting_cell_type = cell_type;
-            const cell_sets = switch (cell_type) {
-                .vertex => &sm.vertex_sets,
-                .edge => &sm.edge_sets,
-                .face => &sm.face_sets,
+        if (c.ImGui_RadioButton(@tagName(cell_type), sd.selecting_cell_type == cell_type)) {
+            sd.selecting_cell_type = cell_type;
+            const cell_sets = sm.cellSetContainerPtr(cell_type);
+            // if the selected CellSet of the new cell type is null, select the first CellSet of that type if it exists
+            switch (cell_type) {
+                .vertex => if (sd.selected_vertex_set == null and cell_sets.count() > 0) {
+                    var it = cell_sets.valueIterator();
+                    sd.selected_vertex_set = it.next().?;
+                },
+                .edge => if (sd.selected_edge_set == null and cell_sets.count() > 0) {
+                    var it = cell_sets.valueIterator();
+                    sd.selected_edge_set = it.next().?;
+                },
+                .face => if (sd.selected_face_set == null and cell_sets.count() > 0) {
+                    var it = cell_sets.valueIterator();
+                    sd.selected_face_set = it.next().?;
+                },
                 else => unreachable,
-            };
-            // select the first cell set of the new cell type if it exists, otherwise set to null
-            sd.selected_cell_set = if (cell_sets.count() > 0) blk: {
-                var it = cell_sets.iterator();
-                break :blk it.next().?.value_ptr;
-            } else null;
+            }
             sms.app_ctx.requestRedraw();
         }
     }
 
     c.ImGui_SeparatorText("Selection mode");
-    if (c.ImGui_RadioButton("Single", sms.selection_mode == .single)) {
-        sms.selection_mode = .single;
+    if (c.ImGui_RadioButton("Single", sd.selection_mode == .single)) {
+        sd.selection_mode = .single;
     }
     c.ImGui_SameLine();
-    if (c.ImGui_RadioButton("Within Sphere", sms.selection_mode == .within_sphere)) {
-        sms.selection_mode = .within_sphere;
+    if (c.ImGui_RadioButton("Within Sphere", sd.selection_mode == .within_sphere)) {
+        sd.selection_mode = .within_sphere;
     }
 
     c.ImGui_SeparatorText("Cell set");
@@ -525,12 +570,21 @@ pub fn rightPanel(m: *Module) void {
         }
         c.ImGui_SameLine();
         if (c.ImGui_ButtonEx("Create", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-            const cell_set = sm.addCellSet(sms.selecting_cell_type, cell_set_name) catch |err| {
-                std.debug.print("Error adding cell set: {}\n", .{err});
-                return;
-            };
+            inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
+                if (cell_type == sd.selecting_cell_type) {
+                    const cell_set = sm.addCellSet(cell_type, cell_set_name) catch |err| {
+                        std.debug.print("Error adding cell set: {}\n", .{err});
+                        return;
+                    };
+                    switch (cell_type) {
+                        .vertex => sd.selected_vertex_set = cell_set,
+                        .edge => sd.selected_edge_set = cell_set,
+                        .face => sd.selected_face_set = cell_set,
+                        else => unreachable,
+                    }
+                }
+            }
             UiData.cell_set_name_buf = @splat(0);
-            sd.selected_cell_set = cell_set;
             sms.app_ctx.requestRedraw();
         }
         if (disabled) {
@@ -542,43 +596,112 @@ pub fn rightPanel(m: *Module) void {
 
         c.ImGui_Text("Cell set selection");
         c.ImGui_PushID("cell set");
-        switch (imgui_utils.surfaceMeshCellSetComboBox(sm, sms.selecting_cell_type, sd.selected_cell_set)) {
-            .unchanged => {},
-            .cleared => {
-                sd.selected_cell_set = null;
-                sms.app_ctx.requestRedraw();
-            },
-            .changed => |cell_set| {
-                sd.selected_cell_set = cell_set;
-                sms.app_ctx.requestRedraw();
-            },
+        inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
+            if (cell_type == sd.selecting_cell_type) {
+                switch (imgui_utils.surfaceMeshCellSetComboBox(sm, cell_type, switch (cell_type) {
+                    .vertex => sd.selected_vertex_set,
+                    .edge => sd.selected_edge_set,
+                    .face => sd.selected_face_set,
+                    else => unreachable,
+                })) {
+                    .unchanged => {},
+                    .cleared => {
+                        switch (cell_type) {
+                            .vertex => sd.selected_vertex_set = null,
+                            .edge => sd.selected_edge_set = null,
+                            .face => sd.selected_face_set = null,
+                            else => unreachable,
+                        }
+                        sms.app_ctx.requestRedraw();
+                    },
+                    .changed => |cell_set| {
+                        switch (cell_type) {
+                            .vertex => sd.selected_vertex_set = cell_set,
+                            .edge => sd.selected_edge_set = cell_set,
+                            .face => sd.selected_face_set = cell_set,
+                            else => unreachable,
+                        }
+                        sms.app_ctx.requestRedraw();
+                    },
+                }
+            }
         }
         c.ImGui_PopID();
     }
-    if (sd.selected_cell_set) |cell_set| {
-        var buf: [64]u8 = undefined;
-        const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{cell_set.cells.items.len}) catch "";
-        c.ImGui_Text(text);
-        c.ImGui_SameLine();
-        const disabled = cell_set.cells.items.len == 0;
-        if (disabled) {
-            c.ImGui_BeginDisabled(true);
-        }
-        if (c.ImGui_Button(if (cell_set.cells.items.len > 0) "Clear selection" else "No selection to clear")) {
-            cell_set.clear();
-            sm_store.surfaceMeshCellSetUpdated(sm, cell_set);
-            sms.app_ctx.requestRedraw();
-        }
-        if (disabled) {
-            c.ImGui_EndDisabled();
-        }
-    } else {
-        c.ImGui_Text("No cell set selected");
+
+    switch (sd.selecting_cell_type) {
+        .vertex => {
+            if (sd.selected_vertex_set) |vertex_set| {
+                var buf: [64]u8 = undefined;
+                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{vertex_set.cell_set_gen.cells.items.len}) catch "";
+                c.ImGui_Text(text);
+                c.ImGui_SameLine();
+                const disabled = vertex_set.cell_set_gen.cells.items.len == 0;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_Button(if (!disabled) "Clear selection" else "No selection to clear")) {
+                    vertex_set.clear();
+                    sm_store.surfaceMeshCellSetUpdated(sm, .vertex, vertex_set);
+                    sms.app_ctx.requestRedraw();
+                }
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
+            } else {
+                c.ImGui_Text("No cell set selected");
+            }
+        },
+        .edge => {
+            if (sd.selected_edge_set) |edge_set| {
+                var buf: [64]u8 = undefined;
+                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{edge_set.cell_set_gen.cells.items.len}) catch "";
+                c.ImGui_Text(text);
+                c.ImGui_SameLine();
+                const disabled = edge_set.cell_set_gen.cells.items.len == 0;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_Button(if (!disabled) "Clear selection" else "No selection to clear")) {
+                    edge_set.clear();
+                    sm_store.surfaceMeshCellSetUpdated(sm, .edge, edge_set);
+                    sms.app_ctx.requestRedraw();
+                }
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
+            } else {
+                c.ImGui_Text("No cell set selected");
+            }
+        },
+        .face => {
+            if (sd.selected_face_set) |face_set| {
+                var buf: [64]u8 = undefined;
+                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{face_set.cell_set_gen.cells.items.len}) catch "";
+                c.ImGui_Text(text);
+                c.ImGui_SameLine();
+                const disabled = face_set.cell_set_gen.cells.items.len == 0;
+                if (disabled) {
+                    c.ImGui_BeginDisabled(true);
+                }
+                if (c.ImGui_Button(if (!disabled) "Clear selection" else "No selection to clear")) {
+                    face_set.clear();
+                    sm_store.surfaceMeshCellSetUpdated(sm, .face, face_set);
+                    sms.app_ctx.requestRedraw();
+                }
+                if (disabled) {
+                    c.ImGui_EndDisabled();
+                }
+            } else {
+                c.ImGui_Text("No cell set selected");
+            }
+        },
+        else => unreachable,
     }
 
     c.ImGui_SeparatorText("Display");
 
-    switch (sms.selecting_cell_type) {
+    switch (sd.selecting_cell_type) {
         .vertex => {
             c.ImGui_Text("Size");
             c.ImGui_PushID("DrawSelectedVerticesSize");

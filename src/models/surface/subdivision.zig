@@ -15,8 +15,7 @@ pub fn triangulateFaces(
 ) !void {
     var face_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(allocator, sm.nbCells(.face));
     defer face_buffer.deinit(allocator);
-    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
-    defer face_it.deinit();
+    var face_it = sm.cellIterator(.face);
     while (face_it.next()) |f| {
         if (sm.codegree(f) > 3) {
             try face_buffer.append(allocator, f);
@@ -45,8 +44,7 @@ pub fn cutAllEdges(
 ) !void {
     var edge_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(allocator, sm.nbCells(.edge));
     defer edge_buffer.deinit(allocator);
-    var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
-    defer edge_it.deinit();
+    var edge_it = sm.cellIterator(.edge);
     while (edge_it.next()) |e| {
         try edge_buffer.append(allocator, e);
     }

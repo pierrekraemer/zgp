@@ -161,7 +161,7 @@ pub fn computeVertexCurvatures(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner(.vertex) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -205,13 +205,11 @@ pub fn computeVertexGaussianCurvatures(
     vertex_gaussian_curvature: SurfaceMesh.CellData(.vertex, f32),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         corner_angle: SurfaceMesh.CellData(.corner, f32),
         vertex_gaussian_curvature: SurfaceMesh.CellData(.vertex, f32),
 
-        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), vertex: SurfaceMesh.Cell) void {
             t.vertex_gaussian_curvature.valuePtr(vertex).* = vertexGaussianCurvature(
                 t.surface_mesh,
                 vertex,
@@ -220,21 +218,11 @@ pub fn computeVertexGaussianCurvatures(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner(.vertex) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
         .corner_angle = corner_angle,
         .vertex_gaussian_curvature = vertex_gaussian_curvature,
     });
-
-    // var it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
-    // defer it.deinit();
-    // while (it.next()) |vertex| {
-    //     vertex_gaussian_curvature.valuePtr(vertex).* = vertexGaussianCurvature(
-    //         sm,
-    //         vertex,
-    //         corner_angle,
-    //     );
-    // }
 }

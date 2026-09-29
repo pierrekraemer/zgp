@@ -48,7 +48,7 @@ pub fn computeCornerAngles(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .corner);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner(.corner) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -93,13 +93,11 @@ pub fn computeCornerAnglesIntrinsic(
     corner_angle: SurfaceMesh.CellData(.corner, f32),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         edge_length: SurfaceMesh.CellData(.edge, f32),
         corner_angle: SurfaceMesh.CellData(.corner, f32),
 
-        pub fn run(t: *const Task, corner: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), corner: SurfaceMesh.Cell) void {
             t.corner_angle.valuePtr(corner).* = cornerAngleIntrinsic(
                 t.surface_mesh,
                 corner,
@@ -108,7 +106,7 @@ pub fn computeCornerAnglesIntrinsic(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .corner);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner(.corner) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -157,14 +155,12 @@ pub fn computeEdgeDihedralAngles(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
         edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
 
-        pub fn run(t: *const Task, edge: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), edge: SurfaceMesh.Cell) void {
             t.edge_dihedral_angle.valuePtr(edge).* = edgeDihedralAngle(
                 t.surface_mesh,
                 edge,
@@ -174,7 +170,7 @@ pub fn computeEdgeDihedralAngles(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .edge);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner(.edge) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,

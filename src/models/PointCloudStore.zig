@@ -110,9 +110,9 @@ pub fn deinit(pcs: *PointCloudStore) void {
     }
     pcs.point_clouds.deinit(pcs.allocator);
 
-    var vbo_it = pcs.data_vbo.iterator();
-    while (vbo_it.next()) |entry| {
-        entry.value_ptr.deinit();
+    var vbo_it = pcs.data_vbo.valueIterator();
+    while (vbo_it.next()) |vbo| {
+        vbo.deinit();
     }
     pcs.data_vbo.deinit(pcs.allocator);
 

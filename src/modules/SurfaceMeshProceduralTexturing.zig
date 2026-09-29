@@ -40,8 +40,7 @@ const TnBData = struct {
 
     fn computeVertexRefEdges(tbd: *TnBData) !void {
         assert(tbd.initialized);
-        var v_it: SurfaceMesh.CellIterator = try .init(tbd.surface_mesh, .vertex);
-        defer v_it.deinit();
+        var v_it = tbd.surface_mesh.cellIterator(.vertex);
         while (v_it.next()) |v| {
             tbd.vertex_ref_edge.?.valuePtr(v).* = .{ .edge = v.dart() };
         }

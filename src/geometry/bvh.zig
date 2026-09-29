@@ -46,8 +46,7 @@ pub const TrianglesBVH = struct {
         var position_array = try std.ArrayList(Vec3f).initCapacity(sm.allocator, sm.nbCells(.vertex));
         defer position_array.deinit(sm.allocator);
 
-        var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
-        defer vertex_it.deinit();
+        var vertex_it = sm.cellIterator(.vertex);
         var nb_vertices: u32 = 0;
         while (vertex_it.next()) |v| : (nb_vertices += 1) {
             vertex_index.valuePtr(v).* = nb_vertices;
@@ -55,8 +54,7 @@ pub const TrianglesBVH = struct {
         }
 
         // TODO: this code makes the assumption that the mesh is made of triangle faces
-        var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
-        defer face_it.deinit();
+        var face_it = sm.cellIterator(.face);
         while (face_it.next()) |f| {
             try surface_mesh_faces.append(sm.allocator, f);
             var dart_it = sm.cellDartIterator(f);

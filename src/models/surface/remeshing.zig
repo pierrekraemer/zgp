@@ -68,19 +68,17 @@ pub fn isotropicRemeshing(
     var mean_edge_length = edge_length.data.meanValue();
     const length_goal = mean_edge_length * edge_length_factor;
 
-    var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
-    defer edge_it.deinit();
-    var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
-    defer vertex_it.deinit();
+    var edge_it = sm.cellIterator(.edge);
+    var vertex_it = sm.cellIterator(.vertex);
 
     // feature edges are edges with a dihedral angle above a certain threshold
-    var feature_edge: SurfaceMesh.CellMarker = try .init(sm, .edge);
+    var feature_edge: SurfaceMesh.CellMarker(.edge) = try .init(sm);
     defer feature_edge.deinit();
     // feature vertices are vertices incident to at least one feature edge
-    var feature_vertex: SurfaceMesh.CellMarker = try .init(sm, .vertex);
+    var feature_vertex: SurfaceMesh.CellMarker(.vertex) = try .init(sm);
     defer feature_vertex.deinit();
     // feature corners are vertices incident to more than 2 feature edges
-    var feature_corner: SurfaceMesh.CellMarker = try .init(sm, .vertex);
+    var feature_corner: SurfaceMesh.CellMarker(.vertex) = try .init(sm);
     defer feature_corner.deinit();
 
     if (preserve_features) {

@@ -84,8 +84,7 @@ pub fn computeVertexQEMs(
     vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
 ) !void {
     vertex_qem.data.fill(mat.zero4f);
-    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
-    defer face_it.deinit();
+    var face_it = sm.cellIterator(.face);
     while (face_it.next()) |face| {
         const n = face_normal.value(face);
         const p = vertex_position.value(.{ .vertex = face.dart() });
@@ -103,8 +102,7 @@ pub fn computeVertexQEMs(
             );
         }
     }
-    var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
-    defer vertex_it.deinit();
+    var vertex_it = sm.cellIterator(.vertex);
     while (vertex_it.next()) |vertex| {
         const p = vertex_position.value(vertex);
         const tb = vertex_tangent_basis.value(vertex);
@@ -135,8 +133,7 @@ pub fn computeVertexQEMsSimd(
 ) !void {
     vertex_qem.data.fill(@splat(vec.zero4f));
 
-    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
-    defer face_it.deinit();
+    var face_it = sm.cellIterator(.face);
     while (face_it.next()) |face| {
         const n = vec.simdFromVec3f(face_normal.value(face));
         const p = vertex_position.value(.{ .vertex = face.dart() });
@@ -151,8 +148,7 @@ pub fn computeVertexQEMsSimd(
             vertex_qem.valuePtr(v).* = mat.simdAdd4f(vertex_qem.value(v), fq);
         }
     }
-    var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
-    defer vertex_it.deinit();
+    var vertex_it = sm.cellIterator(.vertex);
     while (vertex_it.next()) |vertex| {
         const p = vertex_position.value(vertex);
         const tb = vertex_tangent_basis.value(vertex);

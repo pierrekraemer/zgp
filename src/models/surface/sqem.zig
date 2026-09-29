@@ -52,8 +52,6 @@ pub fn computeVertexSQEMs(
     vertex_sqem: SurfaceMesh.CellData(.vertex, SQEM),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_area: SurfaceMesh.CellData(.vertex, f32),
@@ -63,7 +61,7 @@ pub fn computeVertexSQEMs(
         line_quadric_epsilon: f32,
         vertex_sqem: SurfaceMesh.CellData(.vertex, SQEM),
 
-        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), vertex: SurfaceMesh.Cell) void {
             t.vertex_sqem.valuePtr(vertex).* = vertexSQEM(
                 t.surface_mesh,
                 vertex,
@@ -77,7 +75,7 @@ pub fn computeVertexSQEMs(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
+    var pctr: SurfaceMesh.ParallelCellTaskRunner(.vertex) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,

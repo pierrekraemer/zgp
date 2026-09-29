@@ -21,7 +21,7 @@ const DistanceData = struct {
     app_ctx: *AppContext,
     surface_mesh: *SurfaceMesh,
 
-    selected_vertex_set: ?*SurfaceMesh.CellSet = null,
+    selected_vertex_set: ?*SurfaceMesh.CellSet(.vertex) = null,
     vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null,
 
     hm_ctx: ?distance.HeatMethodContext = null, // optional Heat Method context
@@ -255,7 +255,7 @@ pub fn rightClickMenu(m: *Module) void {
             if (dd.hm_ctx) |*hm_ctx| {
                 const disabled =
                     dd.selected_vertex_set == null or
-                    dd.selected_vertex_set.?.cells.items.len == 0 or
+                    dd.selected_vertex_set.?.cell_set_gen.cells.items.len == 0 or
                     dd.vertex_distance == null;
                 if (disabled) {
                     c.ImGui_BeginDisabled(true);
@@ -264,7 +264,7 @@ pub fn rightClickMenu(m: *Module) void {
                     const t = std.Io.Timestamp.now(smd.app_ctx.io, .real);
 
                     hm_ctx.computeGeodesicDistancesFromSource(
-                        dd.selected_vertex_set.?.cells.items,
+                        dd.selected_vertex_set.?.cell_set_gen.cells.items,
                         dd.vertex_distance.?,
                     ) catch |err| {
                         std.debug.print("Failed to compute geodesic distance: {}\n", .{err});

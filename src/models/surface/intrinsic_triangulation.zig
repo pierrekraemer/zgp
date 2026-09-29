@@ -96,8 +96,7 @@ pub const ITContext = struct {
         // initialize extrinsic to intrinsic vertex mapping & intrinsic vertex extrinsic SurfacePoint (all are initially of vertex type, i.e. sit on extrinsic vertices)
         // initialize intrinsic halfedge extrinsic SurfacePoint angle (expressed in the underlying SurfacePoint tangent space)
         // initialize extrinsic vertex angle sums
-        var int_vertex_it: SurfaceMesh.CellIterator = try .init(intrinsic_surface_mesh, .vertex);
-        defer int_vertex_it.deinit();
+        var int_vertex_it = intrinsic_surface_mesh.cellIterator(.vertex);
         while (int_vertex_it.next()) |v| {
             // WARNING: the following code relies on the fact that after cloning, intrinsic vertex v.dart() is equal to extrinsic vertex v.dart()
             extrinsic_vertex_intrinsic_vertex.valuePtr(v).* = v; // WARNING: this mapping must be updated after intrinsic edge flips (the representative Dart of the intrinsic vertex might have moved to a different vertex)
@@ -118,8 +117,7 @@ pub const ITContext = struct {
         // initialize intrinsic edge data:
         // - original edge boolean
         // - edge traces (empty for now)
-        var int_edge_it: SurfaceMesh.CellIterator = try .init(intrinsic_surface_mesh, .edge);
-        defer int_edge_it.deinit();
+        var int_edge_it = intrinsic_surface_mesh.cellIterator(.edge);
         while (int_edge_it.next()) |e| {
             intrinsic_edge_is_original.valuePtr(e).* = true; // all edges are original after cloning
             intrinsic_edge_trace.valuePtr(e).* = .empty;
@@ -148,14 +146,10 @@ pub const ITContext = struct {
     }
 
     pub fn deinit(it_ctx: *ITContext) void {
-        var edge_it = SurfaceMesh.CellIterator.init(it_ctx.intrinsic_surface_mesh, .edge) catch |err| {
-            std.debug.print("Error creating edge iterator in ITData deinit: {}\n", .{err});
-            return;
-        };
+        var edge_it = it_ctx.intrinsic_surface_mesh.cellIterator(.edge);
         while (edge_it.next()) |e| {
             it_ctx.intrinsic_edge_trace.valuePtr(e).deinit(it_ctx.allocator);
         }
-        edge_it.deinit(); // this deinit is not deferred because it must be called before the intrinsic_surface_mesh is deinit and destroyed
 
         it_ctx.intrinsic_surface_mesh.deinit();
         it_ctx.allocator.destroy(it_ctx.intrinsic_surface_mesh);
@@ -310,8 +304,7 @@ pub const ITContext = struct {
     pub fn flipToDelaunay(it_ctx: *const ITContext) !void {
         var edges_queue: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(it_ctx.allocator, it_ctx.intrinsic_surface_mesh.nbCells(.edge));
         defer edges_queue.deinit(it_ctx.allocator);
-        var edge_it: SurfaceMesh.CellIterator = try .init(it_ctx.intrinsic_surface_mesh, .edge);
-        defer edge_it.deinit();
+        var edge_it = it_ctx.intrinsic_surface_mesh.cellIterator(.edge);
         while (edge_it.next()) |e| {
             try edges_queue.append(it_ctx.allocator, e); // all edges are initially added to the queue
         }
@@ -323,7 +316,7 @@ pub const ITContext = struct {
         edges_queue: *std.ArrayList(SurfaceMesh.Cell),
         callbacks: anytype, // can define `beforeEdgeFlip(edge: SurfaceMesh.Cell) void` and `afterEdgeFlip(edge: SurfaceMesh.Cell) void`
     ) !void {
-        var edge_in_queue: SurfaceMesh.CellMarker = try .init(it_ctx.intrinsic_surface_mesh, .edge);
+        var edge_in_queue: SurfaceMesh.CellMarker(.edge) = try .init(it_ctx.intrinsic_surface_mesh);
         defer edge_in_queue.deinit();
         for (edges_queue.items) |e| {
             edge_in_queue.mark(e);

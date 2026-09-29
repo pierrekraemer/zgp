@@ -165,23 +165,22 @@ pub const ParallelPointTaskRunner = struct {
 
 pub fn CellData(comptime T: type) type {
     return struct {
-        const Self = @This();
         pub const DataType = T;
 
         point_cloud: *const PointCloud,
         data: *Data(T),
 
-        pub fn value(self: Self, p: Point) T {
-            return self.data.value(self.point_cloud.pointIndex(p));
+        pub fn value(cd: @This(), p: Point) T {
+            return cd.data.value(cd.point_cloud.pointIndex(p));
         }
-        pub fn valuePtr(self: Self, p: Point) *T {
-            return self.data.valuePtr(self.point_cloud.pointIndex(p));
+        pub fn valuePtr(cd: @This(), p: Point) *T {
+            return cd.data.valuePtr(cd.point_cloud.pointIndex(p));
         }
-        pub fn name(self: Self) []const u8 {
-            return self.data.data_gen.name;
+        pub fn name(cd: @This()) []const u8 {
+            return cd.data.data_gen.name;
         }
-        pub fn gen(self: Self) *DataGen {
-            return &self.data.data_gen;
+        pub fn gen(cd: @This()) *DataGen {
+            return &cd.data.data_gen;
         }
     };
 }
@@ -223,7 +222,7 @@ pub fn nbPoints(pc: *const PointCloud) u32 {
 }
 
 pub fn addPoint(pc: *PointCloud) !Point {
-    return pc.point_data.getIndex();
+    return pc.point_data.acquireIndex();
 }
 
 pub fn removePoint(pc: *PointCloud, p: Point) void {

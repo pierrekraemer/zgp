@@ -26,8 +26,8 @@ const DeformationData = struct {
     app_ctx: *AppContext,
     surface_mesh: *SurfaceMesh,
 
-    fixed_vertex_set: ?*SurfaceMesh.CellSet = null, // anchored vertices
-    handle_vertex_set: ?*SurfaceMesh.CellSet = null, // handle vertices (moved by user)
+    fixed_vertex_set: ?*SurfaceMesh.CellSet(.vertex) = null, // anchored vertices
+    handle_vertex_set: ?*SurfaceMesh.CellSet(.vertex) = null, // handle vertices (moved by user)
 
     arap_ctx: ?arap.ARAPContext = null, // optional ARAP context
     // maybe there will be other deformation contexts in the future, e.g. for other deformation methods
@@ -46,8 +46,8 @@ const DeformationData = struct {
         assert(dd.it_ctx == null);
         assert(vertex_position.surface_mesh == dd.surface_mesh);
         assert(halfedge_cotan_weight.surface_mesh == dd.surface_mesh);
-        assert(dd.fixed_vertex_set != null and dd.fixed_vertex_set.?.cells.items.len > 0 and dd.fixed_vertex_set.?.surface_mesh == dd.surface_mesh);
-        assert(dd.handle_vertex_set != null and dd.handle_vertex_set.?.cells.items.len > 0 and dd.handle_vertex_set.?.surface_mesh == dd.surface_mesh);
+        assert(dd.fixed_vertex_set != null and dd.fixed_vertex_set.?.cell_set_gen.cells.items.len > 0 and dd.fixed_vertex_set.?.cell_set_gen.surface_mesh == dd.surface_mesh);
+        assert(dd.handle_vertex_set != null and dd.handle_vertex_set.?.cell_set_gen.cells.items.len > 0 and dd.handle_vertex_set.?.cell_set_gen.surface_mesh == dd.surface_mesh);
 
         if (use_intrinsic_delaunay and edge_length != null and corner_angle != null) {
             assert(edge_length.?.surface_mesh == dd.surface_mesh);
@@ -159,7 +159,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
     const can_drag = info.std_datas.vertex_position != null and
         info.std_datas.halfedge_cotan_weight != null and
         dd.handle_vertex_set != null and
-        dd.handle_vertex_set.?.cells.items.len > 0 and
+        dd.handle_vertex_set.?.cell_set_gen.cells.items.len > 0 and
         (smd.deformation_mode == .SimpleTranslation or (smd.deformation_mode == .ARAP and dd.arap_ctx != null));
 
     if (!can_drag) {
@@ -172,13 +172,13 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                 c.SDLK_D => {
                     // compute and store the average depth of the handle vertices
                     smd.drag_z = 0;
-                    for (dd.handle_vertex_set.?.indices.items) |vertex_id| {
+                    for (dd.handle_vertex_set.?.cell_set_gen.indices.items) |vertex_id| {
                         const p = view.worldToView(info.std_datas.vertex_position.?.valueByIndex(vertex_id));
                         if (p) |p_view| {
                             smd.drag_z += p_view[2];
                         }
                     }
-                    smd.drag_z /= @floatFromInt(dd.handle_vertex_set.?.indices.items.len);
+                    smd.drag_z /= @floatFromInt(dd.handle_vertex_set.?.cell_set_gen.indices.items.len);
                     smd.dragging = true;
                 },
                 else => {},
@@ -199,7 +199,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                 if (p_now != null and p_prev != null) {
                     const tr = vec.sub3f(p_now.?, p_prev.?);
                     // Translate handle vertices
-                    for (dd.handle_vertex_set.?.indices.items) |vertex_id| {
+                    for (dd.handle_vertex_set.?.cell_set_gen.indices.items) |vertex_id| {
                         const pos = info.std_datas.vertex_position.?.valuePtrByIndex(vertex_id);
                         pos.* = vec.add3f(pos.*, tr);
                     }
@@ -264,9 +264,9 @@ pub fn rightPanel(m: *Module) void {
         // Initialize ARAP button
         {
             const disabled = dd.fixed_vertex_set == null or
-                dd.fixed_vertex_set.?.cells.items.len == 0 or
+                dd.fixed_vertex_set.?.cell_set_gen.cells.items.len == 0 or
                 dd.handle_vertex_set == null or
-                dd.handle_vertex_set.?.cells.items.len == 0 or
+                dd.handle_vertex_set.?.cell_set_gen.cells.items.len == 0 or
                 info.std_datas.vertex_position == null or
                 info.std_datas.halfedge_cotan_weight == null or
                 (smd.use_intrinsic_delaunay and info.std_datas.edge_length == null) or

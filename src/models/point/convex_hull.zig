@@ -142,8 +142,7 @@ pub fn generateConvexHull(
     face_most_distant_point_index.data.fill(0);
 
     // register points outside the initial tetrahedron in the faces
-    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
-    defer face_it.deinit();
+    var face_it = sm.cellIterator(.face);
     var point_it = pc.pointIterator();
     while (point_it.next()) |p| {
         face_it.reset();
@@ -262,7 +261,7 @@ fn buildHorizon(
     var visible_faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
 
     try visible_faces.append(allocator, face);
-    var visible_faces_marker: SurfaceMesh.CellMarker = try .init(sm, .face);
+    var visible_faces_marker: SurfaceMesh.CellMarker(.face) = try .init(sm);
     defer visible_faces_marker.deinit();
     visible_faces_marker.mark(face);
 
