@@ -11,6 +11,10 @@ const Data = data.Data;
 
 const BufferPool = @import("../../utils/BufferPool.zig").BufferPool;
 
+// ------------------------------------------------------------------------- //
+// Basic types
+// ------------------------------------------------------------------------- //
+
 pub const CellIndex = u32;
 
 pub const Cell = union(enum) {
@@ -18,18 +22,21 @@ pub const Cell = union(enum) {
     edge: CellIndex,
     face: CellIndex,
 
-    pub fn index(c: Cell) CellIndex {
-        const idx, _ = switch (c) {
-            inline else => |val, tag| .{ val, tag },
-        };
-        return idx;
-    }
-
     pub fn cellType(c: Cell) CellType {
         return std.meta.activeTag(c);
     }
+
+    pub fn index(c: Cell) CellIndex {
+        return switch (c) {
+            inline else => |val| val,
+        };
+    }
 };
 pub const CellType = std.meta.Tag(Cell);
+
+// ------------------------------------------------------------------------- //
+// Fields
+// ------------------------------------------------------------------------- //
 
 allocator: std.mem.Allocator,
 cell_buffer_pool: *BufferPool(Cell), // the BufferPool is shared between IncidenceGraphs (owned by the IncidenceGraphStore)
@@ -43,6 +50,23 @@ edge_incident_vertices: *Data([2]CellIndex),
 edge_incident_faces: *Data(std.ArrayList(CellIndex)),
 face_incident_edges: *Data(std.ArrayList(CellIndex)),
 face_incident_edges_dir: *Data(std.ArrayList(bool)),
+
+// ------------------------------------------------------------------------- //
+// Basic accessors
+// ------------------------------------------------------------------------- //
+
+/// Returns the data container associated with the given CellType.
+pub fn dataContainerPtr(ig: anytype, cell_type: CellType) if (@typeInfo(@TypeOf(ig)).pointer.is_const) *const DataContainer else *DataContainer {
+    return switch (cell_type) {
+        .vertex => &ig.vertex_data,
+        .edge => &ig.edge_data,
+        .face => &ig.face_data,
+    };
+}
+
+// ------------------------------------------------------------------------- //
+// Initialization, deinitialization
+// ------------------------------------------------------------------------- //
 
 pub fn init(ig: *IncidenceGraph, allocator: std.mem.Allocator, cell_buffer_pool: *BufferPool(Cell)) !void {
     ig.allocator = allocator;
@@ -101,86 +125,81 @@ pub fn clearRetainingCapacity(ig: *IncidenceGraph) void {
     ig.face_data.clearRetainingCapacity();
 }
 
+// ------------------------------------------------------------------------- //
+// Iterators
+// ------------------------------------------------------------------------- //
+
+pub fn CellIterator(comptime cell_type: CellType) type {
+    return struct {
+        dc_it: DataContainer.IndexIterator,
+        pub fn next(it: *@This()) ?Cell {
+            return @unionInit(
+                Cell,
+                @tagName(cell_type),
+                it.dc_it.next() orelse return null,
+            );
+        }
+        pub fn nextSafe(it: *@This()) ?Cell {
+            return @unionInit(
+                Cell,
+                @tagName(cell_type),
+                it.dc_it.nextSafe() orelse return null,
+            );
+        }
+        pub fn reset(it: *@This()) void {
+            it.dc_it.reset();
+        }
+    };
+}
+
+/// Return a CellIterator that iterates over all the cells of the given type in the IncidenceGraph.
+pub fn cellIterator(ig: *const IncidenceGraph, comptime cell_type: CellType) CellIterator(cell_type) {
+    return .{ .dc_it = ig.dataContainerPtr(cell_type).indexIterator() };
+}
+
+// ------------------------------------------------------------------------- //
+// Markers
+// ------------------------------------------------------------------------- //
+
 /// A CellMarker stores a boolean for each cell of the given CellType.
 /// It can be used for any purpose, using the value/valuePtr/reset functions.
-pub const CellMarker = struct {
-    incidence_graph: *IncidenceGraph,
-    cell_type: CellType,
-    marker: *Data(bool),
+pub fn CellMarker(comptime cell_type: CellType) type {
+    return struct {
+        incidence_graph: *IncidenceGraph,
+        marker: *Data(bool),
 
-    pub fn init(ig: *IncidenceGraph, cell_type: CellType) !CellMarker {
-        return .{
-            .incidence_graph = ig,
-            .cell_type = cell_type,
-            .marker = try switch (cell_type) {
-                .vertex => ig.vertex_data.getMarker(),
-                .edge => ig.edge_data.getMarker(),
-                .face => ig.face_data.getMarker(),
-                else => unreachable,
-            },
-        };
-    }
-    pub fn deinit(cm: *CellMarker) void {
-        switch (cm.cell_type) {
-            .vertex => cm.incidence_graph.vertex_data.releaseMarker(cm.marker),
-            .edge => cm.incidence_graph.edge_data.releaseMarker(cm.marker),
-            .face => cm.incidence_graph.face_data.releaseMarker(cm.marker),
-            else => unreachable,
+        pub fn init(ig: *IncidenceGraph) !@This() {
+            return .{
+                .incidence_graph = ig,
+                .marker = try ig.dataContainerPtr(cell_type).acquireMarker(),
+            };
         }
-    }
-
-    pub fn mark(cm: *CellMarker, c: Cell) void {
-        assert(c.cellType() == cm.cell_type);
-        // assert(!cm.isMarked(c));
-        cm.marker.valuePtr(c.index()).* = true;
-    }
-    pub fn unmark(cm: *CellMarker, c: Cell) void {
-        assert(c.cellType() == cm.cell_type);
-        // assert(cm.isMarked(c));
-        cm.marker.valuePtr(c.index()).* = false;
-    }
-    pub fn isMarked(cm: *CellMarker, c: Cell) bool {
-        assert(c.cellType() == cm.cell_type);
-        return cm.marker.value(c.index());
-    }
-    pub fn reset(cm: *CellMarker) void {
-        cm.marker.fill(false);
-    }
-};
-
-/// CellIterator iterates over all the cells of the given CellType of the IncidenceGraph.
-const CellIterator = struct {
-    incidence_graph: *IncidenceGraph,
-    cell_type: CellType,
-    cell_container: *DataContainer,
-    current_index: CellIndex = undefined,
-
-    pub fn next(ci: *CellIterator) ?Cell {
-        if (ci.current_index == ci.cell_container.lastIndex()) {
-            return null;
+        pub fn deinit(cm: *@This()) void {
+            cm.incidence_graph.dataContainerPtr(cell_type).releaseMarker(cm.marker);
         }
-        // prepare current_index for next iteration
-        defer ci.current_index = ci.cell_container.nextIndex(ci.current_index);
-        return switch (ci.cell_type) {
-            .vertex => .{ .vertex = ci.current_index },
-            .edge => .{ .edge = ci.current_index },
-            .face => .{ .face = ci.current_index },
-        };
-    }
-    pub fn reset(ci: *CellIterator) void {
-        ci.current_index = ci.cell_container.firstIndex();
-    }
-};
 
-pub fn cellIterator(ig: *IncidenceGraph, cell_type: CellType) CellIterator {
-    var ci: CellIterator = .{
-        .incidence_graph = ig,
-        .cell_type = cell_type,
-        .cell_container = ig.dataContainerPtr(cell_type),
+        pub fn mark(cm: *@This(), c: Cell) void {
+            assert(c.cellType() == cell_type);
+            cm.marker.valuePtr(c.index()).* = true;
+        }
+        pub fn unmark(cm: *@This(), c: Cell) void {
+            assert(c.cellType() == cell_type);
+            cm.marker.valuePtr(c.index()).* = false;
+        }
+        pub fn isMarked(cm: *@This(), c: Cell) bool {
+            assert(c.cellType() == cell_type);
+            return cm.marker.value(c.index());
+        }
+
+        pub fn reset(cm: *@This()) void {
+            cm.marker.fill(false);
+        }
     };
-    ci.reset();
-    return ci;
 }
+
+// ------------------------------------------------------------------------- //
+// Cell Data
+// ------------------------------------------------------------------------- //
 
 /// A CellData is a handle to a data array of type `T` associated with cells of the given CellType.
 /// It provides functions to access the data associated with a given cell or its index.
@@ -189,52 +208,45 @@ pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
         pub const CellType = cell_type;
         pub const DataType = T;
 
-        incidence_graph: *const IncidenceGraph,
         data: *Data(T),
 
+        fn ValuePtrType(comptime SelfType: type) type {
+            if (@typeInfo(SelfType).pointer.is_const) {
+                return *const T;
+            } else {
+                return *T;
+            }
+        }
+        pub fn valuePtr(cd: anytype, c: Cell) ValuePtrType(@TypeOf(cd)) {
+            assert(c.cellType() == cell_type);
+            return cd.data.valuePtr(c.index());
+        }
         pub fn value(cd: @This(), c: Cell) T {
             assert(c.cellType() == cell_type);
             return cd.data.value(c.index());
         }
-        pub fn valuePtr(cd: @This(), c: Cell) *T {
-            assert(c.cellType() == cell_type);
-            return cd.data.valuePtr(c.index());
-        }
+
         pub fn name(cd: @This()) []const u8 {
             return cd.data.data_gen.name;
         }
+
         pub fn gen(cd: @This()) *DataGen {
             return &cd.data.data_gen;
         }
     };
 }
 
-/// Returns the data container associated with the given CellType.
-pub fn dataContainerPtr(ig: anytype, cell_type: CellType) if (@typeInfo(@TypeOf(ig)).pointer.is_const) *const DataContainer else *DataContainer {
-    return switch (cell_type) {
-        .vertex => &ig.vertex_data,
-        .edge => &ig.edge_data,
-        .face => &ig.face_data,
-    };
-}
-
 /// Creates a new data array of the type `T` associated with cells of the given CellType.
 /// The `name` must be unique for the given CellType for the creation to succeed.
 pub fn addData(ig: *IncidenceGraph, comptime cell_type: CellType, comptime T: type, name: []const u8) !CellData(cell_type, T) {
-    return .{
-        .incidence_graph = ig,
-        .data = try ig.dataContainerPtr(cell_type).addData(T, name),
-    };
+    return .{ .data = try ig.dataContainerPtr(cell_type).addData(T, name) };
 }
 
 /// Returns a handle to the data array of the type `T` associated with cells of the given CellType
 /// if it exists with the given name, otherwise returns null.
 pub fn getData(ig: *const IncidenceGraph, comptime cell_type: CellType, comptime T: type, name: []const u8) ?CellData(cell_type, T) {
     if (ig.dataContainerPtr(cell_type).getData(T, name)) |d| {
-        return .{
-            .incidence_graph = ig,
-            .data = d,
-        };
+        return .{ .data = d };
     } else return null;
 }
 
@@ -243,45 +255,17 @@ pub fn getData(ig: *const IncidenceGraph, comptime cell_type: CellType, comptime
 /// and returns a handle to it, along with a boolean indicating whether the data array was newly created (true) or already existed (false).
 pub fn getOrAddData(ig: *IncidenceGraph, comptime cell_type: CellType, comptime T: type, name: []const u8) !struct { CellData(cell_type, T), bool } {
     const d, const created = try ig.dataContainerPtr(cell_type).getOrAddData(T, name);
-    return .{
-        .{
-            .incidence_graph = ig,
-            .data = d,
-        },
-        created,
-    };
+    return .{ .{ .data = d }, created };
 }
 
 /// Removes the data array of the type `T` associated with cells of the given CellType.
-pub fn removeData(ig: *IncidenceGraph, comptime cell_type: CellType, comptime T: type, cellData: CellData(cell_type, T)) void {
-    assert(cellData.incidence_graph == ig);
-    ig.dataContainerPtr(cell_type).removeData(&cellData.data.data_gen);
+pub fn removeData(ig: *IncidenceGraph, comptime cell_type: CellType, cell_data: anytype) void {
+    ig.dataContainerPtr(cell_type).removeData(cell_data.gen());
 }
 
-/// Returns the number of cells of the given CellType in the given IncidenceGraph.
-pub fn nbCells(ig: *const IncidenceGraph, cell_type: CellType) u32 {
-    return ig.dataContainerPtr(cell_type).nbElements();
-}
-
-/// Returns the degree of the given cell (number of d+1 incident cells).
-/// Only vertices and edges have a degree (faces are top-cells and do not have a degree).
-pub fn degree(ig: *const IncidenceGraph, cell: Cell) u32 {
-    return switch (cell) {
-        .vertex => ig.vertex_incident_edges.value(cell).items.len,
-        .edge => ig.edge_incident_faces.value(cell).items.len,
-        else => unreachable,
-    };
-}
-
-/// Returns the codegree of the given cell (number of d-1 incident cells).
-/// Only edges and faces have a codegree (vertices are 0-cells and do not have a codegree).
-pub fn codegree(ig: *const IncidenceGraph, cell: Cell) u32 {
-    return switch (cell) {
-        .edge => 2,
-        .face => ig.face_incident_edges.value(cell).items.len,
-        else => unreachable,
-    };
-}
+// ------------------------------------------------------------------------- //
+// Cell Management
+// ------------------------------------------------------------------------- //
 
 pub fn addVertex(ig: *IncidenceGraph) !Cell {
     const idx = try ig.vertex_data.acquireIndex();
@@ -313,4 +297,29 @@ pub fn addFace(ig: *IncidenceGraph, edges: []const Cell) !Cell {
         try ig.edge_incident_faces.valuePtr(e.index()).append(ig.allocator, idx);
     }
     return .{ .face = idx };
+}
+
+/// Returns the number of cells of the given CellType in the given IncidenceGraph.
+pub fn nbCells(ig: *const IncidenceGraph, cell_type: CellType) u32 {
+    return ig.dataContainerPtr(cell_type).nbElements();
+}
+
+/// Returns the degree of the given cell (number of d+1 incident cells).
+/// Only vertices and edges have a degree (faces are top-cells and do not have a degree).
+pub fn degree(ig: *const IncidenceGraph, cell: Cell) u32 {
+    return switch (cell) {
+        .vertex => ig.vertex_incident_edges.value(cell).items.len,
+        .edge => ig.edge_incident_faces.value(cell).items.len,
+        else => unreachable,
+    };
+}
+
+/// Returns the codegree of the given cell (number of d-1 incident cells).
+/// Only edges and faces have a codegree (vertices are 0-cells and do not have a codegree).
+pub fn codegree(ig: *const IncidenceGraph, cell: Cell) u32 {
+    return switch (cell) {
+        .edge => 2,
+        .face => ig.face_incident_edges.value(cell).items.len,
+        else => unreachable,
+    };
 }

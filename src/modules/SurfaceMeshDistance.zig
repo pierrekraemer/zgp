@@ -39,12 +39,6 @@ const DistanceData = struct {
     ) !void {
         assert(dd.hm_ctx == null);
         assert(diffusion_time > 0.0);
-        assert(halfedge_cotan_weight.surface_mesh == dd.surface_mesh);
-        assert(vertex_position.surface_mesh == dd.surface_mesh);
-        assert(vertex_area.surface_mesh == dd.surface_mesh);
-        assert(edge_length.surface_mesh == dd.surface_mesh);
-        assert(face_area.surface_mesh == dd.surface_mesh);
-        assert(face_normal.surface_mesh == dd.surface_mesh);
 
         dd.hm_ctx = try .init(
             dd.app_ctx.allocator,
@@ -265,7 +259,7 @@ pub fn rightClickMenu(m: *Module) void {
 
                     hm_ctx.computeGeodesicDistancesFromSource(
                         dd.selected_vertex_set.?.cell_set_gen.cells.items,
-                        dd.vertex_distance.?,
+                        &dd.vertex_distance.?,
                     ) catch |err| {
                         std.debug.print("Failed to compute geodesic distance: {}\n", .{err});
                     };

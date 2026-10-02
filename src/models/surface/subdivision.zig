@@ -22,7 +22,7 @@ pub fn triangulateFaces(
         }
     }
     for (face_buffer.items) |f| {
-        var d_start = f.dart();
+        var d_start = sm.dart(f);
         const d_end = sm.phi_1(d_start);
         var d_next = sm.phi1(d_start);
         if (d_next == d_start) continue; // 1-sided face
@@ -40,7 +40,7 @@ pub fn triangulateFaces(
 pub fn cutAllEdges(
     allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position: *SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
     var edge_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(allocator, sm.nbCells(.edge));
     defer edge_buffer.deinit(allocator);
@@ -49,10 +49,11 @@ pub fn cutAllEdges(
         try edge_buffer.append(allocator, e);
     }
     for (edge_buffer.items) |e| {
+        const d = sm.dart(e);
         const new_pos = vec.mulScalar3f(
             vec.add3f(
-                vertex_position.value(.{ .vertex = e.dart() }),
-                vertex_position.value(.{ .vertex = sm.phi1(e.dart()) }),
+                vertex_position.value(sm.vertex(d)),
+                vertex_position.value(sm.vertex(sm.phi1(d))),
             ),
             0.5,
         );

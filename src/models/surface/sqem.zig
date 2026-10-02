@@ -21,7 +21,7 @@ pub fn vertexSQEM(
     assert(vertex.cellType() == .vertex);
     var vsq = SQEM.zero;
     const p = vertex_position.value(vertex);
-    var dart_it = sm.cellDartIterator(vertex);
+    var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
     while (dart_it.next()) |d| {
         if (!sm.isBoundaryDart(d)) {
             const face: SurfaceMesh.Cell = .{ .face = d };
@@ -49,7 +49,7 @@ pub fn computeVertexSQEMs(
     face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     line_quadric_epsilon: f32,
-    vertex_sqem: SurfaceMesh.CellData(.vertex, SQEM),
+    vertex_sqem: *SurfaceMesh.CellData(.vertex, SQEM),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
@@ -59,7 +59,7 @@ pub fn computeVertexSQEMs(
         face_area: SurfaceMesh.CellData(.face, f32),
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
         line_quadric_epsilon: f32,
-        vertex_sqem: SurfaceMesh.CellData(.vertex, SQEM),
+        vertex_sqem: *SurfaceMesh.CellData(.vertex, SQEM),
 
         pub fn run(t: *const @This(), vertex: SurfaceMesh.Cell) void {
             t.vertex_sqem.valuePtr(vertex).* = vertexSQEM(

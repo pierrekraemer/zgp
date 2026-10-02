@@ -15,16 +15,14 @@ pub fn halfedgeCotanWeight(
 ) f32 {
     assert(halfedge.cellType() == .halfedge);
 
-    if (sm.isBoundaryDart(halfedge.dart())) {
+    const d = sm.dart(halfedge);
+    if (sm.isBoundaryDart(d)) {
         return 0.0;
     }
 
-    const d = halfedge.dart();
-    const d1 = sm.phi1(d);
-    const d_1 = sm.phi_1(d);
-    const p1 = vertex_position.value(.{ .vertex = d });
-    const p2 = vertex_position.value(.{ .vertex = d1 });
-    const p3 = vertex_position.value(.{ .vertex = d_1 });
+    const p1 = vertex_position.value(sm.vertex(d));
+    const p2 = vertex_position.value(sm.vertex(sm.phi1(d)));
+    const p3 = vertex_position.value(sm.vertex(sm.phi_1(d)));
     const vecR = vec.sub3f(p1, p3);
     const vecL = vec.sub3f(p2, p3);
     // cotan(theta_i^jk) = (u . v) / ||u x v||
@@ -38,16 +36,14 @@ pub fn computeHalfedgeCotanWeights(
     io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+    halfedge_cotan_weight: *SurfaceMesh.CellData(.halfedge, f32),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+        halfedge_cotan_weight: *SurfaceMesh.CellData(.halfedge, f32),
 
-        pub fn run(t: *const Task, halfedge: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), halfedge: SurfaceMesh.Cell) void {
             t.halfedge_cotan_weight.valuePtr(halfedge).* = halfedgeCotanWeight(
                 t.surface_mesh,
                 halfedge,
@@ -76,17 +72,15 @@ pub fn halfedgeCotanWeightIntrinsic(
 ) f32 {
     assert(halfedge.cellType() == .halfedge);
 
-    if (sm.isBoundaryDart(halfedge.dart())) {
+    const d = sm.dart(halfedge);
+    if (sm.isBoundaryDart(d)) {
         return 0.0;
     }
 
-    const d = halfedge.dart();
-    const d1 = sm.phi1(d);
-    const d_1 = sm.phi_1(d);
-    const l_ij = edge_length.value(.{ .edge = d });
-    const l_jk = edge_length.value(.{ .edge = d1 });
-    const l_ki = edge_length.value(.{ .edge = d_1 });
-    const area = face_area.value(.{ .face = d });
+    const l_ij = edge_length.value(sm.edge(d));
+    const l_jk = edge_length.value(sm.edge(sm.phi1(d)));
+    const l_ki = edge_length.value(sm.edge(sm.phi_1(d)));
+    const area = face_area.value(sm.face(d));
     return (-l_ij * l_ij + l_jk * l_jk + l_ki * l_ki) / (4.0 * area);
 }
 
@@ -98,17 +92,15 @@ pub fn computeHalfedgeCotanWeightsIntrinsic(
     sm: *SurfaceMesh,
     edge_length: SurfaceMesh.CellData(.edge, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
-    halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+    halfedge_cotan_weight: *SurfaceMesh.CellData(.halfedge, f32),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         edge_length: SurfaceMesh.CellData(.edge, f32),
         face_area: SurfaceMesh.CellData(.face, f32),
-        halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+        halfedge_cotan_weight: *SurfaceMesh.CellData(.halfedge, f32),
 
-        pub fn run(t: *const Task, halfedge: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), halfedge: SurfaceMesh.Cell) void {
             t.halfedge_cotan_weight.valuePtr(halfedge).* = halfedgeCotanWeightIntrinsic(
                 t.surface_mesh,
                 halfedge,
@@ -135,15 +127,14 @@ pub fn edgeCotanWeight(
     halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
 ) f32 {
     assert(edge.cellType() == .edge);
-
     var w: f32 = 0.0;
-    const d = edge.dart();
+    const d = sm.dart(edge);
     if (!sm.isBoundaryDart(d)) {
-        w += halfedge_cotan_weight.value(.{ .halfedge = d });
+        w += halfedge_cotan_weight.value(sm.halfedge(d));
     }
     const dd = sm.phi2(d);
     if (!sm.isBoundaryDart(dd)) {
-        w += halfedge_cotan_weight.value(.{ .halfedge = dd });
+        w += halfedge_cotan_weight.value(sm.halfedge(dd));
     }
     return w;
 }

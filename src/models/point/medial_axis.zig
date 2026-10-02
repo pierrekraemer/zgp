@@ -62,7 +62,7 @@ pub fn computePointShrinkingBalls(
     pc_kdtree: *kdtree.PointsKDTree,
     point_position: PointCloud.CellData(Vec3f),
     point_normal: PointCloud.CellData(Vec3f),
-    point_shrinking_ball: PointCloud.CellData(?Vec4f),
+    point_shrinking_ball: *PointCloud.CellData(?Vec4f),
 ) !void {
     const Task = struct {
         const Task = @This();
@@ -71,7 +71,7 @@ pub fn computePointShrinkingBalls(
         pc_kdtree: *kdtree.PointsKDTree,
         point_position: PointCloud.CellData(Vec3f),
         point_normal: PointCloud.CellData(Vec3f),
-        point_shrinking_ball: PointCloud.CellData(?Vec4f),
+        point_shrinking_ball: *PointCloud.CellData(?Vec4f),
 
         pub fn run(t: *const Task, point: PointCloud.Point) void {
             const n = t.point_normal.value(point);
@@ -143,8 +143,8 @@ pub const VMASContext = struct {
         point_knn.data.fill(.empty);
         const point_tangent_basis = try point_cloud.addData([2]Vec3f, "tangent_basis");
         // const point_area = try point_cloud.addData(f32, "area");
-        const point_sqem = try point_cloud.addData(SQEM, "sqem");
-        const point_shrinking_ball = try point_cloud.addData(?Vec4f, "shrinking_ball");
+        var point_sqem = try point_cloud.addData(SQEM, "sqem");
+        var point_shrinking_ball = try point_cloud.addData(?Vec4f, "shrinking_ball");
         const point_sphere = try point_cloud.addData(?PointCloud.Point, "sphere");
         const point_sphere_error = try point_cloud.addData(f32, "sphere_error");
 
@@ -189,7 +189,7 @@ pub const VMASContext = struct {
             // point_area,
             point_tangent_basis,
             line_quadric_epsilon,
-            point_sqem,
+            &point_sqem,
         );
 
         // compute points shrinking balls
@@ -199,7 +199,7 @@ pub const VMASContext = struct {
             point_cloud_kdtree,
             point_position,
             point_normal,
-            point_shrinking_ball,
+            &point_shrinking_ball,
         );
 
         return .{
@@ -241,12 +241,12 @@ pub const VMASContext = struct {
         while (p_it.next()) |p| {
             vmas_ctx.point_knn.valuePtr(p).deinit(vmas_ctx.allocator);
         }
-        vmas_ctx.point_cloud.removeData(std.ArrayList(PointCloud.Point), vmas_ctx.point_knn);
-        vmas_ctx.point_cloud.removeData([2]Vec3f, vmas_ctx.point_tangent_basis);
-        vmas_ctx.point_cloud.removeData(SQEM, vmas_ctx.point_sqem);
-        vmas_ctx.point_cloud.removeData(?Vec4f, vmas_ctx.point_shrinking_ball);
-        vmas_ctx.point_cloud.removeData(?PointCloud.Point, vmas_ctx.point_sphere);
-        vmas_ctx.point_cloud.removeData(f32, vmas_ctx.point_sphere_error);
+        vmas_ctx.point_cloud.removeData(vmas_ctx.point_knn);
+        vmas_ctx.point_cloud.removeData(vmas_ctx.point_tangent_basis);
+        vmas_ctx.point_cloud.removeData(vmas_ctx.point_sqem);
+        vmas_ctx.point_cloud.removeData(vmas_ctx.point_shrinking_ball);
+        vmas_ctx.point_cloud.removeData(vmas_ctx.point_sphere);
+        vmas_ctx.point_cloud.removeData(vmas_ctx.point_sphere_error);
 
         // remove spheres PointCloud data
         // first deinit ArrayLists in sphere_cluster data & ArrayHashMaps in sphere_neighbor_spheres data
@@ -255,9 +255,9 @@ pub const VMASContext = struct {
             vmas_ctx.sphere_cluster.valuePtr(s).deinit(vmas_ctx.allocator);
             vmas_ctx.sphere_neighbor_spheres.valuePtr(s).deinit(vmas_ctx.allocator);
         }
-        vmas_ctx.spheres.removeData(std.ArrayList(PointCloud.Point), vmas_ctx.sphere_cluster);
-        vmas_ctx.spheres.removeData(f32, vmas_ctx.sphere_error);
-        vmas_ctx.spheres.removeData(std.AutoArrayHashMapUnmanaged(PointCloud.Point, void), vmas_ctx.sphere_neighbor_spheres);
+        vmas_ctx.spheres.removeData(vmas_ctx.sphere_cluster);
+        vmas_ctx.spheres.removeData(vmas_ctx.sphere_error);
+        vmas_ctx.spheres.removeData(vmas_ctx.sphere_neighbor_spheres);
         // do not destroy the position and radius data of the spheres PointCloud
 
         // do not destroy the vertex position data of the skeleton IncidenceGraph
@@ -307,7 +307,7 @@ pub const VMASContext = struct {
             // vmas_ctx.point_area,
             vmas_ctx.point_tangent_basis,
             line_quadric_epsilon,
-            vmas_ctx.point_sqem,
+            &vmas_ctx.point_sqem,
         );
     }
 
@@ -458,7 +458,7 @@ pub const VMASContext = struct {
 
     pub fn updateSkeleton(vmas_ctx: *VMASContext) !void {
         var sphere_skeleton_vertex = try vmas_ctx.spheres.addData(IncidenceGraph.Cell, "__sphere_skeleton_vertex");
-        defer vmas_ctx.spheres.removeData(IncidenceGraph.Cell, sphere_skeleton_vertex);
+        defer vmas_ctx.spheres.removeData(sphere_skeleton_vertex);
         var skeleton_edges: std.AutoHashMapUnmanaged([2]IncidenceGraph.Cell, IncidenceGraph.Cell) = .empty;
         defer skeleton_edges.deinit(vmas_ctx.allocator);
 

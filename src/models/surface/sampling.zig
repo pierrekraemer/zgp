@@ -19,21 +19,14 @@ pub fn uniformlySamplePointsOnSurface(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
     pc: *PointCloud,
-    sample_position: PointCloud.CellData(Vec3f),
-    sample_surface_point: PointCloud.CellData(SurfacePoint),
+    sample_position: *PointCloud.CellData(Vec3f),
+    sample_surface_point: *PointCloud.CellData(SurfacePoint),
     nb_points: usize,
 ) !void {
+    if (sm.nbCells(.face) == 0) return;
     // ensure the inactive indices in the face_area data count
     // for 0 proportion in the subsequent weightedIndex call
     face_area.data.fillInactive(0.0);
-    // store a face Cell in the face data container
-    // so that an index in the face_area data can be mapped to a face Cell
-    var faces = try sm.addData(.face, SurfaceMesh.Cell, "face");
-    defer sm.removeData(.face, SurfaceMesh.Cell, faces);
-    var face_it = sm.cellIterator(.face);
-    while (face_it.next()) |f| {
-        faces.valuePtr(f).* = f;
-    }
     for (0..nb_points) |_| {
         const p = try pc.addPoint();
         const r1 = random.float(f32);
@@ -41,10 +34,11 @@ pub fn uniformlySamplePointsOnSurface(
         const sqrt_r1 = @sqrt(r1);
         const bcoords: Vec3f = .{ 1.0 - sqrt_r1, sqrt_r1 * (1.0 - r2), sqrt_r1 * r2 };
         const face_index: u32 = @intCast(random.weightedIndex(f32, face_area.data.storage.items));
+        const face_dart = sm.dart(.{ .face = face_index });
         const sp: SurfacePoint = .{
             .surface_mesh = sm,
             .type = .{
-                .face = .{ .cell = faces.valueByIndex(face_index), .bcoords = bcoords },
+                .face = .{ .dart = face_dart, .bcoords = bcoords },
             },
         };
         sample_surface_point.valuePtr(p).* = sp;
@@ -60,8 +54,8 @@ pub fn poissonDiskSamplePointsOnSurface(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
     pc: *PointCloud,
-    sample_position: PointCloud.CellData(Vec3f),
-    sample_surface_point: PointCloud.CellData(SurfacePoint),
+    sample_position: *PointCloud.CellData(Vec3f),
+    sample_surface_point: *PointCloud.CellData(SurfacePoint),
     poisson_radius: f32,
 ) !void {
     if (sm.nbCells(.face) == 0) return;
@@ -70,7 +64,7 @@ pub fn poissonDiskSamplePointsOnSurface(
     const center = vec.mulScalar3f(vec.add3f(bb_min, bb_max), 0.5);
 
     const grid_unit_size = poisson_radius / @sqrt(3.0);
-    var grid: std.AutoHashMapUnmanaged([3]i32, Vec3f) = .empty;
+    var grid: std.AutoHashMapUnmanaged([3]i32, PointCloud.Point) = .empty;
     defer grid.deinit(allocator);
 
     var active_points: std.ArrayList(SurfacePoint) = try .initCapacity(allocator, 1024);
@@ -83,7 +77,7 @@ pub fn poissonDiskSamplePointsOnSurface(
         const sp: SurfacePoint = .{ // and create a SurfacePoint at its center
             .surface_mesh = sm,
             .type = .{
-                .face = .{ .cell = f, .bcoords = .{ 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0 } },
+                .face = .{ .dart = sm.dart(f), .bcoords = .{ 1.0 / 3.0, 1.0 / 3.0, 1.0 / 3.0 } },
             },
         };
         const p = try pc.addPoint(); // add the point to the PointCloud
@@ -98,18 +92,19 @@ pub fn poissonDiskSamplePointsOnSurface(
             @intFromFloat(pos_grid_coord[1]),
             @intFromFloat(pos_grid_coord[2]),
         };
-        try grid.put(allocator, grid_idx, pos); // add the point in the spatial grid
+        try grid.put(allocator, grid_idx, p); // add the point in the spatial grid
     }
 
     while (active_points.items.len > 0) {
         // pick a random active point
         const idx = random.intRangeLessThan(u32, 0, @intCast(active_points.items.len));
         const sp = active_points.items[idx];
-        const f = sp.type.face.cell; // active point are face SurfacePoints
+        const f_dart = sp.type.face.dart; // active point are face SurfacePoints
+        const f = sm.face(f_dart);
         // compute the tangent basis of the face
         const f_basis_X: Vec3f = vec.normalized3f(vec.sub3f(
-            vertex_position.value(.{ .vertex = f.dart() }),
-            vertex_position.value(.{ .vertex = sm.phi1(f.dart()) }),
+            vertex_position.value(sm.vertex(f_dart)),
+            vertex_position.value(sm.vertex(sm.phi1(f_dart))),
         ));
         const f_basis_Y: Vec3f = vec.normalized3f(vec.cross3f(face_normal.value(f), f_basis_X));
         const pos = sp.readData(Vec3f, .vertex, vertex_position);
@@ -148,7 +143,7 @@ pub fn poissonDiskSamplePointsOnSurface(
                             @as(i32, @intFromFloat(candidate_pos_grid_coord[2])) + @as(i32, @intCast(z)) - 1,
                         };
                         if (grid.get(grid_idx)) |p| { // if it is occupied
-                            if (vec.norm3f(vec.sub3f(candidate_pos, p)) < poisson_radius) { // and its content is too close to the candidate point
+                            if (vec.norm3f(vec.sub3f(candidate_pos, sample_position.value(p))) < poisson_radius) { // and its content is too close to the candidate point
                                 candidate_is_valid = false; // it is not valid
                                 break :blk;
                             }
@@ -161,7 +156,7 @@ pub fn poissonDiskSamplePointsOnSurface(
                 sample_surface_point.valuePtr(p).* = candidate_sp;
                 sample_position.valuePtr(p).* = candidate_pos;
                 try active_points.append(allocator, candidate_sp); // add the SurfacePoint to the active list
-                try grid.put(allocator, candidate_pos_grid_idx, candidate_pos); // add the point in the spatial grid
+                try grid.put(allocator, candidate_pos_grid_idx, p); // add the point in the spatial grid
                 new_point_added = true;
                 break;
             }

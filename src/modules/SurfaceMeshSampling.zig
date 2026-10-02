@@ -139,7 +139,7 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
     if (sd.initialized) {
         // the SurfacePoint data of the samples PointCloud is no longer valid after the SurfaceMesh is destroyed
         // (but there is no reason to destroy the PointCloud itself)
-        sd.samples.removeData(SurfacePoint, sd.sample_surface_point);
+        sd.samples.removeData(sd.sample_surface_point);
     }
     _ = sms.surface_meshes_data.remove(surface_mesh);
 }
@@ -175,8 +175,8 @@ fn uniformSampling(
         vertex_position,
         face_area,
         sd.samples,
-        sd.sample_position,
-        sd.sample_surface_point,
+        &sd.sample_position,
+        &sd.sample_surface_point,
         nb_points,
     );
     const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, sms.app_ctx.io, .real).nanoseconds);
@@ -209,8 +209,8 @@ fn poissonDiskSampling(
         vertex_position,
         face_normal,
         sd.samples,
-        sd.sample_position,
-        sd.sample_surface_point,
+        &sd.sample_position,
+        &sd.sample_surface_point,
         poisson_radius,
     );
     const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, sms.app_ctx.io, .real).nanoseconds);
@@ -385,10 +385,7 @@ pub fn rightPanel(m: *Module) void {
                             const T = @FieldType(DataTypes, data_type.name);
                             const selected_cell_data: ?SurfaceMesh.CellData(cell_type, T) = if (UiData.selected_data_gen) |data_gen| blk: {
                                 const selected_data: *Data(T) = @fieldParentPtr("data_gen", data_gen);
-                                break :blk .{
-                                    .surface_mesh = sm,
-                                    .data = selected_data,
-                                };
+                                break :blk .{ .data = selected_data };
                             } else null;
                             switch (imgui_utils.surfaceMeshCellDataComboBox(sm, cell_type, @FieldType(DataTypes, data_type.name), selected_cell_data)) {
                                 .unchanged => {},

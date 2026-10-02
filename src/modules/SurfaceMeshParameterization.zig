@@ -144,14 +144,14 @@ const ParameterizationData = struct {
             vertex_position,
             face_normal,
             pd.samples.?,
-            pd.sample_position,
-            pd.sample_surface_point,
+            &pd.sample_position,
+            &pd.sample_surface_point,
             poisson_radius,
         );
 
         // snap samples to vertices
-        // map each vertex index to the first sample that is snapped to it so that we can detect & remove samples that are snapped to the same vertex
-        var vertex_sample: std.AutoHashMapUnmanaged(u32, PointCloud.Point) = .empty;
+        // set of vertices that already have a sample snapped to them, to avoid snapping multiple samples to the same vertex
+        var vertex_sample: std.AutoHashMapUnmanaged(u32, void) = .empty;
         defer vertex_sample.deinit(pd.app_ctx.allocator);
         // var connectivity_updated = false;
         var point_it = pd.samples.?.pointIterator();
@@ -160,12 +160,10 @@ const ParameterizationData = struct {
             const sp = pd.sample_surface_point.valuePtr(sample);
             switch (sp.type) {
                 .vertex => |v| {
-                    snapped_to = v;
+                    snapped_to = pd.surface_mesh.vertex(v);
                 },
                 .edge => |e| {
-                    const d = e.cell.dart();
-                    const v0: SurfaceMesh.Cell = .{ .vertex = d };
-                    const v1: SurfaceMesh.Cell = .{ .vertex = pd.surface_mesh.phi1(d) };
+                    const d = e.dart;
                     // if (e.t < 0.1) {
                     //     snapped_to = v0;
                     // } else if (e.t > 0.9) {
@@ -176,13 +174,10 @@ const ParameterizationData = struct {
                     //     vertex_position.valuePtr(snapped_to).* = pos;
                     //     connectivity_updated = true;
                     // }
-                    snapped_to = if (e.t < 0.5) v0 else v1;
+                    snapped_to = if (e.t < 0.5) pd.surface_mesh.vertex(d) else pd.surface_mesh.vertex(pd.surface_mesh.phi1(d));
                 },
                 .face => |f| {
-                    const d = f.cell.dart();
-                    const v0: SurfaceMesh.Cell = .{ .vertex = d };
-                    const v1: SurfaceMesh.Cell = .{ .vertex = pd.surface_mesh.phi1(d) };
-                    const v2: SurfaceMesh.Cell = .{ .vertex = pd.surface_mesh.phi_1(d) };
+                    const d = f.dart;
                     // if (f.bcoords[0] > 0.9) {
                     //     snapped_to = v0;
                     // } else if (f.bcoords[1] > 0.9) {
@@ -198,20 +193,20 @@ const ParameterizationData = struct {
                     //     connectivity_updated = true;
                     // }
                     if (f.bcoords[0] >= f.bcoords[1] and f.bcoords[0] >= f.bcoords[2]) {
-                        snapped_to = v0;
+                        snapped_to = pd.surface_mesh.vertex(d);
                     } else if (f.bcoords[1] >= f.bcoords[0] and f.bcoords[1] >= f.bcoords[2]) {
-                        snapped_to = v1;
+                        snapped_to = pd.surface_mesh.vertex(pd.surface_mesh.phi1(d));
                     } else {
-                        snapped_to = v2;
+                        snapped_to = pd.surface_mesh.vertex(pd.surface_mesh.phi_1(d));
                     }
                 },
             }
-            const snapped_to_index = pd.surface_mesh.cellIndex(snapped_to);
+            const snapped_to_index = snapped_to.index();
             if (vertex_sample.get(snapped_to_index)) |_| {
                 pd.samples.?.removePoint(sample); // remove this sample as it is snapped to a vertex that already has a sample
             } else {
-                try vertex_sample.put(pd.app_ctx.allocator, snapped_to_index, sample);
-                sp.*.type = .{ .vertex = snapped_to };
+                try vertex_sample.put(pd.app_ctx.allocator, snapped_to_index, {});
+                sp.*.type = .{ .vertex = pd.surface_mesh.dart(snapped_to) };
                 pd.sample_position.valuePtr(sample).* = vertex_position.value(snapped_to);
             }
         }
@@ -286,43 +281,39 @@ const ParameterizationData = struct {
         while (point_it.next()) |sample| {
             const sp = pd.sample_surface_point.value(sample);
             if (sp.type == .vertex) { // all samples are snapped to vertices, so this is always true
-                const it_v = pd.it_ctx.?.extrinsic_vertex_intrinsic_vertex.value(sp.type.vertex);
+                const it_v = pd.surface_mesh.vertex(sp.type.vertex);
                 try it_source_vertices.append(pd.app_ctx.allocator, it_v);
-                try source_vertex_sample.put(pd.app_ctx.allocator, pd.surface_mesh.cellIndex(sp.type.vertex), sample);
+                try source_vertex_sample.put(pd.app_ctx.allocator, it_v.index(), sample);
             } else unreachable; // all samples are snapped to vertices, so this should never happen
         }
 
         // compute the closest source vertex and distance to it for each vertex in the intrinsic triangulation
-        const it_closest_source_distance = try pd.it_ctx.?.intrinsic_surface_mesh.addData(.vertex, f32, "it_closest_source_distance");
-        defer pd.it_ctx.?.intrinsic_surface_mesh.removeData(.vertex, f32, it_closest_source_distance);
-        const it_closest_source_vertex = try pd.it_ctx.?.intrinsic_surface_mesh.addData(.vertex, ?SurfaceMesh.Cell, "it_closest_source_vertex");
-        defer pd.it_ctx.?.intrinsic_surface_mesh.removeData(.vertex, ?SurfaceMesh.Cell, it_closest_source_vertex);
+        var it_closest_source_distance = try pd.it_ctx.?.intrinsic_surface_mesh.addData(.vertex, f32, "it_closest_source_distance");
+        defer pd.it_ctx.?.intrinsic_surface_mesh.removeData(.vertex, it_closest_source_distance);
+        var it_closest_source_vertex = try pd.it_ctx.?.intrinsic_surface_mesh.addData(.vertex, ?SurfaceMesh.Cell, "it_closest_source_vertex");
+        defer pd.it_ctx.?.intrinsic_surface_mesh.removeData(.vertex, it_closest_source_vertex);
         try distance.multiSourceDijkstraDistancesAndSources(
             pd.app_ctx.allocator,
             pd.it_ctx.?.intrinsic_surface_mesh,
             it_source_vertices.items,
             pd.it_ctx.?.intrinsic_edge_length,
-            it_closest_source_distance,
-            it_closest_source_vertex,
+            &it_closest_source_distance,
+            &it_closest_source_vertex,
         );
 
         // for inspection purposes only,
         // copy back the closest source distance and corresponding sample color in the underlying SurfaceMesh
-        const vertex_distance, _ = try pd.surface_mesh.getOrAddData(.vertex, f32, "closest_source_distance");
-        const vertex_color, _ = try pd.surface_mesh.getOrAddData(.vertex, Vec3f, "closest_sample_color");
+        var vertex_distance, _ = try pd.surface_mesh.getOrAddData(.vertex, f32, "closest_source_distance");
+        var vertex_color, _ = try pd.surface_mesh.getOrAddData(.vertex, Vec3f, "closest_sample_color");
         var it_v_it = pd.it_ctx.?.intrinsic_surface_mesh.cellIterator(.vertex);
-        while (it_v_it.next()) |it_v| {
-            // v is the vertex in the underlying SurfaceMesh corresponding to the intrinsic vertex it_v
-            const v = pd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(it_v).type.vertex;
-            vertex_distance.valuePtr(v).* = it_closest_source_distance.value(it_v);
+        while (it_v_it.next()) |v| {
+            vertex_distance.valuePtr(v).* = it_closest_source_distance.value(v);
             // if the closest source vertex of it_v is not defined, it means it was not reachable from any source vertex
-            if (it_closest_source_vertex.value(it_v)) |it_sv| {
-                // sv is the vertex in the underlying SurfaceMesh corresponding to the intrinsic source vertex it_sv
-                const sv = pd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(it_sv).type.vertex;
-                const sample = source_vertex_sample.get(pd.surface_mesh.cellIndex(sv)).?; // get the sample corresponding to the closest source vertex
+            if (it_closest_source_vertex.value(v)) |sv| {
+                const sample = source_vertex_sample.get(sv.index()).?; // get the sample corresponding to the closest source vertex
                 vertex_color.valuePtr(v).* = pd.sample_color.value(sample);
             } else {
-                std.debug.print("Vertex {d} is not reachable from any source vertex\n", .{pd.surface_mesh.cellIndex(v)});
+                std.debug.print("Vertex {d} is not reachable from any source vertex\n", .{v.index()});
             }
         }
         pd.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(pd.surface_mesh, .vertex, f32, vertex_distance);
@@ -335,23 +326,23 @@ const ParameterizationData = struct {
             pd.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(pd.samples_surface_mesh.?, .vertex, Vec3f, pd.ssm_vertex_position);
         }
         // the following data is used to reconstruct the adjacency between faces after they have been created
-        const ssm_darts_of_vertex = try pd.samples_surface_mesh.?.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
-        defer pd.samples_surface_mesh.?.removeData(.vertex, std.ArrayList(SurfaceMesh.Dart), ssm_darts_of_vertex);
+        var ssm_darts_of_vertex = try pd.samples_surface_mesh.?.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
+        defer pd.samples_surface_mesh.?.removeData(.vertex, ssm_darts_of_vertex);
         var darts_array_lists_arena = std.heap.ArenaAllocator.init(pd.app_ctx.allocator);
         defer darts_array_lists_arena.deinit();
         // this data is used to map each sample to the index of its corresponding vertex in the samples SurfaceMesh
-        const sample_ssm_vertex_index = try pd.samples.?.addData(u32, "sample_ssm_vertex_index");
-        defer pd.samples.?.removeData(u32, sample_ssm_vertex_index);
+        var sample_ssm_vertex = try pd.samples.?.addData(SurfaceMesh.Cell, "sample_ssm_vertex_index");
+        defer pd.samples.?.removeData(sample_ssm_vertex);
         // create a vertex in the samples SurfaceMesh for each sample
         point_it.reset();
         while (point_it.next()) |sample| {
             const sp = pd.sample_surface_point.value(sample);
             if (sp.type == .vertex) { // all samples are snapped to vertices, so this is always true
-                const vertex_index = try pd.samples_surface_mesh.?.acquireCellIndex(.vertex); // get a new vertex index
-                pd.ssm_vertex_position.valuePtrByIndex(vertex_index).* = pd.sample_position.value(sample); // copy the position of the sample to the new vertex
-                pd.ssm_vertex_sample.valuePtrByIndex(vertex_index).* = sample; // map the new vertex to the sample
-                sample_ssm_vertex_index.valuePtr(sample).* = vertex_index; // map the sample to the new vertex index
-                ssm_darts_of_vertex.valuePtrByIndex(vertex_index).* = try .initCapacity(darts_array_lists_arena.allocator(), 8);
+                const vertex = try pd.samples_surface_mesh.?.addCell(.vertex); // get a new vertex
+                pd.ssm_vertex_position.valuePtr(vertex).* = pd.sample_position.value(sample); // copy the position of the sample to the new vertex
+                pd.ssm_vertex_sample.valuePtr(vertex).* = sample; // map the new vertex to the sample
+                sample_ssm_vertex.valuePtr(sample).* = vertex; // map the sample to the new vertex
+                ssm_darts_of_vertex.valuePtr(vertex).* = try .initCapacity(darts_array_lists_arena.allocator(), 8);
             } else unreachable; // all samples are snapped to vertices, so this should never happen
         }
         // create a face in the samples SurfaceMesh for each face in the intrinsic triangulation that has 3 different closest source vertices
@@ -361,32 +352,33 @@ const ParameterizationData = struct {
         // - try to find a relevant place to add a new sample and start the process again
         var it_f_it = pd.it_ctx.?.intrinsic_surface_mesh.cellIterator(.face);
         while (it_f_it.next()) |f| {
-            const it_sv0 = it_closest_source_vertex.value(.{ .vertex = f.dart() });
-            const it_sv1 = it_closest_source_vertex.value(.{ .vertex = pd.it_ctx.?.intrinsic_surface_mesh.phi1(f.dart()) });
-            const it_sv2 = it_closest_source_vertex.value(.{ .vertex = pd.it_ctx.?.intrinsic_surface_mesh.phi_1(f.dart()) });
-            if (it_sv0 != null and it_sv1 != null and it_sv2 != null) {
-                const sv0 = pd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(it_sv0.?).type.vertex; // get the corresponding vertex in the underlying SurfaceMesh
-                const sv1 = pd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(it_sv1.?).type.vertex;
-                const sv2 = pd.it_ctx.?.intrinsic_vertex_extrinsic_sp.value(it_sv2.?).type.vertex;
-                const s0 = source_vertex_sample.get(pd.surface_mesh.cellIndex(sv0)).?; // these vertices are source vertices, so they must have a corresponding sample
-                const s1 = source_vertex_sample.get(pd.surface_mesh.cellIndex(sv1)).?;
-                const s2 = source_vertex_sample.get(pd.surface_mesh.cellIndex(sv2)).?;
+            const d = pd.it_ctx.?.intrinsic_surface_mesh.dart(f);
+            const fv0 = pd.it_ctx.?.intrinsic_surface_mesh.vertex(d);
+            const fv1 = pd.it_ctx.?.intrinsic_surface_mesh.vertex(pd.it_ctx.?.intrinsic_surface_mesh.phi1(d));
+            const fv2 = pd.it_ctx.?.intrinsic_surface_mesh.vertex(pd.it_ctx.?.intrinsic_surface_mesh.phi_1(d));
+            const sv0 = it_closest_source_vertex.value(fv0);
+            const sv1 = it_closest_source_vertex.value(fv1);
+            const sv2 = it_closest_source_vertex.value(fv2);
+            if (sv0 != null and sv1 != null and sv2 != null) {
+                const s0 = source_vertex_sample.get(sv0.?.index()).?; // these vertices are source vertices, so they must have a corresponding sample
+                const s1 = source_vertex_sample.get(sv1.?.index()).?;
+                const s2 = source_vertex_sample.get(sv2.?.index()).?;
                 if (s0 != s1 and s1 != s2 and s2 != s0) {
-                    const s0_ssm_vertex_index = sample_ssm_vertex_index.value(s0); // get the vertex indices in the samples SurfaceMesh corresponding to the samples
-                    const s1_ssm_vertex_index = sample_ssm_vertex_index.value(s1);
-                    const s2_ssm_vertex_index = sample_ssm_vertex_index.value(s2);
+                    const s0_ssm_vertex = sample_ssm_vertex.value(s0); // get the vertices in the samples SurfaceMesh corresponding to the samples
+                    const s1_ssm_vertex = sample_ssm_vertex.value(s1);
+                    const s2_ssm_vertex = sample_ssm_vertex.value(s2);
                     const face = try pd.samples_surface_mesh.?.addUnboundedFace(3); // create a new triangle face in the samples SurfaceMesh
-                    const d0 = face.dart();
+                    const d0 = face;
                     const d1 = pd.samples_surface_mesh.?.phi1(d0);
                     const d2 = pd.samples_surface_mesh.?.phi1(d1);
-                    // index the darts of the new face with the corresponding vertex indices in the samples SurfaceMesh
-                    pd.samples_surface_mesh.?.setDartCellIndex(d0, .vertex, s0_ssm_vertex_index);
-                    pd.samples_surface_mesh.?.setDartCellIndex(d1, .vertex, s1_ssm_vertex_index);
-                    pd.samples_surface_mesh.?.setDartCellIndex(d2, .vertex, s2_ssm_vertex_index);
+                    // index the darts of the new face with the corresponding vertices in the samples SurfaceMesh
+                    pd.samples_surface_mesh.?.setDartCell(d0, .vertex, s0_ssm_vertex);
+                    pd.samples_surface_mesh.?.setDartCell(d1, .vertex, s1_ssm_vertex);
+                    pd.samples_surface_mesh.?.setDartCell(d2, .vertex, s2_ssm_vertex);
                     // register the new darts in the darts_of_vertex data of the vertices of the samples SurfaceMesh (used to reconstruct phi2)
-                    try ssm_darts_of_vertex.valuePtrByIndex(s0_ssm_vertex_index).append(darts_array_lists_arena.allocator(), d0);
-                    try ssm_darts_of_vertex.valuePtrByIndex(s1_ssm_vertex_index).append(darts_array_lists_arena.allocator(), d1);
-                    try ssm_darts_of_vertex.valuePtrByIndex(s2_ssm_vertex_index).append(darts_array_lists_arena.allocator(), d2);
+                    try ssm_darts_of_vertex.valuePtr(s0_ssm_vertex).append(darts_array_lists_arena.allocator(), d0);
+                    try ssm_darts_of_vertex.valuePtr(s1_ssm_vertex).append(darts_array_lists_arena.allocator(), d1);
+                    try ssm_darts_of_vertex.valuePtr(s2_ssm_vertex).append(darts_array_lists_arena.allocator(), d2);
                 }
             }
         }
@@ -395,11 +387,11 @@ const ParameterizationData = struct {
         var ssm_dart_it = pd.samples_surface_mesh.?.dartIterator();
         while (ssm_dart_it.next()) |d| {
             if (pd.samples_surface_mesh.?.phi2(d) == d) {
-                const vertex_index = pd.samples_surface_mesh.?.dartCellIndex(d, .vertex);
-                const next_vertex_index = pd.samples_surface_mesh.?.dartCellIndex(pd.samples_surface_mesh.?.phi1(d), .vertex);
-                const next_vertex_darts = ssm_darts_of_vertex.valueByIndex(next_vertex_index);
+                const vertex = pd.samples_surface_mesh.?.vertex(d);
+                const next_vertex = pd.samples_surface_mesh.?.vertex(pd.samples_surface_mesh.?.phi1(d));
+                const next_vertex_darts = ssm_darts_of_vertex.value(next_vertex);
                 const opposite_dart = for (next_vertex_darts.items) |d2| {
-                    if (pd.samples_surface_mesh.?.dartCellIndex(pd.samples_surface_mesh.?.phi1(d2), .vertex) == vertex_index) {
+                    if (pd.samples_surface_mesh.?.vertex(pd.samples_surface_mesh.?.phi1(d2)).index() == vertex.index()) {
                         break d2;
                     }
                 } else null;
@@ -421,9 +413,9 @@ const ParameterizationData = struct {
             zgp_log.info("closed {d} boundary faces", .{nb_boundary_faces});
         }
 
-        try pd.samples_surface_mesh.?.indexCells(.vertex); // should be a no-op as the vertices have been indexed, and no boundary face has been added
-        try pd.samples_surface_mesh.?.indexCells(.edge);
-        try pd.samples_surface_mesh.?.indexCells(.face);
+        try pd.samples_surface_mesh.?.initCells(.vertex); // should be a no-op as the vertices have been set, and no boundary face has been added
+        try pd.samples_surface_mesh.?.initCells(.edge);
+        try pd.samples_surface_mesh.?.initCells(.face);
 
         if (builtin.mode == .Debug) {
             const ok = try pd.samples_surface_mesh.?.checkIntegrity();
@@ -447,18 +439,21 @@ const ParameterizationData = struct {
 
         var ssm_e_it = pd.samples_surface_mesh.?.cellIterator(.edge);
         while (ssm_e_it.next()) |e| {
-            const s_start = pd.ssm_vertex_sample.value(.{ .vertex = e.dart() });
-            const s_end = pd.ssm_vertex_sample.value(.{ .vertex = pd.samples_surface_mesh.?.phi1(e.dart()) });
-            const start_v: SurfaceMesh.Cell = pd.sample_surface_point.value(s_start).type.vertex;
-            const end_v: SurfaceMesh.Cell = pd.sample_surface_point.value(s_end).type.vertex;
+            const d = pd.samples_surface_mesh.?.dart(e);
+            const d1 = pd.samples_surface_mesh.?.phi1(d);
+            const s_start = pd.ssm_vertex_sample.value(pd.samples_surface_mesh.?.vertex(d));
+            const s_end = pd.ssm_vertex_sample.value(pd.samples_surface_mesh.?.vertex(d1));
+            const start_v = pd.surface_mesh.vertex(pd.sample_surface_point.value(s_start).type.vertex);
+            const end_v = pd.surface_mesh.vertex(pd.sample_surface_point.value(s_end).type.vertex);
             const path = try sep_ctx.shortestEdgePathBetweenVertices(
                 pd.app_ctx.allocator,
                 start_v,
                 end_v,
             );
-            for (path.items) |d| {
-                try shortest_paths_set.add(.{ .edge = d });
-                edge_marker.mark(.{ .edge = d });
+            for (path.items) |pathd| {
+                const edge = pd.surface_mesh.edge(pathd);
+                try shortest_paths_set.add(edge);
+                edge_marker.mark(edge);
             }
             pd.ssm_edge_path.valuePtr(e).* = path;
         }
@@ -486,22 +481,22 @@ const ParameterizationData = struct {
         // init the triangle canonical Dart & UVs data
         var sm_f_it = pd.surface_mesh.cellIterator(.face);
         while (sm_f_it.next()) |f| {
-            pd.triangle_dart.valuePtr(f).* = f.dart();
+            pd.triangle_dart.valuePtr(f).* = pd.surface_mesh.dart(f);
             pd.triangle_uvs.valuePtr(f).* = .init();
         }
 
         // storage for the UV coordinates of the vertices of the patch currently being processed, in the tangent
         // space of its origin vertex; reused (and fully overwritten before being read) for each patch
         var current_patch_uv = try pd.surface_mesh.addData(.vertex, Vec2f, "__current_patch_uv");
-        defer pd.surface_mesh.removeData(.vertex, Vec2f, current_patch_uv);
+        defer pd.surface_mesh.removeData(.vertex, current_patch_uv);
         // storage for the distance of the vertices of the patch currently being processed to the boundary of the patch; reused (and fully overwritten before being read) for each patch
         var current_patch_distance_to_boundary = try pd.surface_mesh.addData(.vertex, f32, "__current_patch_distance_to_boundary");
-        defer pd.surface_mesh.removeData(.vertex, f32, current_patch_distance_to_boundary);
+        defer pd.surface_mesh.removeData(.vertex, current_patch_distance_to_boundary);
 
         // this data is used to store the incoming dart for each vertex in the shortest path tree
         // a null value indicates a vertex that has not been reached yet
         var incoming_dart = try pd.it_ctx.?.intrinsic_surface_mesh.addData(.vertex, ?SurfaceMesh.Dart, "__incoming_dart");
-        defer pd.it_ctx.?.intrinsic_surface_mesh.removeData(.vertex, ?SurfaceMesh.Dart, incoming_dart);
+        defer pd.it_ctx.?.intrinsic_surface_mesh.removeData(.vertex, incoming_dart);
 
         // Priority queue type for darts of the SurfaceMesh to expand from, ordered by their distance from the origin vertex
         const DartInfo = struct {
@@ -529,19 +524,19 @@ const ParameterizationData = struct {
         // this design is due to the fact that the UV coordinates are computed on the intrinsic triangulation which does not share the same connectivity
         var patch_vertex_indices_set: std.AutoArrayHashMapUnmanaged(u32, void) = .empty;
         defer patch_vertex_indices_set.deinit(pd.app_ctx.allocator);
-        // the list of vertex indices (in the underlying SurfaceMesh) that belong to the patch of the origin vertex
+        // the list of vertices (in the underlying SurfaceMesh) that belong to the patch of the origin vertex
         // built progressively while removing vertices from the patch_vertex_indices_set as their UV coordinates are computed
         // used afterwards to compute the distance of each vertex of the patch to the boundary of the patch
-        var patch_vertex_indices: std.ArrayList(u32) = .empty;
-        defer patch_vertex_indices.deinit(pd.app_ctx.allocator);
+        var patch_vertices: std.ArrayList(SurfaceMesh.Cell) = .empty;
+        defer patch_vertices.deinit(pd.app_ctx.allocator);
         // the set of edge indices (in the underlying SurfaceMesh) that bound the patch
         // built from the edge paths registered on the edges of the samples SurfaceMesh that are opposite to the origin vertex in each of its incident faces
         // used to delimit the flood fill over the faces of the underlying SurfaceMesh that belong to the patch of the origin vertex
         var patch_boundary_edge_indices: std.AutoArrayHashMapUnmanaged(u32, void) = .empty;
         defer patch_boundary_edge_indices.deinit(pd.app_ctx.allocator);
-        // the list of segments (pairs of vertex indices in the underlying SurfaceMesh) that bound the patch (built alongside the patch_boundary_edge_indices)
+        // the list of segments (pairs of vertices in the underlying SurfaceMesh) that bound the patch (built alongside the patch_boundary_edge_indices)
         // used to compute the distance of each vertex of the patch to the boundary of the patch
-        var patch_boundary_segments: std.ArrayList([2]u32) = .empty;
+        var patch_boundary_segments: std.ArrayList([2]SurfaceMesh.Cell) = .empty;
         defer patch_boundary_segments.deinit(pd.app_ctx.allocator);
         // the queue and marker used to flood fill the faces of the underlying SurfaceMesh that belong to the patch
         // used to establish the set of vertices that belong to the patch, starting from the faces incident to the origin vertex
@@ -558,23 +553,21 @@ const ParameterizationData = struct {
         var ssm_v_it = pd.samples_surface_mesh.?.cellIterator(.vertex);
         while (ssm_v_it.next()) |ssm_v| {
             const sample = pd.ssm_vertex_sample.value(ssm_v);
-            const sm_origin_v = pd.sample_surface_point.value(sample).type.vertex;
-            const it_origin_v = pd.it_ctx.?.extrinsic_vertex_intrinsic_vertex.value(sm_origin_v);
-            const origin_v_index = pd.surface_mesh.cellIndex(sm_origin_v);
+            const origin_v = pd.surface_mesh.vertex(pd.sample_surface_point.value(sample).type.vertex);
 
             // collect the edges that delimit the patch of the underlying SurfaceMesh that will be parameterized around the origin vertex
             patch_boundary_edge_indices.clearRetainingCapacity();
             patch_boundary_segments.clearRetainingCapacity();
             {
-                var dart_it = pd.samples_surface_mesh.?.cellDartIterator(ssm_v);
+                var dart_it = pd.samples_surface_mesh.?.orbitDartIterator(pd.samples_surface_mesh.?.dart(ssm_v), .vertex);
                 while (dart_it.next()) |d| {
                     const d1 = pd.samples_surface_mesh.?.phi1(d);
-                    const edge_path = pd.ssm_edge_path.value(.{ .edge = d1 });
+                    const edge_path = pd.ssm_edge_path.value(pd.samples_surface_mesh.?.edge(d1));
                     for (edge_path.items) |dart| {
-                        try patch_boundary_edge_indices.put(pd.app_ctx.allocator, pd.surface_mesh.cellIndex(.{ .edge = dart }), {});
+                        try patch_boundary_edge_indices.put(pd.app_ctx.allocator, pd.surface_mesh.edge(dart).index(), {});
                         try patch_boundary_segments.append(pd.app_ctx.allocator, .{
-                            pd.surface_mesh.cellIndex(.{ .vertex = dart }),
-                            pd.surface_mesh.cellIndex(.{ .vertex = pd.surface_mesh.phi1(dart) }),
+                            pd.surface_mesh.vertex(dart),
+                            pd.surface_mesh.vertex(pd.surface_mesh.phi1(dart)),
                         });
                     }
                 }
@@ -586,18 +579,18 @@ const ParameterizationData = struct {
             // in these cases, the triangle ABC has an empty region in the underlying SurfaceMesh, and some triangles incident to the origin vertex actually do not belong to the patch of the origin vertex
             // and the flood fill will not be bounded by the boundary edges and will go over the whole mesh
             patch_vertex_indices_set.clearRetainingCapacity();
-            patch_vertex_indices.clearRetainingCapacity();
+            patch_vertices.clearRetainingCapacity();
             patch_faces.clearRetainingCapacity();
             {
                 var problematic = false;
-                var origin_dart_it = pd.surface_mesh.cellDartIterator(sm_origin_v);
+                var origin_dart_it = pd.surface_mesh.orbitDartIterator(pd.surface_mesh.dart(origin_v), .vertex);
                 while (origin_dart_it.next()) |d| {
-                    const f: SurfaceMesh.Cell = .{ .face = d };
+                    const f = pd.surface_mesh.face(d);
                     if (!patch_faces_visited.isMarked(f)) {
                         patch_faces_visited.mark(f);
                         try patch_faces.append(pd.app_ctx.allocator, f);
                         pd.triangle_uvs.valuePtr(f).registerSample(sample) catch {
-                            // std.debug.print("Error registering sample {d} in triangle {d}: {}\n", .{ sample, pd.surface_mesh.cellIndex(f), err });
+                            // std.debug.print("Error registering sample {d} in triangle {d}: {}\n", .{ sample, f.index(), err });
                             try problematic_faces.add(f);
                             problematic = true;
                         };
@@ -606,18 +599,18 @@ const ParameterizationData = struct {
                 var i: usize = 0;
                 while (i < patch_faces.items.len) : (i += 1) {
                     const f = patch_faces.items[i];
-                    var face_dart_it = pd.surface_mesh.cellDartIterator(f);
+                    var face_dart_it = pd.surface_mesh.orbitDartIterator(pd.surface_mesh.dart(f), .face);
                     while (face_dart_it.next()) |d| {
-                        try patch_vertex_indices_set.put(pd.app_ctx.allocator, pd.surface_mesh.cellIndex(.{ .vertex = d }), {});
-                        if (patch_boundary_edge_indices.contains(pd.surface_mesh.cellIndex(.{ .edge = d }))) {
+                        try patch_vertex_indices_set.put(pd.app_ctx.allocator, pd.surface_mesh.vertex(d).index(), {});
+                        if (patch_boundary_edge_indices.contains(pd.surface_mesh.edge(d).index())) {
                             continue; // do not cross a patch boundary edge
                         }
-                        const nf: SurfaceMesh.Cell = .{ .face = pd.surface_mesh.phi2(d) };
+                        const nf = pd.surface_mesh.face(pd.surface_mesh.phi2(d));
                         if (!patch_faces_visited.isMarked(nf)) {
                             patch_faces_visited.mark(nf);
                             try patch_faces.append(pd.app_ctx.allocator, nf);
                             pd.triangle_uvs.valuePtr(nf).registerSample(sample) catch {
-                                // std.debug.print("Error registering sample {d} in triangle {d}: {}\n", .{ sample, pd.surface_mesh.cellIndex(nf), err });
+                                // std.debug.print("Error registering sample {d} in triangle {d}: {}\n", .{ sample, nf.index(), err });
                                 try problematic_faces.add(nf);
                                 problematic = true;
                             };
@@ -625,49 +618,48 @@ const ParameterizationData = struct {
                     }
                 }
                 if (problematic and patch_faces.items.len > 1000) {
-                    try problematic_vertices.add(sm_origin_v);
+                    try problematic_vertices.add(origin_v);
                 }
                 // unmark the visited faces so the marker can be reused for the next origin vertex
                 for (patch_faces.items) |f| {
                     patch_faces_visited.unmark(f);
                 }
                 // the origin vertex is never popped from the shortest path tree expansion below, so remove it now
-                _ = patch_vertex_indices_set.swapRemove(origin_v_index);
-                try patch_vertex_indices.append(pd.app_ctx.allocator, origin_v_index);
+                _ = patch_vertex_indices_set.swapRemove(origin_v.index());
+                try patch_vertices.append(pd.app_ctx.allocator, origin_v);
             }
 
             // initialize the queue with the darts outgoing from the origin vertex
             dart_queue.clearRetainingCapacity();
             {
-                const origin_v_angle_sum = pd.it_ctx.?.extrinsic_vertex_angle_sum.valueByIndex(origin_v_index);
-                var dart_it = pd.it_ctx.?.intrinsic_surface_mesh.cellDartIterator(it_origin_v);
+                const origin_v_angle_sum = pd.it_ctx.?.extrinsic_vertex_angle_sum.value(origin_v);
+                var dart_it = pd.it_ctx.?.intrinsic_surface_mesh.orbitDartIterator(pd.it_ctx.?.intrinsic_surface_mesh.dart(origin_v), .vertex);
                 while (dart_it.next()) |d| {
                     try dart_queue.push(
                         pd.app_ctx.allocator,
                         .{
                             .dart = d,
-                            .distance = pd.it_ctx.?.intrinsic_edge_length.value(.{ .edge = d }),
+                            .distance = pd.it_ctx.?.intrinsic_edge_length.value(pd.it_ctx.?.intrinsic_surface_mesh.edge(d)),
                             .uv = .{ 0.0, 0.0 },
-                            .global_angle = pd.it_ctx.?.intrinsic_halfedge_extrinsic_sp_angle.value(.{ .halfedge = d }) / origin_v_angle_sum * std.math.tau,
+                            .global_angle = pd.it_ctx.?.intrinsic_halfedge_extrinsic_sp_angle.data.value(d) / origin_v_angle_sum * std.math.tau,
                         },
                     );
                 }
-                current_patch_uv.valuePtrByIndex(origin_v_index).* = .{ 0.0, 0.0 };
+                current_patch_uv.valuePtr(origin_v).* = .{ 0.0, 0.0 };
             }
 
             incoming_dart.data.fill(null);
             while (dart_queue.pop()) |d_info| {
-                const pointed_v: SurfaceMesh.Cell = .{ .vertex = pd.it_ctx.?.intrinsic_surface_mesh.phi1(d_info.dart) };
-                const pointed_v_index = pd.it_ctx.?.intrinsic_surface_mesh.cellIndex(pointed_v);
+                const pointed_v = pd.it_ctx.?.intrinsic_surface_mesh.vertex(pd.it_ctx.?.intrinsic_surface_mesh.phi1(d_info.dart));
                 // if the pointed vertex has already been reached, or is the origin vertex, skip it
-                if (incoming_dart.value(pointed_v) != null or pointed_v_index == origin_v_index) {
+                if (incoming_dart.value(pointed_v) != null or pointed_v.index() == origin_v.index()) {
                     continue;
                 }
                 // the queue is ordered by distance, so the first time we reach a vertex is the shortest path to it
                 incoming_dart.valuePtr(pointed_v).* = d_info.dart;
 
                 // the UV coordinate of pointed_v is the UV coordinate of v + the vector from v to pointed_v in the tangent space of the origin vertex
-                const l = pd.it_ctx.?.intrinsic_edge_length.value(.{ .edge = d_info.dart });
+                const l = pd.it_ctx.?.intrinsic_edge_length.value(pd.it_ctx.?.intrinsic_surface_mesh.edge(d_info.dart));
                 const uv = vec.add2f(d_info.uv, .{
                     l * std.math.cos(d_info.global_angle),
                     l * std.math.sin(d_info.global_angle),
@@ -675,35 +667,33 @@ const ParameterizationData = struct {
 
                 // the UV coordinate is only recorded if the vertex belongs to the patch of the origin vertex;
                 // the patch is completely covered when all of its vertices have been reached, and the expansion can then stop
-                if (patch_vertex_indices_set.swapRemove(pointed_v_index)) { // return true if the vertex was in the set and has been removed
-                    try patch_vertex_indices.append(pd.app_ctx.allocator, pointed_v_index);
-                    current_patch_uv.valuePtrByIndex(pointed_v_index).* = uv;
+                if (patch_vertex_indices_set.swapRemove(pointed_v.index())) { // return true if the vertex was in the set and has been removed
+                    try patch_vertices.append(pd.app_ctx.allocator, pointed_v);
+                    current_patch_uv.valuePtr(pointed_v).* = uv;
                     if (patch_vertex_indices_set.count() == 0) {
                         break; // all vertices of the patch have been reached, we can stop the expansion
                     }
                 }
                 // otherwise, enqueue the edges outgoing from pointed_v
-                var dart_it = pd.it_ctx.?.intrinsic_surface_mesh.cellDartIterator(pointed_v);
+                var dart_it = pd.it_ctx.?.intrinsic_surface_mesh.orbitDartIterator(pd.it_ctx.?.intrinsic_surface_mesh.dart(pointed_v), .vertex);
                 // a_prev is the angle of the edge from pointed_v to v (i.e. looking back in the shortest path towards the origin vertex)
                 // in the local tangent space of pointed_v
-                const pointed_v_angle_sum = pd.it_ctx.?.extrinsic_vertex_angle_sum.valueByIndex(pointed_v_index);
-                const a_prev = pd.it_ctx.?.intrinsic_halfedge_extrinsic_sp_angle.value(.{
-                    .halfedge = pd.it_ctx.?.intrinsic_surface_mesh.phi2(d_info.dart),
-                }) / pointed_v_angle_sum * std.math.tau;
+                const pointed_v_angle_sum = pd.it_ctx.?.extrinsic_vertex_angle_sum.value(pointed_v);
+                const a_prev = pd.it_ctx.?.intrinsic_halfedge_extrinsic_sp_angle.data.value(pd.it_ctx.?.intrinsic_surface_mesh.phi2(d_info.dart)) / pointed_v_angle_sum * std.math.tau;
                 while (dart_it.next()) |out_d| {
-                    const nv: SurfaceMesh.Cell = .{ .vertex = pd.it_ctx.?.intrinsic_surface_mesh.phi1(out_d) };
+                    const nv = pd.it_ctx.?.intrinsic_surface_mesh.vertex(pd.it_ctx.?.intrinsic_surface_mesh.phi1(out_d));
                     // if the neighbor vertex across the edge has already been reached, skip it
                     if (incoming_dart.value(nv) != null) {
                         continue;
                     }
                     // a is the angle of the edge from pointed_v to nv in the local tangent space of pointed_v
-                    const a = pd.it_ctx.?.intrinsic_halfedge_extrinsic_sp_angle.value(.{ .halfedge = out_d }) / pointed_v_angle_sum * std.math.tau;
+                    const a = pd.it_ctx.?.intrinsic_halfedge_extrinsic_sp_angle.data.value(out_d) / pointed_v_angle_sum * std.math.tau;
                     const delta_a = a - a_prev; // this encodes the difference between where we go and where we come from
                     try dart_queue.push(
                         pd.app_ctx.allocator,
                         .{
                             .dart = out_d,
-                            .distance = d_info.distance + pd.it_ctx.?.intrinsic_edge_length.value(.{ .edge = out_d }),
+                            .distance = d_info.distance + pd.it_ctx.?.intrinsic_edge_length.value(pd.it_ctx.?.intrinsic_surface_mesh.edge(out_d)),
                             .uv = uv,
                             // the global angle (i.e. angle in the tangent space of the origin vertex) for this outgoing dart
                             // is the global angle of the edge we come from + delta_a + PI (modulo 2*PI)
@@ -714,38 +704,38 @@ const ParameterizationData = struct {
             }
 
             // compute the distance of each vertex of the patch to the boundary of the patch, in the UV space of the patch
-            for (patch_vertex_indices.items) |v_index| {
-                const p = current_patch_uv.valueByIndex(v_index);
+            for (patch_vertices.items) |v| {
+                const p = current_patch_uv.value(v);
                 var min_dist_squared = std.math.floatMax(f32);
                 for (patch_boundary_segments.items) |segment| {
-                    const a = current_patch_uv.valueByIndex(segment[0]);
-                    const b = current_patch_uv.valueByIndex(segment[1]);
+                    const a = current_patch_uv.value(segment[0]);
+                    const b = current_patch_uv.value(segment[1]);
                     const dist = geometry_utils.squaredDistanceSegmentPoint(a, b, p);
                     if (dist < min_dist_squared) {
                         min_dist_squared = dist;
                     }
                 }
-                current_patch_distance_to_boundary.valuePtrByIndex(v_index).* = std.math.sqrt(min_dist_squared);
+                current_patch_distance_to_boundary.valuePtr(v).* = std.math.sqrt(min_dist_squared);
             }
 
             // re-center the patch's UV space on its farthest-from-the-boundary vertex instead of on the origin (sample) vertex
             // and normalize the distance to boundary values accordingly, so that the distance at the origin is 1 and the distance on the boundary is 0
             {
-                var farthest_v_index = origin_v_index;
-                var farthest_dist = current_patch_distance_to_boundary.valueByIndex(origin_v_index);
-                for (patch_vertex_indices.items) |v_index| {
-                    const d = current_patch_distance_to_boundary.valueByIndex(v_index);
+                var farthest_v = origin_v;
+                var farthest_dist = current_patch_distance_to_boundary.value(origin_v);
+                for (patch_vertices.items) |v| {
+                    const d = current_patch_distance_to_boundary.value(v);
                     if (d > farthest_dist) {
                         farthest_dist = d;
-                        farthest_v_index = v_index;
+                        farthest_v = v;
                     }
                 }
-                const new_origin_uv = current_patch_uv.valueByIndex(farthest_v_index);
-                for (patch_vertex_indices.items) |v_index| {
-                    current_patch_uv.valuePtrByIndex(v_index).* = vec.sub2f(current_patch_uv.valueByIndex(v_index), new_origin_uv);
+                const new_origin_uv = current_patch_uv.value(farthest_v);
+                for (patch_vertices.items) |v| {
+                    current_patch_uv.valuePtr(v).* = vec.sub2f(current_patch_uv.value(v), new_origin_uv);
                     // commented out version normalizes the distance smoothly to 0 at the boundary and 1 at the farthest vertex, even if the farthest vertex is not the origin vertex
                     // not useful now that the origin of the patch is re-centered on the farthest vertex
-                    current_patch_distance_to_boundary.valuePtrByIndex(v_index).* /= farthest_dist; // / (current_patch_distance_to_boundary.valueByIndex(v_index) + vec.norm2f(current_patch_uv.valueByIndex(v_index)));
+                    current_patch_distance_to_boundary.valuePtr(v).* /= farthest_dist; // / (current_patch_distance_to_boundary.value(v) + vec.norm2f(current_patch_uv.value(v)));
                 }
             }
 
@@ -753,22 +743,22 @@ const ParameterizationData = struct {
             // data of the patch faces, in the order induced by the canonical dart of each triangle
             for (patch_faces.items) |f| {
                 const tri_dart = pd.triangle_dart.value(f);
-                const v0_index = pd.surface_mesh.cellIndex(.{ .vertex = tri_dart });
-                const v1_index = pd.surface_mesh.cellIndex(.{ .vertex = pd.surface_mesh.phi1(tri_dart) });
-                const v2_index = pd.surface_mesh.cellIndex(.{ .vertex = pd.surface_mesh.phi_1(tri_dart) });
+                const v0 = pd.surface_mesh.vertex(tri_dart);
+                const v1 = pd.surface_mesh.vertex(pd.surface_mesh.phi1(tri_dart));
+                const v2 = pd.surface_mesh.vertex(pd.surface_mesh.phi_1(tri_dart));
                 const tri_uvs = pd.triangle_uvs.valuePtr(f);
                 const slot = for (tri_uvs.samples, 0..) |s, idx| {
                     if (s == sample) break idx;
                 } else continue; // unreachable; // the sample was registered in this face during the flood fill above, so it must be found
                 tri_uvs.uvs[slot] = .{
-                    current_patch_uv.valueByIndex(v0_index),
-                    current_patch_uv.valueByIndex(v1_index),
-                    current_patch_uv.valueByIndex(v2_index),
+                    current_patch_uv.value(v0),
+                    current_patch_uv.value(v1),
+                    current_patch_uv.value(v2),
                 };
                 tri_uvs.distance_to_boundary[slot] = .{
-                    current_patch_distance_to_boundary.valueByIndex(v0_index),
-                    current_patch_distance_to_boundary.valueByIndex(v1_index),
-                    current_patch_distance_to_boundary.valueByIndex(v2_index),
+                    current_patch_distance_to_boundary.value(v0),
+                    current_patch_distance_to_boundary.value(v1),
+                    current_patch_distance_to_boundary.value(v2),
                 };
             }
         }
@@ -988,7 +978,7 @@ pub fn rightPanel(m: *Module) void {
                     info.std_datas.edge_length.?,
                     info.std_datas.corner_angle.?,
                 ) catch null;
-                if (pd.it_ctx) |it_ctx| {
+                if (pd.it_ctx) |*it_ctx| {
                     it_ctx.flipToDelaunay() catch |err| {
                         std.debug.print("Error during intrinsic triangulation Delaunay flip: {}\n", .{err});
                     };
@@ -1047,12 +1037,12 @@ pub fn rightPanel(m: *Module) void {
                 c.ImGui_BeginDisabled(true);
             }
             if (c.ImGui_ButtonEx("Display UVs", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                const vertex_uv, _ = sm.getOrAddData(.vertex, Vec2f, "vertex_uv") catch |err| {
+                var vertex_uv, _ = sm.getOrAddData(.vertex, Vec2f, "vertex_uv") catch |err| {
                     std.debug.print("Failed to get or add vertex_uv data: {}\n", .{err});
                     return;
                 };
                 vertex_uv.data.fill(.{ 0.0, 0.0 });
-                const vertex_boundary_dist, _ = sm.getOrAddData(.vertex, f32, "vertex_boundary_dist") catch |err| {
+                var vertex_boundary_dist, _ = sm.getOrAddData(.vertex, f32, "vertex_boundary_dist") catch |err| {
                     std.debug.print("Failed to get or add vertex_boundary_dist data: {}\n", .{err});
                     return;
                 };
@@ -1072,15 +1062,15 @@ pub fn rightPanel(m: *Module) void {
                     for (tri_uvs.samples, 0..) |s, idx| {
                         for (selected_samples.items) |selected_sample| {
                             if (s == selected_sample) {
-                                const v0_index = pd.surface_mesh.cellIndex(.{ .vertex = tri_dart });
-                                const v1_index = pd.surface_mesh.cellIndex(.{ .vertex = pd.surface_mesh.phi1(tri_dart) });
-                                const v2_index = pd.surface_mesh.cellIndex(.{ .vertex = pd.surface_mesh.phi_1(tri_dart) });
-                                vertex_uv.valuePtrByIndex(v0_index).* = tri_uvs.uvs[idx][0];
-                                vertex_uv.valuePtrByIndex(v1_index).* = tri_uvs.uvs[idx][1];
-                                vertex_uv.valuePtrByIndex(v2_index).* = tri_uvs.uvs[idx][2];
-                                vertex_boundary_dist.valuePtrByIndex(v0_index).* = tri_uvs.distance_to_boundary[idx][0];
-                                vertex_boundary_dist.valuePtrByIndex(v1_index).* = tri_uvs.distance_to_boundary[idx][1];
-                                vertex_boundary_dist.valuePtrByIndex(v2_index).* = tri_uvs.distance_to_boundary[idx][2];
+                                const v0 = pd.surface_mesh.vertex(tri_dart);
+                                const v1 = pd.surface_mesh.vertex(pd.surface_mesh.phi1(tri_dart));
+                                const v2 = pd.surface_mesh.vertex(pd.surface_mesh.phi_1(tri_dart));
+                                vertex_uv.valuePtr(v0).* = tri_uvs.uvs[idx][0];
+                                vertex_uv.valuePtr(v1).* = tri_uvs.uvs[idx][1];
+                                vertex_uv.valuePtr(v2).* = tri_uvs.uvs[idx][2];
+                                vertex_boundary_dist.valuePtr(v0).* = tri_uvs.distance_to_boundary[idx][0];
+                                vertex_boundary_dist.valuePtr(v1).* = tri_uvs.distance_to_boundary[idx][1];
+                                vertex_boundary_dist.valuePtr(v2).* = tri_uvs.distance_to_boundary[idx][2];
                             }
                         }
                     }

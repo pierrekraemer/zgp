@@ -81,19 +81,21 @@ pub fn fillFromPointCloud(i: *IBO, pc: *PointCloud, allocator: std.mem.Allocator
     i.fillFromIndexSlice(indices.items, &.{});
 }
 
-// TODO: check for potentially non-initialized IBO primitive type
-
-pub fn fillFromSurfaceMeshCellSlice(i: *IBO, sm: *SurfaceMesh, cells: []const SurfaceMesh.Cell, allocator: std.mem.Allocator) !void {
+pub fn fillFromSurfaceMeshCellSlice(i: *IBO, sm: *SurfaceMesh, comptime cell_type: SurfaceMesh.CellType, cells: []const SurfaceMesh.Cell, allocator: std.mem.Allocator) !void {
+    i.primitive = switch (cell_type) {
+        .vertex => .points,
+        .edge => .lines,
+        .face => .triangles,
+        else => unreachable,
+    };
     if (cells.len == 0) {
         i.fillFromIndexSlice(&.{}, &.{});
         return;
     }
-    const cell_type = cells[0].cellType();
     var indices = try std.ArrayList(u32).initCapacity(allocator, switch (cell_type) {
         .vertex => cells.len,
         .edge => cells.len * 2,
         .face => cells.len * 3, // TODO: this assumes all faces are triangles
-        .boundary => cells.len * 2,
         else => unreachable,
     });
     defer indices.deinit(allocator);
@@ -101,53 +103,37 @@ pub fn fillFromSurfaceMeshCellSlice(i: *IBO, sm: *SurfaceMesh, cells: []const Su
     defer cell_indices.deinit(allocator);
     switch (cell_type) {
         .vertex => {
-            i.primitive = .points;
             for (cells) |v| {
-                try indices.append(allocator, sm.cellIndex(v));
+                try indices.append(allocator, v.index());
             }
         },
         .edge => {
-            i.primitive = .lines;
             for (cells) |e| {
-                const d = e.dart();
-                const d1 = sm.phi1(d);
-                try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
-                try indices.append(allocator, sm.cellIndex(.{ .vertex = d1 }));
+                const d = sm.dart(e);
+                try indices.append(allocator, sm.vertex(d).index());
+                try indices.append(allocator, sm.vertex(sm.phi1(d)).index());
                 // line primitive is associated to its edge index
-                try cell_indices.append(allocator, sm.cellIndex(e));
+                try cell_indices.append(allocator, e.index());
             }
         },
         .face => {
-            i.primitive = .triangles;
             for (cells) |f| {
                 // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
-                var dart_it = sm.cellDartIterator(f);
+                var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
                 const dart_start = dart_it.next() orelse continue;
-                const start_index = sm.cellIndex(.{ .vertex = dart_start });
+                const start_v = sm.vertex(dart_start);
                 var dart_v1 = dart_it.next() orelse continue;
-                var v1_index = sm.cellIndex(.{ .vertex = dart_v1 });
+                var v1 = sm.vertex(dart_v1);
                 while (dart_it.next()) |dart_v2| {
-                    const v2_index = sm.cellIndex(.{ .vertex = dart_v2 });
-                    try indices.append(allocator, start_index);
-                    try indices.append(allocator, v1_index);
-                    try indices.append(allocator, v2_index);
+                    const v2 = sm.vertex(dart_v2);
+                    try indices.append(allocator, start_v.index());
+                    try indices.append(allocator, v1.index());
+                    try indices.append(allocator, v2.index());
                     // triangle primitive is associated to its face index
                     // (for polygonal faces, multiple triangle primitives are associated to the same face index)
-                    try cell_indices.append(allocator, sm.cellIndex(f));
+                    try cell_indices.append(allocator, f.index());
                     dart_v1 = dart_v2;
-                    v1_index = v2_index;
-                }
-            }
-        },
-        .boundary => {
-            i.primitive = .lines;
-            for (cells) |b| {
-                var dart_it = sm.cellDartIterator(b);
-                while (dart_it.next()) |d| {
-                    try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
-                    try indices.append(allocator, sm.cellIndex(.{ .vertex = sm.phi1(d) }));
-                    // boundary line primitive is associated to its edge index
-                    try cell_indices.append(allocator, sm.cellIndex(.{ .edge = d }));
+                    v1 = v2;
                 }
             }
         },
@@ -160,86 +146,88 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
     i.primitive = switch (cell_type) {
         .vertex => .points,
         .edge => .lines,
-        .boundary => .lines,
         .face => .triangles,
         else => unreachable,
     };
-    const nb_cells = switch (cell_type) {
-        .boundary => 512, // counting boundary cells is expensive, so we just assume a number of cells for the preallocation of the index buffers
-        else => sm.nbCells(cell_type),
-    };
+    const nb_cells = sm.nbCells(cell_type);
     if (nb_cells == 0) {
         i.fillFromIndexSlice(&.{}, &.{});
         return;
     }
-    var indices = try std.ArrayList(u32).initCapacity(allocator, switch (cell_type) {
+    var indices: std.ArrayList(u32) = try .initCapacity(allocator, switch (cell_type) {
         .vertex => nb_cells,
         .edge => nb_cells * 2,
         .face => nb_cells * 3, // TODO: this assumes all faces are triangles
-        .boundary => nb_cells * 2,
         else => unreachable,
     });
     defer indices.deinit(allocator);
-    var cell_indices: std.ArrayList(u32) = try std.ArrayList(u32).initCapacity(allocator, if (cell_type == .vertex) 0 else nb_cells);
+    var cell_indices: std.ArrayList(u32) = try .initCapacity(allocator, if (cell_type == .vertex) 0 else nb_cells);
     defer cell_indices.deinit(allocator);
     switch (cell_type) {
         .vertex => {
             var v_it = sm.cellIterator(.vertex);
             while (v_it.next()) |v| {
-                try indices.append(allocator, sm.cellIndex(v));
+                try indices.append(allocator, v.index());
             }
         },
         .edge => {
             var e_it = sm.cellIterator(.edge);
             while (e_it.next()) |e| {
-                const d = e.dart();
-                const d1 = sm.phi1(d);
-                try indices.append(allocator, sm.cellIndex(.{ .vertex = d }));
-                try indices.append(allocator, sm.cellIndex(.{ .vertex = d1 }));
+                const d = sm.dart(e);
+                try indices.append(allocator, sm.vertex(d).index());
+                try indices.append(allocator, sm.vertex(sm.phi1(d)).index());
                 // line primitive is associated to its edge index
-                try cell_indices.append(allocator, sm.cellIndex(e));
+                try cell_indices.append(allocator, e.index());
             }
         },
         .face => {
             var f_it = sm.cellIterator(.face);
             while (f_it.next()) |f| {
                 // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
-                var dart_it = sm.cellDartIterator(f);
+                var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
                 const dart_start = dart_it.next() orelse continue;
-                const start_index = sm.cellIndex(.{ .vertex = dart_start });
+                const start_v = sm.vertex(dart_start);
                 var dart_v1 = dart_it.next() orelse continue;
-                var v1_index = sm.cellIndex(.{ .vertex = dart_v1 });
+                var v1 = sm.vertex(dart_v1);
                 while (dart_it.next()) |dart_v2| {
-                    const v2_index = sm.cellIndex(.{ .vertex = dart_v2 });
-                    try indices.append(allocator, start_index);
-                    try indices.append(allocator, v1_index);
-                    try indices.append(allocator, v2_index);
+                    const v2 = sm.vertex(dart_v2);
+                    try indices.append(allocator, start_v.index());
+                    try indices.append(allocator, v1.index());
+                    try indices.append(allocator, v2.index());
                     // triangle primitive is associated to its face index
                     // (for polygonal faces, multiple triangle primitives are associated to the same face index)
-                    try cell_indices.append(allocator, sm.cellIndex(f));
+                    try cell_indices.append(allocator, f.index());
                     dart_v1 = dart_v2;
-                    v1_index = v2_index;
-                }
-            }
-        },
-        .boundary => {
-            var dm = try SurfaceMesh.DartMarker.init(sm);
-            defer dm.deinit();
-            var it = sm.dartIterator();
-            while (it.next()) |d| {
-                if (sm.isBoundaryDart(d) and !dm.isMarked(d)) {
-                    dm.markCell(.{ .face = d });
-                }
-                var dart_it = sm.cellDartIterator(.{ .boundary = d });
-                while (dart_it.next()) |bd| {
-                    try indices.append(allocator, sm.cellIndex(.{ .vertex = bd }));
-                    try indices.append(allocator, sm.cellIndex(.{ .vertex = sm.phi1(bd) }));
-                    // boundary line primitive is associated to its edge index
-                    try cell_indices.append(allocator, sm.cellIndex(.{ .edge = bd }));
+                    v1 = v2;
                 }
             }
         },
         else => unreachable,
+    }
+    i.fillFromIndexSlice(indices.items, cell_indices.items);
+}
+
+pub fn fillFromSurfaceMeshBoundary(i: *IBO, sm: *SurfaceMesh, allocator: std.mem.Allocator) !void {
+    i.primitive = .lines;
+    var indices: std.ArrayList(u32) = try .initCapacity(allocator, 1024);
+    defer indices.deinit(allocator);
+    var cell_indices: std.ArrayList(u32) = try .initCapacity(allocator, 512);
+    defer cell_indices.deinit(allocator);
+    var dm: SurfaceMesh.DartMarker = try .init(sm);
+    defer dm.deinit();
+    var it = sm.dartIterator();
+    while (it.next()) |d| {
+        if (dm.isMarked(d)) continue;
+        if (sm.isBoundaryDart(d)) {
+            var dart_it = sm.orbitDartIterator(d, .face);
+            while (dart_it.next()) |bd| {
+                dm.mark(bd);
+                try indices.append(allocator, sm.vertex(bd).index());
+                try indices.append(allocator, sm.vertex(sm.phi1(bd)).index());
+                // boundary line primitive is associated to its edge index
+                try cell_indices.append(allocator, sm.edge(bd).index());
+            }
+        }
     }
     i.fillFromIndexSlice(indices.items, cell_indices.items);
 }

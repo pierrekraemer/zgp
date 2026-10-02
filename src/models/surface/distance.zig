@@ -50,7 +50,7 @@ pub const ShortestEdgePathContext = struct {
 
     pub fn deinit(sep_ctx: *ShortestEdgePathContext, allocator: std.mem.Allocator) void {
         sep_ctx.dart_queue.deinit(allocator);
-        sep_ctx.surface_mesh.removeData(.vertex, ?SurfaceMesh.Dart, sep_ctx.incoming_dart);
+        sep_ctx.surface_mesh.removeData(.vertex, sep_ctx.incoming_dart);
     }
 
     /// Compute the shortest edge path between two vertices of the SurfaceMesh using Dijkstra's algorithm.
@@ -67,36 +67,32 @@ pub const ShortestEdgePathContext = struct {
         sep_ctx.incoming_dart.data.fill(null);
         sep_ctx.dart_queue.clearRetainingCapacity();
 
-        const v_start_idx = sep_ctx.surface_mesh.cellIndex(v_start);
-        const v_end_idx = sep_ctx.surface_mesh.cellIndex(v_end);
-
         // initialize the queue with the darts outgoing from the starting vertex
         {
-            var dart_it = sep_ctx.surface_mesh.cellDartIterator(v_start);
+            var dart_it = sep_ctx.surface_mesh.orbitDartIterator(sep_ctx.surface_mesh.dart(v_start), .vertex);
             while (dart_it.next()) |d| {
                 try sep_ctx.dart_queue.push(
                     allocator,
-                    .{ .dart = d, .distance = sep_ctx.edge_weight.value(.{ .edge = d }) },
+                    .{ .dart = d, .distance = sep_ctx.edge_weight.value(sep_ctx.surface_mesh.edge(d)) },
                 );
             }
         }
         while (sep_ctx.dart_queue.pop()) |d_info| {
-            const pointed_v: SurfaceMesh.Cell = .{ .vertex = sep_ctx.surface_mesh.phi1(d_info.dart) };
-            const pointed_v_idx = sep_ctx.surface_mesh.cellIndex(pointed_v);
-            if (sep_ctx.incoming_dart.value(pointed_v) != null or pointed_v_idx == v_start_idx) {
+            const pointed_v = sep_ctx.surface_mesh.vertex(sep_ctx.surface_mesh.phi1(d_info.dart));
+            if (sep_ctx.incoming_dart.value(pointed_v) != null or pointed_v.index() == v_start.index()) {
                 // this vertex has already been reached, or is the starting vertex, skip it
                 continue;
             }
             // the queue is ordered by distance, so the first time we reach a vertex is the shortest path to it
             sep_ctx.incoming_dart.valuePtr(pointed_v).* = d_info.dart;
             // if we reached the end vertex, we can reconstruct the path and return it
-            if (pointed_v_idx == v_end_idx) {
+            if (pointed_v.index() == v_end.index()) {
                 // reconstruct the path from v_end to v_start using the incoming_dart data
                 var path: std.ArrayList(SurfaceMesh.Dart) = try .initCapacity(allocator, 16);
                 try path.append(allocator, d_info.dart);
                 var current_d = d_info.dart;
                 // follow the incoming darts until reaching the starting vertex which has no incoming dart
-                while (sep_ctx.incoming_dart.value(.{ .vertex = current_d })) |incoming| {
+                while (sep_ctx.incoming_dart.value(sep_ctx.surface_mesh.vertex(current_d))) |incoming| {
                     try path.append(allocator, incoming);
                     current_d = incoming;
                 }
@@ -105,11 +101,11 @@ pub const ShortestEdgePathContext = struct {
                 return path;
             }
             // otherwise, expand the search to the neighbors of the current pointed vertex
-            var dart_it = sep_ctx.surface_mesh.cellDartIterator(pointed_v);
+            var dart_it = sep_ctx.surface_mesh.orbitDartIterator(sep_ctx.surface_mesh.dart(pointed_v), .vertex);
             while (dart_it.next()) |d| {
-                const nv: SurfaceMesh.Cell = .{ .vertex = sep_ctx.surface_mesh.phi1(d) };
+                const nv = sep_ctx.surface_mesh.vertex(sep_ctx.surface_mesh.phi1(d));
                 if (sep_ctx.incoming_dart.value(nv) == null) {
-                    const weight = sep_ctx.edge_weight.value(.{ .edge = d });
+                    const weight = sep_ctx.edge_weight.value(sep_ctx.surface_mesh.edge(d));
                     try sep_ctx.dart_queue.push(allocator, .{
                         .dart = d,
                         .distance = d_info.distance + weight,
@@ -130,8 +126,8 @@ pub fn multiSourceDijkstraDistancesAndSources(
     sm: *SurfaceMesh,
     source_vertices: []SurfaceMesh.Cell,
     edge_weight: SurfaceMesh.CellData(.edge, f32),
-    vertex_distance: SurfaceMesh.CellData(.vertex, f32),
-    vertex_source: SurfaceMesh.CellData(.vertex, ?SurfaceMesh.Cell),
+    vertex_distance: *SurfaceMesh.CellData(.vertex, f32),
+    vertex_source: *SurfaceMesh.CellData(.vertex, ?SurfaceMesh.Cell),
 ) !void {
     assert(source_vertices.len > 0);
 
@@ -140,23 +136,20 @@ pub fn multiSourceDijkstraDistancesAndSources(
     vertex_source.data.fill(null);
 
     // Priority queue type for vertices of the SurfaceMesh, ordered by their distance from the closest source vertex
-    const VertexQueueContext = struct {
-        surface_mesh: *const SurfaceMesh,
-    };
     const VertexInfo = struct {
         const VertexInfo = @This();
         vertex: SurfaceMesh.Cell,
         distance: f32,
-        pub fn cmp(ctx: VertexQueueContext, a: VertexInfo, b: VertexInfo) std.math.Order {
+        pub fn cmp(_: void, a: VertexInfo, b: VertexInfo) std.math.Order {
             const distance_order = std.math.order(a.distance, b.distance);
             if (distance_order != .eq) return distance_order;
             // tie-breaker: use vertex indices to have a deterministic order
-            return std.math.order(ctx.surface_mesh.cellIndex(a.vertex), ctx.surface_mesh.cellIndex(b.vertex));
+            return std.math.order(a.vertex.index(), b.vertex.index());
         }
     };
-    const VertexQueue = std.PriorityQueue(VertexInfo, VertexQueueContext, VertexInfo.cmp);
+    const VertexQueue = std.PriorityQueue(VertexInfo, void, VertexInfo.cmp);
 
-    var queue: VertexQueue = .initContext(.{ .surface_mesh = sm });
+    var queue: VertexQueue = .empty;
     defer queue.deinit(allocator);
 
     // initialize the queue with the source vertices
@@ -172,10 +165,10 @@ pub fn multiSourceDijkstraDistancesAndSources(
             continue; // this vertex has already been reached with a smaller distance, skip it
         }
         // expand the neighbors of the current vertex
-        var dart_it = sm.cellDartIterator(v);
+        var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
         while (dart_it.next()) |d| {
-            const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
-            const weight = edge_weight.value(.{ .edge = d });
+            const nv = sm.vertex(sm.phi1(d));
+            const weight = edge_weight.value(sm.edge(d));
             const new_distance = v_info.distance + weight;
             if (new_distance < vertex_distance.value(nv)) {
                 vertex_distance.valuePtr(nv).* = new_distance;
@@ -246,10 +239,9 @@ pub const HeatMethodContext = struct {
         defer triplets.deinit(allocator);
         var edge_it = sm.cellIterator(.edge);
         while (edge_it.next()) |edge| {
-            const d = edge.dart();
-            const dd = sm.phi2(d);
-            const i = vertex_index.value(.{ .vertex = d });
-            const j = vertex_index.value(.{ .vertex = dd });
+            const d = sm.dart(edge);
+            const i = vertex_index.value(sm.vertex(d));
+            const j = vertex_index.value(sm.vertex(sm.phi1(d)));
             const w_ij: eigen.Scalar = @floatCast(laplacian.edgeCotanWeight(sm, edge, halfedge_cotan_weight));
             // off-diagonal
             triplets.appendAssumeCapacity(.{ .row = @intCast(i), .col = @intCast(j), .value = w_ij });
@@ -326,10 +318,10 @@ pub const HeatMethodContext = struct {
         hm_ctx.heat_t.deinit(hm_ctx.allocator);
         hm_ctx.div.deinit(hm_ctx.allocator);
         hm_ctx.dist.deinit(hm_ctx.allocator);
-        hm_ctx.surface_mesh.removeData(.vertex, f64, hm_ctx.vertex_heat_grad_div);
-        hm_ctx.surface_mesh.removeData(.face, Vec3d, hm_ctx.face_heat_grad);
-        hm_ctx.surface_mesh.removeData(.vertex, f64, hm_ctx.vertex_heat);
-        hm_ctx.surface_mesh.removeData(.vertex, u32, hm_ctx.vertex_index);
+        hm_ctx.surface_mesh.removeData(.vertex, hm_ctx.vertex_heat_grad_div);
+        hm_ctx.surface_mesh.removeData(.face, hm_ctx.face_heat_grad);
+        hm_ctx.surface_mesh.removeData(.vertex, hm_ctx.vertex_heat);
+        hm_ctx.surface_mesh.removeData(.vertex, hm_ctx.vertex_index);
     }
 
     /// Compute the geodesic distance from each vertex of the SurfaceMesh to its closest source vertex using the heat method.
@@ -337,7 +329,7 @@ pub const HeatMethodContext = struct {
     pub fn computeGeodesicDistancesFromSource(
         hm_ctx: *HeatMethodContext,
         source_vertices: []SurfaceMesh.Cell,
-        vertex_distance: SurfaceMesh.CellData(.vertex, f32),
+        vertex_distance: *SurfaceMesh.CellData(.vertex, f32),
     ) !void {
         // setup heat_0 vector: 1.0 at source vertices, 0.0 elsewhere
         @memset(hm_ctx.heat_0.items, 0.0);
@@ -364,7 +356,7 @@ pub const HeatMethodContext = struct {
             hm_ctx.vertex_heat,
             hm_ctx.face_area,
             hm_ctx.face_normal,
-            hm_ctx.face_heat_grad,
+            &hm_ctx.face_heat_grad,
         );
 
         // negate and normalize the face gradients
@@ -383,7 +375,7 @@ pub const HeatMethodContext = struct {
             hm_ctx.halfedge_cotan_weight,
             hm_ctx.vertex_position,
             hm_ctx.face_heat_grad,
-            hm_ctx.vertex_heat_grad_div,
+            &hm_ctx.vertex_heat_grad_div,
         );
 
         // setup div vector

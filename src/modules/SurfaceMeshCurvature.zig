@@ -67,7 +67,7 @@ fn computeVertexCurvatures(
     edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
     edge_length: SurfaceMesh.CellData(.edge, f32),
     face_area: SurfaceMesh.CellData(.face, f32),
-    vertex_curvature: curvature.SurfaceMeshCurvatureDatas,
+    vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
@@ -180,7 +180,7 @@ pub fn rightClickMenu(m: *Module) void {
                     info.std_datas.edge_dihedral_angle.?,
                     info.std_datas.edge_length.?,
                     info.std_datas.face_area.?,
-                    curvature_datas.*,
+                    curvature_datas,
                 ) catch |err| {
                     std.debug.print("Error computing curvatures: {}\n", .{err});
                 };

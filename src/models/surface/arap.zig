@@ -34,19 +34,17 @@ pub fn computeVertexOneRingRotation(
 
     // Build the covariance matrix S = sum_j w_ij * e_ij_rest * e_ij_current^T
     var S: SimdMat4f = .{ @splat(0.0), @splat(0.0), @splat(0.0), @splat(0.0) };
-    const v_idx = sm.cellIndex(v);
-    const p_rest = vertex_position_rest.valueByIndex(v_idx);
-    const p_current = vec.simdFromVec3f(vertex_position.valueByIndex(v_idx));
-    var dart_it = sm.cellDartIterator(v);
+    const p_rest = vertex_position_rest.value(v);
+    const p_current = vec.simdFromVec3f(vertex_position.value(v));
+    var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
     while (dart_it.next()) |d| {
-        const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
-        const nv_idx = sm.cellIndex(nv);
-        const nv_current = vec.simdFromVec3f(vertex_position.valueByIndex(nv_idx));
+        const nv = sm.vertex(sm.phi1(d));
+        const nv_current = vec.simdFromVec3f(vertex_position.value(nv));
         // edge vectors in rest and current poses
-        const e_rest = vertex_position_rest.valueByIndex(nv_idx) - p_rest;
+        const e_rest = vertex_position_rest.value(nv) - p_rest;
         const e_current = nv_current - p_current;
         // cotan weight of the edge (sum of both halfedge cotan weights)
-        const w = laplacian.edgeCotanWeight(sm, .{ .edge = d }, halfedge_cotan_weight);
+        const w = laplacian.edgeCotanWeight(sm, sm.edge(d), halfedge_cotan_weight);
         // S += w * e_rest * e_current^T
         S = mat.simdAdd4f(S, mat.simdMulScalar4f(mat.simdOuterProduct4f(e_rest, e_current), w));
     }
@@ -176,10 +174,10 @@ pub const ARAPContext = struct {
         defer triplets.deinit(allocator);
         var edge_it = compute_surface_mesh.cellIterator(.edge);
         while (edge_it.next()) |edge| {
-            const d = edge.dart();
+            const d = compute_surface_mesh.dart(edge);
             const dd = compute_surface_mesh.phi2(d);
-            const i = free_vertex_index.valueByIndex(compute_surface_mesh.cellIndex(.{ .vertex = d }));
-            const j = free_vertex_index.valueByIndex(compute_surface_mesh.cellIndex(.{ .vertex = dd }));
+            const i = free_vertex_index.value(compute_surface_mesh.vertex(d)); // the intrinsic mesh shares the same vertex indices as the extrinsic mesh
+            const j = free_vertex_index.value(compute_surface_mesh.vertex(dd));
             const w_ij: eigen.Scalar = @floatCast(laplacian.edgeCotanWeight(compute_surface_mesh, edge, compute_halfedge_cotan_weight));
             if (i != invalid_index and j != invalid_index) {
                 // off-diagonal
@@ -224,9 +222,9 @@ pub const ARAPContext = struct {
         arap_ctx.solve_mat.deinit();
         arap_ctx.rhs_mat.deinit();
         arap_ctx.factorized_L.deinit();
-        arap_ctx.surface_mesh.removeData(.vertex, u32, arap_ctx.free_vertex_index);
-        arap_ctx.surface_mesh.removeData(.vertex, SimdVec4f, arap_ctx.vertex_rotation);
-        arap_ctx.surface_mesh.removeData(.vertex, SimdVec4f, arap_ctx.vertex_position_rest);
+        arap_ctx.surface_mesh.removeData(.vertex, arap_ctx.free_vertex_index);
+        arap_ctx.surface_mesh.removeData(.vertex, arap_ctx.vertex_rotation);
+        arap_ctx.surface_mesh.removeData(.vertex, arap_ctx.vertex_position_rest);
     }
 
     /// Run the ARAP local/global solve & updates vertex_position
@@ -236,7 +234,7 @@ pub const ARAPContext = struct {
             halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
             vertex_position_rest: SurfaceMesh.CellData(.vertex, SimdVec4f),
             vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-            vertex_rotation: SurfaceMesh.CellData(.vertex, SimdVec4f),
+            vertex_rotation: *SurfaceMesh.CellData(.vertex, SimdVec4f),
 
             pub fn run(t: *const @This(), v: SurfaceMesh.Cell) void {
                 const v_rotation = t.vertex_rotation.valuePtr(v);
@@ -261,32 +259,31 @@ pub const ARAPContext = struct {
             rhs_mat: eigen.DenseMatrix,
 
             pub fn run(t: *@This(), v: SurfaceMesh.Cell) void {
-                const v_idx = t.surface_mesh.cellIndex(v);
-                const fi = t.free_vertex_index.valueByIndex(v_idx);
+                const fi = t.free_vertex_index.value(v);
                 if (fi == invalid_index) return; // constrained vertex
 
                 var rhs_val: SimdVec4f = vec.zero4f;
+                const v_pos_rest = t.vertex_position_rest.value(v);
 
                 // iterate over one-ring neighbors
-                var dart_it = t.surface_mesh.cellDartIterator(v);
+                var dart_it = t.surface_mesh.orbitDartIterator(t.surface_mesh.dart(v), .vertex);
                 while (dart_it.next()) |d| {
-                    const vn: SurfaceMesh.Cell = .{ .vertex = t.surface_mesh.phi1(d) };
-                    const vn_idx = t.surface_mesh.cellIndex(vn);
+                    const vn = t.surface_mesh.vertex(t.surface_mesh.phi1(d));
 
-                    const w_ij = laplacian.edgeCotanWeight(t.surface_mesh, .{ .edge = d }, t.halfedge_cotan_weight);
+                    const w_ij = laplacian.edgeCotanWeight(t.surface_mesh, t.surface_mesh.edge(d), t.halfedge_cotan_weight);
 
                     // Rest edge vector
-                    const e_rest: SimdVec4f = t.vertex_position_rest.valueByIndex(vn_idx) - t.vertex_position_rest.valueByIndex(v_idx);
+                    const e_rest: SimdVec4f = t.vertex_position_rest.value(vn) - v_pos_rest;
                     // Rotated edge: (R_i + R_j) / 2 * e_rest
-                    const rotated_e_i = geometry_utils.rotateVectorByQuaternion(t.vertex_rotation.valueByIndex(v_idx), e_rest);
-                    const rotated_e_j = geometry_utils.rotateVectorByQuaternion(t.vertex_rotation.valueByIndex(vn_idx), e_rest);
+                    const rotated_e_i = geometry_utils.rotateVectorByQuaternion(t.vertex_rotation.value(v), e_rest);
+                    const rotated_e_j = geometry_utils.rotateVectorByQuaternion(t.vertex_rotation.value(vn), e_rest);
                     const rotated_e = (rotated_e_i + rotated_e_j) * @as(SimdVec4f, @splat(0.5 * w_ij));
                     rhs_val += rotated_e;
 
                     // if neighbor is constrained, move its contribution to the RHS
                     // L_ij = w_ij, so: rhs -= L_ij * p_j => rhs -= w_ij * p_j
-                    if (t.free_vertex_index.valueByIndex(vn_idx) == invalid_index) {
-                        rhs_val -= vec.simdFromVec3f(t.vertex_position.valueByIndex(vn_idx)) * @as(SimdVec4f, @splat(w_ij));
+                    if (t.free_vertex_index.value(vn) == invalid_index) {
+                        rhs_val -= vec.simdFromVec3f(t.vertex_position.value(vn)) * @as(SimdVec4f, @splat(w_ij));
                     }
                 }
 
@@ -299,16 +296,15 @@ pub const ARAPContext = struct {
         const WriteSolvedPositionsTask = struct {
             surface_mesh: *const SurfaceMesh,
             free_vertex_index: SurfaceMesh.CellData(.vertex, u32),
-            vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
             solve_mat: eigen.DenseMatrix,
+            vertex_position: *SurfaceMesh.CellData(.vertex, Vec3f),
 
             pub fn run(t: *@This(), v: SurfaceMesh.Cell) void {
-                const v_idx = t.surface_mesh.cellIndex(v);
-                const fi = t.free_vertex_index.valueByIndex(v_idx);
+                const fi = t.free_vertex_index.value(v);
                 if (fi == invalid_index) return; // constrained vertex
                 var solved_row: [3]eigen.Scalar = undefined;
                 t.solve_mat.getRow(@intCast(fi), &solved_row);
-                t.vertex_position.valuePtrByIndex(v_idx).* = vec.vec3fFromVec3d(.{ solved_row[0], solved_row[1], solved_row[2] });
+                t.vertex_position.valuePtr(v).* = vec.vec3fFromVec3d(.{ solved_row[0], solved_row[1], solved_row[2] });
             }
         };
 
@@ -322,7 +318,7 @@ pub const ARAPContext = struct {
                 .halfedge_cotan_weight = arap_ctx.compute_halfedge_cotan_weight,
                 .vertex_position_rest = arap_ctx.vertex_position_rest,
                 .vertex_position = arap_ctx.vertex_position,
-                .vertex_rotation = arap_ctx.vertex_rotation,
+                .vertex_rotation = &arap_ctx.vertex_rotation,
             });
 
             // prepare the right-hand side matrix (nb_free x 3)
@@ -345,8 +341,8 @@ pub const ARAPContext = struct {
             try pctr.run(arap_ctx.io, WriteSolvedPositionsTask{
                 .surface_mesh = arap_ctx.compute_surface_mesh,
                 .free_vertex_index = arap_ctx.free_vertex_index,
-                .vertex_position = arap_ctx.vertex_position,
                 .solve_mat = arap_ctx.solve_mat,
+                .vertex_position = &arap_ctx.vertex_position,
             });
         }
     }

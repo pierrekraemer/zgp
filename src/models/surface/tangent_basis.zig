@@ -15,11 +15,10 @@ pub fn vertexTangentBasis(
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
 ) [2]Vec3f {
     assert(vertex.cellType() == .vertex);
-    const d = vertex.dart();
-    const d1 = sm.phi1(d);
+    const d = sm.dart(vertex);
     const n = vertex_normal.value(vertex);
     var X = vec.sub3f(
-        vertex_position.value(.{ .vertex = d1 }),
+        vertex_position.value(sm.vertex(sm.phi1(d))),
         vertex_position.value(vertex),
     );
     X = geometry_utils.removeComponent(X, n);
@@ -35,13 +34,13 @@ pub fn computeVertexTangentBases(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
+    vertex_tangent_basis: *SurfaceMesh.CellData(.vertex, [2]Vec3f),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
+        vertex_tangent_basis: *SurfaceMesh.CellData(.vertex, [2]Vec3f),
 
         pub fn run(t: *const @This(), vertex: SurfaceMesh.Cell) void {
             t.vertex_tangent_basis.valuePtr(vertex).* = vertexTangentBasis(

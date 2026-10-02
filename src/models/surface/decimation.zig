@@ -34,7 +34,7 @@ const QEMDecimationContext = struct {
             vertex_position_simd.data.valuePtr(elem.idx).* = vec.simdFromVec3f(elem.value_ptr.*);
         }
 
-        const vertex_qem_simd = try sm.addData(.vertex, SimdMat4f, "__qem_simd");
+        var vertex_qem_simd = try sm.addData(.vertex, SimdMat4f, "__qem_simd");
         try qem.computeVertexQEMsSimd(
             sm,
             vertex_position_simd,
@@ -42,7 +42,7 @@ const QEMDecimationContext = struct {
             vertex_tangent_basis,
             face_area,
             face_normal,
-            vertex_qem_simd,
+            &vertex_qem_simd,
         );
 
         return .{
@@ -53,8 +53,8 @@ const QEMDecimationContext = struct {
     }
 
     pub fn deinit(qem_ctx: *QEMDecimationContext) void {
-        qem_ctx.surface_mesh.removeData(.vertex, SimdVec4f, qem_ctx.vertex_position_simd);
-        qem_ctx.surface_mesh.removeData(.vertex, SimdMat4f, qem_ctx.vertex_qem_simd);
+        qem_ctx.surface_mesh.removeData(.vertex, qem_ctx.vertex_position_simd);
+        qem_ctx.surface_mesh.removeData(.vertex, qem_ctx.vertex_qem_simd);
     }
 
     pub fn writeBack(qem_ctx: *QEMDecimationContext, vertex_position: SurfaceMesh.CellData(.vertex, Vec3f)) !void {
@@ -64,16 +64,13 @@ const QEMDecimationContext = struct {
         }
     }
 
-    fn edgeCollapsePositionAndQuadric(
-        qem_ctx: *QEMDecimationContext,
-        edge: SurfaceMesh.Cell,
-    ) struct { SimdVec4f, SimdMat4f } {
+    fn edgeCollapsePositionAndQuadric(qem_ctx: *QEMDecimationContext, edge: SurfaceMesh.Cell) struct { SimdVec4f, SimdMat4f } {
         assert(edge.cellType() == .edge);
         const sm = qem_ctx.surface_mesh;
-        const d = edge.dart();
+        const d = sm.dart(edge);
         const d1 = sm.phi1(d);
-        const v1: SurfaceMesh.Cell = .{ .vertex = d };
-        const v2: SurfaceMesh.Cell = .{ .vertex = d1 };
+        const v1 = sm.vertex(d);
+        const v2 = sm.vertex(d1);
 
         const q = mat.simdAdd4f(
             qem_ctx.vertex_qem_simd.value(v1),
@@ -81,10 +78,10 @@ const QEMDecimationContext = struct {
         );
 
         var p: ?SimdVec4f = null;
-        if (!sm.isIncidentToBoundary(edge)) {
-            if (sm.isIncidentToBoundary(v1)) {
+        if (!sm.isOrbitIncidentToBoundary(d, .edge)) {
+            if (sm.isOrbitIncidentToBoundary(d, .vertex)) {
                 p = qem_ctx.vertex_position_simd.value(v1); // put on v1 if v1 is on boundary and v2 is not
-            } else if (sm.isIncidentToBoundary(v2)) {
+            } else if (sm.isOrbitIncidentToBoundary(d1, .vertex)) {
                 p = qem_ctx.vertex_position_simd.value(v2); // put on v2 if v2 is on boundary and v1 is not
             }
         }
@@ -116,17 +113,17 @@ pub fn decimateQEM(
     // Priority queue type for edge collapse, ordered by the ascending cost of collapsing the edge
     const EdgeQueueContext = struct {
         qem_ctx: *QEMDecimationContext,
-        edge_queue_index: SurfaceMesh.CellData(.edge, ?usize),
+        edge_queue_index: *SurfaceMesh.CellData(.edge, ?usize),
     };
     const EdgeInfo = struct {
         const EdgeInfo = @This();
         edge: SurfaceMesh.Cell,
         cost: f32,
-        pub fn cmp(qctx: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
+        pub fn cmp(_: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
             const cost_order = std.math.order(a.cost, b.cost);
             if (cost_order != .eq) return cost_order;
             // tie-breaker: use edge indices to have a deterministic order
-            return std.math.order(qctx.qem_ctx.surface_mesh.cellIndex(a.edge), qctx.qem_ctx.surface_mesh.cellIndex(b.edge));
+            return std.math.order(a.edge.index(), b.edge.index());
         }
         pub fn setEdgeIndexInQueue(qctx: EdgeQueueContext, a: EdgeInfo, index: usize) void {
             qctx.edge_queue_index.valuePtr(a.edge).* = index;
@@ -161,7 +158,7 @@ pub fn decimateQEM(
     };
 
     var edge_queue_index = try sm.addData(.edge, ?usize, "__edge_queue_index");
-    defer sm.removeData(.edge, ?usize, edge_queue_index);
+    defer sm.removeData(.edge, edge_queue_index);
     edge_queue_index.data.fill(null);
 
     var qem_ctx: QEMDecimationContext = try .init(
@@ -176,7 +173,7 @@ pub fn decimateQEM(
 
     var queue: EdgeQueue = .initContext(.{
         .qem_ctx = &qem_ctx,
-        .edge_queue_index = edge_queue_index,
+        .edge_queue_index = &edge_queue_index,
     });
     defer queue.deinit(allocator);
 
@@ -193,7 +190,7 @@ pub fn decimateQEM(
         const info = queue.popIndex(0);
         const edge = info.edge;
 
-        const d = edge.dart();
+        const d = sm.dart(edge);
         const dd = sm.phi2(d);
         const d1 = sm.phi1(d);
         const d_1 = sm.phi_1(d);
@@ -202,31 +199,31 @@ pub fn decimateQEM(
         const d_12 = sm.phi2(d_1);
         const dd_12 = sm.phi2(dd_1);
 
-        EdgeQueueUtil.removeEdgeFromQueue(&queue, .{ .edge = d1 });
-        EdgeQueueUtil.removeEdgeFromQueue(&queue, .{ .edge = d_1 });
+        EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(d1));
+        EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(d_1));
         if (!sm.isBoundaryDart(dd)) { // if the edge is incident to a boundary face, the boundary dart is necessarily dd
-            EdgeQueueUtil.removeEdgeFromQueue(&queue, .{ .edge = dd1 });
-            EdgeQueueUtil.removeEdgeFromQueue(&queue, .{ .edge = dd_1 });
+            EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(dd1));
+            EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(dd_1));
         }
 
         // TODO: check for potential face flips before collapsing
         const p, const q = qem_ctx.edgeCollapsePositionAndQuadric(edge);
         const v = sm.collapseEdge(edge);
 
-        // Update the shadow context
+        // Update the context data
         qem_ctx.vertex_position_simd.valuePtr(v).* = p;
         qem_ctx.vertex_qem_simd.valuePtr(v).* = q;
 
-        var dart_it = sm.cellDartIterator(v); // v.dart() == d_12
+        var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex); // sm.dart(v) == d_12
         while (dart_it.next()) |dv| {
-            try EdgeQueueUtil.updateEdgeInQueue(&queue, .{ .edge = dv }, allocator);
-            try EdgeQueueUtil.updateEdgeInQueue(&queue, .{ .edge = sm.phi1(dv) }, allocator);
+            try EdgeQueueUtil.updateEdgeInQueue(&queue, sm.edge(dv), allocator);
+            try EdgeQueueUtil.updateEdgeInQueue(&queue, sm.edge(sm.phi1(dv)), allocator);
             if (dv == d_12 or dv == dd_12) {
                 var d_it = sm.phi1(sm.phi2(sm.phi1(dv)));
                 const d_stop = sm.phi2(dv);
                 while (d_it != d_stop) : (d_it = sm.phi1(sm.phi2(d_it))) {
-                    try EdgeQueueUtil.updateEdgeInQueue(&queue, .{ .edge = d_it }, allocator);
-                    try EdgeQueueUtil.updateEdgeInQueue(&queue, .{ .edge = sm.phi1(d_it) }, allocator);
+                    try EdgeQueueUtil.updateEdgeInQueue(&queue, sm.edge(d_it), allocator);
+                    try EdgeQueueUtil.updateEdgeInQueue(&queue, sm.edge(sm.phi1(d_it)), allocator);
                 }
             }
         }

@@ -14,13 +14,11 @@ pub fn cornerAngle(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
 ) f32 {
     assert(corner.cellType() == .corner);
-    const d = corner.dart();
-    const d1 = sm.phi1(d);
-    const d_1 = sm.phi_1(d);
-    const p1 = vertex_position.value(.{ .vertex = d });
+    const d = sm.dart(corner);
+    const p1 = vertex_position.value(sm.vertex(d));
     return geometry_utils.angle(
-        vec.sub3f(vertex_position.value(.{ .vertex = d1 }), p1),
-        vec.sub3f(vertex_position.value(.{ .vertex = d_1 }), p1),
+        vec.sub3f(vertex_position.value(sm.vertex(sm.phi1(d))), p1),
+        vec.sub3f(vertex_position.value(sm.vertex(sm.phi_1(d))), p1),
     );
 }
 
@@ -30,16 +28,14 @@ pub fn computeCornerAngles(
     io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
+    corner_angle: *SurfaceMesh.CellData(.corner, f32),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        corner_angle: SurfaceMesh.CellData(.corner, f32),
+        corner_angle: *SurfaceMesh.CellData(.corner, f32),
 
-        pub fn run(t: *const Task, corner: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), corner: SurfaceMesh.Cell) void {
             t.corner_angle.valuePtr(corner).* = cornerAngle(
                 t.surface_mesh,
                 corner,
@@ -58,8 +54,7 @@ pub fn computeCornerAngles(
 
     // single-threaded version for the record
 
-    // var corner_it = try SurfaceMesh.CellIterator(.corner).init(sm);
-    // defer corner_it.deinit();
+    // var corner_it = sm.cellIterator(.corner);
     // while (corner_it.next()) |corner| {
     //     corner_angle.valuePtr(corner).* = cornerAngle(sm, corner, vertex_position);
     // }
@@ -73,12 +68,10 @@ pub fn cornerAngleIntrinsic(
     edge_length: SurfaceMesh.CellData(.edge, f32),
 ) f32 {
     assert(corner.cellType() == .corner);
-    const d = corner.dart();
-    const d1 = sm.phi1(d);
-    const d_1 = sm.phi_1(d);
-    const lOpp = edge_length.value(.{ .edge = d1 });
-    const lA = edge_length.value(.{ .edge = d });
-    const lB = edge_length.value(.{ .edge = d_1 });
+    const d = sm.dart(corner);
+    const lOpp = edge_length.value(sm.edge(sm.phi1(d)));
+    const lA = edge_length.value(sm.edge(d));
+    const lB = edge_length.value(sm.edge(sm.phi_1(d)));
     const q = (lA * lA + lB * lB - lOpp * lOpp) / (2.0 * lA * lB);
     return std.math.acos(@max(-1.0, @min(1.0, q)));
 }
@@ -90,12 +83,12 @@ pub fn computeCornerAnglesIntrinsic(
     io: std.Io,
     sm: *SurfaceMesh,
     edge_length: SurfaceMesh.CellData(.edge, f32),
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
+    corner_angle: *SurfaceMesh.CellData(.corner, f32),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
         edge_length: SurfaceMesh.CellData(.edge, f32),
-        corner_angle: SurfaceMesh.CellData(.corner, f32),
+        corner_angle: *SurfaceMesh.CellData(.corner, f32),
 
         pub fn run(t: *const @This(), corner: SurfaceMesh.Cell) void {
             t.corner_angle.valuePtr(corner).* = cornerAngleIntrinsic(
@@ -125,18 +118,18 @@ pub fn edgeDihedralAngle(
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
 ) f32 {
     assert(edge.cellType() == .edge);
-    if (sm.isIncidentToBoundary(edge)) {
+    const d = sm.dart(edge);
+    if (sm.isOrbitIncidentToBoundary(d, .edge)) {
         return 0.0; // Dihedral angle is not defined for boundary edges
     }
-    const d = edge.dart();
     const d2 = sm.phi2(d);
-    const n1 = face_normal.value(.{ .face = d });
-    const n2 = face_normal.value(.{ .face = d2 });
+    const n1 = face_normal.value(sm.face(d));
+    const n2 = face_normal.value(sm.face(d2));
     return std.math.atan2(
         vec.dot3f(
             vec.normalized3f(vec.sub3f(
-                vertex_position.value(.{ .vertex = d2 }),
-                vertex_position.value(.{ .vertex = d }),
+                vertex_position.value(sm.vertex(d2)),
+                vertex_position.value(sm.vertex(d)),
             )),
             vec.cross3f(n1, n2),
         ),
@@ -152,13 +145,13 @@ pub fn computeEdgeDihedralAngles(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
+    edge_dihedral_angle: *SurfaceMesh.CellData(.edge, f32),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
         face_normal: SurfaceMesh.CellData(.face, Vec3f),
-        edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
+        edge_dihedral_angle: *SurfaceMesh.CellData(.edge, f32),
 
         pub fn run(t: *const @This(), edge: SurfaceMesh.Cell) void {
             t.edge_dihedral_angle.valuePtr(edge).* = edgeDihedralAngle(

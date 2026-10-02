@@ -4,8 +4,6 @@ const PointCloud = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
-
 const data = @import("../../utils/data.zig");
 const DataContainer = data.DataContainer;
 const DataGen = data.DataGen;
@@ -13,12 +11,24 @@ const Data = data.Data;
 
 const BufferPool = @import("../../utils/BufferPool.zig").BufferPool;
 
+// ------------------------------------------------------------------------- //
+// Basic types
+// ------------------------------------------------------------------------- //
+
 pub const Point = u32;
+
+// ------------------------------------------------------------------------- //
+// Fields
+// ------------------------------------------------------------------------- //
 
 allocator: std.mem.Allocator,
 point_buffer_pool: *BufferPool(Point), // the BufferPool is shared between PointClouds (owned by the PointCloudStore)
 
 point_data: DataContainer,
+
+// ------------------------------------------------------------------------- //
+// Initialization, deinitialization
+// ------------------------------------------------------------------------- //
 
 pub fn init(pc: *PointCloud, allocator: std.mem.Allocator, point_buffer_pool: *BufferPool(Point)) !void {
     pc.allocator = allocator;
@@ -33,6 +43,10 @@ pub fn deinit(pc: *PointCloud) void {
 pub fn clearRetainingCapacity(pc: *PointCloud) void {
     pc.point_data.clearRetainingCapacity();
 }
+
+// ------------------------------------------------------------------------- //
+// Iterators
+// ------------------------------------------------------------------------- //
 
 const PointIterator = struct {
     point_cloud: *const PointCloud,
@@ -57,6 +71,10 @@ pub fn pointIterator(pc: *const PointCloud) PointIterator {
         .current = pc.point_data.firstIndex(),
     };
 }
+
+// ------------------------------------------------------------------------- //
+// Parallel Cell Task Runner
+// ------------------------------------------------------------------------- //
 
 /// A ParallelPointTaskRunner allows to run tasks on the points in parallel.
 /// The `run` function takes a Task as an argument which is expected to expose a `run` function that takes a point as argument.
@@ -163,22 +181,34 @@ pub const ParallelPointTaskRunner = struct {
     }
 };
 
+// ------------------------------------------------------------------------- //
+// Cell Data
+// ------------------------------------------------------------------------- //
+
 pub fn CellData(comptime T: type) type {
     return struct {
         pub const DataType = T;
 
-        point_cloud: *const PointCloud,
         data: *Data(T),
 
-        pub fn value(cd: @This(), p: Point) T {
-            return cd.data.value(cd.point_cloud.pointIndex(p));
+        fn ValuePtrType(comptime SelfType: type) type {
+            if (@typeInfo(SelfType).pointer.is_const) {
+                return *const T;
+            } else {
+                return *T;
+            }
         }
         pub fn valuePtr(cd: @This(), p: Point) *T {
-            return cd.data.valuePtr(cd.point_cloud.pointIndex(p));
+            return cd.data.valuePtr(p);
         }
+        pub fn value(cd: @This(), p: Point) T {
+            return cd.data.value(p);
+        }
+
         pub fn name(cd: @This()) []const u8 {
             return cd.data.data_gen.name;
         }
+
         pub fn gen(cd: @This()) *DataGen {
             return &cd.data.data_gen;
         }
@@ -188,10 +218,7 @@ pub fn CellData(comptime T: type) type {
 /// Creates a new data array of the type `T`.
 /// The `name` must be unique for the creation to succeed.
 pub fn addData(pc: *PointCloud, comptime T: type, name: []const u8) !CellData(T) {
-    return .{
-        .point_cloud = pc,
-        .data = try pc.point_data.addData(T, name),
-    };
+    return .{ .data = try pc.point_data.addData(T, name) };
 }
 
 /// Returns a handle to the data array of the type `T` if it exists with the given name, otherwise returns null.
@@ -203,23 +230,16 @@ pub fn getData(pc: *PointCloud, comptime T: type, name: []const u8) ?CellData(T)
 /// and returns a handle to it, along with a boolean indicating whether the data array was newly created (true) or already existed (false).
 pub fn getOrAddData(pc: *PointCloud, comptime T: type, name: []const u8) !struct { CellData(T), bool } {
     const d, const created = try pc.point_data.getOrAddData(T, name);
-    return .{
-        .{
-            .point_cloud = pc,
-            .data = d,
-        },
-        created,
-    };
+    return .{ .{ .data = d }, created };
 }
 
-pub fn removeData(pc: *PointCloud, comptime T: type, cellData: CellData(T)) void {
-    assert(cellData.point_cloud == pc);
-    pc.point_data.removeData(&cellData.data.data_gen);
+pub fn removeData(pc: *PointCloud, cell_data: anytype) void {
+    pc.point_data.removeData(cell_data.gen());
 }
 
-pub fn nbPoints(pc: *const PointCloud) u32 {
-    return pc.point_data.nbElements();
-}
+// ------------------------------------------------------------------------- //
+// Cell Management
+// ------------------------------------------------------------------------- //
 
 pub fn addPoint(pc: *PointCloud) !Point {
     return pc.point_data.acquireIndex();
@@ -229,6 +249,6 @@ pub fn removePoint(pc: *PointCloud, p: Point) void {
     pc.point_data.releaseIndex(p);
 }
 
-pub fn pointIndex(_: *const PointCloud, p: Point) u32 {
-    return p;
+pub fn nbPoints(pc: *const PointCloud) u32 {
+    return pc.point_data.nbElements();
 }

@@ -38,8 +38,6 @@ const MedialAxisData = struct {
     ) !void {
         assert(mad.vmas_ctx == null);
         assert(point_cloud_kdtree.point_cloud == mad.point_cloud and point_cloud_kdtree.initialized);
-        assert(point_position.point_cloud == mad.point_cloud);
-        assert(point_normal.point_cloud == mad.point_cloud);
 
         var buf: [64]u8 = undefined;
         const spheres_name = std.fmt.bufPrintSentinel(&buf, "{s}_spheres", .{mad.app_ctx.point_cloud_store.pointCloudName(mad.point_cloud).?}, 0) catch "__spheres";

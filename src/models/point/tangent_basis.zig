@@ -16,13 +16,11 @@ pub fn computePointTangentBases(
     point_tangent_basis: PointCloud.CellData([2]Vec3f),
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         point_cloud: *const PointCloud,
         point_normal: PointCloud.CellData(Vec3f),
         point_tangent_basis: PointCloud.CellData([2]Vec3f),
 
-        pub fn run(t: *const Task, point: PointCloud.Point) void {
+        pub fn run(t: *const @This(), point: PointCloud.Point) void {
             t.point_tangent_basis.valuePtr(point).* = geometry_utils.tangentBasis(t.point_normal.value(point));
         }
     };

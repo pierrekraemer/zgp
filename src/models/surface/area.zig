@@ -16,16 +16,16 @@ pub fn faceArea(
 ) f32 {
     assert(face.cellType() == .face);
     var area: f32 = 0.0;
-    const d_start = face.dart();
-    const p1 = vertex_position.value(.{ .vertex = d_start });
+    const d_start = sm.dart(face);
+    const p1 = vertex_position.value(sm.vertex(d_start));
     var d_next = sm.phi1(d_start);
     if (d_next == d_start) return 0.0; // 1-sided face
     var d_prev = d_next;
     d_next = sm.phi1(d_next);
     if (d_next == d_start) return 0.0; // 2-sided face
-    var p2 = vertex_position.value(.{ .vertex = d_prev });
+    var p2 = vertex_position.value(sm.vertex(d_prev));
     while (d_next != d_start) : (d_next = sm.phi1(d_next)) {
-        const p3 = vertex_position.value(.{ .vertex = d_next });
+        const p3 = vertex_position.value(sm.vertex(d_next));
         area += geometry_utils.triangleArea(p1, p2, p3);
         d_prev = d_next;
         p2 = p3;
@@ -39,12 +39,12 @@ pub fn computeFaceAreas(
     io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
+    face_area: *SurfaceMesh.CellData(.face, f32),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
         vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        face_area: SurfaceMesh.CellData(.face, f32),
+        face_area: *SurfaceMesh.CellData(.face, f32),
 
         pub fn run(t: *const @This(), face: SurfaceMesh.Cell) void {
             t.face_area.valuePtr(face).* = faceArea(
@@ -72,14 +72,11 @@ pub fn faceAreaIntrinsic(
     edge_length: SurfaceMesh.CellData(.edge, f32),
 ) f32 {
     assert(face.cellType() == .face);
-
-    const d = face.dart();
-    const d1 = sm.phi1(d);
-    const d_1 = sm.phi_1(d);
+    const d = sm.dart(face);
     return geometry_utils.triangleAreaIntrinsic(
-        edge_length.value(.{ .edge = d }),
-        edge_length.value(.{ .edge = d1 }),
-        edge_length.value(.{ .edge = d_1 }),
+        edge_length.value(sm.edge(d)),
+        edge_length.value(sm.edge(sm.phi1(d))),
+        edge_length.value(sm.edge(sm.phi_1(d))),
     );
 }
 
@@ -90,12 +87,12 @@ pub fn computeFaceAreasIntrinsic(
     io: std.Io,
     sm: *SurfaceMesh,
     edge_length: SurfaceMesh.CellData(.edge, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
+    face_area: *SurfaceMesh.CellData(.face, f32),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
         edge_length: SurfaceMesh.CellData(.edge, f32),
-        face_area: SurfaceMesh.CellData(.face, f32),
+        face_area: *SurfaceMesh.CellData(.face, f32),
 
         pub fn run(t: *const @This(), face: SurfaceMesh.Cell) void {
             t.face_area.valuePtr(face).* = faceAreaIntrinsic(
@@ -128,7 +125,7 @@ pub fn vertexArea(
     var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
         if (sm.isBoundaryDart(d)) continue; // skip boundary faces
-        const f: SurfaceMesh.Cell = .{ .face = d };
+        const f = sm.face(d);
         const cd: f32 = @floatFromInt(sm.codegree(f));
         area += face_area.value(f) / cd;
     }
@@ -143,16 +140,16 @@ pub fn vertexArea(
 pub fn computeVertexAreas(
     sm: *SurfaceMesh,
     face_area: SurfaceMesh.CellData(.face, f32),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
+    vertex_area: *SurfaceMesh.CellData(.vertex, f32),
 ) !void {
     vertex_area.data.fill(0.0);
     var it = sm.cellIterator(.face);
-    while (it.next()) |face| {
-        const cd: f32 = @floatFromInt(sm.codegree(face));
-        const a = face_area.value(face) / cd;
-        var dart_it = sm.cellDartIterator(face);
+    while (it.next()) |f| {
+        const cd: f32 = @floatFromInt(sm.codegree(f));
+        const a = face_area.value(f) / cd;
+        var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
         while (dart_it.next()) |d| {
-            vertex_area.valuePtr(.{ .vertex = d }).* += a;
+            vertex_area.valuePtr(sm.vertex(d)).* += a;
         }
     }
 }

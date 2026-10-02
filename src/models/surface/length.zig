@@ -13,11 +13,11 @@ pub fn edgeLength(
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
 ) f32 {
     assert(edge.cellType() == .edge);
-    const d = edge.dart();
+    const d = sm.dart(edge);
     return vec.norm3f(
         vec.sub3f(
-            vertex_position.value(.{ .vertex = sm.phi1(d) }),
-            vertex_position.value(.{ .vertex = d }),
+            vertex_position.value(sm.vertex(sm.phi1(d))),
+            vertex_position.value(sm.vertex(d)),
         ),
     );
 }
@@ -28,7 +28,7 @@ pub fn edgeLength(
 pub fn computeEdgeLengths(
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
+    edge_length: *SurfaceMesh.CellData(.edge, f32),
 ) !void {
     var it = sm.cellIterator(.edge);
     while (it.next()) |edge| {

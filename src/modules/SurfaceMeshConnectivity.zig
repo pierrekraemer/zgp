@@ -51,10 +51,10 @@ pub fn deinit(_: *SurfaceMeshConnectivity) void {}
 fn cutAllEdges(
     smc: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position: *SurfaceMesh.CellData(.vertex, Vec3f),
 ) !void {
     try subdivision.cutAllEdges(smc.app_ctx.allocator, sm, vertex_position);
-    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
+    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position.*);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
     smc.app_ctx.requestRedraw();
 }
@@ -75,15 +75,15 @@ fn remesh(
     edge_length_factor: f32,
     preserve_features: bool,
     adaptive: bool,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_curvature: curvature.SurfaceMeshCurvatureDatas,
+    vertex_position: *SurfaceMesh.CellData(.vertex, Vec3f),
+    corner_angle: *SurfaceMesh.CellData(.corner, f32),
+    face_area: *SurfaceMesh.CellData(.face, f32),
+    face_normal: *SurfaceMesh.CellData(.face, Vec3f),
+    edge_length: *SurfaceMesh.CellData(.edge, f32),
+    edge_dihedral_angle: *SurfaceMesh.CellData(.edge, f32),
+    vertex_area: *SurfaceMesh.CellData(.vertex, f32),
+    vertex_normal: *SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
@@ -105,7 +105,7 @@ fn remesh(
         vertex_normal,
         vertex_curvature,
     );
-    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
+    smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position.*);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
     smc.app_ctx.requestRedraw();
 
@@ -162,7 +162,7 @@ fn generateConvexHull(
     }
 
     const ch = try smc.app_ctx.surface_mesh_store.createSurfaceMesh(convex_hull_name);
-    const ch_vertex_position = try ch.addData(.vertex, Vec3f, "position");
+    var ch_vertex_position = try ch.addData(.vertex, Vec3f, "position");
     smc.app_ctx.surface_mesh_store.setSurfaceMeshStdData(ch, .{ .vertex_position = ch_vertex_position });
 
     try convex_hull.generateConvexHull(
@@ -170,7 +170,7 @@ fn generateConvexHull(
         &pc,
         point_position,
         ch,
-        ch_vertex_position,
+        &ch_vertex_position,
     );
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(ch, .vertex, Vec3f, ch_vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(ch);
@@ -215,7 +215,7 @@ pub fn rightClickMenu(m: *Module) void {
                 c.ImGui_BeginDisabled(true);
             }
             if (c.ImGui_ButtonEx("Cut all edges", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                smc.cutAllEdges(sm, info.std_datas.vertex_position.?) catch |err| {
+                smc.cutAllEdges(sm, &info.std_datas.vertex_position.?) catch |err| {
                     std.debug.print("Error cutting all edges: {}\n", .{err});
                 };
             }
@@ -298,7 +298,7 @@ pub fn rightClickMenu(m: *Module) void {
                 info.std_datas.edge_dihedral_angle == null or
                 info.std_datas.vertex_area == null or
                 info.std_datas.vertex_normal == null;
-            const curvature_datas = smc.surface_mesh_curvature.surfaceMeshCurvatureDatas(sm);
+            var curvature_datas = smc.surface_mesh_curvature.surfaceMeshCurvatureDatas(sm);
             if (UiData.adaptive_remeshing) {
                 if (curvature_datas.vertex_kmin == null or curvature_datas.vertex_Kmin == null or curvature_datas.vertex_kmax == null or curvature_datas.vertex_Kmax == null) {
                     disabled = true;
@@ -314,15 +314,15 @@ pub fn rightClickMenu(m: *Module) void {
                     UiData.edge_length_factor,
                     UiData.preserve_features,
                     UiData.adaptive_remeshing,
-                    info.std_datas.vertex_position.?,
-                    info.std_datas.corner_angle.?,
-                    info.std_datas.face_area.?,
-                    info.std_datas.face_normal.?,
-                    info.std_datas.edge_length.?,
-                    info.std_datas.edge_dihedral_angle.?,
-                    info.std_datas.vertex_area.?,
-                    info.std_datas.vertex_normal.?,
-                    curvature_datas,
+                    &info.std_datas.vertex_position.?,
+                    &info.std_datas.corner_angle.?,
+                    &info.std_datas.face_area.?,
+                    &info.std_datas.face_normal.?,
+                    &info.std_datas.edge_length.?,
+                    &info.std_datas.edge_dihedral_angle.?,
+                    &info.std_datas.vertex_area.?,
+                    &info.std_datas.vertex_normal.?,
+                    &curvature_datas,
                 ) catch |err| {
                     std.debug.print("Error remeshing: {}\n", .{err});
                 };

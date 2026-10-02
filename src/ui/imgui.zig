@@ -156,7 +156,7 @@ pub fn pointCloudDataComboBox(
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                return .{ .changed = .{ .point_cloud = point_cloud, .data = data } };
+                return .{ .changed = .{ .data = data } };
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
@@ -213,7 +213,7 @@ pub fn surfaceMeshCellDataComboBox(
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                return .{ .changed = .{ .surface_mesh = surface_mesh, .data = data } };
+                return .{ .changed = .{ .data = data } };
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
@@ -318,7 +318,7 @@ pub fn incidenceGraphCellDataComboBox(
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                return .{ .changed = .{ .incidence_graph = incidence_graph, .data = data } };
+                return .{ .changed = .{ .data = data } };
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();

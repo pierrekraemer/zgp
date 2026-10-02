@@ -336,27 +336,45 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                             switch (sd.selecting_cell_type) {
                                 .vertex => {
                                     sms.hovered_cell = info.bvh.intersectedVertex(ray);
+                                    if (sms.hovered_cell) |cell| {
+                                        sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, .vertex, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
+                                            std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
+                                            break :blk false;
+                                        };
+                                    }
                                 },
                                 .edge => {
                                     sms.hovered_cell = info.bvh.intersectedEdge(ray);
+                                    if (sms.hovered_cell) |cell| {
+                                        sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, .edge, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
+                                            std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
+                                            break :blk false;
+                                        };
+                                    }
                                 },
                                 .face => {
                                     sms.hovered_cell = info.bvh.intersectedTriangle(ray);
+                                    if (sms.hovered_cell) |cell| {
+                                        sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, .face, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
+                                            std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
+                                            break :blk false;
+                                        };
+                                    }
                                 },
                                 else => unreachable,
                             }
                         },
                         .within_sphere => {
                             sms.hovered_cell = info.bvh.intersectedVertex(ray); // within sphere selection is always centered on a vertex
+                            if (sms.hovered_cell) |cell| {
+                                sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, .vertex, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
+                                    std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
+                                    break :blk false;
+                                };
+                            }
                         },
                     }
-                    if (sms.hovered_cell) |cell| {
-                        sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
-                            std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
-                            break :blk false;
-                        };
-                    } else {
-                        sms.hovered_cell = null;
+                    if (sms.hovered_cell == null) {
                         sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{});
                     }
                     sms.app_ctx.requestRedraw();

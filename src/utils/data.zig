@@ -93,11 +93,9 @@ pub fn Data(comptime T: type) type {
                 return *T;
             }
         }
-
         pub fn valuePtr(self: anytype, index: u32) ValuePtrType(@TypeOf(self)) {
             return &self.storage.items[index];
         }
-
         pub fn value(self: *Self, index: u32) T {
             return self.storage.items[index];
         }
@@ -107,7 +105,6 @@ pub fn Data(comptime T: type) type {
                 element.* = val;
             }
         }
-
         pub fn fillInactive(self: *Self, val: T) void {
             for (self.storage.items, 0..) |*element, index| {
                 if (!self.data_gen.container.isActiveIndexAssumeSize(@intCast(index))) {
@@ -144,14 +141,12 @@ pub fn Data(comptime T: type) type {
                 }
             };
         }
-
         pub fn iterator(self: *Self) Iterator {
             return .{
                 .data = self,
                 .index = self.data_gen.container.firstIndex(),
             };
         }
-
         pub fn constIterator(self: *const Self) ConstIterator {
             return .{
                 .data = self,
@@ -177,14 +172,12 @@ pub fn Data(comptime T: type) type {
                 }
             };
         }
-
         pub fn valueIterator(self: *Self) ValueIterator {
             return .{
                 .data = self,
                 .index = self.data_gen.container.firstIndex(),
             };
         }
-
         pub fn constValueIterator(self: *const Self) ConstValueIterator {
             return .{
                 .data = self,
@@ -207,7 +200,6 @@ pub fn Data(comptime T: type) type {
             }
             return best;
         }
-
         pub fn maxValue(
             self: *Self,
             context: anytype,
@@ -223,7 +215,6 @@ pub fn Data(comptime T: type) type {
             }
             return best;
         }
-
         pub fn minMaxValues(
             self: *Self,
             context: anytype,
@@ -243,7 +234,6 @@ pub fn Data(comptime T: type) type {
             }
             return .{ min, max };
         }
-
         pub fn meanValue(self: *const Self) T {
             var sum: T = switch (@typeInfo(T)) {
                 .float, .int => 0,

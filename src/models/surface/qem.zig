@@ -40,7 +40,7 @@ pub fn vertexQEM(
     var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
         if (!sm.isBoundaryDart(d)) {
-            const face: SurfaceMesh.Cell = .{ .face = d };
+            const face = sm.face(d);
             const n = face_normal.value(face);
             const plane: Vec4f = .{ n[0], n[1], n[2], -vec.dot3f(p, n) };
             const fq = mat.mulScalar4f(
@@ -81,13 +81,14 @@ pub fn computeVertexQEMs(
     vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    vertex_qem: SurfaceMesh.CellData(.vertex, Mat4f),
+    vertex_qem: *SurfaceMesh.CellData(.vertex, Mat4f),
 ) !void {
     vertex_qem.data.fill(mat.zero4f);
     var face_it = sm.cellIterator(.face);
     while (face_it.next()) |face| {
+        const fd = sm.dart(face);
         const n = face_normal.value(face);
-        const p = vertex_position.value(.{ .vertex = face.dart() });
+        const p = vertex_position.value(sm.vertex(fd));
         const plane: Vec4f = .{ n[0], n[1], n[2], -vec.dot3f(p, n) };
         const fq = mat.mulScalar4f(
             mat.outerProduct4f(plane, plane),
@@ -95,7 +96,7 @@ pub fn computeVertexQEMs(
         );
         var dart_it = sm.cellDartIterator(face);
         while (dart_it.next()) |d| {
-            const v: SurfaceMesh.Cell = .{ .vertex = d };
+            const v = sm.vertex(d);
             vertex_qem.valuePtr(v).* = mat.add4f(
                 vertex_qem.value(v),
                 fq,
@@ -129,23 +130,26 @@ pub fn computeVertexQEMsSimd(
     vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
     face_area: SurfaceMesh.CellData(.face, f32),
     face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    vertex_qem: SurfaceMesh.CellData(.vertex, SimdMat4f),
+    vertex_qem: *SurfaceMesh.CellData(.vertex, SimdMat4f),
 ) !void {
     vertex_qem.data.fill(@splat(vec.zero4f));
-
     var face_it = sm.cellIterator(.face);
     while (face_it.next()) |face| {
+        const fd = sm.dart(face);
         const n = vec.simdFromVec3f(face_normal.value(face));
-        const p = vertex_position.value(.{ .vertex = face.dart() });
+        const p = vertex_position.value(sm.vertex(fd));
         const plane: SimdVec4f = .{ n[0], n[1], n[2], -vec.simdDot4f(p, n) };
         const fq = mat.simdMulScalar4f(
             mat.simdOuterProduct4f(plane, plane),
             face_area.value(face) / 3.0,
         );
-        var dart_it = sm.cellDartIterator(face);
+        var dart_it = sm.orbitDartIterator(sm.dart(face), .face);
         while (dart_it.next()) |d| {
-            const v: SurfaceMesh.Cell = .{ .vertex = d };
-            vertex_qem.valuePtr(v).* = mat.simdAdd4f(vertex_qem.value(v), fq);
+            const v = sm.vertex(d);
+            vertex_qem.valuePtr(v).* = mat.simdAdd4f(
+                vertex_qem.value(v),
+                fq,
+            );
         }
     }
     var vertex_it = sm.cellIterator(.vertex);
@@ -163,7 +167,10 @@ pub fn computeVertexQEMsSimd(
             ),
             line_quadric_epsilon * vertex_area.value(vertex),
         );
-        vertex_qem.valuePtr(vertex).* = mat.simdAdd4f(vertex_qem.value(vertex), reg);
+        vertex_qem.valuePtr(vertex).* = mat.simdAdd4f(
+            vertex_qem.value(vertex),
+            reg,
+        );
     }
 }
 

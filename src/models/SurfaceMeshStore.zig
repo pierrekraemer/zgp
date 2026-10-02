@@ -284,7 +284,7 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
         zgp_log.err("Failed to fill triangles IBO for SurfaceMesh: {}", .{err});
         return;
     };
-    info.boundaries_ibo.fillFromSurfaceMesh(sm, .boundary, sms.allocator) catch |err| {
+    info.boundaries_ibo.fillFromSurfaceMeshBoundary(sm, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill boundaries IBO for SurfaceMesh: {}", .{err});
         return;
     };
@@ -327,7 +327,7 @@ pub fn surfaceMeshCellSetUpdated(
     // if it exists, update the IBO with the data
     const maybe_ibo = sms.cell_set_ibo.getPtr(cell_set.gen());
     if (maybe_ibo) |ibo| {
-        ibo.fillFromSurfaceMeshCellSlice(sm, cell_set.cell_set_gen.cells.items, sms.allocator) catch |err| {
+        ibo.fillFromSurfaceMeshCellSlice(sm, cell_type, cell_set.cell_set_gen.cells.items, sms.allocator) catch |err| {
             zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
             return;
         };
@@ -367,7 +367,7 @@ pub fn cellSetIBO(
     };
     if (!ibo.found_existing) {
         ibo.value_ptr.* = IBO.init();
-        ibo.value_ptr.fillFromSurfaceMeshCellSlice(cell_set.cell_set_gen.surface_mesh, cell_set.cell_set_gen.cells.items, sms.allocator) catch |err| {
+        ibo.value_ptr.fillFromSurfaceMeshCellSlice(cell_set.cell_set_gen.surface_mesh, cell_type, cell_set.cell_set_gen.cells.items, sms.allocator) catch |err| {
             zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
             return IBO.init(); // return a dummy IBO
         };
@@ -715,25 +715,25 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
 
     const sm = try sms.createSurfaceMesh(std.fs.path.basename(filename));
 
-    const vertex_position = try sm.addData(.vertex, Vec3f, "position");
-    const darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
-    defer sm.removeData(.vertex, std.ArrayList(SurfaceMesh.Dart), darts_of_vertex);
+    var vertex_position = try sm.addData(.vertex, Vec3f, "position");
+    var darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
+    defer sm.removeData(.vertex, darts_of_vertex);
     var darts_array_lists_arena = std.heap.ArenaAllocator.init(sms.allocator);
     defer darts_array_lists_arena.deinit();
 
     for (import_data.vertices_position.items) |pos| {
-        const vertex_index = try sm.acquireCellIndex(.vertex);
-        vertex_position.valuePtrByIndex(vertex_index).* = pos;
-        darts_of_vertex.valuePtrByIndex(vertex_index).* = try .initCapacity(darts_array_lists_arena.allocator(), 8);
+        const vertex = try sm.addCell(.vertex);
+        vertex_position.valuePtr(vertex).* = pos;
+        darts_of_vertex.valuePtr(vertex).* = try .initCapacity(darts_array_lists_arena.allocator(), 8);
     }
 
     var i: u32 = 0;
     for (import_data.faces_nb_vertices.items) |face_nb_vertices| {
-        const face = try sm.addUnboundedFace(face_nb_vertices);
-        var d = face.dart();
+        var d = try sm.addUnboundedFace(face_nb_vertices);
         for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
-            sm.setDartCellIndex(d, .vertex, index);
-            try darts_of_vertex.valuePtrByIndex(index).append(darts_array_lists_arena.allocator(), d);
+            const v: SurfaceMesh.Cell = .{ .vertex = index };
+            sm.setDartCell(d, .vertex, v);
+            try darts_of_vertex.valuePtr(v).append(darts_array_lists_arena.allocator(), d);
             d = sm.phi1(d);
         }
         i += face_nb_vertices;
@@ -744,11 +744,11 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
     var dart_it = sm.dartIterator();
     while (dart_it.next()) |d| {
         if (sm.phi2(d) == d) {
-            const vertex_index = sm.dartCellIndex(d, .vertex);
-            const next_vertex_index = sm.dartCellIndex(sm.phi1(d), .vertex);
-            const next_vertex_darts = darts_of_vertex.valueByIndex(next_vertex_index);
+            const vertex = sm.vertex(d);
+            const next_vertex = sm.vertex(sm.phi1(d));
+            const next_vertex_darts = darts_of_vertex.value(next_vertex);
             const opposite_dart = for (next_vertex_darts.items) |d2| {
-                if (sm.dartCellIndex(sm.phi1(d2), .vertex) == vertex_index) {
+                if (sm.vertex(sm.phi1(d2)).index() == vertex.index()) {
                     break d2;
                 }
             } else null;
@@ -766,9 +766,9 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
         zgp_log.info("closed {d} boundary faces", .{nb_boundary_faces});
     }
 
-    try sm.indexCells(.vertex); // only effect of this call is to set indices for the potentially created boundary dart
-    try sm.indexCells(.edge);
-    try sm.indexCells(.face);
+    try sm.initCells(.vertex); // the only effect of this call is to fill the cells for the potentially created boundary dart
+    try sm.initCells(.edge);
+    try sm.initCells(.face);
 
     if (builtin.mode == .Debug) {
         const ok = try sm.checkIntegrity();

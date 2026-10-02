@@ -21,13 +21,13 @@ const bvh = @import("../../geometry/bvh.zig");
 fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
     assert(edge.cellType() == .edge);
 
-    const d = edge.dart();
+    const d = sm.dart(edge);
     const dd = sm.phi2(d);
 
-    const w: i32 = @intCast(sm.degree(.{ .vertex = d }));
-    const x: i32 = @intCast(sm.degree(.{ .vertex = dd }));
-    const y: i32 = @intCast(sm.degree(.{ .vertex = sm.phi_1(d) }));
-    const z: i32 = @intCast(sm.degree(.{ .vertex = sm.phi_1(dd) }));
+    const w: i32 = @intCast(sm.degree(sm.vertex(d)));
+    const x: i32 = @intCast(sm.degree(sm.vertex(dd)));
+    const y: i32 = @intCast(sm.degree(sm.vertex(sm.phi_1(d))));
+    const z: i32 = @intCast(sm.degree(sm.vertex(sm.phi_1(dd))));
 
     if (w < 4 or x < 4)
         return false;
@@ -53,15 +53,15 @@ pub fn isotropicRemeshing(
     edge_length_factor: f32,
     preserve_features: bool,
     adaptive: bool,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_curvature: curvature.SurfaceMeshCurvatureDatas,
+    vertex_position: *SurfaceMesh.CellData(.vertex, Vec3f),
+    corner_angle: *SurfaceMesh.CellData(.corner, f32),
+    face_area: *SurfaceMesh.CellData(.face, f32),
+    face_normal: *SurfaceMesh.CellData(.face, Vec3f),
+    edge_length: *SurfaceMesh.CellData(.edge, f32),
+    edge_dihedral_angle: *SurfaceMesh.CellData(.edge, f32),
+    vertex_area: *SurfaceMesh.CellData(.vertex, f32),
+    vertex_normal: *SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     try subdivision.triangulateFaces(allocator, sm);
 
@@ -86,18 +86,17 @@ pub fn isotropicRemeshing(
         while (edge_it.next()) |edge| {
             if (@abs(edge_dihedral_angle.value(edge)) > angle_threshold) {
                 feature_edge.mark(edge);
-                const v1: SurfaceMesh.Cell = .{ .vertex = edge.dart() };
-                const v2: SurfaceMesh.Cell = .{ .vertex = sm.phi1(edge.dart()) };
-                feature_vertex.mark(v1);
-                feature_vertex.mark(v2);
+                const d = sm.dart(edge);
+                feature_vertex.mark(sm.vertex(d));
+                feature_vertex.mark(sm.vertex(sm.phi1(d)));
             }
         }
         while (vertex_it.next()) |vertex| {
             if (feature_vertex.isMarked(vertex)) {
                 var nb_incident_feature_edge: u32 = 0;
-                var dart_it = sm.cellDartIterator(vertex);
+                var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
                 while (dart_it.next()) |d| {
-                    const e: SurfaceMesh.Cell = .{ .edge = d };
+                    const e = sm.edge(d);
                     if (feature_edge.isMarked(e)) {
                         nb_incident_feature_edge += 1;
                         if (nb_incident_feature_edge > 2) {
@@ -114,28 +113,27 @@ pub fn isotropicRemeshing(
 
     // sizing field for adaptive remeshing
     var vertex_sizing_field = try sm.addData(.vertex, f32, "__vertex_sizing_field");
-    defer sm.removeData(.vertex, f32, vertex_sizing_field);
+    defer sm.removeData(.vertex, vertex_sizing_field);
 
     // Priority queue types for edge cut & collapse, ordered by edge length (descending for cut, ascending for collapse)
     const EdgeQueueContext = struct {
-        surface_mesh: *const SurfaceMesh,
-        edge_queue_index: SurfaceMesh.CellData(.edge, ?usize),
+        edge_queue_index: *SurfaceMesh.CellData(.edge, ?usize),
     };
     const EdgeInfo = struct {
         const EdgeInfo = @This();
         edge: SurfaceMesh.Cell,
         length: f32,
-        pub fn cmpAsc(ctx: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
+        pub fn cmpAsc(_: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
             const length_order = std.math.order(a.length, b.length);
             if (length_order != .eq) return length_order;
             // tie-breaker: use edge indices to order edges
-            return std.math.order(ctx.surface_mesh.cellIndex(a.edge), ctx.surface_mesh.cellIndex(b.edge));
+            return std.math.order(a.edge.index(), b.edge.index());
         }
-        pub fn cmpDesc(ctx: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
+        pub fn cmpDesc(_: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
             const length_order = std.math.order(b.length, a.length);
             if (length_order != .eq) return length_order;
             // tie-breaker: use edge indices to order edges
-            return std.math.order(ctx.surface_mesh.cellIndex(a.edge), ctx.surface_mesh.cellIndex(b.edge));
+            return std.math.order(a.edge.index(), b.edge.index());
         }
         pub fn setEdgeIndexInQueue(ctx: EdgeQueueContext, a: EdgeInfo, index: usize) void {
             ctx.edge_queue_index.valuePtr(a.edge).* = index;
@@ -154,18 +152,16 @@ pub fn isotropicRemeshing(
     };
 
     var cut_edge_queue_index = try sm.addData(.edge, ?usize, "__cut_edge_queue_index");
-    defer sm.removeData(.edge, ?usize, cut_edge_queue_index);
+    defer sm.removeData(.edge, cut_edge_queue_index);
     var cut_edge_queue: EdgeQueueDesc = .initContext(.{
-        .surface_mesh = sm,
-        .edge_queue_index = cut_edge_queue_index,
+        .edge_queue_index = &cut_edge_queue_index,
     });
     defer cut_edge_queue.deinit(allocator);
 
     var collapse_edge_queue_index = try sm.addData(.edge, ?usize, "__collapse_edge_queue_index");
-    defer sm.removeData(.edge, ?usize, collapse_edge_queue_index);
+    defer sm.removeData(.edge, collapse_edge_queue_index);
     var collapse_edge_queue: EdgeQueueAsc = .initContext(.{
-        .surface_mesh = sm,
-        .edge_queue_index = collapse_edge_queue_index,
+        .edge_queue_index = &collapse_edge_queue_index,
     });
     defer collapse_edge_queue.deinit(allocator);
 
@@ -177,23 +173,24 @@ pub fn isotropicRemeshing(
         if (!adaptive and iteration > 0) break;
 
         // remove "flat" degree-3 vertices
-        try normal.computeFaceNormals(io, sm, vertex_position, face_normal);
-        try angle.computeEdgeDihedralAngles(io, sm, vertex_position, face_normal, edge_dihedral_angle);
+        try normal.computeFaceNormals(io, sm, vertex_position.*, face_normal);
+        try angle.computeEdgeDihedralAngles(io, sm, vertex_position.*, face_normal.*, edge_dihedral_angle);
         vertex_it.reset();
         while (vertex_it.nextSafe()) |vertex| {
-            if (sm.degree(vertex) != 3 or feature_vertex.isMarked(vertex) or sm.isIncidentToBoundary(vertex)) {
+            const d = sm.dart(vertex);
+            if (sm.degree(vertex) != 3 or feature_vertex.isMarked(vertex) or sm.isOrbitIncidentToBoundary(d, .vertex)) {
                 continue;
             }
-            var dart_it = sm.cellDartIterator(vertex);
-            const remove: bool = while (dart_it.next()) |d| {
-                if (sm.degree(.{ .vertex = sm.phi1(d) }) < 4 or
-                    @abs(edge_dihedral_angle.value(.{ .edge = d })) > (10.0 * (std.math.pi / 180.0)))
+            var dart_it = sm.orbitDartIterator(d, .vertex);
+            const remove: bool = while (dart_it.next()) |dd| {
+                if (sm.degree(sm.vertex(sm.phi1(dd))) < 4 or
+                    @abs(edge_dihedral_angle.value(sm.edge(dd))) > (10.0 * (std.math.pi / 180.0)))
                 {
                     break false;
                 }
             } else true;
             if (remove) {
-                sm.removeVertex(vertex);
+                try sm.removeVertex(vertex);
             }
         }
 
@@ -202,12 +199,11 @@ pub fn isotropicRemeshing(
         cut_edge_queue.clearRetainingCapacity();
         cut_edge_queue_index.data.fill(null);
         while (edge_it.next()) |edge| {
-            const d = edge.dart();
-            const dd = sm.phi2(d);
+            const d = sm.dart(edge);
             const l = edge_length.value(edge);
             const length_goal_edge = if (adaptive and iteration > 0) @min(
-                vertex_sizing_field.value(.{ .vertex = d }),
-                vertex_sizing_field.value(.{ .vertex = dd }),
+                vertex_sizing_field.value(sm.vertex(d)),
+                vertex_sizing_field.value(sm.vertex(sm.phi1(d))),
             ) else length_goal;
             if (l > length_goal_edge * 1.33) {
                 try cut_edge_queue.push(allocator, .{ .edge = edge, .length = l });
@@ -217,38 +213,41 @@ pub fn isotropicRemeshing(
             const info = cut_edge_queue.popIndex(0);
             const edge = info.edge;
 
-            const d = edge.dart();
+            const d = sm.dart(edge);
             const dd = sm.phi2(d);
+            const vd = sm.vertex(d);
+            const vdd = sm.vertex(dd);
             const new_pos = vec.mulScalar3f(
                 vec.add3f(
-                    vertex_position.value(.{ .vertex = d }),
-                    vertex_position.value(.{ .vertex = dd }),
+                    vertex_position.value(vd),
+                    vertex_position.value(vdd),
                 ),
                 0.5,
             );
             const v = try sm.cutEdge(edge);
             vertex_position.valuePtr(v).* = new_pos;
-            if (preserve_features and feature_edge.isMarked(edge)) {
-                feature_edge.mark(.{ .edge = dd });
+            const ed = sm.edge(d);
+            const edd = sm.edge(dd);
+            if (preserve_features and feature_edge.isMarked(ed)) {
+                feature_edge.mark(edd);
                 feature_vertex.mark(v);
             }
             const new_length = info.length / 2.0;
-            edge_length.valuePtr(.{ .edge = d }).* = new_length;
-            edge_length.valuePtr(.{ .edge = dd }).* = new_length;
+            edge_length.valuePtr(ed).* = new_length;
+            edge_length.valuePtr(edd).* = new_length;
             if (new_length > length_goal * 1.33) {
-                try cut_edge_queue.push(allocator, .{ .edge = .{ .edge = d }, .length = new_length });
-                try cut_edge_queue.push(allocator, .{ .edge = .{ .edge = dd }, .length = new_length });
+                try cut_edge_queue.push(allocator, .{ .edge = ed, .length = new_length });
+                try cut_edge_queue.push(allocator, .{ .edge = edd, .length = new_length });
             }
             if (adaptive and iteration > 0) {
-                vertex_sizing_field.valuePtr(v).* = 0.5 * (vertex_sizing_field.value(.{ .vertex = d }) +
-                    vertex_sizing_field.value(.{ .vertex = dd }));
+                vertex_sizing_field.valuePtr(v).* = 0.5 * (vertex_sizing_field.value(vd) + vertex_sizing_field.value(vdd));
             }
             // triangulate adjacent (non-boundary) faces
             const d1 = sm.phi1(d);
             const dd1 = sm.phi1(dd);
             if (!sm.isBoundaryDart(d1)) {
                 const e = try sm.cutFace(d1, sm.phi1(sm.phi1(d1)));
-                const l = length.edgeLength(sm, e, vertex_position);
+                const l = length.edgeLength(sm, e, vertex_position.*);
                 edge_length.valuePtr(e).* = l;
                 if (l > length_goal * 1.33) {
                     try cut_edge_queue.push(allocator, .{ .edge = e, .length = l });
@@ -256,7 +255,7 @@ pub fn isotropicRemeshing(
             }
             if (!sm.isBoundaryDart(dd1)) {
                 const e = try sm.cutFace(dd1, sm.phi1(sm.phi1(dd1)));
-                const l = length.edgeLength(sm, e, vertex_position);
+                const l = length.edgeLength(sm, e, vertex_position.*);
                 edge_length.valuePtr(e).* = l;
                 if (l > length_goal * 1.33) {
                     try cut_edge_queue.push(allocator, .{ .edge = e, .length = l });
@@ -270,9 +269,9 @@ pub fn isotropicRemeshing(
         collapse_edge_queue_index.data.fill(null);
         while (edge_it.next()) |edge| {
             const l = edge_length.value(edge);
-            const d = edge.dart();
-            const v1: SurfaceMesh.Cell = .{ .vertex = d };
-            const v2: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
+            const d = sm.dart(edge);
+            const v1 = sm.vertex(d);
+            const v2 = sm.vertex(sm.phi1(d));
             const length_goal_edge = if (adaptive and iteration > 0) @min(
                 vertex_sizing_field.value(v1),
                 vertex_sizing_field.value(v2),
@@ -288,9 +287,10 @@ pub fn isotropicRemeshing(
             // so its index in the queue must be set to null
             collapse_edge_queue_index.valuePtr(edge).* = null;
 
-            const d = edge.dart();
-            const v1: SurfaceMesh.Cell = .{ .vertex = d };
-            const v2: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
+            const d = sm.dart(edge);
+            const d1 = sm.phi1(d);
+            const v1 = sm.vertex(d);
+            const v2 = sm.vertex(d1);
             if (preserve_features) {
                 if (feature_corner.isMarked(v1) or feature_corner.isMarked(v2)) {
                     continue;
@@ -307,10 +307,10 @@ pub fn isotropicRemeshing(
                 vec.add3f(vertex_position.value(v1), vertex_position.value(v2)),
                 0.5,
             );
-            if (!sm.isIncidentToBoundary(edge)) {
-                if (sm.isIncidentToBoundary(v1)) {
+            if (!sm.isOrbitIncidentToBoundary(d, .edge)) {
+                if (sm.isOrbitIncidentToBoundary(d, .vertex)) {
                     new_pos = vertex_position.value(v1);
-                } else if (sm.isIncidentToBoundary(v2)) {
+                } else if (sm.isOrbitIncidentToBoundary(d1, .vertex)) {
                     new_pos = vertex_position.value(v2);
                 }
             }
@@ -322,13 +322,13 @@ pub fn isotropicRemeshing(
             // remove them from the queue
             // (edges incident to the resulting vertex will be re-inserted after collapsing if they satisfy collapse conditions)
             if (!sm.isBoundaryDart(d)) {
-                EdgeQueueUtil.removeEdgeFromQueue(&collapse_edge_queue, .{ .edge = sm.phi1(d) });
-                EdgeQueueUtil.removeEdgeFromQueue(&collapse_edge_queue, .{ .edge = sm.phi_1(d) });
+                EdgeQueueUtil.removeEdgeFromQueue(&collapse_edge_queue, sm.edge(sm.phi1(d)));
+                EdgeQueueUtil.removeEdgeFromQueue(&collapse_edge_queue, sm.edge(sm.phi_1(d)));
             }
             const dd = sm.phi2(d);
             if (!sm.isBoundaryDart(dd)) {
-                EdgeQueueUtil.removeEdgeFromQueue(&collapse_edge_queue, .{ .edge = sm.phi1(dd) });
-                EdgeQueueUtil.removeEdgeFromQueue(&collapse_edge_queue, .{ .edge = sm.phi_1(dd) });
+                EdgeQueueUtil.removeEdgeFromQueue(&collapse_edge_queue, sm.edge(sm.phi1(dd)));
+                EdgeQueueUtil.removeEdgeFromQueue(&collapse_edge_queue, sm.edge(sm.phi_1(dd)));
             }
 
             const v = sm.collapseEdge(edge);
@@ -340,14 +340,14 @@ pub fn isotropicRemeshing(
             // after collapsing, iterate over all the edges incident to the new vertex and update their length
             // if any of these edges is in the collapse queue, start by removing it from the queue and then
             // insert it if it is still satisfying the collapse conditions
-            var dart_it = sm.cellDartIterator(v);
+            var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
             while (dart_it.next()) |dv| {
-                const e: SurfaceMesh.Cell = .{ .edge = dv };
-                const el = length.edgeLength(sm, e, vertex_position);
+                const e = sm.edge(dv);
+                const el = length.edgeLength(sm, e, vertex_position.*);
                 edge_length.valuePtr(e).* = el;
                 EdgeQueueUtil.removeEdgeFromQueue(&collapse_edge_queue, e);
-                const ev1: SurfaceMesh.Cell = .{ .vertex = dv };
-                const ev2: SurfaceMesh.Cell = .{ .vertex = sm.phi1(dv) };
+                const ev1 = sm.vertex(dv);
+                const ev2 = sm.vertex(sm.phi1(dv));
                 const length_goal_edge = if (adaptive and iteration >= 1) @min(
                     vertex_sizing_field.value(ev1),
                     vertex_sizing_field.value(ev2),
@@ -372,29 +372,30 @@ pub fn isotropicRemeshing(
 
         // tangential relaxation
         // first, update datas needed for relaxation after remeshing operations
-        try length.computeEdgeLengths(sm, vertex_position, edge_length);
-        try angle.computeCornerAngles(io, sm, vertex_position, corner_angle);
-        try area.computeFaceAreas(io, sm, vertex_position, face_area);
-        try normal.computeFaceNormals(io, sm, vertex_position, face_normal);
-        try area.computeVertexAreas(sm, face_area, vertex_area);
-        try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
+        try length.computeEdgeLengths(sm, vertex_position.*, edge_length);
+        try angle.computeCornerAngles(io, sm, vertex_position.*, corner_angle);
+        try area.computeFaceAreas(io, sm, vertex_position.*, face_area);
+        try normal.computeFaceNormals(io, sm, vertex_position.*, face_normal);
+        try area.computeVertexAreas(sm, face_area.*, vertex_area);
+        try normal.computeVertexNormals(io, sm, corner_angle.*, face_normal.*, vertex_normal);
         vertex_it.reset();
         while (vertex_it.next()) |vertex| {
-            if (sm.isIncidentToBoundary(vertex) or (preserve_features and feature_vertex.isMarked(vertex))) {
+            const vd = sm.dart(vertex);
+            if (sm.isOrbitIncidentToBoundary(vd, .vertex) or (preserve_features and feature_vertex.isMarked(vertex))) {
                 continue;
             }
             var q = vec.zero3f;
             var w: f32 = 0.0;
             if (adaptive and iteration > 0) {
-                var dart_it = sm.cellDartIterator(vertex);
+                var dart_it = sm.orbitDartIterator(vd, .vertex);
                 while (dart_it.next()) |d| {
-                    const f: SurfaceMesh.Cell = .{ .face = d };
+                    const f = sm.face(d);
                     var avg_sizing_field: f32 = 0.0;
                     var avg_position = vec.zero3f;
                     var count: u32 = 0;
-                    var face_dart_it = sm.cellDartIterator(f);
+                    var face_dart_it = sm.orbitDartIterator(d, .face);
                     while (face_dart_it.next()) |fd| {
-                        const iv: SurfaceMesh.Cell = .{ .vertex = fd };
+                        const iv = sm.vertex(fd);
                         avg_sizing_field += vertex_sizing_field.value(iv);
                         avg_position = vec.add3f(avg_position, vertex_position.value(iv));
                         count += 1;
@@ -406,9 +407,9 @@ pub fn isotropicRemeshing(
                     w += a;
                 }
             } else {
-                var dart_it = sm.cellDartIterator(vertex);
+                var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
                 while (dart_it.next()) |d| {
-                    const nv: SurfaceMesh.Cell = .{ .vertex = sm.phi1(d) };
+                    const nv = sm.vertex(sm.phi1(d));
                     const a = vertex_area.value(nv);
                     q = vec.add3f(
                         q,
@@ -437,16 +438,16 @@ pub fn isotropicRemeshing(
         // in the adaptive case, compute a curvature-based sizing field at the end of iterations 0
         if (adaptive and (iteration == 0)) {
             // first, update data needed for sizing field computation
-            try length.computeEdgeLengths(sm, vertex_position, edge_length);
-            try angle.computeCornerAngles(io, sm, vertex_position, corner_angle);
-            try area.computeFaceAreas(io, sm, vertex_position, face_area);
-            try normal.computeFaceNormals(io, sm, vertex_position, face_normal);
-            try angle.computeEdgeDihedralAngles(io, sm, vertex_position, face_normal, edge_dihedral_angle);
-            try area.computeVertexAreas(sm, face_area, vertex_area);
-            try normal.computeVertexNormals(sm, corner_angle, face_normal, vertex_normal);
-            try curvature.computeVertexCurvatures(io, sm, vertex_position, vertex_normal, edge_dihedral_angle, edge_length, face_area, vertex_curvature);
+            try length.computeEdgeLengths(sm, vertex_position.*, edge_length);
+            try angle.computeCornerAngles(io, sm, vertex_position.*, corner_angle);
+            try area.computeFaceAreas(io, sm, vertex_position.*, face_area);
+            try normal.computeFaceNormals(io, sm, vertex_position.*, face_normal);
+            try angle.computeEdgeDihedralAngles(io, sm, vertex_position.*, face_normal.*, edge_dihedral_angle);
+            try area.computeVertexAreas(sm, face_area.*, vertex_area);
+            try normal.computeVertexNormals(io, sm, corner_angle.*, face_normal.*, vertex_normal);
+            try curvature.computeVertexCurvatures(io, sm, vertex_position.*, vertex_normal.*, edge_dihedral_angle.*, edge_length.*, face_area.*, vertex_curvature);
             mean_edge_length = edge_length.data.meanValue();
-            const approx_tolerance = mean_edge_length * 0.035; // TODO: this value could be tuned
+            const approx_tolerance = mean_edge_length * 0.025; // TODO: this value could be tuned
             vertex_it.reset();
             while (vertex_it.next()) |vertex| {
                 const kmin = vertex_curvature.vertex_kmin.?.value(vertex);

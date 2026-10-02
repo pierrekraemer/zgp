@@ -42,7 +42,7 @@ pub fn computePointSQEMs(
     // point_area: PointCloud.CellData(f32),
     point_tangent_basis: PointCloud.CellData([2]Vec3f),
     line_quadric_epsilon: f32,
-    point_sqem: PointCloud.CellData(SQEM),
+    point_sqem: *PointCloud.CellData(SQEM),
 ) !void {
     const Task = struct {
         const Task = @This();
@@ -52,7 +52,7 @@ pub fn computePointSQEMs(
         // point_area: PointCloud.CellData(f32),
         point_tangent_basis: PointCloud.CellData([2]Vec3f),
         line_quadric_epsilon: f32,
-        point_sqem: PointCloud.CellData(SQEM),
+        point_sqem: *PointCloud.CellData(SQEM),
 
         pub fn run(t: *const Task, point: PointCloud.Point) void {
             t.point_sqem.valuePtr(point).* = pointSQEM(

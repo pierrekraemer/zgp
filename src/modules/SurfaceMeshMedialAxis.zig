@@ -44,12 +44,6 @@ const MedialAxisData = struct {
     ) !void {
         assert(mad.vmas_ctx == null);
         assert(surface_mesh_bvh.surface_mesh == mad.surface_mesh and surface_mesh_bvh.initialized);
-        assert(vertex_position.surface_mesh == mad.surface_mesh);
-        assert(vertex_normal.surface_mesh == mad.surface_mesh);
-        assert(vertex_area.surface_mesh == mad.surface_mesh);
-        assert(vertex_tangent_basis.surface_mesh == mad.surface_mesh);
-        assert(face_area.surface_mesh == mad.surface_mesh);
-        assert(face_normal.surface_mesh == mad.surface_mesh);
 
         var buf: [64]u8 = undefined;
         const spheres_name = std.fmt.bufPrintSentinel(&buf, "{s}_spheres", .{mad.app_ctx.surface_mesh_store.surfaceMeshName(mad.surface_mesh).?}, 0) catch "__spheres";

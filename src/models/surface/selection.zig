@@ -15,16 +15,16 @@ fn includeVertex(
     face_buffer: *std.ArrayList(SurfaceMesh.Cell),
 ) !void {
     try vertex_buffer.append(sm.allocator, v);
-    var dart_it = sm.cellDartIterator(v);
+    var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
     while (dart_it.next()) |d| {
         dm.mark(d);
         // if all darts of the edge are now marked, include edge in result
         if (dm.isMarked(d) and dm.isMarked(sm.phi2(d))) {
-            try edge_buffer.append(sm.allocator, .{ .edge = d });
+            try edge_buffer.append(sm.allocator, sm.edge(d));
         }
         // if all darts of the face are now marked, include face in result
-        const face: SurfaceMesh.Cell = .{ .face = d };
-        var face_dart_it = sm.cellDartIterator(face);
+        const face = sm.face(d);
+        var face_dart_it = sm.orbitDartIterator(sm.dart(face), .face);
         const face_in = while (face_dart_it.next()) |fd| {
             if (!dm.isMarked(fd)) {
                 break false;
@@ -62,13 +62,13 @@ pub fn cellsWithinSphereAroundVertex(
     var i: u32 = 0;
     while (i < vertex_buffer.items.len) : (i += 1) {
         const v = vertex_buffer.items[i];
-        var dart_it = sm.cellDartIterator(v);
+        var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
         while (dart_it.next()) |d| {
             const d2 = sm.phi2(d);
             if (dm.isMarked(d2)) {
                 continue;
             }
-            const nv: SurfaceMesh.Cell = .{ .vertex = d2 };
+            const nv = sm.vertex(d2);
             const nvp = vertex_position.value(nv);
             if (vec.squaredNorm3f(vec.sub3f(nvp, vp)) < radius * radius) {
                 try includeVertex(sm, &dm, nv, vertex_buffer, edge_buffer, face_buffer);
