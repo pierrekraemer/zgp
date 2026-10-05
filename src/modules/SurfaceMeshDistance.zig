@@ -21,8 +21,8 @@ const DistanceData = struct {
     app_ctx: *AppContext,
     surface_mesh: *SurfaceMesh,
 
-    selected_vertex_set: ?*SurfaceMesh.CellSet(.vertex) = null,
-    vertex_distance: ?SurfaceMesh.CellData(.vertex, f32) = null,
+    selected_vertex_set: ?*SurfaceMesh.VertexSet = null,
+    vertex_distance: ?SurfaceMesh.VertexData(f32) = null,
 
     hm_ctx: ?distance.HeatMethodContext = null, // optional Heat Method context
     // maybe there will be other distance computation contexts in the future, e.g. for other distance computation methods
@@ -30,12 +30,12 @@ const DistanceData = struct {
     fn initHeatMethodContext(
         dd: *DistanceData,
         diffusion_time: f32,
-        halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_area: SurfaceMesh.CellData(.vertex, f32),
-        edge_length: SurfaceMesh.CellData(.edge, f32),
-        face_area: SurfaceMesh.CellData(.face, f32),
-        face_normal: SurfaceMesh.CellData(.face, Vec3f),
+        halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        vertex_area: SurfaceMesh.VertexData(f32),
+        edge_length: SurfaceMesh.EdgeData(f32),
+        face_area: SurfaceMesh.FaceData(f32),
+        face_normal: SurfaceMesh.FaceData(Vec3f),
     ) !void {
         assert(dd.hm_ctx == null);
         assert(diffusion_time > 0.0);
@@ -249,7 +249,7 @@ pub fn rightClickMenu(m: *Module) void {
             if (dd.hm_ctx) |*hm_ctx| {
                 const disabled =
                     dd.selected_vertex_set == null or
-                    dd.selected_vertex_set.?.cell_set_gen.cells.items.len == 0 or
+                    dd.selected_vertex_set.?.cells.items.len == 0 or
                     dd.vertex_distance == null;
                 if (disabled) {
                     c.ImGui_BeginDisabled(true);
@@ -258,7 +258,7 @@ pub fn rightClickMenu(m: *Module) void {
                     const t = std.Io.Timestamp.now(smd.app_ctx.io, .real);
 
                     hm_ctx.computeGeodesicDistancesFromSource(
-                        dd.selected_vertex_set.?.cell_set_gen.cells.items,
+                        dd.selected_vertex_set.?.cells.items,
                         &dd.vertex_distance.?,
                     ) catch |err| {
                         std.debug.print("Failed to compute geodesic distance: {}\n", .{err});

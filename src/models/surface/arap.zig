@@ -24,14 +24,12 @@ const intrinsic_triangulation = @import("intrinsic_triangulation.zig");
 /// Returns the optimal rotation as a unit quaternion.
 pub fn computeVertexOneRingRotation(
     sm: *const SurfaceMesh,
-    v: SurfaceMesh.Cell,
+    v: SurfaceMesh.Vertex,
     previous_rotation: SimdVec4f,
-    halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-    vertex_position_rest: SurfaceMesh.CellData(.vertex, SimdVec4f),
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
+    vertex_position_rest: SurfaceMesh.VertexData(SimdVec4f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
 ) SimdVec4f {
-    assert(v.cellType() == .vertex);
-
     // Build the covariance matrix S = sum_j w_ij * e_ij_rest * e_ij_current^T
     var S: SimdMat4f = .{ @splat(0.0), @splat(0.0), @splat(0.0), @splat(0.0) };
     const p_rest = vertex_position_rest.value(v);
@@ -98,19 +96,19 @@ pub const ARAPContext = struct {
     io: std.Io,
 
     surface_mesh: *SurfaceMesh, // the original SurfaceMesh
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f), // defined on the original SurfaceMesh, updated by the ARAP solver
+    vertex_position: SurfaceMesh.VertexData(Vec3f), // defined on the original SurfaceMesh, updated by the ARAP solver
 
-    vertex_position_rest: SurfaceMesh.CellData(.vertex, SimdVec4f), // created on the original SurfaceMesh
-    vertex_rotation: SurfaceMesh.CellData(.vertex, SimdVec4f), // created on the original SurfaceMesh
+    vertex_position_rest: SurfaceMesh.VertexData(SimdVec4f), // created on the original SurfaceMesh
+    vertex_rotation: SurfaceMesh.VertexData(SimdVec4f), // created on the original SurfaceMesh
     nb_free: u32,
-    free_vertex_index: SurfaceMesh.CellData(.vertex, u32), // created on the original SurfaceMesh
+    free_vertex_index: SurfaceMesh.VertexData(u32), // created on the original SurfaceMesh
 
     // if an IT context is provided upon init, it is supposed to be Delaunay,
     // and its connectivity and halfedge cotan weights are used to compute the Laplacian and vertex rotations;
     // the following two fields thus either point to the IT SurfaceMesh and its halfedge cotan weights
     // or to the original SurfaceMesh and its halfedge cotan weights
     compute_surface_mesh: *SurfaceMesh,
-    compute_halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+    compute_halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
 
     // WARNING!
     // - if provided, the IT context should not be deinitialized while the ARAP context is still alive
@@ -130,10 +128,10 @@ pub const ARAPContext = struct {
         allocator: std.mem.Allocator,
         io: std.Io,
         sm: *SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-        fixed_set: *SurfaceMesh.CellSet(.vertex),
-        handle_set: *SurfaceMesh.CellSet(.vertex),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
+        fixed_set: *SurfaceMesh.VertexSet,
+        handle_set: *SurfaceMesh.VertexSet,
         it_ctx: ?intrinsic_triangulation.ITContext,
     ) !ARAPContext {
         // Create & initialize vertex rest positions (stored as SimdVec4f)
@@ -148,7 +146,7 @@ pub const ARAPContext = struct {
 
         // Create consecutive indices for free vertices
         var free_vertex_index = try sm.addData(.vertex, u32, "__arap_free_vertex_index");
-        var vertex_it = sm.cellIterator(.vertex);
+        var vertex_it = sm.vertexIterator();
         var nb_free: u32 = 0;
         while (vertex_it.next()) |v| {
             if (fixed_set.contains(v) or handle_set.contains(v)) {
@@ -172,7 +170,7 @@ pub const ARAPContext = struct {
         const nb_edges = compute_surface_mesh.nbCells(.edge);
         var triplets = try std.ArrayList(SparseMatrix.Triplet).initCapacity(allocator, 4 * nb_edges);
         defer triplets.deinit(allocator);
-        var edge_it = compute_surface_mesh.cellIterator(.edge);
+        var edge_it = compute_surface_mesh.edgeIterator();
         while (edge_it.next()) |edge| {
             const d = compute_surface_mesh.dart(edge);
             const dd = compute_surface_mesh.phi2(d);
@@ -222,21 +220,21 @@ pub const ARAPContext = struct {
         arap_ctx.solve_mat.deinit();
         arap_ctx.rhs_mat.deinit();
         arap_ctx.factorized_L.deinit();
-        arap_ctx.surface_mesh.removeData(.vertex, arap_ctx.free_vertex_index);
-        arap_ctx.surface_mesh.removeData(.vertex, arap_ctx.vertex_rotation);
-        arap_ctx.surface_mesh.removeData(.vertex, arap_ctx.vertex_position_rest);
+        arap_ctx.surface_mesh.removeData(arap_ctx.free_vertex_index);
+        arap_ctx.surface_mesh.removeData(arap_ctx.vertex_rotation);
+        arap_ctx.surface_mesh.removeData(arap_ctx.vertex_position_rest);
     }
 
     /// Run the ARAP local/global solve & updates vertex_position
     pub fn solve(arap_ctx: *ARAPContext) !void {
         const ComputeVertexRotationTask = struct {
             surface_mesh: *const SurfaceMesh,
-            halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-            vertex_position_rest: SurfaceMesh.CellData(.vertex, SimdVec4f),
-            vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-            vertex_rotation: *SurfaceMesh.CellData(.vertex, SimdVec4f),
+            halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
+            vertex_position_rest: SurfaceMesh.VertexData(SimdVec4f),
+            vertex_position: SurfaceMesh.VertexData(Vec3f),
+            vertex_rotation: *SurfaceMesh.VertexData(SimdVec4f),
 
-            pub fn run(t: *const @This(), v: SurfaceMesh.Cell) void {
+            pub fn run(t: *const @This(), v: SurfaceMesh.Vertex) void {
                 const v_rotation = t.vertex_rotation.valuePtr(v);
                 v_rotation.* = computeVertexOneRingRotation(
                     t.surface_mesh,
@@ -251,14 +249,14 @@ pub const ARAPContext = struct {
 
         const SetupVertexRHSTask = struct {
             surface_mesh: *const SurfaceMesh,
-            halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-            vertex_position_rest: SurfaceMesh.CellData(.vertex, SimdVec4f),
-            vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-            vertex_rotation: SurfaceMesh.CellData(.vertex, SimdVec4f),
-            free_vertex_index: SurfaceMesh.CellData(.vertex, u32),
+            halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
+            vertex_position_rest: SurfaceMesh.VertexData(SimdVec4f),
+            vertex_position: SurfaceMesh.VertexData(Vec3f),
+            vertex_rotation: SurfaceMesh.VertexData(SimdVec4f),
+            free_vertex_index: SurfaceMesh.VertexData(u32),
             rhs_mat: eigen.DenseMatrix,
 
-            pub fn run(t: *@This(), v: SurfaceMesh.Cell) void {
+            pub fn run(t: *@This(), v: SurfaceMesh.Vertex) void {
                 const fi = t.free_vertex_index.value(v);
                 if (fi == invalid_index) return; // constrained vertex
 
@@ -295,11 +293,11 @@ pub const ARAPContext = struct {
 
         const WriteSolvedPositionsTask = struct {
             surface_mesh: *const SurfaceMesh,
-            free_vertex_index: SurfaceMesh.CellData(.vertex, u32),
+            free_vertex_index: SurfaceMesh.VertexData(u32),
             solve_mat: eigen.DenseMatrix,
-            vertex_position: *SurfaceMesh.CellData(.vertex, Vec3f),
+            vertex_position: *SurfaceMesh.VertexData(Vec3f),
 
-            pub fn run(t: *@This(), v: SurfaceMesh.Cell) void {
+            pub fn run(t: *@This(), v: SurfaceMesh.Vertex) void {
                 const fi = t.free_vertex_index.value(v);
                 if (fi == invalid_index) return; // constrained vertex
                 var solved_row: [3]eigen.Scalar = undefined;
@@ -308,7 +306,7 @@ pub const ARAPContext = struct {
             }
         };
 
-        var pctr: SurfaceMesh.ParallelCellTaskRunner(.vertex) = try .init(arap_ctx.compute_surface_mesh);
+        var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(arap_ctx.compute_surface_mesh);
         defer pctr.deinit();
 
         for (0..@intCast(arap_ctx.nb_iterations)) |_| {

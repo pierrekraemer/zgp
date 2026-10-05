@@ -27,16 +27,16 @@ const bvh = @import("../geometry/bvh.zig");
 
 /// This struct defines the standard datas of a SurfaceMesh
 pub const SurfaceMeshStdDatas = struct {
-    corner_angle: ?SurfaceMesh.CellData(.corner, f32) = null,
-    halfedge_cotan_weight: ?SurfaceMesh.CellData(.halfedge, f32) = null,
-    vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
-    vertex_area: ?SurfaceMesh.CellData(.vertex, f32) = null,
-    vertex_normal: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
-    vertex_tangent_basis: ?SurfaceMesh.CellData(.vertex, [2]Vec3f) = null,
-    edge_length: ?SurfaceMesh.CellData(.edge, f32) = null,
-    edge_dihedral_angle: ?SurfaceMesh.CellData(.edge, f32) = null,
-    face_area: ?SurfaceMesh.CellData(.face, f32) = null,
-    face_normal: ?SurfaceMesh.CellData(.face, Vec3f) = null,
+    corner_angle: ?SurfaceMesh.CornerData(f32) = null,
+    halfedge_cotan_weight: ?SurfaceMesh.HalfedgeData(f32) = null,
+    vertex_position: ?SurfaceMesh.VertexData(Vec3f) = null,
+    vertex_area: ?SurfaceMesh.VertexData(f32) = null,
+    vertex_normal: ?SurfaceMesh.VertexData(Vec3f) = null,
+    vertex_tangent_basis: ?SurfaceMesh.VertexData([2]Vec3f) = null,
+    edge_length: ?SurfaceMesh.EdgeData(f32) = null,
+    edge_dihedral_angle: ?SurfaceMesh.EdgeData(f32) = null,
+    face_area: ?SurfaceMesh.FaceData(f32) = null,
+    face_normal: ?SurfaceMesh.FaceData(Vec3f) = null,
 };
 /// This tagged union is generated from the SurfaceMeshStdDatas struct and allows to
 /// easily provide a single data entry to the setSurfaceMeshStdData function
@@ -98,7 +98,7 @@ cell_set_ibo: std.AutoHashMapUnmanaged(*const SurfaceMesh.CellSetGen, IBO),
 // updated upon calls to surfaceMeshDataUpdated
 data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.Io.Timestamp),
 
-cell_buffer_pool: BufferPool(SurfaceMesh.Cell),
+index_buffer_pool: BufferPool(u32),
 
 pub fn init(io: std.Io, allocator: std.mem.Allocator) !SurfaceMeshStore {
     return .{
@@ -110,7 +110,7 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !SurfaceMeshStore {
         .data_vbo = .empty,
         .cell_set_ibo = .empty,
         .data_last_update = .empty,
-        .cell_buffer_pool = try .init(io, allocator, 2048, 64, 32),
+        .index_buffer_pool = try .init(io, allocator, 2048, 64, 32),
     };
 }
 
@@ -145,7 +145,7 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
 
     sms.data_last_update.deinit(sms.allocator);
 
-    sms.cell_buffer_pool.deinit();
+    sms.index_buffer_pool.deinit();
 }
 
 pub fn addListener(sms: *SurfaceMeshStore, module: *Module) !void {
@@ -160,7 +160,7 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     // create and init the SurfaceMesh
     var sm = try sms.allocator.create(SurfaceMesh);
     errdefer sms.allocator.destroy(sm);
-    try sm.init(sms.allocator, &sms.cell_buffer_pool);
+    try sm.init(sms.allocator, &sms.index_buffer_pool);
     errdefer sm.deinit();
 
     // register the SurfaceMesh in the SurfaceMeshStore to make it available in the UI and for other modules
@@ -327,7 +327,7 @@ pub fn surfaceMeshCellSetUpdated(
     // if it exists, update the IBO with the data
     const maybe_ibo = sms.cell_set_ibo.getPtr(cell_set.gen());
     if (maybe_ibo) |ibo| {
-        ibo.fillFromSurfaceMeshCellSlice(sm, cell_type, cell_set.cell_set_gen.cells.items, sms.allocator) catch |err| {
+        ibo.fillFromSurfaceMeshCellSlice(sm, cell_set.cells.items, sms.allocator) catch |err| {
             zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
             return;
         };
@@ -367,7 +367,7 @@ pub fn cellSetIBO(
     };
     if (!ibo.found_existing) {
         ibo.value_ptr.* = IBO.init();
-        ibo.value_ptr.fillFromSurfaceMeshCellSlice(cell_set.cell_set_gen.surface_mesh, cell_type, cell_set.cell_set_gen.cells.items, sms.allocator) catch |err| {
+        ibo.value_ptr.fillFromSurfaceMeshCellSlice(cell_set.cell_set_gen.surface_mesh, cell_set.cells.items, sms.allocator) catch |err| {
             zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
             return IBO.init(); // return a dummy IBO
         };
@@ -717,7 +717,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
 
     var vertex_position = try sm.addData(.vertex, Vec3f, "position");
     var darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
-    defer sm.removeData(.vertex, darts_of_vertex);
+    defer sm.removeData(darts_of_vertex);
     var darts_array_lists_arena = std.heap.ArenaAllocator.init(sms.allocator);
     defer darts_array_lists_arena.deinit();
 
@@ -730,9 +730,9 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
     var i: u32 = 0;
     for (import_data.faces_nb_vertices.items) |face_nb_vertices| {
         var d = try sm.addUnboundedFace(face_nb_vertices);
-        for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |index| {
-            const v: SurfaceMesh.Cell = .{ .vertex = index };
-            sm.setDartCell(d, .vertex, v);
+        for (import_data.faces_vertex_indices.items[i .. i + face_nb_vertices]) |idx| {
+            const v: SurfaceMesh.Vertex = .{ .index = idx };
+            sm.setDartCell(d, v);
             try darts_of_vertex.valuePtr(v).append(darts_array_lists_arena.allocator(), d);
             d = sm.phi1(d);
         }
@@ -748,7 +748,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
             const next_vertex = sm.vertex(sm.phi1(d));
             const next_vertex_darts = darts_of_vertex.value(next_vertex);
             const opposite_dart = for (next_vertex_darts.items) |d2| {
-                if (sm.vertex(sm.phi1(d2)).index() == vertex.index()) {
+                if (sm.vertex(sm.phi1(d2)).index == vertex.index) {
                     break d2;
                 }
             } else null;

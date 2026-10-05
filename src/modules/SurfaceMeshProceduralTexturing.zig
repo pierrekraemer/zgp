@@ -17,11 +17,11 @@ const Vec3f = vec.Vec3f;
 
 const TnBData = struct {
     surface_mesh: *SurfaceMesh,
-    vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
-    vertex_ref_dart: ?SurfaceMesh.CellData(.vertex, SurfaceMesh.Dart) = null,
+    vertex_position: ?SurfaceMesh.VertexData(Vec3f) = null,
+    vertex_ref_dart: ?SurfaceMesh.VertexData(SurfaceMesh.Dart) = null,
     initialized: bool = false,
 
-    pub fn init(tbd: *TnBData, vertex_position: SurfaceMesh.CellData(.vertex, Vec3f)) !void {
+    pub fn init(tbd: *TnBData, vertex_position: SurfaceMesh.VertexData(Vec3f)) !void {
         tbd.vertex_position = vertex_position;
         if (!tbd.initialized) {
             tbd.vertex_ref_dart = try tbd.surface_mesh.addData(.vertex, SurfaceMesh.Dart, "__vertex_ref_dart");
@@ -33,14 +33,14 @@ const TnBData = struct {
 
     pub fn deinit(tbd: *TnBData) void {
         if (tbd.initialized) {
-            tbd.surface_mesh.removeData(.vertex, tbd.vertex_ref_dart.?);
+            tbd.surface_mesh.removeData(tbd.vertex_ref_dart.?);
             tbd.initialized = false;
         }
     }
 
     fn computeVertexRefDarts(tbd: *TnBData) !void {
         assert(tbd.initialized);
-        var v_it = tbd.surface_mesh.cellIterator(.vertex);
+        var v_it = tbd.surface_mesh.vertexIterator();
         while (v_it.next()) |v| {
             tbd.vertex_ref_dart.?.valuePtr(v).* = tbd.surface_mesh.dart(v);
         }

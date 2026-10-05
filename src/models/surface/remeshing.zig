@@ -18,9 +18,7 @@ const curvature = @import("curvature.zig");
 const bvh = @import("../../geometry/bvh.zig");
 
 /// Return true if flipping the given edge improves the deviation from degree-6 vertices.
-fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Cell) bool {
-    assert(edge.cellType() == .edge);
-
+fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Edge) bool {
     const d = sm.dart(edge);
     const dd = sm.phi2(d);
 
@@ -53,14 +51,14 @@ pub fn isotropicRemeshing(
     edge_length_factor: f32,
     preserve_features: bool,
     adaptive: bool,
-    vertex_position: *SurfaceMesh.CellData(.vertex, Vec3f),
-    corner_angle: *SurfaceMesh.CellData(.corner, f32),
-    face_area: *SurfaceMesh.CellData(.face, f32),
-    face_normal: *SurfaceMesh.CellData(.face, Vec3f),
-    edge_length: *SurfaceMesh.CellData(.edge, f32),
-    edge_dihedral_angle: *SurfaceMesh.CellData(.edge, f32),
-    vertex_area: *SurfaceMesh.CellData(.vertex, f32),
-    vertex_normal: *SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position: *SurfaceMesh.VertexData(Vec3f),
+    corner_angle: *SurfaceMesh.CornerData(f32),
+    face_area: *SurfaceMesh.FaceData(f32),
+    face_normal: *SurfaceMesh.FaceData(Vec3f),
+    edge_length: *SurfaceMesh.EdgeData(f32),
+    edge_dihedral_angle: *SurfaceMesh.EdgeData(f32),
+    vertex_area: *SurfaceMesh.VertexData(f32),
+    vertex_normal: *SurfaceMesh.VertexData(Vec3f),
     vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     try subdivision.triangulateFaces(allocator, sm);
@@ -68,17 +66,17 @@ pub fn isotropicRemeshing(
     var mean_edge_length = edge_length.data.meanValue();
     const length_goal = mean_edge_length * edge_length_factor;
 
-    var edge_it = sm.cellIterator(.edge);
-    var vertex_it = sm.cellIterator(.vertex);
+    var edge_it = sm.edgeIterator();
+    var vertex_it = sm.vertexIterator();
 
     // feature edges are edges with a dihedral angle above a certain threshold
-    var feature_edge: SurfaceMesh.CellMarker(.edge) = try .init(sm);
+    var feature_edge: SurfaceMesh.EdgeMarker = try .init(sm);
     defer feature_edge.deinit();
     // feature vertices are vertices incident to at least one feature edge
-    var feature_vertex: SurfaceMesh.CellMarker(.vertex) = try .init(sm);
+    var feature_vertex: SurfaceMesh.VertexMarker = try .init(sm);
     defer feature_vertex.deinit();
     // feature corners are vertices incident to more than 2 feature edges
-    var feature_corner: SurfaceMesh.CellMarker(.vertex) = try .init(sm);
+    var feature_corner: SurfaceMesh.VertexMarker = try .init(sm);
     defer feature_corner.deinit();
 
     if (preserve_features) {
@@ -113,27 +111,27 @@ pub fn isotropicRemeshing(
 
     // sizing field for adaptive remeshing
     var vertex_sizing_field = try sm.addData(.vertex, f32, "__vertex_sizing_field");
-    defer sm.removeData(.vertex, vertex_sizing_field);
+    defer sm.removeData(vertex_sizing_field);
 
     // Priority queue types for edge cut & collapse, ordered by edge length (descending for cut, ascending for collapse)
     const EdgeQueueContext = struct {
-        edge_queue_index: *SurfaceMesh.CellData(.edge, ?usize),
+        edge_queue_index: *SurfaceMesh.EdgeData(?usize),
     };
     const EdgeInfo = struct {
         const EdgeInfo = @This();
-        edge: SurfaceMesh.Cell,
+        edge: SurfaceMesh.Edge,
         length: f32,
         pub fn cmpAsc(_: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
             const length_order = std.math.order(a.length, b.length);
             if (length_order != .eq) return length_order;
             // tie-breaker: use edge indices to order edges
-            return std.math.order(a.edge.index(), b.edge.index());
+            return std.math.order(a.edge.index, b.edge.index);
         }
         pub fn cmpDesc(_: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
             const length_order = std.math.order(b.length, a.length);
             if (length_order != .eq) return length_order;
             // tie-breaker: use edge indices to order edges
-            return std.math.order(a.edge.index(), b.edge.index());
+            return std.math.order(a.edge.index, b.edge.index);
         }
         pub fn setEdgeIndexInQueue(ctx: EdgeQueueContext, a: EdgeInfo, index: usize) void {
             ctx.edge_queue_index.valuePtr(a.edge).* = index;
@@ -142,8 +140,7 @@ pub fn isotropicRemeshing(
     const EdgeQueueAsc = PriorityQueue(EdgeInfo, EdgeQueueContext, EdgeInfo.cmpAsc, EdgeInfo.setEdgeIndexInQueue);
     const EdgeQueueDesc = PriorityQueue(EdgeInfo, EdgeQueueContext, EdgeInfo.cmpDesc, EdgeInfo.setEdgeIndexInQueue);
     const EdgeQueueUtil = struct {
-        fn removeEdgeFromQueue(queue: anytype, edge: SurfaceMesh.Cell) void {
-            assert(edge.cellType() == .edge);
+        fn removeEdgeFromQueue(queue: anytype, edge: SurfaceMesh.Edge) void {
             if (queue.context.edge_queue_index.value(edge)) |index| {
                 _ = queue.popIndex(index);
             }
@@ -152,14 +149,14 @@ pub fn isotropicRemeshing(
     };
 
     var cut_edge_queue_index = try sm.addData(.edge, ?usize, "__cut_edge_queue_index");
-    defer sm.removeData(.edge, cut_edge_queue_index);
+    defer sm.removeData(cut_edge_queue_index);
     var cut_edge_queue: EdgeQueueDesc = .initContext(.{
         .edge_queue_index = &cut_edge_queue_index,
     });
     defer cut_edge_queue.deinit(allocator);
 
     var collapse_edge_queue_index = try sm.addData(.edge, ?usize, "__collapse_edge_queue_index");
-    defer sm.removeData(.edge, collapse_edge_queue_index);
+    defer sm.removeData(collapse_edge_queue_index);
     var collapse_edge_queue: EdgeQueueAsc = .initContext(.{
         .edge_queue_index = &collapse_edge_queue_index,
     });

@@ -10,11 +10,10 @@ const geometry_utils = @import("../../geometry/utils.zig");
 /// Compute and return the tangent basis of the given vertex.
 pub fn vertexTangentBasis(
     sm: *const SurfaceMesh,
-    vertex: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex: SurfaceMesh.Vertex,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_normal: SurfaceMesh.VertexData(Vec3f),
 ) [2]Vec3f {
-    assert(vertex.cellType() == .vertex);
     const d = sm.dart(vertex);
     const n = vertex_normal.value(vertex);
     var X = vec.sub3f(
@@ -32,17 +31,17 @@ pub fn vertexTangentBasis(
 pub fn computeVertexTangentBases(
     io: std.Io,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_tangent_basis: *SurfaceMesh.CellData(.vertex, [2]Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_normal: SurfaceMesh.VertexData(Vec3f),
+    vertex_tangent_basis: *SurfaceMesh.VertexData([2]Vec3f),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_tangent_basis: *SurfaceMesh.CellData(.vertex, [2]Vec3f),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        vertex_normal: SurfaceMesh.VertexData(Vec3f),
+        vertex_tangent_basis: *SurfaceMesh.VertexData([2]Vec3f),
 
-        pub fn run(t: *const @This(), vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), vertex: SurfaceMesh.Vertex) void {
             t.vertex_tangent_basis.valuePtr(vertex).* = vertexTangentBasis(
                 t.surface_mesh,
                 vertex,
@@ -52,7 +51,7 @@ pub fn computeVertexTangentBases(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner(.vertex) = try .init(sm);
+    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,

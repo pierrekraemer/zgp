@@ -62,11 +62,11 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
 fn computeVertexCurvatures(
     smc: *SurfaceMeshCurvature,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_normal: SurfaceMesh.VertexData(Vec3f),
+    edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
+    edge_length: SurfaceMesh.EdgeData(f32),
+    face_area: SurfaceMesh.FaceData(f32),
     vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);

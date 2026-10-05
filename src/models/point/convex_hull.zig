@@ -15,7 +15,7 @@ pub fn generateConvexHull(
     pc: *const PointCloud,
     point_position: PointCloud.CellData(Vec3f),
     sm: *SurfaceMesh,
-    vertex_position: *SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position: *SurfaceMesh.VertexData(Vec3f),
 ) !void {
     // no convex hull for less than 4 points
     if (pc.nbPoints() < 4) {
@@ -132,19 +132,19 @@ pub fn generateConvexHull(
         while (it.next()) |elem| {
             elem.value_ptr.deinit(allocator);
         }
-        sm.removeData(.face, face_points_on_positive_side);
+        sm.removeData(face_points_on_positive_side);
     }
     var face_most_distant_point_dist = try sm.addData(.face, f32, "most_distant_point_dist");
-    defer sm.removeData(.face, face_most_distant_point_dist);
+    defer sm.removeData(face_most_distant_point_dist);
     var face_most_distant_point_index = try sm.addData(.face, u32, "most_distant_point_index");
-    defer sm.removeData(.face, face_most_distant_point_index);
+    defer sm.removeData(face_most_distant_point_index);
 
     face_points_on_positive_side.data.fill(.empty);
     face_most_distant_point_dist.data.fill(0.0);
     face_most_distant_point_index.data.fill(0);
 
     // register points outside the initial tetrahedron in the faces
-    var face_it = sm.cellIterator(.face);
+    var face_it = sm.faceIterator();
     var point_it = pc.pointIterator();
     while (point_it.next()) |p| {
         face_it.reset();
@@ -168,7 +168,7 @@ pub fn generateConvexHull(
     }
 
     // initialize active faces list (faces with points on their exterior side)
-    var active_faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
+    var active_faces: std.ArrayList(SurfaceMesh.Face) = .empty;
     defer active_faces.deinit(allocator);
     face_it.reset();
     while (face_it.next()) |f| {
@@ -253,18 +253,18 @@ pub fn generateConvexHull(
 fn buildHorizon(
     allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
     point: Vec3f,
-    face: SurfaceMesh.Cell,
+    face: SurfaceMesh.Face,
 ) !struct {
     std.ArrayList(SurfaceMesh.Dart), // horizon darts
-    std.ArrayList(SurfaceMesh.Cell), // visible faces
+    std.ArrayList(SurfaceMesh.Face), // visible faces
 } {
     var horizon_darts: std.ArrayList(SurfaceMesh.Dart) = .empty;
-    var visible_faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
+    var visible_faces: std.ArrayList(SurfaceMesh.Face) = .empty;
 
     try visible_faces.append(allocator, face);
-    var visible_faces_marker: SurfaceMesh.CellMarker(.face) = try .init(sm);
+    var visible_faces_marker: SurfaceMesh.FaceMarker = try .init(sm);
     defer visible_faces_marker.deinit();
     visible_faces_marker.mark(face);
 

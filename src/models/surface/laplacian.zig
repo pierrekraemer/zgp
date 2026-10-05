@@ -10,11 +10,9 @@ const Vec3f = vec.Vec3f;
 /// i.e. cotan(theta)/2 where theta is the angle opposite to the halfedge in its incident face.
 pub fn halfedgeCotanWeight(
     sm: *const SurfaceMesh,
-    halfedge: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    halfedge: SurfaceMesh.Halfedge,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
 ) f32 {
-    assert(halfedge.cellType() == .halfedge);
-
     const d = sm.dart(halfedge);
     if (sm.isBoundaryDart(d)) {
         return 0.0;
@@ -35,15 +33,15 @@ pub fn halfedgeCotanWeight(
 pub fn computeHalfedgeCotanWeights(
     io: std.Io,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    halfedge_cotan_weight: *SurfaceMesh.CellData(.halfedge, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    halfedge_cotan_weight: *SurfaceMesh.HalfedgeData(f32),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        halfedge_cotan_weight: *SurfaceMesh.CellData(.halfedge, f32),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        halfedge_cotan_weight: *SurfaceMesh.HalfedgeData(f32),
 
-        pub fn run(t: *const @This(), halfedge: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), halfedge: SurfaceMesh.Halfedge) void {
             t.halfedge_cotan_weight.valuePtr(halfedge).* = halfedgeCotanWeight(
                 t.surface_mesh,
                 halfedge,
@@ -52,7 +50,7 @@ pub fn computeHalfedgeCotanWeights(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner(.halfedge) = try .init(sm);
+    var pctr: SurfaceMesh.ParallelHalfedgeTaskRunner = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -66,12 +64,10 @@ pub fn computeHalfedgeCotanWeights(
 /// This version uses intrinsic geometry (edge lengths and face areas) instead of extrinsic vertex positions.
 pub fn halfedgeCotanWeightIntrinsic(
     sm: *const SurfaceMesh,
-    halfedge: SurfaceMesh.Cell,
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
+    halfedge: SurfaceMesh.Halfedge,
+    edge_length: SurfaceMesh.EdgeData(f32),
+    face_area: SurfaceMesh.FaceData(f32),
 ) f32 {
-    assert(halfedge.cellType() == .halfedge);
-
     const d = sm.dart(halfedge);
     if (sm.isBoundaryDart(d)) {
         return 0.0;
@@ -90,17 +86,17 @@ pub fn halfedgeCotanWeightIntrinsic(
 pub fn computeHalfedgeCotanWeightsIntrinsic(
     io: std.Io,
     sm: *SurfaceMesh,
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    halfedge_cotan_weight: *SurfaceMesh.CellData(.halfedge, f32),
+    edge_length: SurfaceMesh.EdgeData(f32),
+    face_area: SurfaceMesh.FaceData(f32),
+    halfedge_cotan_weight: *SurfaceMesh.HalfedgeData(f32),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
-        edge_length: SurfaceMesh.CellData(.edge, f32),
-        face_area: SurfaceMesh.CellData(.face, f32),
-        halfedge_cotan_weight: *SurfaceMesh.CellData(.halfedge, f32),
+        edge_length: SurfaceMesh.EdgeData(f32),
+        face_area: SurfaceMesh.FaceData(f32),
+        halfedge_cotan_weight: *SurfaceMesh.HalfedgeData(f32),
 
-        pub fn run(t: *const @This(), halfedge: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), halfedge: SurfaceMesh.Halfedge) void {
             t.halfedge_cotan_weight.valuePtr(halfedge).* = halfedgeCotanWeightIntrinsic(
                 t.surface_mesh,
                 halfedge,
@@ -110,7 +106,7 @@ pub fn computeHalfedgeCotanWeightsIntrinsic(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner(.halfedge) = try .init(sm);
+    var pctr: SurfaceMesh.ParallelHalfedgeTaskRunner = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -123,10 +119,9 @@ pub fn computeHalfedgeCotanWeightsIntrinsic(
 /// Compute and return the cotan weight of the given edge.
 pub fn edgeCotanWeight(
     sm: *const SurfaceMesh,
-    edge: SurfaceMesh.Cell,
-    halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
+    edge: SurfaceMesh.Edge,
+    halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
 ) f32 {
-    assert(edge.cellType() == .edge);
     var w: f32 = 0.0;
     const d = sm.dart(edge);
     if (!sm.isBoundaryDart(d)) {

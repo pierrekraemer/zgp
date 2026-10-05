@@ -9,10 +9,10 @@ const Vec3f = vec.Vec3f;
 fn includeVertex(
     sm: *const SurfaceMesh,
     dm: *SurfaceMesh.DartMarker,
-    v: SurfaceMesh.Cell,
-    vertex_buffer: *std.ArrayList(SurfaceMesh.Cell),
-    edge_buffer: *std.ArrayList(SurfaceMesh.Cell),
-    face_buffer: *std.ArrayList(SurfaceMesh.Cell),
+    v: SurfaceMesh.Vertex,
+    vertex_buffer: *std.ArrayList(SurfaceMesh.Vertex),
+    edge_buffer: *std.ArrayList(SurfaceMesh.Edge),
+    face_buffer: *std.ArrayList(SurfaceMesh.Face),
 ) !void {
     try vertex_buffer.append(sm.allocator, v);
     var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
@@ -40,14 +40,13 @@ fn includeVertex(
 /// and store them in the given buffers.
 pub fn cellsWithinSphereAroundVertex(
     sm: *SurfaceMesh,
-    vertex: SurfaceMesh.Cell,
+    vertex: SurfaceMesh.Vertex,
     radius: f32,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_buffer: *std.ArrayList(SurfaceMesh.Cell),
-    edge_buffer: *std.ArrayList(SurfaceMesh.Cell),
-    face_buffer: *std.ArrayList(SurfaceMesh.Cell),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_buffer: *std.ArrayList(SurfaceMesh.Vertex),
+    edge_buffer: *std.ArrayList(SurfaceMesh.Edge),
+    face_buffer: *std.ArrayList(SurfaceMesh.Face),
 ) !void {
-    assert(vertex.cellType() == .vertex);
     vertex_buffer.clearRetainingCapacity();
     edge_buffer.clearRetainingCapacity();
     face_buffer.clearRetainingCapacity();

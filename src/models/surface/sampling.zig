@@ -16,8 +16,8 @@ const bvh = @import("../../geometry/bvh.zig");
 pub fn uniformlySamplePointsOnSurface(
     random: std.Random,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_area: SurfaceMesh.FaceData(f32),
     pc: *PointCloud,
     sample_position: *PointCloud.CellData(Vec3f),
     sample_surface_point: *PointCloud.CellData(SurfacePoint),
@@ -34,7 +34,7 @@ pub fn uniformlySamplePointsOnSurface(
         const sqrt_r1 = @sqrt(r1);
         const bcoords: Vec3f = .{ 1.0 - sqrt_r1, sqrt_r1 * (1.0 - r2), sqrt_r1 * r2 };
         const face_index: u32 = @intCast(random.weightedIndex(f32, face_area.data.storage.items));
-        const face_dart = sm.dart(.{ .face = face_index });
+        const face_dart = sm.dart(SurfaceMesh.Face{ .index = face_index });
         const sp: SurfacePoint = .{
             .surface_mesh = sm,
             .type = .{
@@ -51,8 +51,8 @@ pub fn poissonDiskSamplePointsOnSurface(
     random: std.Random,
     sm: *SurfaceMesh,
     sm_bvh: *bvh.TrianglesBVH,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
     pc: *PointCloud,
     sample_position: *PointCloud.CellData(Vec3f),
     sample_surface_point: *PointCloud.CellData(SurfacePoint),
@@ -72,7 +72,7 @@ pub fn poissonDiskSamplePointsOnSurface(
 
     // initialize a first point
     {
-        var face_it = sm.cellIterator(.face);
+        var face_it = sm.faceIterator();
         const f = face_it.next().?; // get the first face of the SurfaceMesh
         const sp: SurfacePoint = .{ // and create a SurfacePoint at its center
             .surface_mesh = sm,

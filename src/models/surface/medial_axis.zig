@@ -62,18 +62,18 @@ pub fn computeVertexShrinkingBalls(
     io: std.Io,
     sm: *SurfaceMesh,
     sm_bvh: *bvh.TrianglesBVH,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_shrinking_ball: *SurfaceMesh.CellData(.vertex, ?Vec4f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_normal: SurfaceMesh.VertexData(Vec3f),
+    vertex_shrinking_ball: *SurfaceMesh.VertexData(?Vec4f),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
         sm_bvh: *bvh.TrianglesBVH,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_shrinking_ball: *SurfaceMesh.CellData(.vertex, ?Vec4f),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        vertex_normal: SurfaceMesh.VertexData(Vec3f),
+        vertex_shrinking_ball: *SurfaceMesh.VertexData(?Vec4f),
 
-        pub fn run(t: *const @This(), vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), vertex: SurfaceMesh.Vertex) void {
             const n = t.vertex_normal.value(vertex);
             t.vertex_shrinking_ball.valuePtr(vertex).* = shrinkingBall(
                 t.sm_bvh,
@@ -83,7 +83,7 @@ pub fn computeVertexShrinkingBalls(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner(.vertex) = try .init(sm);
+    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -102,41 +102,41 @@ pub const VMASContext = struct {
     surface_mesh: *SurfaceMesh,
     // given data
     surface_mesh_bvh: *bvh.TrianglesBVH,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_normal: SurfaceMesh.VertexData(Vec3f),
+    vertex_area: SurfaceMesh.VertexData(f32),
+    vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+    face_area: SurfaceMesh.FaceData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
     // created data
-    vertex_sqem: SurfaceMesh.CellData(.vertex, SQEM),
-    vertex_shrinking_ball: SurfaceMesh.CellData(.vertex, ?Vec4f),
-    vertex_sphere: SurfaceMesh.CellData(.vertex, ?PointCloud.Point),
-    vertex_sphere_error: SurfaceMesh.CellData(.vertex, f32),
+    vertex_sqem: SurfaceMesh.VertexData(SQEM),
+    vertex_shrinking_ball: SurfaceMesh.VertexData(?Vec4f),
+    vertex_sphere: SurfaceMesh.VertexData(?PointCloud.Point),
+    vertex_sphere_error: SurfaceMesh.VertexData(f32),
 
     spheres: *PointCloud,
     // created data
     sphere_center: PointCloud.CellData(Vec3f),
     sphere_radius: PointCloud.CellData(f32),
-    sphere_cluster: PointCloud.CellData(std.ArrayList(SurfaceMesh.Cell)),
+    sphere_cluster: PointCloud.CellData(std.ArrayList(SurfaceMesh.Vertex)),
     sphere_error: PointCloud.CellData(f32),
     sphere_neighbor_spheres: PointCloud.CellData(std.AutoArrayHashMapUnmanaged(PointCloud.Point, void)),
 
     skeleton: *IncidenceGraph,
     // created data
-    skeleton_vertex_position: IncidenceGraph.CellData(.vertex, Vec3f),
+    skeleton_vertex_position: IncidenceGraph.VertexData(Vec3f),
 
     pub fn init(
         allocator: std.mem.Allocator,
         io: std.Io,
         surface_mesh: *SurfaceMesh,
         surface_mesh_bvh: *bvh.TrianglesBVH,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_area: SurfaceMesh.CellData(.vertex, f32),
-        vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-        face_area: SurfaceMesh.CellData(.face, f32),
-        face_normal: SurfaceMesh.CellData(.face, Vec3f),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        vertex_normal: SurfaceMesh.VertexData(Vec3f),
+        vertex_area: SurfaceMesh.VertexData(f32),
+        vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+        face_area: SurfaceMesh.FaceData(f32),
+        face_normal: SurfaceMesh.FaceData(Vec3f),
         spheres: *PointCloud,
         skeleton: *IncidenceGraph,
         line_quadric_epsilon: f32,
@@ -152,7 +152,7 @@ pub const VMASContext = struct {
         // create medial spheres PointCloud data
         const sphere_center = try spheres.addData(Vec3f, "center");
         const sphere_radius = try spheres.addData(f32, "radius");
-        const sphere_cluster = try spheres.addData(std.ArrayList(SurfaceMesh.Cell), "cluster");
+        const sphere_cluster = try spheres.addData(std.ArrayList(SurfaceMesh.Vertex), "cluster");
         const sphere_error = try spheres.addData(f32, "error");
         const sphere_neighbor_spheres = try spheres.addData(std.AutoArrayHashMapUnmanaged(PointCloud.Point, void), "neighbor_spheres");
 
@@ -217,10 +217,10 @@ pub const VMASContext = struct {
     // TODO: maybe take a boolean argument to decide whether to destroy them or not?
     pub fn deinit(vmas_ctx: *VMASContext) void {
         // remove SurfaceMesh data
-        vmas_ctx.surface_mesh.removeData(.vertex, vmas_ctx.vertex_sqem);
-        vmas_ctx.surface_mesh.removeData(.vertex, vmas_ctx.vertex_shrinking_ball);
-        vmas_ctx.surface_mesh.removeData(.vertex, vmas_ctx.vertex_sphere);
-        vmas_ctx.surface_mesh.removeData(.vertex, vmas_ctx.vertex_sphere_error);
+        vmas_ctx.surface_mesh.removeData(vmas_ctx.vertex_sqem);
+        vmas_ctx.surface_mesh.removeData(vmas_ctx.vertex_shrinking_ball);
+        vmas_ctx.surface_mesh.removeData(vmas_ctx.vertex_sphere);
+        vmas_ctx.surface_mesh.removeData(vmas_ctx.vertex_sphere_error);
 
         // remove spheres PointCloud data
         // first deinit ArrayLists in sphere_cluster data & ArrayHashMaps in sphere_neighbor_spheres data
@@ -251,7 +251,7 @@ pub const VMASContext = struct {
         vmas_ctx.sphere_neighbor_spheres.valuePtr(s1).* = .empty;
 
         // and initialize its cluster
-        var v_it = vmas_ctx.surface_mesh.cellIterator(.vertex);
+        var v_it = vmas_ctx.surface_mesh.vertexIterator();
         while (v_it.next()) |v| {
             try vmas_ctx.sphere_cluster.valuePtr(s1).append(vmas_ctx.allocator, v);
             vmas_ctx.vertex_sphere.valuePtr(v).* = s1;
@@ -294,7 +294,7 @@ pub const VMASContext = struct {
             vmas_ctx.sphere_error.valuePtr(s).* = 0.0;
         }
         // compute new clusters
-        var v_it = vmas_ctx.surface_mesh.cellIterator(.vertex);
+        var v_it = vmas_ctx.surface_mesh.vertexIterator();
         while (v_it.next()) |v| {
             const v_sqem = vmas_ctx.vertex_sqem.valuePtr(v);
             var min_distance = std.math.floatMax(f32);
@@ -356,7 +356,7 @@ pub const VMASContext = struct {
         while (s_it.next()) |s| {
             vmas_ctx.sphere_neighbor_spheres.valuePtr(s).clearRetainingCapacity();
         }
-        var e_it = vmas_ctx.surface_mesh.cellIterator(.edge);
+        var e_it = vmas_ctx.surface_mesh.edgeIterator();
         while (e_it.next()) |e| {
             const d = vmas_ctx.surface_mesh.dart(e);
             const s1 = vmas_ctx.vertex_sphere.value(vmas_ctx.surface_mesh.vertex(d));
@@ -429,9 +429,9 @@ pub const VMASContext = struct {
     }
 
     pub fn updateSkeleton(vmas_ctx: *VMASContext) !void {
-        var sphere_skeleton_vertex = try vmas_ctx.spheres.addData(IncidenceGraph.Cell, "__sphere_skeleton_vertex");
+        var sphere_skeleton_vertex = try vmas_ctx.spheres.addData(IncidenceGraph.Vertex, "__sphere_skeleton_vertex");
         defer vmas_ctx.spheres.removeData(sphere_skeleton_vertex);
-        var skeleton_edges: std.AutoHashMapUnmanaged([2]IncidenceGraph.Cell, IncidenceGraph.Cell) = .empty;
+        var skeleton_edges: std.AutoHashMapUnmanaged([2]IncidenceGraph.Vertex, IncidenceGraph.Edge) = .empty;
         defer skeleton_edges.deinit(vmas_ctx.allocator);
 
         vmas_ctx.skeleton.clearRetainingCapacity();
@@ -449,7 +449,7 @@ pub const VMASContext = struct {
                     // store edge with canonical ordering of vertices (smaller index first)
                     try skeleton_edges.put(
                         vmas_ctx.allocator,
-                        if (v.index() < sn_v.index()) .{ v, sn_v } else .{ sn_v, v },
+                        if (v.index < sn_v.index) .{ v, sn_v } else .{ sn_v, v },
                         e,
                     );
                 }
@@ -466,10 +466,10 @@ pub const VMASContext = struct {
                         const v1 = sphere_skeleton_vertex.value(s);
                         const v2 = sphere_skeleton_vertex.value(sn);
                         const v3 = sphere_skeleton_vertex.value(snn);
-                        const edges: [3]IncidenceGraph.Cell = .{
-                            skeleton_edges.get(if (v1.index() < v2.index()) .{ v1, v2 } else .{ v2, v1 }).?,
-                            skeleton_edges.get(if (v2.index() < v3.index()) .{ v2, v3 } else .{ v3, v2 }).?,
-                            skeleton_edges.get(if (v3.index() < v1.index()) .{ v3, v1 } else .{ v1, v3 }).?,
+                        const edges: [3]IncidenceGraph.Edge = .{
+                            skeleton_edges.get(if (v1.index < v2.index) .{ v1, v2 } else .{ v2, v1 }).?,
+                            skeleton_edges.get(if (v2.index < v3.index) .{ v2, v3 } else .{ v3, v2 }).?,
+                            skeleton_edges.get(if (v3.index < v1.index) .{ v3, v1 } else .{ v1, v3 }).?,
                         };
                         _ = try vmas_ctx.skeleton.addFace(&edges);
                     }
@@ -493,7 +493,7 @@ pub const VMASContext = struct {
     }
 
     pub fn splitSphere(vmas_ctx: *VMASContext, sphere: PointCloud.Point) !void {
-        var worst_vertex: ?SurfaceMesh.Cell = null;
+        var worst_vertex: ?SurfaceMesh.Vertex = null;
         var worst_vertex_error: f32 = 0.0;
         const cluster = vmas_ctx.sphere_cluster.valuePtr(sphere);
         for (cluster.items) |v| {

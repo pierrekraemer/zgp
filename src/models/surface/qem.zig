@@ -27,14 +27,13 @@ const line_quadric_epsilon = 1e-4;
 /// https://www.dgp.toronto.edu/~hsuehtil/pdf/lineQuadric.pdf
 pub fn vertexQEM(
     sm: *const SurfaceMesh,
-    vertex: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex: SurfaceMesh.Vertex,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_area: SurfaceMesh.VertexData(f32),
+    vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+    face_area: SurfaceMesh.FaceData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
 ) Mat4f {
-    assert(vertex.cellType() == .vertex);
     var vq = mat.zero4;
     const p = vertex_position.value(vertex);
     var dart_it = sm.cellDartIterator(vertex);
@@ -76,15 +75,15 @@ pub fn vertexQEM(
 /// Face contributions to vertices quadrics are computed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance)
 pub fn computeVertexQEMs(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    vertex_qem: *SurfaceMesh.CellData(.vertex, Mat4f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_area: SurfaceMesh.VertexData(f32),
+    vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+    face_area: SurfaceMesh.FaceData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
+    vertex_qem: *SurfaceMesh.VertexData(Mat4f),
 ) !void {
     vertex_qem.data.fill(mat.zero4f);
-    var face_it = sm.cellIterator(.face);
+    var face_it = sm.faceIterator();
     while (face_it.next()) |face| {
         const fd = sm.dart(face);
         const n = face_normal.value(face);
@@ -103,7 +102,7 @@ pub fn computeVertexQEMs(
             );
         }
     }
-    var vertex_it = sm.cellIterator(.vertex);
+    var vertex_it = sm.vertexIterator();
     while (vertex_it.next()) |vertex| {
         const p = vertex_position.value(vertex);
         const tb = vertex_tangent_basis.value(vertex);
@@ -125,15 +124,15 @@ pub fn computeVertexQEMs(
 
 pub fn computeVertexQEMsSimd(
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, SimdVec4f),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    vertex_qem: *SurfaceMesh.CellData(.vertex, SimdMat4f),
+    vertex_position: SurfaceMesh.VertexData(SimdVec4f),
+    vertex_area: SurfaceMesh.VertexData(f32),
+    vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+    face_area: SurfaceMesh.FaceData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
+    vertex_qem: *SurfaceMesh.VertexData(SimdMat4f),
 ) !void {
     vertex_qem.data.fill(@splat(vec.zero4f));
-    var face_it = sm.cellIterator(.face);
+    var face_it = sm.faceIterator();
     while (face_it.next()) |face| {
         const fd = sm.dart(face);
         const n = vec.simdFromVec3f(face_normal.value(face));
@@ -152,7 +151,7 @@ pub fn computeVertexQEMsSimd(
             );
         }
     }
-    var vertex_it = sm.cellIterator(.vertex);
+    var vertex_it = sm.vertexIterator();
     while (vertex_it.next()) |vertex| {
         const p = vertex_position.value(vertex);
         const tb = vertex_tangent_basis.value(vertex);

@@ -28,17 +28,17 @@ pub const TrianglesBVH = struct {
     initialized: bool = false,
     bvh_ptr: *anyopaque = undefined,
     surface_mesh: *SurfaceMesh = undefined,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f) = undefined,
-    surface_mesh_faces: std.ArrayList(SurfaceMesh.Cell) = .empty,
+    vertex_position: SurfaceMesh.VertexData(Vec3f) = undefined,
+    surface_mesh_faces: std.ArrayList(SurfaceMesh.Cell(.face)) = .empty,
 
     pub fn init(
         sm: *SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
     ) !TrianglesBVH {
         var vertex_index = try sm.addData(.vertex, u32, "__vertex_index");
-        defer sm.removeData(.vertex, vertex_index);
+        defer sm.removeData(vertex_index);
 
-        var surface_mesh_faces: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(sm.allocator, sm.nbCells(.face));
+        var surface_mesh_faces: std.ArrayList(SurfaceMesh.Cell(.face)) = try .initCapacity(sm.allocator, sm.nbCells(.face));
         errdefer surface_mesh_faces.deinit(sm.allocator);
 
         var triangles_indices_array: std.ArrayList(Index) = try .initCapacity(sm.allocator, 3 * sm.nbCells(.face));
@@ -46,7 +46,7 @@ pub const TrianglesBVH = struct {
         var position_array: std.ArrayList(Vec3f) = try .initCapacity(sm.allocator, sm.nbCells(.vertex));
         defer position_array.deinit(sm.allocator);
 
-        var vertex_it = sm.cellIterator(.vertex);
+        var vertex_it = sm.vertexIterator();
         var nb_vertices: u32 = 0;
         while (vertex_it.next()) |v| : (nb_vertices += 1) {
             vertex_index.valuePtr(v).* = nb_vertices;
@@ -54,7 +54,7 @@ pub const TrianglesBVH = struct {
         }
 
         // TODO: this code makes the assumption that the mesh is made of triangle faces
-        var face_it = sm.cellIterator(.face);
+        var face_it = sm.faceIterator();
         while (face_it.next()) |f| {
             try surface_mesh_faces.append(sm.allocator, f);
             var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
@@ -96,7 +96,7 @@ pub const TrianglesBVH = struct {
         return null;
     }
 
-    pub fn intersectedTriangle(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Cell {
+    pub fn intersectedTriangle(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Face {
         assert(tbvh.initialized);
         if (tbvh.intersect(ray)) |h| {
             return tbvh.surface_mesh_faces.items[h.triIndex];
@@ -104,7 +104,7 @@ pub const TrianglesBVH = struct {
         return null;
     }
 
-    pub fn intersectedEdge(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Cell {
+    pub fn intersectedEdge(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Edge {
         assert(tbvh.initialized);
         if (tbvh.intersect(ray)) |h| {
             const f = tbvh.surface_mesh_faces.items[h.triIndex];
@@ -126,7 +126,7 @@ pub const TrianglesBVH = struct {
         return null;
     }
 
-    pub fn intersectedVertex(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Cell {
+    pub fn intersectedVertex(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Vertex {
         assert(tbvh.initialized);
         if (tbvh.intersect(ray)) |h| {
             const f = tbvh.surface_mesh_faces.items[h.triIndex];

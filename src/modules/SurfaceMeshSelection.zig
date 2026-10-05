@@ -34,9 +34,9 @@ const SelectionData = struct {
     line_cylinder_shader_parameters: LineCylinder.Parameters,
     tri_flat_shader_parameters: TriFlat.Parameters,
 
-    selected_vertex_set: ?*SurfaceMesh.CellSet(.vertex) = null,
-    selected_edge_set: ?*SurfaceMesh.CellSet(.edge) = null,
-    selected_face_set: ?*SurfaceMesh.CellSet(.face) = null,
+    selected_vertex_set: ?*SurfaceMesh.VertexSet = null,
+    selected_edge_set: ?*SurfaceMesh.EdgeSet = null,
+    selected_face_set: ?*SurfaceMesh.FaceSet = null,
 
     selecting_cell_type: SurfaceMesh.CellType = .vertex,
     selection_mode: SelectionMode = .single,
@@ -92,7 +92,7 @@ module: Module = .{
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, SelectionData) = .empty,
 
 selecting: bool = false,
-hovered_cell: ?SurfaceMesh.Cell = null,
+hovered_cell_index: ?u32 = null,
 hovered_cell_ibo: IBO,
 
 pub fn init(app_ctx: *AppContext) SurfaceMeshSelection {
@@ -159,7 +159,7 @@ pub fn surfaceMeshStdDataChanged(
 pub fn selectedModelChanged(m: *Module) void {
     const sms: *SurfaceMeshSelection = @alignCast(@fieldParentPtr("module", m));
     sms.selecting = false;
-    sms.hovered_cell = null;
+    sms.hovered_cell_index = null;
     sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{});
 }
 
@@ -200,10 +200,10 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     }
 
     // draw currently hovered cell
-    if (sms.selecting and sms.hovered_cell != null) {
+    if (sms.selecting and sms.hovered_cell_index != null) {
         const modState = c.SDL_GetModState();
         const action: SelectionAction = if (modState & c.SDL_KMOD_SHIFT != 0) .remove else .add;
-        const cell_type = sms.hovered_cell.?.cellType(); // or sms.selecting_cell_type
+        const cell_type = sd.selecting_cell_type;
         switch (cell_type) {
             .vertex => {
                 const sphere_radius_backup = sd.point_sphere_shader_parameters.sphere_radius;
@@ -316,7 +316,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
             switch (event.key.key) {
                 c.SDLK_S => {
                     sms.selecting = false;
-                    sms.hovered_cell = null;
+                    sms.hovered_cell_index = null;
                     sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{});
                     sms.app_ctx.requestRedraw();
                 },
@@ -335,27 +335,27 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                         .single => {
                             switch (sd.selecting_cell_type) {
                                 .vertex => {
-                                    sms.hovered_cell = info.bvh.intersectedVertex(ray);
-                                    if (sms.hovered_cell) |cell| {
-                                        sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, .vertex, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
+                                    sms.hovered_cell_index = if (info.bvh.intersectedVertex(ray)) |v| v.index else null;
+                                    if (sms.hovered_cell_index) |idx| {
+                                        sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, &[_]SurfaceMesh.Vertex{.{ .index = idx }}, sms.app_ctx.allocator) catch |err| {
                                             std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
                                             break :blk false;
                                         };
                                     }
                                 },
                                 .edge => {
-                                    sms.hovered_cell = info.bvh.intersectedEdge(ray);
-                                    if (sms.hovered_cell) |cell| {
-                                        sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, .edge, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
+                                    sms.hovered_cell_index = if (info.bvh.intersectedEdge(ray)) |e| e.index else null;
+                                    if (sms.hovered_cell_index) |idx| {
+                                        sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, &[_]SurfaceMesh.Edge{.{ .index = idx }}, sms.app_ctx.allocator) catch |err| {
                                             std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
                                             break :blk false;
                                         };
                                     }
                                 },
                                 .face => {
-                                    sms.hovered_cell = info.bvh.intersectedTriangle(ray);
-                                    if (sms.hovered_cell) |cell| {
-                                        sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, .face, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
+                                    sms.hovered_cell_index = if (info.bvh.intersectedTriangle(ray)) |f| f.index else null;
+                                    if (sms.hovered_cell_index) |idx| {
+                                        sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, &[_]SurfaceMesh.Face{.{ .index = idx }}, sms.app_ctx.allocator) catch |err| {
                                             std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
                                             break :blk false;
                                         };
@@ -365,16 +365,16 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                             }
                         },
                         .within_sphere => {
-                            sms.hovered_cell = info.bvh.intersectedVertex(ray); // within sphere selection is always centered on a vertex
-                            if (sms.hovered_cell) |cell| {
-                                sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, .vertex, &[_]SurfaceMesh.Cell{cell}, sms.app_ctx.allocator) catch |err| {
+                            sms.hovered_cell_index = if (info.bvh.intersectedVertex(ray)) |v| v.index else null; // within sphere selection is always centered on a vertex
+                            if (sms.hovered_cell_index) |idx| {
+                                sms.hovered_cell_ibo.fillFromSurfaceMeshCellSlice(sm, &[_]SurfaceMesh.Vertex{.{ .index = idx }}, sms.app_ctx.allocator) catch |err| {
                                     std.debug.print("Failed to fill selecting cell IBO: {}\n", .{err});
                                     break :blk false;
                                 };
                             }
                         },
                     }
-                    if (sms.hovered_cell == null) {
+                    if (sms.hovered_cell_index == null) {
                         sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{});
                     }
                     sms.app_ctx.requestRedraw();
@@ -387,31 +387,31 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
             switch (event.button.button) {
                 c.SDL_BUTTON_LEFT => {
                     if (sms.selecting) {
-                        if (sms.hovered_cell) |cell| {
+                        if (sms.hovered_cell_index) |idx| {
                             const modState = c.SDL_GetModState();
                             const action: SelectionAction = if (modState & c.SDL_KMOD_SHIFT != 0) .remove else .add;
                             switch (sd.selection_mode) {
                                 .single => {
                                     switch (action) {
                                         .add => switch (sd.selecting_cell_type) {
-                                            .vertex => sd.selected_vertex_set.?.add(cell) catch |err| {
+                                            .vertex => sd.selected_vertex_set.?.add(.{ .index = idx }) catch |err| {
                                                 std.debug.print("Failed to add vertex to vertex_set: {}\n", .{err});
                                                 break :blk false;
                                             },
-                                            .edge => sd.selected_edge_set.?.add(cell) catch |err| {
+                                            .edge => sd.selected_edge_set.?.add(.{ .index = idx }) catch |err| {
                                                 std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
                                                 break :blk false;
                                             },
-                                            .face => sd.selected_face_set.?.add(cell) catch |err| {
+                                            .face => sd.selected_face_set.?.add(.{ .index = idx }) catch |err| {
                                                 std.debug.print("Failed to add face to face_set: {}\n", .{err});
                                                 break :blk false;
                                             },
                                             else => unreachable,
                                         },
                                         .remove => switch (sd.selecting_cell_type) {
-                                            .vertex => sd.selected_vertex_set.?.remove(cell),
-                                            .edge => sd.selected_edge_set.?.remove(cell),
-                                            .face => sd.selected_face_set.?.remove(cell),
+                                            .vertex => sd.selected_vertex_set.?.remove(.{ .index = idx }),
+                                            .edge => sd.selected_edge_set.?.remove(.{ .index = idx }),
+                                            .face => sd.selected_face_set.?.remove(.{ .index = idx }),
                                             else => unreachable,
                                         },
                                     }
@@ -426,37 +426,31 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                                 .within_sphere => {
                                     const info = sm_store.surfaceMeshInfo(sm);
                                     if (info.std_datas.vertex_position) |vertex_position| {
-                                        var vertices: std.ArrayList(SurfaceMesh.Cell) = .empty;
+                                        var vertices: std.ArrayList(SurfaceMesh.Vertex) = .empty;
                                         defer vertices.deinit(sm.allocator);
-                                        var edges: std.ArrayList(SurfaceMesh.Cell) = .empty;
+                                        var edges: std.ArrayList(SurfaceMesh.Edge) = .empty;
                                         defer edges.deinit(sm.allocator);
-                                        var faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
+                                        var faces: std.ArrayList(SurfaceMesh.Face) = .empty;
                                         defer faces.deinit(sm.allocator);
-                                        selection.cellsWithinSphereAroundVertex(sm, cell, sd.selection_radius, vertex_position, &vertices, &edges, &faces) catch |err| {
+                                        selection.cellsWithinSphereAroundVertex(sm, .{ .index = idx }, sd.selection_radius, vertex_position, &vertices, &edges, &faces) catch |err| {
                                             std.debug.print("Failed to select cells within sphere: {}\\n", .{err});
                                             break :blk false;
                                         };
-                                        const cells_in_sphere = switch (sd.selecting_cell_type) {
-                                            .vertex => vertices.items,
-                                            .edge => edges.items,
-                                            .face => faces.items,
-                                            else => unreachable,
-                                        };
                                         switch (action) {
                                             .add => switch (sd.selecting_cell_type) {
-                                                .vertex => for (cells_in_sphere) |cell_in_sphere| {
+                                                .vertex => for (vertices.items) |cell_in_sphere| {
                                                     sd.selected_vertex_set.?.add(cell_in_sphere) catch |err| {
                                                         std.debug.print("Failed to add vertex to vertex_set: {}\n", .{err});
                                                         break :blk false;
                                                     };
                                                 },
-                                                .edge => for (cells_in_sphere) |cell_in_sphere| {
+                                                .edge => for (edges.items) |cell_in_sphere| {
                                                     sd.selected_edge_set.?.add(cell_in_sphere) catch |err| {
                                                         std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
                                                         break :blk false;
                                                     };
                                                 },
-                                                .face => for (cells_in_sphere) |cell_in_sphere| {
+                                                .face => for (faces.items) |cell_in_sphere| {
                                                     sd.selected_face_set.?.add(cell_in_sphere) catch |err| {
                                                         std.debug.print("Failed to add face to face_set: {}\n", .{err});
                                                         break :blk false;
@@ -465,13 +459,13 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                                                 else => unreachable,
                                             },
                                             .remove => switch (sd.selecting_cell_type) {
-                                                .vertex => for (cells_in_sphere) |cell_in_sphere| {
+                                                .vertex => for (vertices.items) |cell_in_sphere| {
                                                     sd.selected_vertex_set.?.remove(cell_in_sphere);
                                                 },
-                                                .edge => for (cells_in_sphere) |cell_in_sphere| {
+                                                .edge => for (edges.items) |cell_in_sphere| {
                                                     sd.selected_edge_set.?.remove(cell_in_sphere);
                                                 },
-                                                .face => for (cells_in_sphere) |cell_in_sphere| {
+                                                .face => for (faces.items) |cell_in_sphere| {
                                                     sd.selected_face_set.?.remove(cell_in_sphere);
                                                 },
                                                 else => unreachable,
@@ -651,10 +645,10 @@ pub fn rightPanel(m: *Module) void {
         .vertex => {
             if (sd.selected_vertex_set) |vertex_set| {
                 var buf: [64]u8 = undefined;
-                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{vertex_set.cell_set_gen.cells.items.len}) catch "";
+                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{vertex_set.cells.items.len}) catch "";
                 c.ImGui_Text(text);
                 c.ImGui_SameLine();
-                const disabled = vertex_set.cell_set_gen.cells.items.len == 0;
+                const disabled = vertex_set.cells.items.len == 0;
                 if (disabled) {
                     c.ImGui_BeginDisabled(true);
                 }
@@ -673,10 +667,10 @@ pub fn rightPanel(m: *Module) void {
         .edge => {
             if (sd.selected_edge_set) |edge_set| {
                 var buf: [64]u8 = undefined;
-                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{edge_set.cell_set_gen.cells.items.len}) catch "";
+                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{edge_set.cells.items.len}) catch "";
                 c.ImGui_Text(text);
                 c.ImGui_SameLine();
-                const disabled = edge_set.cell_set_gen.cells.items.len == 0;
+                const disabled = edge_set.cells.items.len == 0;
                 if (disabled) {
                     c.ImGui_BeginDisabled(true);
                 }
@@ -695,10 +689,10 @@ pub fn rightPanel(m: *Module) void {
         .face => {
             if (sd.selected_face_set) |face_set| {
                 var buf: [64]u8 = undefined;
-                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{face_set.cell_set_gen.cells.items.len}) catch "";
+                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{face_set.cells.items.len}) catch "";
                 c.ImGui_Text(text);
                 c.ImGui_SameLine();
-                const disabled = face_set.cell_set_gen.cells.items.len == 0;
+                const disabled = face_set.cells.items.len == 0;
                 if (disabled) {
                     c.ImGui_BeginDisabled(true);
                 }

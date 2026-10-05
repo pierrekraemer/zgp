@@ -311,8 +311,8 @@ pub fn dataComputableAndUpToDate(
 fn computeCornerAngles(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    corner_angle: *SurfaceMesh.CellData(.corner, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    corner_angle: *SurfaceMesh.CornerData(f32),
 ) !void {
     try angle.computeCornerAngles(app_ctx.io, sm, vertex_position, corner_angle);
     app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .corner, f32, corner_angle.*);
@@ -321,8 +321,8 @@ fn computeCornerAngles(
 fn computeHalfedgeCotanWeights(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    halfedge_cotan_weight: *SurfaceMesh.CellData(.halfedge, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    halfedge_cotan_weight: *SurfaceMesh.HalfedgeData(f32),
 ) !void {
     try laplacian.computeHalfedgeCotanWeights(app_ctx.io, sm, vertex_position, halfedge_cotan_weight);
     app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .halfedge, f32, halfedge_cotan_weight.*);
@@ -331,8 +331,8 @@ fn computeHalfedgeCotanWeights(
 fn computeEdgeLengths(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    edge_length: *SurfaceMesh.CellData(.edge, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    edge_length: *SurfaceMesh.EdgeData(f32),
 ) !void {
     try length.computeEdgeLengths(sm, vertex_position, edge_length);
     app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .edge, f32, edge_length.*);
@@ -341,9 +341,9 @@ fn computeEdgeLengths(
 fn computeEdgeDihedralAngles(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    edge_dihedral_angle: *SurfaceMesh.CellData(.edge, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
+    edge_dihedral_angle: *SurfaceMesh.EdgeData(f32),
 ) !void {
     const t = std.Io.Timestamp.now(app_ctx.io, .real);
     try angle.computeEdgeDihedralAngles(app_ctx.io, sm, vertex_position, face_normal, edge_dihedral_angle);
@@ -355,8 +355,8 @@ fn computeEdgeDihedralAngles(
 fn computeFaceAreas(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_area: *SurfaceMesh.CellData(.face, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_area: *SurfaceMesh.FaceData(f32),
 ) !void {
     try area.computeFaceAreas(app_ctx.io, sm, vertex_position, face_area);
     app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .face, f32, face_area.*);
@@ -365,8 +365,8 @@ fn computeFaceAreas(
 fn computeFaceNormals(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_normal: *SurfaceMesh.CellData(.face, Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_normal: *SurfaceMesh.FaceData(Vec3f),
 ) !void {
     const t = std.Io.Timestamp.now(app_ctx.io, .real);
     try normal.computeFaceNormals(app_ctx.io, sm, vertex_position, face_normal);
@@ -378,8 +378,8 @@ fn computeFaceNormals(
 fn computeVertexAreas(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    face_area: SurfaceMesh.CellData(.face, f32),
-    vertex_area: *SurfaceMesh.CellData(.vertex, f32),
+    face_area: SurfaceMesh.FaceData(f32),
+    vertex_area: *SurfaceMesh.VertexData(f32),
 ) !void {
     try area.computeVertexAreas(sm, face_area, vertex_area);
     app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_area.*);
@@ -388,9 +388,9 @@ fn computeVertexAreas(
 fn computeVertexNormals(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    vertex_normal: *SurfaceMesh.CellData(.vertex, Vec3f),
+    corner_angle: SurfaceMesh.CornerData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
+    vertex_normal: *SurfaceMesh.VertexData(Vec3f),
 ) !void {
     const t = std.Io.Timestamp.now(app_ctx.io, .real);
     try normal.computeVertexNormals(app_ctx.io, sm, corner_angle, face_normal, vertex_normal);
@@ -402,9 +402,9 @@ fn computeVertexNormals(
 fn computeVertexTangentBases(
     app_ctx: *AppContext,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_tangent_basis: *SurfaceMesh.CellData(.vertex, [2]Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_normal: SurfaceMesh.VertexData(Vec3f),
+    vertex_tangent_basis: *SurfaceMesh.VertexData([2]Vec3f),
 ) !void {
     try tangent_basis.computeVertexTangentBases(app_ctx.io, sm, vertex_position, vertex_normal, vertex_tangent_basis);
     app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, [2]Vec3f, vertex_tangent_basis.*);

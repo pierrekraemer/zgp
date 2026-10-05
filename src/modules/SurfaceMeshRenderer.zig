@@ -48,11 +48,11 @@ const ColorType = enum {
 const ColorParameters = struct {
     defined_on: ColorDefinedOn,
     type: ColorType = .rgb,
-    vertex_scalar_data: ?SurfaceMesh.CellData(.vertex, f32) = null, // data used if defined_on is vertex & type is scalar
-    vertex_uv_data: ?SurfaceMesh.CellData(.vertex, Vec2f) = null, // data used if defined_on is vertex & type is uv
-    vertex_rgb_data: ?SurfaceMesh.CellData(.vertex, Vec3f) = null, // data used if defined_on is vertex & type is rgb
-    face_scalar_data: ?SurfaceMesh.CellData(.face, f32) = null, // data used if defined_on is face & type is scalar
-    face_rgb_data: ?SurfaceMesh.CellData(.face, Vec3f) = null, // data used if defined_on is face & type is rgb
+    vertex_scalar_data: ?SurfaceMesh.VertexData(f32) = null, // data used if defined_on is vertex & type is scalar
+    vertex_uv_data: ?SurfaceMesh.VertexData(Vec2f) = null, // data used if defined_on is vertex & type is uv
+    vertex_rgb_data: ?SurfaceMesh.VertexData(Vec3f) = null, // data used if defined_on is vertex & type is rgb
+    face_scalar_data: ?SurfaceMesh.FaceData(f32) = null, // data used if defined_on is face & type is scalar
+    face_rgb_data: ?SurfaceMesh.FaceData(Vec3f) = null, // data used if defined_on is face & type is rgb
 };
 
 const SurfaceMeshRendererParameters = struct {

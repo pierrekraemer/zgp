@@ -17,16 +17,16 @@ const qem = @import("qem.zig");
 const QEMDecimationContext = struct {
     surface_mesh: *SurfaceMesh,
 
-    vertex_position_simd: SurfaceMesh.CellData(.vertex, SimdVec4f),
-    vertex_qem_simd: SurfaceMesh.CellData(.vertex, SimdMat4f),
+    vertex_position_simd: SurfaceMesh.VertexData(SimdVec4f),
+    vertex_qem_simd: SurfaceMesh.VertexData(SimdMat4f),
 
     pub fn init(
         sm: *SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_area: SurfaceMesh.CellData(.vertex, f32),
-        vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-        face_area: SurfaceMesh.CellData(.face, f32),
-        face_normal: SurfaceMesh.CellData(.face, Vec3f),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        vertex_area: SurfaceMesh.VertexData(f32),
+        vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+        face_area: SurfaceMesh.FaceData(f32),
+        face_normal: SurfaceMesh.FaceData(Vec3f),
     ) !QEMDecimationContext {
         const vertex_position_simd = try sm.addData(.vertex, SimdVec4f, "__position_simd");
         var it = vertex_position.data.constIterator();
@@ -53,19 +53,18 @@ const QEMDecimationContext = struct {
     }
 
     pub fn deinit(qem_ctx: *QEMDecimationContext) void {
-        qem_ctx.surface_mesh.removeData(.vertex, qem_ctx.vertex_position_simd);
-        qem_ctx.surface_mesh.removeData(.vertex, qem_ctx.vertex_qem_simd);
+        qem_ctx.surface_mesh.removeData(qem_ctx.vertex_position_simd);
+        qem_ctx.surface_mesh.removeData(qem_ctx.vertex_qem_simd);
     }
 
-    pub fn writeBack(qem_ctx: *QEMDecimationContext, vertex_position: SurfaceMesh.CellData(.vertex, Vec3f)) !void {
+    pub fn writeBack(qem_ctx: *QEMDecimationContext, vertex_position: SurfaceMesh.VertexData(Vec3f)) !void {
         var it = qem_ctx.vertex_position_simd.data.constIterator();
         while (it.next()) |elem| {
             vertex_position.data.valuePtr(elem.idx).* = vec.simdToVec3f(elem.value_ptr.*);
         }
     }
 
-    fn edgeCollapsePositionAndQuadric(qem_ctx: *QEMDecimationContext, edge: SurfaceMesh.Cell) struct { SimdVec4f, SimdMat4f } {
-        assert(edge.cellType() == .edge);
+    fn edgeCollapsePositionAndQuadric(qem_ctx: *QEMDecimationContext, edge: SurfaceMesh.Edge) struct { SimdVec4f, SimdMat4f } {
         const sm = qem_ctx.surface_mesh;
         const d = sm.dart(edge);
         const d1 = sm.phi1(d);
@@ -101,11 +100,11 @@ const QEMDecimationContext = struct {
 pub fn decimateQEM(
     allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_area: SurfaceMesh.VertexData(f32),
+    vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+    face_area: SurfaceMesh.FaceData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
     nb_vertices_to_remove: u32,
 ) !void {
     try subdivision.triangulateFaces(allocator, sm);
@@ -113,17 +112,17 @@ pub fn decimateQEM(
     // Priority queue type for edge collapse, ordered by the ascending cost of collapsing the edge
     const EdgeQueueContext = struct {
         qem_ctx: *QEMDecimationContext,
-        edge_queue_index: *SurfaceMesh.CellData(.edge, ?usize),
+        edge_queue_index: *SurfaceMesh.EdgeData(?usize),
     };
     const EdgeInfo = struct {
         const EdgeInfo = @This();
-        edge: SurfaceMesh.Cell,
+        edge: SurfaceMesh.Edge,
         cost: f32,
         pub fn cmp(_: EdgeQueueContext, a: EdgeInfo, b: EdgeInfo) std.math.Order {
             const cost_order = std.math.order(a.cost, b.cost);
             if (cost_order != .eq) return cost_order;
             // tie-breaker: use edge indices to have a deterministic order
-            return std.math.order(a.edge.index(), b.edge.index());
+            return std.math.order(a.edge.index, b.edge.index);
         }
         pub fn setEdgeIndexInQueue(qctx: EdgeQueueContext, a: EdgeInfo, index: usize) void {
             qctx.edge_queue_index.valuePtr(a.edge).* = index;
@@ -131,8 +130,7 @@ pub fn decimateQEM(
     };
     const EdgeQueue = PriorityQueue(EdgeInfo, EdgeQueueContext, EdgeInfo.cmp, EdgeInfo.setEdgeIndexInQueue);
     const EdgeQueueUtil = struct {
-        fn addEdgeToQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell, alloc: std.mem.Allocator) !void {
-            assert(edge.cellType() == .edge);
+        fn addEdgeToQueue(queue: *EdgeQueue, edge: SurfaceMesh.Edge, alloc: std.mem.Allocator) !void {
             const p, const q = queue.context.qem_ctx.edgeCollapsePositionAndQuadric(edge);
             const p_hom: SimdVec4f = .{ p[0], p[1], p[2], 1.0 };
             // cost = p^T * Q * p  (in f32!)
@@ -141,15 +139,13 @@ pub fn decimateQEM(
 
             try queue.push(alloc, .{ .edge = edge, .cost = cost });
         }
-        fn removeEdgeFromQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell) void {
-            assert(edge.cellType() == .edge);
+        fn removeEdgeFromQueue(queue: *EdgeQueue, edge: SurfaceMesh.Edge) void {
             if (queue.context.edge_queue_index.value(edge)) |index| {
                 _ = queue.popIndex(index);
             }
             queue.context.edge_queue_index.valuePtr(edge).* = null;
         }
-        fn updateEdgeInQueue(queue: *EdgeQueue, edge: SurfaceMesh.Cell, alloc: std.mem.Allocator) !void {
-            assert(edge.cellType() == .edge);
+        fn updateEdgeInQueue(queue: *EdgeQueue, edge: SurfaceMesh.Edge, alloc: std.mem.Allocator) !void {
             removeEdgeFromQueue(queue, edge);
             if (queue.context.qem_ctx.surface_mesh.canCollapseEdge(edge)) {
                 try addEdgeToQueue(queue, edge, alloc);
@@ -158,7 +154,7 @@ pub fn decimateQEM(
     };
 
     var edge_queue_index = try sm.addData(.edge, ?usize, "__edge_queue_index");
-    defer sm.removeData(.edge, edge_queue_index);
+    defer sm.removeData(edge_queue_index);
     edge_queue_index.data.fill(null);
 
     var qem_ctx: QEMDecimationContext = try .init(
@@ -178,7 +174,7 @@ pub fn decimateQEM(
     defer queue.deinit(allocator);
 
     // initialize the queue with all topologically collapsible edges
-    var edge_it = sm.cellIterator(.edge);
+    var edge_it = sm.edgeIterator();
     while (edge_it.next()) |edge| {
         if (sm.canCollapseEdge(edge)) {
             try EdgeQueueUtil.addEdgeToQueue(&queue, edge, allocator);

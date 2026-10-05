@@ -35,3 +35,13 @@ pub fn UnionFromStruct(S: type) type {
     const EnumType = @Enum(u32, .exhaustive, &field_names, &enum_values);
     return @Union(.auto, EnumType, &field_names, &field_types, &@splat(.{}));
 }
+
+/// Return the element type of a collection, whatever its exact type is
+/// (slice, const slice, pointer to an array, ...).
+pub fn collectionElementType(comptime T: type) type {
+    return switch (@typeInfo(T)) {
+        .pointer => |p| collectionElementType(p.child),
+        .array => |a| collectionElementType(a.child),
+        else => T,
+    };
+}

@@ -96,7 +96,7 @@ pub fn Data(comptime T: type) type {
         pub fn valuePtr(self: anytype, index: u32) ValuePtrType(@TypeOf(self)) {
             return &self.storage.items[index];
         }
-        pub fn value(self: *Self, index: u32) T {
+        pub fn value(self: *const Self, index: u32) T {
             return self.storage.items[index];
         }
 

@@ -160,8 +160,8 @@ pub fn pointCloudDestroyed(m: *Module, point_cloud: *PointCloud) void {
 fn uniformSampling(
     sms: *SurfaceMeshSampling,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_area: SurfaceMesh.FaceData(f32),
     nb_points: usize,
     pointcloud_name: []const u8,
 ) !void {
@@ -192,8 +192,8 @@ fn poissonDiskSampling(
     sms: *SurfaceMeshSampling,
     sm: *SurfaceMesh,
     sm_bvh: *bvh.TrianglesBVH,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
     poisson_radius: f32,
     pointcloud_name: []const u8,
 ) !void {

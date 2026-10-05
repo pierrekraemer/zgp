@@ -11,10 +11,9 @@ const geometry_utils = @import("../../geometry/utils.zig");
 /// TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan.
 pub fn faceArea(
     sm: *const SurfaceMesh,
-    face: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    face: SurfaceMesh.Face,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
 ) f32 {
-    assert(face.cellType() == .face);
     var area: f32 = 0.0;
     const d_start = sm.dart(face);
     const p1 = vertex_position.value(sm.vertex(d_start));
@@ -38,15 +37,15 @@ pub fn faceArea(
 pub fn computeFaceAreas(
     io: std.Io,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_area: *SurfaceMesh.CellData(.face, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_area: *SurfaceMesh.FaceData(f32),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        face_area: *SurfaceMesh.CellData(.face, f32),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        face_area: *SurfaceMesh.FaceData(f32),
 
-        pub fn run(t: *const @This(), face: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), face: SurfaceMesh.Face) void {
             t.face_area.valuePtr(face).* = faceArea(
                 t.surface_mesh,
                 face,
@@ -55,7 +54,7 @@ pub fn computeFaceAreas(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner(.face) = try .init(sm);
+    var pctr: SurfaceMesh.ParallelFaceTaskRunner = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -68,10 +67,9 @@ pub fn computeFaceAreas(
 /// This version uses intrinsic geometry (edge lengths) instead of extrinsic vertex positions.
 pub fn faceAreaIntrinsic(
     sm: *const SurfaceMesh,
-    face: SurfaceMesh.Cell,
-    edge_length: SurfaceMesh.CellData(.edge, f32),
+    face: SurfaceMesh.Face,
+    edge_length: SurfaceMesh.EdgeData(f32),
 ) f32 {
-    assert(face.cellType() == .face);
     const d = sm.dart(face);
     return geometry_utils.triangleAreaIntrinsic(
         edge_length.value(sm.edge(d)),
@@ -86,15 +84,15 @@ pub fn faceAreaIntrinsic(
 pub fn computeFaceAreasIntrinsic(
     io: std.Io,
     sm: *SurfaceMesh,
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    face_area: *SurfaceMesh.CellData(.face, f32),
+    edge_length: SurfaceMesh.EdgeData(f32),
+    face_area: *SurfaceMesh.FaceData(f32),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
-        edge_length: SurfaceMesh.CellData(.edge, f32),
-        face_area: *SurfaceMesh.CellData(.face, f32),
+        edge_length: SurfaceMesh.EdgeData(f32),
+        face_area: *SurfaceMesh.FaceData(f32),
 
-        pub fn run(t: *const @This(), face: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), face: SurfaceMesh.Face) void {
             t.face_area.valuePtr(face).* = faceAreaIntrinsic(
                 t.surface_mesh,
                 face,
@@ -103,7 +101,7 @@ pub fn computeFaceAreasIntrinsic(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner(.face) = try .init(sm);
+    var pctr: SurfaceMesh.ParallelFaceTaskRunner = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -117,10 +115,9 @@ pub fn computeFaceAreasIntrinsic(
 /// Each incident face f contributes 1/codegree(f) of its area to the area of the vertex.
 pub fn vertexArea(
     sm: *const SurfaceMesh,
-    vertex: SurfaceMesh.Cell,
-    face_area: SurfaceMesh.CellData(.face, f32),
+    vertex: SurfaceMesh.Vertex,
+    face_area: SurfaceMesh.FaceData(f32),
 ) f32 {
-    assert(vertex.cellType() == .vertex);
     var area: f32 = 0.0;
     var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
@@ -139,11 +136,11 @@ pub fn vertexArea(
 /// Executed here in a face-centric manner => nice but do not allow for parallelization (TODO: measure performance)
 pub fn computeVertexAreas(
     sm: *SurfaceMesh,
-    face_area: SurfaceMesh.CellData(.face, f32),
-    vertex_area: *SurfaceMesh.CellData(.vertex, f32),
+    face_area: SurfaceMesh.FaceData(f32),
+    vertex_area: *SurfaceMesh.VertexData(f32),
 ) !void {
     vertex_area.data.fill(0.0);
-    var it = sm.cellIterator(.face);
+    var it = sm.faceIterator();
     while (it.next()) |f| {
         const cd: f32 = @floatFromInt(sm.codegree(f));
         const a = face_area.value(f) / cd;

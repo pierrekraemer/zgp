@@ -51,7 +51,7 @@ pub fn deinit(_: *SurfaceMeshConnectivity) void {}
 fn cutAllEdges(
     smc: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
-    vertex_position: *SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position: *SurfaceMesh.VertexData(Vec3f),
 ) !void {
     try subdivision.cutAllEdges(smc.app_ctx.allocator, sm, vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position.*);
@@ -75,14 +75,14 @@ fn remesh(
     edge_length_factor: f32,
     preserve_features: bool,
     adaptive: bool,
-    vertex_position: *SurfaceMesh.CellData(.vertex, Vec3f),
-    corner_angle: *SurfaceMesh.CellData(.corner, f32),
-    face_area: *SurfaceMesh.CellData(.face, f32),
-    face_normal: *SurfaceMesh.CellData(.face, Vec3f),
-    edge_length: *SurfaceMesh.CellData(.edge, f32),
-    edge_dihedral_angle: *SurfaceMesh.CellData(.edge, f32),
-    vertex_area: *SurfaceMesh.CellData(.vertex, f32),
-    vertex_normal: *SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position: *SurfaceMesh.VertexData(Vec3f),
+    corner_angle: *SurfaceMesh.CornerData(f32),
+    face_area: *SurfaceMesh.FaceData(f32),
+    face_normal: *SurfaceMesh.FaceData(Vec3f),
+    edge_length: *SurfaceMesh.EdgeData(f32),
+    edge_dihedral_angle: *SurfaceMesh.EdgeData(f32),
+    vertex_area: *SurfaceMesh.VertexData(f32),
+    vertex_normal: *SurfaceMesh.VertexData(Vec3f),
     vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
@@ -116,11 +116,11 @@ fn remesh(
 fn decimate(
     smc: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_area: SurfaceMesh.VertexData(f32),
+    vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+    face_area: SurfaceMesh.FaceData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
     nb_vertices_to_remove: u32,
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
@@ -146,7 +146,7 @@ fn decimate(
 fn generateConvexHull(
     smc: *SurfaceMeshConnectivity,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
     convex_hull_name: []const u8,
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
@@ -155,7 +155,7 @@ fn generateConvexHull(
     try pc.init(smc.app_ctx.allocator, &smc.app_ctx.point_cloud_store.point_buffer_pool);
     defer pc.deinit();
     const point_position = try pc.addData(Vec3f, "position");
-    var vertex_it = sm.cellIterator(.vertex);
+    var vertex_it = sm.vertexIterator();
     while (vertex_it.next()) |vertex| {
         const p = try pc.addPoint();
         point_position.valuePtr(p).* = vertex_position.valuePtr(vertex).*;

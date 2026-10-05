@@ -10,21 +10,20 @@ const SQEM = @import("../../geometry/SQEM.zig");
 /// Compute and return the SQEM of the given vertex.
 pub fn vertexSQEM(
     sm: *const SurfaceMesh,
-    vertex: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex: SurfaceMesh.Vertex,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_area: SurfaceMesh.VertexData(f32),
+    vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+    face_area: SurfaceMesh.FaceData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
     line_quadric_epsilon: f32,
 ) SQEM {
-    assert(vertex.cellType() == .vertex);
     var vsq = SQEM.zero;
     const p = vertex_position.value(vertex);
     var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
     while (dart_it.next()) |d| {
         if (!sm.isBoundaryDart(d)) {
-            const face: SurfaceMesh.Cell = .{ .face = d };
+            const face = sm.face(d);
             const n = face_normal.value(face);
             var fsq: SQEM = .initSpherePlaneDistance(p, n, face_area.value(face) / 3.0); // TODO: should divide by sm.codegree(face) to avoid triangular hypothesis
             vsq.add(&fsq);
@@ -43,25 +42,25 @@ pub fn vertexSQEM(
 pub fn computeVertexSQEMs(
     io: std.Io,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_area: SurfaceMesh.CellData(.vertex, f32),
-    vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_area: SurfaceMesh.VertexData(f32),
+    vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+    face_area: SurfaceMesh.FaceData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
     line_quadric_epsilon: f32,
-    vertex_sqem: *SurfaceMesh.CellData(.vertex, SQEM),
+    vertex_sqem: *SurfaceMesh.VertexData(SQEM),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_area: SurfaceMesh.CellData(.vertex, f32),
-        vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-        face_area: SurfaceMesh.CellData(.face, f32),
-        face_normal: SurfaceMesh.CellData(.face, Vec3f),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        vertex_area: SurfaceMesh.VertexData(f32),
+        vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+        face_area: SurfaceMesh.FaceData(f32),
+        face_normal: SurfaceMesh.FaceData(Vec3f),
         line_quadric_epsilon: f32,
-        vertex_sqem: *SurfaceMesh.CellData(.vertex, SQEM),
+        vertex_sqem: *SurfaceMesh.VertexData(SQEM),
 
-        pub fn run(t: *const @This(), vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), vertex: SurfaceMesh.Vertex) void {
             t.vertex_sqem.valuePtr(vertex).* = vertexSQEM(
                 t.surface_mesh,
                 vertex,
@@ -75,7 +74,7 @@ pub fn computeVertexSQEMs(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner(.vertex) = try .init(sm);
+    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,

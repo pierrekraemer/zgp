@@ -3,6 +3,8 @@ const IBO = @This();
 const std = @import("std");
 const gl = @import("gl");
 
+const type_utils = @import("../utils/types.zig");
+
 const PointCloud = @import("../models/point/PointCloud.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const IncidenceGraph = @import("../models/incidenceGraph/IncidenceGraph.zig");
@@ -81,7 +83,8 @@ pub fn fillFromPointCloud(i: *IBO, pc: *PointCloud, allocator: std.mem.Allocator
     i.fillFromIndexSlice(indices.items, &.{});
 }
 
-pub fn fillFromSurfaceMeshCellSlice(i: *IBO, sm: *SurfaceMesh, comptime cell_type: SurfaceMesh.CellType, cells: []const SurfaceMesh.Cell, allocator: std.mem.Allocator) !void {
+pub fn fillFromSurfaceMeshCellSlice(i: *IBO, sm: *SurfaceMesh, cells: anytype, allocator: std.mem.Allocator) !void {
+    const cell_type = type_utils.collectionElementType(@TypeOf(cells)).CellType;
     i.primitive = switch (cell_type) {
         .vertex => .points,
         .edge => .lines,
@@ -104,16 +107,16 @@ pub fn fillFromSurfaceMeshCellSlice(i: *IBO, sm: *SurfaceMesh, comptime cell_typ
     switch (cell_type) {
         .vertex => {
             for (cells) |v| {
-                try indices.append(allocator, v.index());
+                try indices.append(allocator, v.index);
             }
         },
         .edge => {
             for (cells) |e| {
                 const d = sm.dart(e);
-                try indices.append(allocator, sm.vertex(d).index());
-                try indices.append(allocator, sm.vertex(sm.phi1(d)).index());
+                try indices.append(allocator, sm.vertex(d).index);
+                try indices.append(allocator, sm.vertex(sm.phi1(d)).index);
                 // line primitive is associated to its edge index
-                try cell_indices.append(allocator, e.index());
+                try cell_indices.append(allocator, e.index);
             }
         },
         .face => {
@@ -126,12 +129,12 @@ pub fn fillFromSurfaceMeshCellSlice(i: *IBO, sm: *SurfaceMesh, comptime cell_typ
                 var v1 = sm.vertex(dart_v1);
                 while (dart_it.next()) |dart_v2| {
                     const v2 = sm.vertex(dart_v2);
-                    try indices.append(allocator, start_v.index());
-                    try indices.append(allocator, v1.index());
-                    try indices.append(allocator, v2.index());
+                    try indices.append(allocator, start_v.index);
+                    try indices.append(allocator, v1.index);
+                    try indices.append(allocator, v2.index);
                     // triangle primitive is associated to its face index
                     // (for polygonal faces, multiple triangle primitives are associated to the same face index)
-                    try cell_indices.append(allocator, f.index());
+                    try cell_indices.append(allocator, f.index);
                     dart_v1 = dart_v2;
                     v1 = v2;
                 }
@@ -165,23 +168,23 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
     defer cell_indices.deinit(allocator);
     switch (cell_type) {
         .vertex => {
-            var v_it = sm.cellIterator(.vertex);
+            var v_it = sm.vertexIterator();
             while (v_it.next()) |v| {
-                try indices.append(allocator, v.index());
+                try indices.append(allocator, v.index);
             }
         },
         .edge => {
-            var e_it = sm.cellIterator(.edge);
+            var e_it = sm.edgeIterator();
             while (e_it.next()) |e| {
                 const d = sm.dart(e);
-                try indices.append(allocator, sm.vertex(d).index());
-                try indices.append(allocator, sm.vertex(sm.phi1(d)).index());
+                try indices.append(allocator, sm.vertex(d).index);
+                try indices.append(allocator, sm.vertex(sm.phi1(d)).index);
                 // line primitive is associated to its edge index
-                try cell_indices.append(allocator, e.index());
+                try cell_indices.append(allocator, e.index);
             }
         },
         .face => {
-            var f_it = sm.cellIterator(.face);
+            var f_it = sm.faceIterator();
             while (f_it.next()) |f| {
                 // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
                 var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
@@ -191,12 +194,12 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
                 var v1 = sm.vertex(dart_v1);
                 while (dart_it.next()) |dart_v2| {
                     const v2 = sm.vertex(dart_v2);
-                    try indices.append(allocator, start_v.index());
-                    try indices.append(allocator, v1.index());
-                    try indices.append(allocator, v2.index());
+                    try indices.append(allocator, start_v.index);
+                    try indices.append(allocator, v1.index);
+                    try indices.append(allocator, v2.index);
                     // triangle primitive is associated to its face index
                     // (for polygonal faces, multiple triangle primitives are associated to the same face index)
-                    try cell_indices.append(allocator, f.index());
+                    try cell_indices.append(allocator, f.index);
                     dart_v1 = dart_v2;
                     v1 = v2;
                 }
@@ -222,10 +225,10 @@ pub fn fillFromSurfaceMeshBoundary(i: *IBO, sm: *SurfaceMesh, allocator: std.mem
             var dart_it = sm.orbitDartIterator(d, .face);
             while (dart_it.next()) |bd| {
                 dm.mark(bd);
-                try indices.append(allocator, sm.vertex(bd).index());
-                try indices.append(allocator, sm.vertex(sm.phi1(bd)).index());
+                try indices.append(allocator, sm.vertex(bd).index);
+                try indices.append(allocator, sm.vertex(sm.phi1(bd)).index);
                 // boundary line primitive is associated to its edge index
-                try cell_indices.append(allocator, sm.edge(bd).index());
+                try cell_indices.append(allocator, sm.edge(bd).index);
             }
         }
     }
@@ -253,37 +256,37 @@ pub fn fillFromIncidenceGraph(i: *IBO, ig: *IncidenceGraph, comptime cell_type: 
     defer cell_indices.deinit(allocator);
     switch (cell_type) {
         .vertex => {
-            var v_it = ig.cellIterator(.vertex);
+            var v_it = ig.vertexIterator();
             while (v_it.next()) |v| {
-                try indices.append(allocator, v.index());
+                try indices.append(allocator, v.index);
             }
         },
         .edge => {
-            var e_it = ig.cellIterator(.edge);
+            var e_it = ig.edgeIterator();
             while (e_it.next()) |e| {
-                const e_idx = e.index();
+                const e_idx = e.index;
                 const iv = ig.edge_incident_vertices.value(e_idx);
-                try indices.append(allocator, iv[0]);
-                try indices.append(allocator, iv[1]);
+                try indices.append(allocator, iv[0].index);
+                try indices.append(allocator, iv[1].index);
                 // line primitive is associated to its edge index
                 try cell_indices.append(allocator, e_idx);
             }
         },
         .face => {
-            var f_it = ig.cellIterator(.face);
+            var f_it = ig.faceIterator();
             while (f_it.next()) |f| {
                 // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
-                const f_idx = f.index();
+                const f_idx = f.index;
                 const ie = ig.face_incident_edges.value(f_idx);
                 if (ie.items.len < 3) continue;
                 const ie_dir = ig.face_incident_edges_dir.value(f_idx);
-                const start_index = if (ie_dir.items[0]) ig.edge_incident_vertices.value(ie.items[0])[0] else ig.edge_incident_vertices.value(ie.items[0])[1];
+                const start_v = if (ie_dir.items[0]) ig.edge_incident_vertices.value(ie.items[0].index)[0] else ig.edge_incident_vertices.value(ie.items[0].index)[1];
                 for (1..ie.items.len) |ie_idx| {
-                    const v1_index = if (ie_dir.items[ie_idx]) ig.edge_incident_vertices.value(ie.items[ie_idx])[0] else ig.edge_incident_vertices.value(ie.items[ie_idx])[1];
-                    const v2_index = if (ie_dir.items[ie_idx]) ig.edge_incident_vertices.value(ie.items[ie_idx])[1] else ig.edge_incident_vertices.value(ie.items[ie_idx])[0];
-                    try indices.append(allocator, start_index);
-                    try indices.append(allocator, v1_index);
-                    try indices.append(allocator, v2_index);
+                    const v1 = if (ie_dir.items[ie_idx]) ig.edge_incident_vertices.value(ie.items[ie_idx].index)[0] else ig.edge_incident_vertices.value(ie.items[ie_idx].index)[1];
+                    const v2 = if (ie_dir.items[ie_idx]) ig.edge_incident_vertices.value(ie.items[ie_idx].index)[1] else ig.edge_incident_vertices.value(ie.items[ie_idx].index)[0];
+                    try indices.append(allocator, start_v.index);
+                    try indices.append(allocator, v1.index);
+                    try indices.append(allocator, v2.index);
                     // triangle primitive is associated to its face index
                     // (for polygonal faces, multiple triangle primitives are associated to the same face index)
                     try cell_indices.append(allocator, f_idx);

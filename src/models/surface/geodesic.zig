@@ -44,8 +44,8 @@ pub fn traceGeodesic(
     src_sp: SurfacePoint,
     angle: f32,
     length: f32,
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
+    corner_angle: SurfaceMesh.CornerData(f32),
+    edge_length: SurfaceMesh.EdgeData(f32),
     trace: ?*std.ArrayList(SurfacePoint),
 ) !struct { SurfacePoint, f32, f32 } {
     if (trace) |t| {
@@ -72,7 +72,7 @@ pub fn traceGeodesic(
                 // find the incident triangle containing the geodesic direction
                 var accumulated_angle: f32 = 0.0;
                 var angle_before: f32 = 0.0;
-                var d_it: SurfaceMesh.CellDartIterator = .init(sm, spv, .vertex);
+                var d_it = sm.orbitDartIterator(spv, .vertex);
                 const face_dart: ?SurfaceMesh.Dart = while (d_it.next()) |vd| {
                     angle_before = accumulated_angle;
                     accumulated_angle += corner_angle.value(sm.corner(vd));

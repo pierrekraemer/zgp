@@ -11,10 +11,9 @@ const geometry_utils = @import("../../geometry/utils.zig");
 /// The normal of a polygonal face is computed as the normalized sum of successive edges cross products.
 pub fn faceNormal(
     sm: *const SurfaceMesh,
-    face: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    face: SurfaceMesh.Face,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
 ) Vec3f {
-    assert(face.cellType() == .face);
     var dart_it = sm.orbitDartIterator(sm.dart(face), .face);
     var normal = vec.zero3f;
     while (dart_it.next()) |dF| {
@@ -41,15 +40,15 @@ pub fn faceNormal(
 pub fn computeFaceNormals(
     io: std.Io,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_normal: *SurfaceMesh.CellData(.face, Vec3f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_normal: *SurfaceMesh.FaceData(Vec3f),
 ) !void {
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        face_normal: *SurfaceMesh.CellData(.face, Vec3f),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        face_normal: *SurfaceMesh.FaceData(Vec3f),
 
-        pub fn run(t: *const @This(), face: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), face: SurfaceMesh.Face) void {
             t.face_normal.valuePtr(face).* = faceNormal(
                 t.surface_mesh,
                 face,
@@ -58,7 +57,7 @@ pub fn computeFaceNormals(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner(.face) = try .init(sm);
+    var pctr: SurfaceMesh.ParallelFaceTaskRunner = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -73,11 +72,10 @@ pub fn computeFaceNormals(
 /// Face normals are assumed to be normalized.
 pub fn vertexNormal(
     sm: *const SurfaceMesh,
-    vertex: SurfaceMesh.Cell,
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    vertex: SurfaceMesh.Vertex,
+    corner_angle: SurfaceMesh.CornerData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
 ) Vec3f {
-    assert(vertex.cellType() == .vertex);
     var normal = vec.zero3f;
     var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
     while (dart_it.next()) |d| {
@@ -101,38 +99,17 @@ pub fn vertexNormal(
 pub fn computeVertexNormals(
     io: std.Io,
     sm: *SurfaceMesh,
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    vertex_normal: *SurfaceMesh.CellData(.vertex, Vec3f),
+    corner_angle: SurfaceMesh.CornerData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
+    vertex_normal: *SurfaceMesh.VertexData(Vec3f),
 ) !void {
-    // vertex_normal.data.fill(vec.zero3f);
-    // var face_it = sm.cellIterator(.face);
-    // while (face_it.next()) |face| {
-    //     const n = face_normal.value(face);
-    //     var dart_it = sm.cellDartIterator(face);
-    //     while (dart_it.next()) |d| {
-    //         const v = sm.vertex(d);
-    //         vertex_normal.valuePtr(v).* = vec.add3f(
-    //             vertex_normal.value(v),
-    //             vec.mulScalar3f(
-    //                 n,
-    //                 corner_angle.data.value(d),
-    //             ),
-    //         );
-    //     }
-    // }
-    // var it = vertex_normal.data.valueIterator();
-    // while (it.next()) |n| {
-    //     n.* = vec.normalized3f(n.*);
-    // }
-
     const Task = struct {
         surface_mesh: *const SurfaceMesh,
-        corner_angle: SurfaceMesh.CellData(.corner, f32),
-        face_normal: SurfaceMesh.CellData(.face, Vec3f),
-        vertex_normal: *SurfaceMesh.CellData(.vertex, Vec3f),
+        corner_angle: SurfaceMesh.CornerData(f32),
+        face_normal: SurfaceMesh.FaceData(Vec3f),
+        vertex_normal: *SurfaceMesh.VertexData(Vec3f),
 
-        pub fn run(t: *const @This(), vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), vertex: SurfaceMesh.Vertex) void {
             t.vertex_normal.valuePtr(vertex).* = vertexNormal(
                 t.surface_mesh,
                 vertex,
@@ -142,7 +119,7 @@ pub fn computeVertexNormals(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner(.vertex) = try .init(sm);
+    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,

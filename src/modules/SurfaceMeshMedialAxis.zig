@@ -34,12 +34,12 @@ const MedialAxisData = struct {
     pub fn initVMASContext(
         mad: *MedialAxisData,
         surface_mesh_bvh: *bvh.TrianglesBVH,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_area: SurfaceMesh.CellData(.vertex, f32),
-        vertex_tangent_basis: SurfaceMesh.CellData(.vertex, [2]Vec3f),
-        face_area: SurfaceMesh.CellData(.face, f32),
-        face_normal: SurfaceMesh.CellData(.face, Vec3f),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        vertex_normal: SurfaceMesh.VertexData(Vec3f),
+        vertex_area: SurfaceMesh.VertexData(f32),
+        vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
+        face_area: SurfaceMesh.FaceData(f32),
+        face_normal: SurfaceMesh.FaceData(Vec3f),
         line_quadric_epsilon: f32,
     ) !void {
         assert(mad.vmas_ctx == null);

@@ -123,7 +123,7 @@ pub const VMASContext = struct {
 
     skeleton: *IncidenceGraph,
     // created data
-    skeleton_vertex_position: IncidenceGraph.CellData(.vertex, Vec3f),
+    skeleton_vertex_position: IncidenceGraph.VertexData(Vec3f),
 
     // initialize a new VMASContext for the given PointCloud
     // the provided spheres PointCloud and skeleton IncidenceGraph will be cleared and filled with new data
@@ -457,9 +457,9 @@ pub const VMASContext = struct {
     }
 
     pub fn updateSkeleton(vmas_ctx: *VMASContext) !void {
-        var sphere_skeleton_vertex = try vmas_ctx.spheres.addData(IncidenceGraph.Cell, "__sphere_skeleton_vertex");
+        var sphere_skeleton_vertex = try vmas_ctx.spheres.addData(IncidenceGraph.Vertex, "__sphere_skeleton_vertex");
         defer vmas_ctx.spheres.removeData(sphere_skeleton_vertex);
-        var skeleton_edges: std.AutoHashMapUnmanaged([2]IncidenceGraph.Cell, IncidenceGraph.Cell) = .empty;
+        var skeleton_edges: std.AutoHashMapUnmanaged([2]IncidenceGraph.Vertex, IncidenceGraph.Edge) = .empty;
         defer skeleton_edges.deinit(vmas_ctx.allocator);
 
         vmas_ctx.skeleton.clearRetainingCapacity();
@@ -477,7 +477,7 @@ pub const VMASContext = struct {
                     // store edge with canonical ordering of vertices (smaller index first)
                     try skeleton_edges.put(
                         vmas_ctx.allocator,
-                        if (v.index() < sn_v.index()) .{ v, sn_v } else .{ sn_v, v },
+                        if (v.index < sn_v.index) .{ v, sn_v } else .{ sn_v, v },
                         e,
                     );
                 }
@@ -494,10 +494,10 @@ pub const VMASContext = struct {
                         const v1 = sphere_skeleton_vertex.value(s);
                         const v2 = sphere_skeleton_vertex.value(sn);
                         const v3 = sphere_skeleton_vertex.value(snn);
-                        const edges: [3]IncidenceGraph.Cell = .{
-                            skeleton_edges.get(if (v1.index() < v2.index()) .{ v1, v2 } else .{ v2, v1 }).?,
-                            skeleton_edges.get(if (v2.index() < v3.index()) .{ v2, v3 } else .{ v3, v2 }).?,
-                            skeleton_edges.get(if (v3.index() < v1.index()) .{ v3, v1 } else .{ v1, v3 }).?,
+                        const edges: [3]IncidenceGraph.Edge = .{
+                            skeleton_edges.get(if (v1.index < v2.index) .{ v1, v2 } else .{ v2, v1 }).?,
+                            skeleton_edges.get(if (v2.index < v3.index) .{ v2, v3 } else .{ v3, v2 }).?,
+                            skeleton_edges.get(if (v3.index < v1.index) .{ v3, v1 } else .{ v1, v3 }).?,
                         };
                         _ = try vmas_ctx.skeleton.addFace(&edges);
                     }
