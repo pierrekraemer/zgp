@@ -233,6 +233,7 @@ pub fn rightPanel(m: *Module) void {
 
     const DataTypes = union(enum) { u32: u32, f32: f32, Vec3f: Vec3f };
     const DataTypesTag = std.meta.Tag(DataTypes);
+    const data_types_info = @typeInfo(DataTypesTag).@"enum";
     const UiData = struct {
         var nb_points: usize = 1000;
         var poisson_radius: f32 = 0.02;
@@ -363,11 +364,11 @@ pub fn rightPanel(m: *Module) void {
             c.ImGui_PushID("data type");
             if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
                 defer c.ImGui_EndCombo();
-                inline for (@typeInfo(DataTypesTag).@"enum".fields) |data_type| {
-                    const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
-                    if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                inline for (data_types_info.field_names, data_types_info.field_values) |field_name, field_value| {
+                    const is_selected = @backingInt(UiData.selected_data_type) == field_value;
+                    if (c.ImGui_SelectableEx(field_name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                         if (!is_selected) {
-                            UiData.selected_data_type = @enumFromInt(data_type.value);
+                            UiData.selected_data_type = @fromBackingInt(field_value);
                             UiData.selected_data_gen = null;
                         }
                     }
@@ -380,14 +381,14 @@ pub fn rightPanel(m: *Module) void {
             c.ImGui_Text("Source data:");
             inline for ([_]SurfaceMesh.CellType{ .vertex, .edge, .face }) |cell_type| {
                 if (UiData.selected_surface_mesh_cell_type == cell_type) {
-                    inline for (@typeInfo(DataTypesTag).@"enum".fields) |data_type| {
-                        if (UiData.selected_data_type == @as(DataTypesTag, @enumFromInt(data_type.value))) {
-                            const T = @FieldType(DataTypes, data_type.name);
+                    inline for (data_types_info.field_names, data_types_info.field_values) |field_name, field_value| {
+                        if (UiData.selected_data_type == @as(DataTypesTag, @fromBackingInt(field_value))) {
+                            const T = @FieldType(DataTypes, field_name);
                             const selected_cell_data: ?SurfaceMesh.CellData(cell_type, T) = if (UiData.selected_data_gen) |data_gen| blk: {
                                 const selected_data: *Data(T) = @fieldParentPtr("data_gen", data_gen);
                                 break :blk .{ .data = selected_data };
                             } else null;
-                            switch (imgui_utils.surfaceMeshCellDataComboBox(sm, cell_type, @FieldType(DataTypes, data_type.name), selected_cell_data)) {
+                            switch (imgui_utils.surfaceMeshCellDataComboBox(sm, cell_type, @FieldType(DataTypes, field_name), selected_cell_data)) {
                                 .unchanged => {},
                                 .cleared => UiData.selected_data_gen = null,
                                 .changed => |data| UiData.selected_data_gen = &data.data.data_gen,

@@ -68,7 +68,7 @@ face_incident_edges_dir: *Data(std.ArrayList(bool)),
 // ------------------------------------------------------------------------- //
 
 /// Returns a pointer to the data container for the given CellType.
-pub fn dataContainerPtr(ig: anytype, cell_type: CellType) if (@typeInfo(@TypeOf(ig)).pointer.is_const) *const DataContainer else *DataContainer {
+pub fn dataContainerPtr(ig: anytype, cell_type: CellType) if (@typeInfo(@TypeOf(ig)).pointer.attrs.@"const") *const DataContainer else *DataContainer {
     return switch (cell_type) {
         .vertex => &ig.vertex_data,
         .edge => &ig.edge_data,
@@ -228,7 +228,7 @@ pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
         data: *Data(T),
 
         fn ValuePtrType(comptime SelfType: type) type {
-            if (@typeInfo(SelfType).pointer.is_const) {
+            if (@typeInfo(SelfType).pointer.attrs.@"const") {
                 return *const T;
             } else {
                 return *T;

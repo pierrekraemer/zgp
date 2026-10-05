@@ -2,19 +2,23 @@
     .name = .zgp,
     .version = "0.0.0",
     .fingerprint = 0xdc9eb8c856ea514c,
-    .minimum_zig_version = "0.16.0",
+    .minimum_zig_version = "0.17.0",
     .dependencies = .{
+        .translate_c = .{
+            .url = "git+https://codeberg.org/ziglang/translate-c#875969d3493e245e01bf5d7860f792d8f3eb9ef5",
+            .hash = "translate_c-0.0.0-Q_BUWoFOBwAhz77Zd15HCVuhTKzdUKc94kezmCeJ7IC_",
+        },
         .zigglgen = .{
-            .url = "git+https://github.com/castholm/zigglgen.git#7e55ad15655fc4d602ed3bcbe7fb487592063156",
-            .hash = "zigglgen-0.5.0-ziggltzDLwA0Gk0Pj6QMij1j6Z_jkvGEtGKBM6-YlI_s",
+            .url = "git+https://github.com/castholm/zigglgen.git#38bfc858ce2182fcb9d5d1819210f97beb4a19d3",
+            .hash = "zigglgen-0.5.1-ziggliTOLwAZfmk4DG9VLmHGE2BexC4o_O5yZKW37vfl",
         },
         .sdl = .{
-            .url = "git+https://github.com/castholm/SDL.git#21c6b79840d123e94a9f183f4b0fa1731668f48d",
-            .hash = "sdl-0.5.0+3.4.8-SDL--k4DpgH323IfF6cEaGzKUdtUQv1azbBmmcv0RMAu",
+            .url = "git+https://github.com/castholm/SDL.git#b72b3671502a70e109350ecac90afdc480dcfcc6",
+            .hash = "sdl-0.5.4+3.4.16-SDL--sQ4qAH3kwC19Zs1kxdHplaSDnWl2MUptZD4AItI",
         },
         .cimgui_zig = .{
-            .url = "git+https://github.com/tiawl/cimgui.zig.git#68c0ed133ed317061baad3a3ae56cd2940c61a62",
-            .hash = "cimgui_zig-1.0.0-2XubksPPvwDUY1zt1EGL16m1Zr-a53ZGn13PsqjChWhk",
+            .url = "git+https://github.com/tiawl/cimgui.zig.git#16aca06994dd3ec8499b912b425d7b235fd939b0",
+            .hash = "cimgui_zig-1.0.0-2XubkrdJxgBJAfyC_xSvPAGU_RuDkZ4YqToci6alA3j3",
         },
         .ceigen = .{
             .path = "src/thirdparty/ceigen",

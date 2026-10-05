@@ -64,24 +64,25 @@ pub fn leftPanel(m: *Module) void {
     const info = sm_store.surfaceMeshInfo(sm);
 
     inline for ([_]SurfaceMesh.CellType{ .halfedge, .corner, .vertex, .edge, .face }) |cell_type| {
-        const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type), .{}) catch "";
+        const cells = std.fmt.bufPrintSentinel(&buf, @tagName(cell_type), .{}, 0) catch "";
         c.ImGui_SeparatorText(cells.ptr);
-        inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |field| {
-            if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
-            c.ImGui_Text(field.name);
+        const std_data_info = @typeInfo(SurfaceMeshStdData).@"union";
+        inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
+            if (@typeInfo(field_type).optional.child.CellType != cell_type) continue;
+            c.ImGui_Text(field_name);
             c.ImGui_SameLine();
             // align 2 buttons to the right of the text
             c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + c.ImGui_GetContentRegionAvail().x - 2 * (button_width + style.*.ItemSpacing.x));
-            const data_selected = @field(info.std_datas, field.name) != null;
+            const data_selected = @field(info.std_datas, field_name) != null;
             if (!data_selected) {
                 c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 128, 128, 200));
                 c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 128, 128, 255));
                 c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 128, 128, 128));
             }
-            c.ImGui_PushID(field.name);
+            c.ImGui_PushID(field_name);
             defer c.ImGui_PopID();
             if (c.ImGui_Button("" ++ c.ICON_FA_DATABASE)) {
-                c.ImGui_OpenPopup("select_data_popup", c.ImGuiPopupFlags_NoReopen);
+                _ = c.ImGui_OpenPopup("select_data_popup", c.ImGuiPopupFlags_NoReopen);
             }
             if (!data_selected) {
                 c.ImGui_PopStyleColorEx(3);
@@ -92,22 +93,22 @@ pub fn leftPanel(m: *Module) void {
                 defer c.ImGui_PopID();
                 switch (imgui_utils.surfaceMeshCellDataComboBox(
                     sm,
-                    @typeInfo(field.type).optional.child.CellType,
-                    @typeInfo(field.type).optional.child.DataType,
-                    @field(info.std_datas, field.name),
+                    @typeInfo(field_type).optional.child.CellType,
+                    @typeInfo(field_type).optional.child.DataType,
+                    @field(info.std_datas, field_name),
                 )) {
                     .unchanged => {},
                     .cleared => {
-                        sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, null));
+                        sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, null));
                         smsd.app_ctx.requestRedraw();
                     },
                     .changed => |data| {
-                        sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
+                        sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, data));
                         smsd.app_ctx.requestRedraw();
                     },
                 }
             }
-            const data_tag = @field(SurfaceMeshStdDataTag, field.name);
+            const data_tag = @field(SurfaceMeshStdDataTag, field_name);
             inline for (std_data_computations) |comp| {
                 if (comp.computes == data_tag) {
                     c.ImGui_SameLine();
@@ -128,7 +129,7 @@ pub fn leftPanel(m: *Module) void {
                         if (computable) {
                             comp.compute(smsd.app_ctx, sm);
                         } else {
-                            zgp_log.err("No computation found for {s} data", .{field.name});
+                            zgp_log.err("No computation found for {s} data", .{field_name});
                         }
                     }
                     c.ImGui_PopStyleColorEx(3);
@@ -150,14 +151,15 @@ pub fn leftPanel(m: *Module) void {
     c.ImGui_Separator();
 
     if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-        inline for (@typeInfo(SurfaceMeshStdData).@"union".fields) |*field| {
-            if (@field(info.std_datas, field.name) == null) {
-                const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
+        const std_data_info = @typeInfo(SurfaceMeshStdData).@"union";
+        inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
+            if (@field(info.std_datas, field_name) == null) {
+                const maybe_data = sm.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
                 if (maybe_data) |data| {
-                    sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field.name, data));
+                    sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, data));
                     smsd.app_ctx.requestRedraw();
                 } else |err| {
-                    zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
+                    zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
                 }
             }
         }

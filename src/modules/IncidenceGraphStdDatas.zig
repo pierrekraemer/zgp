@@ -56,24 +56,25 @@ pub fn leftPanel(m: *Module) void {
     const info = ig_store.incidence_graphs_info.getPtr(ig).?;
 
     inline for ([_]IncidenceGraph.CellType{ .vertex, .edge, .face }) |cell_type| {
-        const cells = std.fmt.bufPrintZ(&buf, @tagName(cell_type), .{}) catch "";
+        const cells = std.fmt.bufPrintSentinel(&buf, @tagName(cell_type), .{}, 0) catch "";
         c.ImGui_SeparatorText(cells.ptr);
-        inline for (@typeInfo(IncidenceGraphStdData).@"union".fields) |*field| {
-            if (@typeInfo(field.type).optional.child.CellType != cell_type) continue;
-            c.ImGui_Text(field.name);
+        const std_data_info = @typeInfo(IncidenceGraphStdData).@"union";
+        inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
+            if (@typeInfo(field_type).optional.child.CellType != cell_type) continue;
+            c.ImGui_Text(field_name);
             c.ImGui_SameLine();
             // align 2 buttons to the right of the text
             c.ImGui_SetCursorPosX(c.ImGui_GetCursorPosX() + c.ImGui_GetContentRegionAvail().x - 2 * button_width - style.*.ItemSpacing.x);
-            const data_selected = @field(info.std_datas, field.name) != null;
+            const data_selected = @field(info.std_datas, field_name) != null;
             if (!data_selected) {
                 c.ImGui_PushStyleColor(c.ImGuiCol_Button, c.IM_COL32(128, 128, 128, 200));
                 c.ImGui_PushStyleColor(c.ImGuiCol_ButtonHovered, c.IM_COL32(128, 128, 128, 255));
                 c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 128, 128, 128));
             }
-            c.ImGui_PushID(field.name);
+            c.ImGui_PushID(field_name);
             defer c.ImGui_PopID();
             if (c.ImGui_Button("" ++ c.ICON_FA_DATABASE)) {
-                c.ImGui_OpenPopup("select_data_popup", c.ImGuiPopupFlags_NoReopen);
+                _ = c.ImGui_OpenPopup("select_data_popup", c.ImGuiPopupFlags_NoReopen);
             }
             if (!data_selected) {
                 c.ImGui_PopStyleColorEx(3);
@@ -84,17 +85,17 @@ pub fn leftPanel(m: *Module) void {
                 defer c.ImGui_PopID();
                 switch (imgui_utils.incidenceGraphCellDataComboBox(
                     ig,
-                    @typeInfo(field.type).optional.child.CellType,
-                    @typeInfo(field.type).optional.child.DataType,
-                    @field(info.std_datas, field.name),
+                    @typeInfo(field_type).optional.child.CellType,
+                    @typeInfo(field_type).optional.child.DataType,
+                    @field(info.std_datas, field_name),
                 )) {
                     .unchanged => {},
                     .cleared => {
-                        ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field.name, null));
+                        ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field_name, null));
                         igsd.app_ctx.requestRedraw();
                     },
                     .changed => |data| {
-                        ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field.name, data));
+                        ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field_name, data));
                         igsd.app_ctx.requestRedraw();
                     },
                 }
@@ -105,14 +106,15 @@ pub fn leftPanel(m: *Module) void {
     c.ImGui_Separator();
 
     if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-        inline for (@typeInfo(IncidenceGraphStdData).@"union".fields) |*field| {
-            if (@field(info.std_datas, field.name) == null) {
-                const maybe_data = ig.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
+        const std_data_info = @typeInfo(IncidenceGraphStdData).@"union";
+        inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
+            if (@field(info.std_datas, field_name) == null) {
+                const maybe_data = ig.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
                 if (maybe_data) |data| {
-                    ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field.name, data));
+                    ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field_name, data));
                     igsd.app_ctx.requestRedraw();
                 } else |err| {
-                    zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
+                    zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
                 }
             }
         }

@@ -36,7 +36,34 @@ pub fn init(sdl_window: *c.SDL_Window, gl_context: c.SDL_GLContext) void {
 
     // _ = c.ImFontAtlas_AddFontDefaultVector(imio.*.Fonts, null);
     _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/ui/DroidSans.ttf", font_size, null, null);
-    var font_config: c.ImFontConfig = .{};
+    var font_config: c.ImFontConfig = .{
+        .Name = @import("std").mem.zeroes([40]u8),
+        .FontData = null,
+        .FontDataSize = 0,
+        .FontDataOwnedByAtlas = false,
+        .MergeMode = false,
+        .PixelSnapH = false,
+        .OversampleH = 0,
+        .OversampleV = 0,
+        .EllipsisChar = 0,
+        .SizePixels = 0,
+        .GlyphRanges = null,
+        .GlyphExcludeRanges = null,
+        .GlyphOffset = @import("std").mem.zeroes(c.ImVec2),
+        .GlyphMinAdvanceX = 0,
+        .GlyphMaxAdvanceX = 0,
+        .GlyphExtraAdvanceX = 0,
+        .FontNo = 0,
+        .FontLoaderFlags = 0,
+        .RasterizerMultiply = 0,
+        .RasterizerDensity = 0,
+        .ExtraSizeScale = 0,
+        .Flags = 0,
+        .DstFont = null,
+        .FontLoader = null,
+        .FontLoaderData = null,
+        .PixelSnapV = false,
+    };
     font_config.MergeMode = true;
     font_config.SizePixels = font_size;
     font_config.GlyphMinAdvanceX = font_size;
@@ -258,10 +285,11 @@ pub fn surfaceMeshCellTypeComboBox(
 ) ?SurfaceMesh.CellType {
     if (c.ImGui_BeginCombo("", @tagName(selected_cell_type), 0)) {
         defer c.ImGui_EndCombo();
-        inline for (@typeInfo(SurfaceMesh.CellType).@"enum".fields) |cell_type| {
-            const is_selected = @intFromEnum(selected_cell_type) == cell_type.value;
-            if (c.ImGui_SelectableEx(cell_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                return @enumFromInt(cell_type.value);
+        const cell_types_enum = @typeInfo(SurfaceMesh.CellType).@"enum";
+        inline for (cell_types_enum.field_names, cell_types_enum.field_values) |cell_type_name, cell_type_value| {
+            const is_selected = @backingInt(selected_cell_type) == cell_type_value;
+            if (c.ImGui_SelectableEx(cell_type_name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                return @fromBackingInt(cell_type_value);
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
@@ -333,10 +361,11 @@ pub fn incidenceGraphCellTypeComboBox(
 ) ?IncidenceGraph.CellType {
     if (c.ImGui_BeginCombo("", @tagName(selected_cell_type), 0)) {
         defer c.ImGui_EndCombo();
-        inline for (@typeInfo(IncidenceGraph.CellType).@"enum".fields) |cell_type| {
-            const is_selected = @intFromEnum(selected_cell_type) == cell_type.value;
-            if (c.ImGui_SelectableEx(cell_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                return @enumFromInt(cell_type.value);
+        const cell_types_enum = @typeInfo(IncidenceGraph.CellType).@"enum";
+        inline for (cell_types_enum.field_names, cell_types_enum.field_values) |cell_type_name, cell_type_value| {
+            const is_selected = @backingInt(selected_cell_type) == cell_type_value;
+            if (c.ImGui_SelectableEx(cell_type_name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                return @fromBackingInt(cell_type_value);
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();

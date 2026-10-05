@@ -325,9 +325,9 @@ pub fn leftPanel(igs: *IncidenceGraphStore) void {
             var buf_count: [16]u8 = undefined;
             // var buf_density: [16]u8 = undefined;
 
-            const cells = std.fmt.bufPrintZ(&buf_name, "{s}", .{@tagName(cell_type)}) catch "";
-            const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{ig.nbCells(cell_type)}) catch "";
-            // const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{ig.dataContainerPtr(cell_type).density() * 100}) catch "";
+            const cells = std.fmt.bufPrintSentinel(&buf_name, "{s}", .{@tagName(cell_type)}, 0) catch "";
+            const count = std.fmt.bufPrintSentinel(&buf_count, "{d}", .{ig.nbCells(cell_type)}, 0) catch "";
+            // const density = std.fmt.bufPrintSentinel(&buf_density, "{d:.1}%", .{ig.dataContainerPtr(cell_type).density() * 100}, 0) catch "";
 
             c.ImGui_TableNextRow();
             _ = c.ImGui_TableNextColumn();
@@ -340,7 +340,7 @@ pub fn leftPanel(igs: *IncidenceGraphStore) void {
     }
 
     if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-        c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
+        _ = c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
     }
     if (c.ImGui_BeginPopupModal("Create Cell Data", 0, c.ImGuiWindowFlags_AlwaysAutoResize)) {
         defer c.ImGui_EndPopup();
@@ -356,11 +356,12 @@ pub fn leftPanel(igs: *IncidenceGraphStore) void {
         c.ImGui_PushID("data type");
         if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
             defer c.ImGui_EndCombo();
-            inline for (@typeInfo(CreateDataTypesTag).@"enum".fields) |*data_type| {
-                const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
-                if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+            const data_types_enum = @typeInfo(CreateDataTypesTag).@"enum";
+            inline for (data_types_enum.field_names, data_types_enum.field_values) |type_name, type_value| {
+                const is_selected = @backingInt(UiData.selected_data_type) == type_value;
+                if (c.ImGui_SelectableEx(type_name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                     if (!is_selected) {
-                        UiData.selected_data_type = @enumFromInt(data_type.value);
+                        UiData.selected_data_type = @fromBackingInt(type_value);
                     }
                 }
                 if (is_selected) {

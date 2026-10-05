@@ -145,7 +145,7 @@ pub fn face(sm: *const SurfaceMesh, d: Dart) Face {
 }
 
 /// Return a pointer to the data container for the given CellType.
-pub fn dataContainerPtr(sm: anytype, comptime cell_type: CellType) if (@typeInfo(@TypeOf(sm)).pointer.is_const) *const DataContainer else *DataContainer {
+pub fn dataContainerPtr(sm: anytype, comptime cell_type: CellType) if (@typeInfo(@TypeOf(sm)).pointer.attrs.@"const") *const DataContainer else *DataContainer {
     return switch (cell_type) {
         .halfedge, .corner => &sm.dart_data,
         .vertex => &sm.vertex_data,
@@ -155,7 +155,7 @@ pub fn dataContainerPtr(sm: anytype, comptime cell_type: CellType) if (@typeInfo
 }
 
 /// Return a pointer to the HashMap of CellSets for the given CellType.
-pub fn cellSetContainerPtr(sm: anytype, comptime cell_type: CellType) if (@typeInfo(@TypeOf(sm)).pointer.is_const) *const std.StringHashMapUnmanaged(CellSet(cell_type)) else *std.StringHashMapUnmanaged(CellSet(cell_type)) {
+pub fn cellSetContainerPtr(sm: anytype, comptime cell_type: CellType) if (@typeInfo(@TypeOf(sm)).pointer.attrs.@"const") *const std.StringHashMapUnmanaged(CellSet(cell_type)) else *std.StringHashMapUnmanaged(CellSet(cell_type)) {
     return switch (cell_type) {
         .vertex => &sm.vertex_sets,
         .edge => &sm.edge_sets,
@@ -679,7 +679,7 @@ pub fn CellData(comptime cell_type: CellType, comptime T: type) type {
         data: *Data(T),
 
         fn ValuePtrType(comptime SelfType: type) type {
-            if (@typeInfo(SelfType).pointer.is_const) {
+            if (@typeInfo(SelfType).pointer.attrs.@"const") {
                 return *const T;
             } else {
                 return *T;

@@ -147,13 +147,14 @@ pub fn rightClickMenu(m: *Module) void {
             c.ImGui_PopID();
 
             if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create curvature datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                inline for (@typeInfo(curvature.SurfaceMeshCurvatureDatas).@"struct".fields) |*field| {
-                    if (@field(curvature_datas, field.name) == null) {
-                        const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
+                const curvature_datas_info = @typeInfo(curvature.SurfaceMeshCurvatureDatas).@"struct";
+                inline for (curvature_datas_info.field_names, curvature_datas_info.field_types) |field_name, field_type| {
+                    if (@field(curvature_datas, field_name) == null) {
+                        const maybe_data = sm.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
                         if (maybe_data) |data| {
-                            @field(curvature_datas, field.name) = data;
+                            @field(curvature_datas, field_name) = data;
                         } else |err| {
-                            zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
+                            zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
                         }
                     }
                 }

@@ -417,7 +417,7 @@ const ParameterizationData = struct {
         try pd.samples_surface_mesh.?.initCells(.edge);
         try pd.samples_surface_mesh.?.initCells(.face);
 
-        if (builtin.mode == .Debug) {
+        if (builtin.mode == .debug) {
             const ok = try pd.samples_surface_mesh.?.checkIntegrity();
             if (!ok) {
                 zgp_log.err("Samples SurfaceMesh integrity check failed", .{});

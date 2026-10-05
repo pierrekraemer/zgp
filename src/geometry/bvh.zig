@@ -29,7 +29,7 @@ pub const TrianglesBVH = struct {
     bvh_ptr: *anyopaque = undefined,
     surface_mesh: *SurfaceMesh = undefined,
     vertex_position: SurfaceMesh.VertexData(Vec3f) = undefined,
-    surface_mesh_faces: std.ArrayList(SurfaceMesh.Cell(.face)) = .empty,
+    surface_mesh_faces: std.ArrayList(SurfaceMesh.Face) = .empty,
 
     pub fn init(
         sm: *SurfaceMesh,
@@ -38,7 +38,7 @@ pub const TrianglesBVH = struct {
         var vertex_index = try sm.addData(.vertex, u32, "__vertex_index");
         defer sm.removeData(vertex_index);
 
-        var surface_mesh_faces: std.ArrayList(SurfaceMesh.Cell(.face)) = try .initCapacity(sm.allocator, sm.nbCells(.face));
+        var surface_mesh_faces: std.ArrayList(SurfaceMesh.Face) = try .initCapacity(sm.allocator, sm.nbCells(.face));
         errdefer surface_mesh_faces.deinit(sm.allocator);
 
         var triangles_indices_array: std.ArrayList(Index) = try .initCapacity(sm.allocator, 3 * sm.nbCells(.face));

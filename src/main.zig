@@ -330,7 +330,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
     const imgui_io = c.ImGui_GetIO();
     if (c.ImGui_IsMouseClicked(1) and !(imgui_io.*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow))) {
-        c.ImGui_OpenPopup("RightClickMenu", 0);
+        _ = c.ImGui_OpenPopup("RightClickMenu", 0);
     }
     if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
         defer c.ImGui_EndPopup();
@@ -393,7 +393,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         // FPS display (ImGui computed value) – right-aligned in the menu bar.
         const fps = imgui_io.*.Framerate;
         var fps_buf: [32]u8 = undefined;
-        const fps_str = std.fmt.bufPrintZ(&fps_buf, "FPS: {d:.1}", .{fps}) catch "FPS: ?";
+        const fps_str = std.fmt.bufPrintSentinel(&fps_buf, "FPS: {d:.1}", .{fps}, 0) catch "FPS: ?";
         const fps_text_width = c.ImGui_CalcTextSize(fps_str.ptr).x;
         c.ImGui_SetCursorPosX(c.ImGui_GetWindowWidth() - fps_text_width - 8.0);
         c.ImGui_TextUnformatted(fps_str.ptr);
@@ -674,7 +674,6 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
 }
 
 pub fn main(init: std.process.Init) !u8 {
-    app_err.reset();
     var empty_argv: [0:null]?[*:0]u8 = .{};
 
     const io = init.io;
@@ -750,14 +749,10 @@ const ErrorStore = struct {
     const status_storing = 1;
     const status_stored = 2;
 
-    status: c.SDL_AtomicInt = .{},
+    status: c.SDL_AtomicInt = .{ .value = status_not_stored },
     err: anyerror = undefined,
     trace_index: usize = undefined,
     trace_addrs: [32]usize = undefined,
-
-    fn reset(es: *ErrorStore) void {
-        _ = c.SDL_SetAtomicInt(&es.status, status_not_stored);
-    }
 
     fn store(es: *ErrorStore, err: anyerror) c.SDL_AppResult {
         if (c.SDL_CompareAndSwapAtomicInt(&es.status, status_not_stored, status_storing)) {

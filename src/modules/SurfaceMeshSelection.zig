@@ -645,7 +645,7 @@ pub fn rightPanel(m: *Module) void {
         .vertex => {
             if (sd.selected_vertex_set) |vertex_set| {
                 var buf: [64]u8 = undefined;
-                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{vertex_set.cells.items.len}) catch "";
+                const text = std.fmt.bufPrintSentinel(&buf, "#selected: {d}", .{vertex_set.cells.items.len}, 0) catch "";
                 c.ImGui_Text(text);
                 c.ImGui_SameLine();
                 const disabled = vertex_set.cells.items.len == 0;
@@ -667,7 +667,7 @@ pub fn rightPanel(m: *Module) void {
         .edge => {
             if (sd.selected_edge_set) |edge_set| {
                 var buf: [64]u8 = undefined;
-                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{edge_set.cells.items.len}) catch "";
+                const text = std.fmt.bufPrintSentinel(&buf, "#selected: {d}", .{edge_set.cells.items.len}, 0) catch "";
                 c.ImGui_Text(text);
                 c.ImGui_SameLine();
                 const disabled = edge_set.cells.items.len == 0;
@@ -689,7 +689,7 @@ pub fn rightPanel(m: *Module) void {
         .face => {
             if (sd.selected_face_set) |face_set| {
                 var buf: [64]u8 = undefined;
-                const text = std.fmt.bufPrintZ(&buf, "#selected: {d}", .{face_set.cells.items.len}) catch "";
+                const text = std.fmt.bufPrintSentinel(&buf, "#selected: {d}", .{face_set.cells.items.len}, 0) catch "";
                 c.ImGui_Text(text);
                 c.ImGui_SameLine();
                 const disabled = face_set.cells.items.len == 0;

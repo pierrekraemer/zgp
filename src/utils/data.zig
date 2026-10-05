@@ -87,7 +87,7 @@ pub fn Data(comptime T: type) type {
         }
 
         fn ValuePtrType(comptime SelfType: type) type {
-            if (@typeInfo(SelfType).pointer.is_const) {
+            if (@typeInfo(SelfType).pointer.attrs.@"const") {
                 return *const T;
             } else {
                 return *T;
