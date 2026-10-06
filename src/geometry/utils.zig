@@ -5,6 +5,7 @@ const Data = @import("../utils/data.zig").Data;
 const vec = @import("../geometry/vec.zig");
 const Vec2f = vec.Vec2f;
 const Vec3f = vec.Vec3f;
+const SimdVec4f = vec.SimdVec4f;
 
 pub const epsilon: f32 = 1e-5;
 
@@ -64,6 +65,7 @@ pub fn layoutTriangleVertex(pA: Vec2f, pB: Vec2f, lBC: f32, lCA: f32) Vec2f {
         ),
     );
 }
+
 /// Compute and return the barycentric coordinates of the given point p
 /// with respect to the triangle defined by the given three points a, b, c.
 pub fn barycentricCoordinates(p: Vec2f, a: Vec2f, b: Vec2f, c: Vec2f) Vec3f {
@@ -128,6 +130,14 @@ pub fn planeOrientation(a: Vec3f, b: Vec3f, c: Vec3f, p: Vec3f) PlaneOrientation
     }
 }
 
+/// Rotate a vector by a quaternion.
+pub fn rotateVectorByQuaternion(quat: SimdVec4f, vector: SimdVec4f) SimdVec4f {
+    const qw: SimdVec4f = @splat(quat[0]);
+    const qv: SimdVec4f = .{ quat[1], quat[2], quat[3], 0.0 };
+    const t_vec = vec.simdCross4f(qv, vector) + qw * vector;
+    return vector + vec.simdCross4f(qv, t_vec) * @as(SimdVec4f, @splat(2.0));
+}
+
 /// Return a vector where the component of v along unitDir has been removed.
 /// As the name suggests, unitDir must be a unit vector.
 pub fn removeComponent(v: Vec3f, unitDir: Vec3f) Vec3f {
@@ -158,9 +168,9 @@ pub fn boundingBox(data: *const Data(Vec3f)) struct { Vec3f, Vec3f } {
     var bb_min = vec.splat3f(std.math.floatMax(f32));
     var bb_max = vec.splat3f(std.math.floatMin(f32));
     var it = data.constIterator();
-    while (it.next()) |pos| {
-        bb_min = vec.componentwiseMin3f(bb_min, pos.*);
-        bb_max = vec.componentwiseMax3f(bb_max, pos.*);
+    while (it.next()) |elem| {
+        bb_min = vec.componentwiseMin3f(bb_min, elem.value_ptr.*);
+        bb_max = vec.componentwiseMax3f(bb_max, elem.value_ptr.*);
     }
     return .{ bb_min, bb_max };
 }
@@ -173,30 +183,30 @@ pub fn extremePoints(data: *const Data(Vec3f)) [6]Vec3f {
     var bb_max = vec.splat3f(std.math.floatMin(f32));
     var result: [6]Vec3f = undefined;
     var it = data.constIterator();
-    while (it.next()) |pos| {
-        if (pos[0] < bb_min[0]) {
-            bb_min[0] = pos[0];
-            result[0] = pos.*;
+    while (it.next()) |elem| {
+        if (elem.value_ptr[0] < bb_min[0]) {
+            bb_min[0] = elem.value_ptr[0];
+            result[0] = elem.value_ptr.*;
         }
-        if (pos[0] > bb_max[0]) {
-            bb_max[0] = pos[0];
-            result[1] = pos.*;
+        if (elem.value_ptr[0] > bb_max[0]) {
+            bb_max[0] = elem.value_ptr[0];
+            result[1] = elem.value_ptr.*;
         }
-        if (pos[1] < bb_min[1]) {
-            bb_min[1] = pos[1];
-            result[2] = pos.*;
+        if (elem.value_ptr[1] < bb_min[1]) {
+            bb_min[1] = elem.value_ptr[1];
+            result[2] = elem.value_ptr.*;
         }
-        if (pos[1] > bb_max[1]) {
-            bb_max[1] = pos[1];
-            result[3] = pos.*;
+        if (elem.value_ptr[1] > bb_max[1]) {
+            bb_max[1] = elem.value_ptr[1];
+            result[3] = elem.value_ptr.*;
         }
-        if (pos[2] < bb_min[2]) {
-            bb_min[2] = pos[2];
-            result[4] = pos.*;
+        if (elem.value_ptr[2] < bb_min[2]) {
+            bb_min[2] = elem.value_ptr[2];
+            result[4] = elem.value_ptr.*;
         }
-        if (pos[2] > bb_max[2]) {
-            bb_max[2] = pos[2];
-            result[5] = pos.*;
+        if (elem.value_ptr[2] > bb_max[2]) {
+            bb_max[2] = elem.value_ptr[2];
+            result[5] = elem.value_ptr.*;
         }
     }
     return result;
@@ -205,60 +215,17 @@ pub fn extremePoints(data: *const Data(Vec3f)) [6]Vec3f {
 /// Scale the given data points by the given scalar factor.
 pub fn scale(data: *Data(Vec3f), s: f32) void {
     var it = data.iterator();
-    while (it.next()) |pos| {
-        pos.* = vec.mulScalar3f(pos.*, s);
+    while (it.next()) |elem| {
+        elem.value_ptr.* = vec.mulScalar3f(elem.value_ptr.*, s);
     }
-}
-
-/// Compute and return the mean value of the given data.
-/// Supports float, int, or array of float/int types.
-pub fn meanValue(comptime T: type, data: *const Data(T)) T {
-    var sum: T = switch (@typeInfo(T)) {
-        .float, .int => 0,
-        .array => blk: {
-            const elem_info = @typeInfo(@typeInfo(T).array.child);
-            if (elem_info != .float and elem_info != .int) {
-                @compileError("meanValue only supports float, int, or array of float/int types");
-            }
-            break :blk @splat(0);
-        },
-        else => @compileError("meanValue only supports float, int, or array of float/int types"),
-    };
-    const nb_elements: usize = data.nbElements();
-    if (nb_elements == 0) {
-        return sum; // return zero if no elements
-    }
-    var it = data.constIterator();
-    while (it.next()) |v| {
-        switch (@typeInfo(T)) {
-            .float, .int => sum += v.*,
-            .array => {
-                inline for (0..@typeInfo(T).array.len) |i| {
-                    sum[i] += v.*[i];
-                }
-            },
-            else => unreachable,
-        }
-    }
-    return switch (@typeInfo(T)) {
-        .float => sum / @as(T, @floatFromInt(nb_elements)),
-        .int => sum / @as(T, @intCast(nb_elements)),
-        .array => blk: {
-            inline for (0..@typeInfo(T).array.len) |i| {
-                sum[i] = sum[i] / @as(@TypeOf(sum[i]), @floatFromInt(nb_elements));
-            }
-            break :blk sum;
-        },
-        else => unreachable,
-    };
 }
 
 /// Translate the given data points to center around the given point.
 pub fn centerAround(data: *Data(Vec3f), v: Vec3f) void {
-    const c = meanValue(Vec3f, data);
+    const c = data.meanValue();
     const offset = vec.sub3f(v, c);
     var it = data.iterator();
-    while (it.next()) |pos| {
-        pos.* = vec.add3f(pos.*, offset);
+    while (it.next()) |elem| {
+        elem.value_ptr.* = vec.add3f(elem.value_ptr.*, offset);
     }
 }

@@ -36,7 +36,34 @@ pub fn init(sdl_window: *c.SDL_Window, gl_context: c.SDL_GLContext) void {
 
     // _ = c.ImFontAtlas_AddFontDefaultVector(imio.*.Fonts, null);
     _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/ui/DroidSans.ttf", font_size, null, null);
-    var font_config: c.ImFontConfig = .{};
+    var font_config: c.ImFontConfig = .{
+        .Name = @import("std").mem.zeroes([40]u8),
+        .FontData = null,
+        .FontDataSize = 0,
+        .FontDataOwnedByAtlas = false,
+        .MergeMode = false,
+        .PixelSnapH = false,
+        .OversampleH = 0,
+        .OversampleV = 0,
+        .EllipsisChar = 0,
+        .SizePixels = 0,
+        .GlyphRanges = null,
+        .GlyphExcludeRanges = null,
+        .GlyphOffset = @import("std").mem.zeroes(c.ImVec2),
+        .GlyphMinAdvanceX = 0,
+        .GlyphMaxAdvanceX = 0,
+        .GlyphExtraAdvanceX = 0,
+        .FontNo = 0,
+        .FontLoaderFlags = 0,
+        .RasterizerMultiply = 0,
+        .RasterizerDensity = 0,
+        .ExtraSizeScale = 0,
+        .Flags = 0,
+        .DstFont = null,
+        .FontLoader = null,
+        .FontLoaderData = null,
+        .PixelSnapV = false,
+    };
     font_config.MergeMode = true;
     font_config.SizePixels = font_size;
     font_config.GlyphMinAdvanceX = font_size;
@@ -152,11 +179,11 @@ pub fn pointCloudDataComboBox(
             c.ImGui_SetItemDefaultFocus();
         }
 
-        var data_it = point_cloud.point_data.typedIterator(T);
+        var data_it = point_cloud.point_data.typedDataIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                return .{ .changed = .{ .point_cloud = point_cloud, .data = data } };
+                return .{ .changed = .{ .data = data } };
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
@@ -209,11 +236,11 @@ pub fn surfaceMeshCellDataComboBox(
         }
 
         var data_container = surface_mesh.dataContainerPtr(cell_type);
-        var data_it = data_container.typedIterator(T);
+        var data_it = data_container.typedDataIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                return .{ .changed = .{ .surface_mesh = surface_mesh, .data = data } };
+                return .{ .changed = .{ .data = data } };
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
@@ -225,10 +252,10 @@ pub fn surfaceMeshCellDataComboBox(
 
 pub fn surfaceMeshCellSetComboBox(
     surface_mesh: *const SurfaceMesh,
-    cell_type: SurfaceMesh.CellType,
-    selected_cell_set: ?*SurfaceMesh.CellSet,
-) SelectionResult(*SurfaceMesh.CellSet) {
-    if (c.ImGui_BeginCombo("", if (selected_cell_set) |cell_set| cell_set.name.ptr else "-- none --", 0)) {
+    comptime cell_type: SurfaceMesh.CellType,
+    selected_cell_set: ?*SurfaceMesh.CellSet(cell_type),
+) SelectionResult(*SurfaceMesh.CellSet(cell_type)) {
+    if (c.ImGui_BeginCombo("", if (selected_cell_set) |cell_set| cell_set.cell_set_gen.name.ptr else "-- none --", 0)) {
         defer c.ImGui_EndCombo();
         const is_none_selected = selected_cell_set == null;
         if (c.ImGui_SelectableEx("-- none --", is_none_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
@@ -238,17 +265,11 @@ pub fn surfaceMeshCellSetComboBox(
             c.ImGui_SetItemDefaultFocus();
         }
 
-        const cell_sets = switch (cell_type) {
-            .vertex => &surface_mesh.vertex_sets,
-            .edge => &surface_mesh.edge_sets,
-            .face => &surface_mesh.face_sets,
-            else => unreachable,
-        };
-        var cell_set_it = cell_sets.iterator();
-        while (cell_set_it.next()) |entry| {
-            const cell_set = entry.value_ptr;
+        const cell_sets = surface_mesh.cellSetContainerPtr(cell_type);
+        var cell_set_it = cell_sets.valueIterator();
+        while (cell_set_it.next()) |cell_set| {
             const is_selected = if (selected_cell_set) |scs| scs == cell_set else false;
-            if (c.ImGui_SelectableEx(cell_set.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+            if (c.ImGui_SelectableEx(cell_set.cell_set_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                 return .{ .changed = cell_set };
             }
             if (is_selected) {
@@ -264,10 +285,11 @@ pub fn surfaceMeshCellTypeComboBox(
 ) ?SurfaceMesh.CellType {
     if (c.ImGui_BeginCombo("", @tagName(selected_cell_type), 0)) {
         defer c.ImGui_EndCombo();
-        inline for (@typeInfo(SurfaceMesh.CellType).@"enum".fields) |cell_type| {
-            const is_selected = @intFromEnum(selected_cell_type) == cell_type.value;
-            if (c.ImGui_SelectableEx(cell_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                return @enumFromInt(cell_type.value);
+        const cell_types_enum = @typeInfo(SurfaceMesh.CellType).@"enum";
+        inline for (cell_types_enum.field_names, cell_types_enum.field_values) |cell_type_name, cell_type_value| {
+            const is_selected = @backingInt(selected_cell_type) == cell_type_value;
+            if (c.ImGui_SelectableEx(cell_type_name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                return @fromBackingInt(cell_type_value);
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
@@ -320,11 +342,11 @@ pub fn incidenceGraphCellDataComboBox(
         }
 
         var data_container = incidence_graph.dataContainerPtr(cell_type);
-        var data_it = data_container.typedIterator(T);
+        var data_it = data_container.typedDataIterator(T);
         while (data_it.next()) |data| {
             const is_selected = if (selected_data) |sd| sd.data == data else false;
             if (c.ImGui_SelectableEx(data.data_gen.name.ptr, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                return .{ .changed = .{ .incidence_graph = incidence_graph, .data = data } };
+                return .{ .changed = .{ .data = data } };
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();
@@ -339,10 +361,11 @@ pub fn incidenceGraphCellTypeComboBox(
 ) ?IncidenceGraph.CellType {
     if (c.ImGui_BeginCombo("", @tagName(selected_cell_type), 0)) {
         defer c.ImGui_EndCombo();
-        inline for (@typeInfo(IncidenceGraph.CellType).@"enum".fields) |cell_type| {
-            const is_selected = @intFromEnum(selected_cell_type) == cell_type.value;
-            if (c.ImGui_SelectableEx(cell_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
-                return @enumFromInt(cell_type.value);
+        const cell_types_enum = @typeInfo(IncidenceGraph.CellType).@"enum";
+        inline for (cell_types_enum.field_names, cell_types_enum.field_values) |cell_type_name, cell_type_value| {
+            const is_selected = @backingInt(selected_cell_type) == cell_type_value;
+            if (c.ImGui_SelectableEx(cell_type_name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+                return @fromBackingInt(cell_type_value);
             }
             if (is_selected) {
                 c.ImGui_SetItemDefaultFocus();

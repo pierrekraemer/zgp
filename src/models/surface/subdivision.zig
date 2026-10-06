@@ -10,20 +10,19 @@ const Vec3f = vec.Vec3f;
 /// Triangulate the polygonal faces of the given SurfaceMesh.
 /// TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan.
 pub fn triangulateFaces(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
 ) !void {
-    var face_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(app_ctx.allocator, sm.nbCells(.face));
-    defer face_buffer.deinit(app_ctx.allocator);
-    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
-    defer face_it.deinit();
+    var face_buffer: std.ArrayList(SurfaceMesh.Face) = try .initCapacity(allocator, sm.nbCells(.face));
+    defer face_buffer.deinit(allocator);
+    var face_it = sm.faceIterator();
     while (face_it.next()) |f| {
         if (sm.codegree(f) > 3) {
-            try face_buffer.append(app_ctx.allocator, f);
+            try face_buffer.append(allocator, f);
         }
     }
     for (face_buffer.items) |f| {
-        var d_start = f.dart();
+        var d_start = sm.dart(f);
         const d_end = sm.phi_1(d_start);
         var d_next = sm.phi1(d_start);
         if (d_next == d_start) continue; // 1-sided face
@@ -39,22 +38,22 @@ pub fn triangulateFaces(
 /// Cut all edges of the given SurfaceMesh.
 /// The positions of the new vertices is the edge midpoints.
 pub fn cutAllEdges(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position: *SurfaceMesh.VertexData(Vec3f),
 ) !void {
-    var edge_buffer: std.ArrayList(SurfaceMesh.Cell) = try .initCapacity(app_ctx.allocator, sm.nbCells(.edge));
-    defer edge_buffer.deinit(app_ctx.allocator);
-    var edge_it: SurfaceMesh.CellIterator = try .init(sm, .edge);
-    defer edge_it.deinit();
+    var edge_buffer: std.ArrayList(SurfaceMesh.Edge) = try .initCapacity(allocator, sm.nbCells(.edge));
+    defer edge_buffer.deinit(allocator);
+    var edge_it = sm.edgeIterator();
     while (edge_it.next()) |e| {
-        try edge_buffer.append(app_ctx.allocator, e);
+        try edge_buffer.append(allocator, e);
     }
     for (edge_buffer.items) |e| {
+        const d = sm.dart(e);
         const new_pos = vec.mulScalar3f(
             vec.add3f(
-                vertex_position.value(.{ .vertex = e.dart() }),
-                vertex_position.value(.{ .vertex = sm.phi1(e.dart()) }),
+                vertex_position.value(sm.vertex(d)),
+                vertex_position.value(sm.vertex(sm.phi1(d))),
             ),
             0.5,
         );

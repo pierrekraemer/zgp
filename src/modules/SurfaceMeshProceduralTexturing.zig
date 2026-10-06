@@ -17,33 +17,32 @@ const Vec3f = vec.Vec3f;
 
 const TnBData = struct {
     surface_mesh: *SurfaceMesh,
-    vertex_position: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
-    vertex_ref_edge: ?SurfaceMesh.CellData(.vertex, SurfaceMesh.Cell) = null,
+    vertex_position: ?SurfaceMesh.VertexData(Vec3f) = null,
+    vertex_ref_dart: ?SurfaceMesh.VertexData(SurfaceMesh.Dart) = null,
     initialized: bool = false,
 
-    pub fn init(tbd: *TnBData, vertex_position: SurfaceMesh.CellData(.vertex, Vec3f)) !void {
+    pub fn init(tbd: *TnBData, vertex_position: SurfaceMesh.VertexData(Vec3f)) !void {
         tbd.vertex_position = vertex_position;
         if (!tbd.initialized) {
-            tbd.vertex_ref_edge = try tbd.surface_mesh.addData(.vertex, SurfaceMesh.Cell, "__vertex_ref_edge");
+            tbd.vertex_ref_dart = try tbd.surface_mesh.addData(.vertex, SurfaceMesh.Dart, "__vertex_ref_dart");
         }
         tbd.initialized = true;
 
-        try tbd.computeVertexRefEdges();
+        try tbd.computeVertexRefDarts();
     }
 
     pub fn deinit(tbd: *TnBData) void {
         if (tbd.initialized) {
-            tbd.surface_mesh.removeData(.vertex, SurfaceMesh.Cell, tbd.vertex_ref_edge.?);
+            tbd.surface_mesh.removeData(tbd.vertex_ref_dart.?);
             tbd.initialized = false;
         }
     }
 
-    fn computeVertexRefEdges(tbd: *TnBData) !void {
+    fn computeVertexRefDarts(tbd: *TnBData) !void {
         assert(tbd.initialized);
-        var v_it: SurfaceMesh.CellIterator = try .init(tbd.surface_mesh, .vertex);
-        defer v_it.deinit();
+        var v_it = tbd.surface_mesh.vertexIterator();
         while (v_it.next()) |v| {
-            tbd.vertex_ref_edge.?.valuePtr(v).* = .{ .edge = v.dart() };
+            tbd.vertex_ref_dart.?.valuePtr(v).* = tbd.surface_mesh.dart(v);
         }
     }
 };

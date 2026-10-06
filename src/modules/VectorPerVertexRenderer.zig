@@ -27,7 +27,7 @@ const Mat4f = mat.Mat4f;
 // TODO: implement IncidenceGraph support
 
 const VertexVectorData = union(enum) {
-    surface_mesh: ?SurfaceMesh.CellData(.vertex, Vec3f),
+    surface_mesh: ?SurfaceMesh.VertexData(Vec3f),
     point_cloud: ?PointCloud.CellData(Vec3f),
 };
 
@@ -186,7 +186,7 @@ fn setPointCloudVectorData(
 fn setSurfaceMeshVectorData(
     vpvr: *VectorPerVertexRenderer,
     surface_mesh: *SurfaceMesh,
-    vertex_vector: ?SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_vector: ?SurfaceMesh.VertexData(Vec3f),
 ) void {
     const p = vpvr.surface_mesh_parameters.getPtr(surface_mesh) orelse return;
     p.vertex_vector.surface_mesh = vertex_vector;

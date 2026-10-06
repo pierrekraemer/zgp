@@ -62,17 +62,17 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
 fn computeVertexCurvatures(
     smc: *SurfaceMeshCurvature,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    vertex_curvature: curvature.SurfaceMeshCurvatureDatas,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_normal: SurfaceMesh.VertexData(Vec3f),
+    edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
+    edge_length: SurfaceMesh.EdgeData(f32),
+    face_area: SurfaceMesh.FaceData(f32),
+    vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
     try curvature.computeVertexCurvatures(
-        smc.app_ctx,
+        smc.app_ctx.io,
         sm,
         vertex_position,
         vertex_normal,
@@ -147,13 +147,14 @@ pub fn rightClickMenu(m: *Module) void {
             c.ImGui_PopID();
 
             if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create curvature datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-                inline for (@typeInfo(curvature.SurfaceMeshCurvatureDatas).@"struct".fields) |*field| {
-                    if (@field(curvature_datas, field.name) == null) {
-                        const maybe_data = sm.addData(@typeInfo(field.type).optional.child.CellType, @typeInfo(field.type).optional.child.DataType, field.name);
+                const curvature_datas_info = @typeInfo(curvature.SurfaceMeshCurvatureDatas).@"struct";
+                inline for (curvature_datas_info.field_names, curvature_datas_info.field_types) |field_name, field_type| {
+                    if (@field(curvature_datas, field_name) == null) {
+                        const maybe_data = sm.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
                         if (maybe_data) |data| {
-                            @field(curvature_datas, field.name) = data;
+                            @field(curvature_datas, field_name) = data;
                         } else |err| {
-                            zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field.name, @tagName(@typeInfo(field.type).optional.child.CellType), @typeName(@typeInfo(field.type).optional.child.DataType), err });
+                            zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
                         }
                     }
                 }
@@ -180,7 +181,7 @@ pub fn rightClickMenu(m: *Module) void {
                     info.std_datas.edge_dihedral_angle.?,
                     info.std_datas.edge_length.?,
                     info.std_datas.face_area.?,
-                    curvature_datas.*,
+                    curvature_datas,
                 ) catch |err| {
                     std.debug.print("Error computing curvatures: {}\n", .{err});
                 };

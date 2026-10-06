@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
@@ -19,28 +18,28 @@ const VertexCurvatureValues = struct {
 };
 
 pub const SurfaceMeshCurvatureDatas = struct {
-    vertex_kmin: ?SurfaceMesh.CellData(.vertex, f32) = null,
-    vertex_Kmin: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
-    vertex_kmax: ?SurfaceMesh.CellData(.vertex, f32) = null,
-    vertex_Kmax: ?SurfaceMesh.CellData(.vertex, Vec3f) = null,
+    vertex_kmin: ?SurfaceMesh.VertexData(f32) = null,
+    vertex_Kmin: ?SurfaceMesh.VertexData(Vec3f) = null,
+    vertex_kmax: ?SurfaceMesh.VertexData(f32) = null,
+    vertex_Kmax: ?SurfaceMesh.VertexData(Vec3f) = null,
 };
 
 fn addEdgeContributionToTensor(
     sm: *const SurfaceMesh,
     d: SurfaceMesh.Dart,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
+    edge_length: SurfaceMesh.EdgeData(f32),
     n: Vec3f,
     tensor: *Mat3f,
 ) void {
     const d2 = sm.phi2(d);
-    const e: SurfaceMesh.Cell = .{ .edge = d };
     const ev = vec.sub3f(
-        vertex_position.value(.{ .vertex = d2 }),
-        vertex_position.value(.{ .vertex = d }),
+        vertex_position.value(sm.vertex(d2)),
+        vertex_position.value(sm.vertex(d)),
     );
     const proj_ev = geometry_utils.removeComponent(ev, n);
+    const e = sm.edge(d);
     tensor.* = mat.add3f(
         tensor.*,
         mat.mulScalar3f(
@@ -54,15 +53,13 @@ fn addEdgeContributionToTensor(
 /// Results are returned as (kmin, Kmin, kmax, Kmax).
 pub fn vertexCurvature(
     sm: *const SurfaceMesh,
-    vertex: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
+    vertex: SurfaceMesh.Vertex,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_normal: SurfaceMesh.VertexData(Vec3f),
+    edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
+    edge_length: SurfaceMesh.EdgeData(f32),
+    face_area: SurfaceMesh.FaceData(f32),
 ) !VertexCurvatureValues {
-    assert(vertex.cellType() == .vertex);
-
     const n = vertex_normal.value(vertex);
 
     var tensor = mat.zero3f;
@@ -71,7 +68,7 @@ pub fn vertexCurvature(
     // accumulate edge contributions to the curvature tensor & face area
     // in the 2-ring around the vertex
     // TODO: compare to the results obtained using selection.cellsWithinSphereAroundVertex (multithread warning for markers)
-    var dart_it = sm.cellDartIterator(vertex);
+    var dart_it = sm.vertexDartIterator(sm.dart(vertex));
     while (dart_it.next()) |d| {
         var d_it = sm.phi2(d);
         const d_end = sm.phi2(sm.phi_1(d_it));
@@ -83,7 +80,7 @@ pub fn vertexCurvature(
             addEdgeContributionToTensor(sm, d_it, vertex_position, edge_dihedral_angle, edge_length, n, &tensor);
             const d_it2 = sm.phi2(d_it);
             if (d_it2 != d and !sm.isBoundaryDart(d_it)) {
-                area += face_area.value(.{ .face = d_it });
+                area += face_area.value(sm.face(d_it));
             }
             if (i >= 3) { // gather exterior 2-ring edges
                 addEdgeContributionToTensor(sm, sm.phi1(d_it), vertex_position, edge_dihedral_angle, edge_length, n, &tensor);
@@ -125,27 +122,25 @@ pub fn vertexCurvature(
 /// Compute the principal curvatures magnitudes and directions of all vertices of the given SurfaceMesh
 /// and store the results in the given datas (which are supposed to be not null).
 pub fn computeVertexCurvatures(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-    edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    vertex_curvature: SurfaceMeshCurvatureDatas,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_normal: SurfaceMesh.VertexData(Vec3f),
+    edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
+    edge_length: SurfaceMesh.EdgeData(f32),
+    face_area: SurfaceMesh.FaceData(f32),
+    vertex_curvature: *SurfaceMeshCurvatureDatas,
 ) !void {
     const Task = struct {
-        const Task = @This();
-
         surface_mesh: *const SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_normal: SurfaceMesh.CellData(.vertex, Vec3f),
-        edge_dihedral_angle: SurfaceMesh.CellData(.edge, f32),
-        edge_length: SurfaceMesh.CellData(.edge, f32),
-        face_area: SurfaceMesh.CellData(.face, f32),
-        vertex_curvature: SurfaceMeshCurvatureDatas,
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        vertex_normal: SurfaceMesh.VertexData(Vec3f),
+        edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
+        edge_length: SurfaceMesh.EdgeData(f32),
+        face_area: SurfaceMesh.FaceData(f32),
+        vertex_curvature: *SurfaceMeshCurvatureDatas,
 
-        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const @This(), vertex: SurfaceMesh.Vertex) void {
             const curvature_values = try vertexCurvature(
                 t.surface_mesh,
                 vertex,
@@ -162,9 +157,9 @@ pub fn computeVertexCurvatures(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
+    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_normal = vertex_normal,
@@ -179,10 +174,9 @@ pub fn computeVertexCurvatures(
 /// computed as the angle defect.
 pub fn vertexGaussianCurvature(
     sm: *const SurfaceMesh,
-    vertex: SurfaceMesh.Cell,
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
+    vertex: SurfaceMesh.Vertex,
+    corner_angle: SurfaceMesh.CornerData(f32),
 ) f32 {
-    assert(vertex.cellType() == .vertex);
     var base: f32 = std.math.tau;
     if (sm.isIncidentToBoundary(vertex)) {
         base = std.math.pi;
@@ -191,7 +185,7 @@ pub fn vertexGaussianCurvature(
     var dart_it = sm.cellDartIterator(vertex);
     while (dart_it.next()) |d| {
         if (!sm.isBoundaryDart(d)) {
-            angle_sum += corner_angle.value(.{ .corner = d });
+            angle_sum += corner_angle.value(sm.corner(d));
         }
     }
     return base - angle_sum;
@@ -200,18 +194,30 @@ pub fn vertexGaussianCurvature(
 /// Compute the Gaussian curvatures of all vertices of the given SurfaceMesh
 /// and store the results in the given vertex_gaussian_curvature data.
 pub fn computeVertexGaussianCurvatures(
-    _: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
-    vertex_gaussian_curvature: SurfaceMesh.CellData(.vertex, f32),
+    corner_angle: SurfaceMesh.CornerData(f32),
+    vertex_gaussian_curvature: *SurfaceMesh.VertexData(f32),
 ) !void {
-    var it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
-    defer it.deinit();
-    while (it.next()) |vertex| {
-        vertex_gaussian_curvature.valuePtr(vertex).* = vertexGaussianCurvature(
-            sm,
-            vertex,
-            corner_angle,
-        );
-    }
+    const Task = struct {
+        surface_mesh: *const SurfaceMesh,
+        corner_angle: SurfaceMesh.CornerData(f32),
+        vertex_gaussian_curvature: *SurfaceMesh.VertexData(f32),
+
+        pub fn run(t: *const @This(), vertex: SurfaceMesh.Vertex) void {
+            t.vertex_gaussian_curvature.valuePtr(vertex).* = vertexGaussianCurvature(
+                t.surface_mesh,
+                vertex,
+                t.corner_angle,
+            );
+        }
+    };
+
+    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
+    defer pctr.deinit();
+    try pctr.run(io, Task{
+        .surface_mesh = sm,
+        .corner_angle = corner_angle,
+        .vertex_gaussian_curvature = vertex_gaussian_curvature,
+    });
 }

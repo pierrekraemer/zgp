@@ -243,7 +243,6 @@ pub fn PriorityQueue(
             self.cap = 0;
         }
 
-        // TODO: make an other version that takes an index instead of searching for the element
         /// Replace an element in the queue with a new element, maintaining priority.
         /// If the element being updated doesn't exist, return `error.ElementNotFound`.
         pub fn update(self: *Self, elem: T, new_elem: T) !void {
@@ -263,6 +262,21 @@ pub fn PriorityQueue(
                 .gt => siftDown(self, update_index),
                 .eq => {}, // Nothing to do as the items have equal priority
             }
+        }
+
+        /// Replace the element at the given index with a new element, maintaining priority.
+        /// Returns the replaced element.
+        pub fn updateIndex(self: *Self, index: usize, new_elem: T) T {
+            assert(self.items.len > index);
+            const old_elem: T = self.items[index];
+            self.items[index] = new_elem;
+            setElemIndexFn(self.context, new_elem, index);
+            switch (compareFn(self.context, new_elem, old_elem)) {
+                .lt => siftUp(self, index),
+                .gt => siftDown(self, index),
+                .eq => {}, // Nothing to do as the items have equal priority
+            }
+            return old_elem;
         }
 
         pub const Iterator = struct {

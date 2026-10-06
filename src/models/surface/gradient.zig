@@ -1,8 +1,8 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
+
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec3d = vec.Vec3d;
@@ -15,25 +15,24 @@ const Vec3d = vec.Vec3d;
 /// The face is assumed to be triangular.
 pub fn scalarFieldFaceGradient(
     sm: *const SurfaceMesh,
-    face: SurfaceMesh.Cell,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_scalar_field: SurfaceMesh.CellData(.vertex, f64),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
+    face: SurfaceMesh.Face,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_scalar_field: SurfaceMesh.VertexData(f64),
+    face_area: SurfaceMesh.FaceData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
 ) Vec3d {
-    assert(face.cellType() == .face);
     var g = vec.zero3d;
-    var dart_it = sm.cellDartIterator(face);
+    var dart_it = sm.faceDartIterator(sm.dart(face));
     while (dart_it.next()) |d| {
-        const v0 = vertex_position.value(.{ .vertex = sm.phi1(d) });
-        const v1 = vertex_position.value(.{ .vertex = sm.phi_1(d) });
+        const v0 = vertex_position.value(sm.vertex(sm.phi1(d)));
+        const v1 = vertex_position.value(sm.vertex(sm.phi_1(d)));
         const e = vec.sub3f(v1, v0);
         const ortho = vec.cross3f(face_normal.value(face), e);
         g = vec.add3d(
             g,
             vec.mulScalar3d(
                 vec.vec3dFromVec3f(ortho),
-                vertex_scalar_field.value(.{ .vertex = d }),
+                vertex_scalar_field.value(sm.vertex(d)),
             ),
         );
     }
@@ -46,25 +45,25 @@ pub fn scalarFieldFaceGradient(
 /// The given scalar field and its computed gradients are of type f64 for improved precision.
 /// The faces of the SurfaceMesh are assumed to be triangular.
 pub fn computeScalarFieldFaceGradients(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    vertex_scalar_field: SurfaceMesh.CellData(.vertex, f64),
-    face_area: SurfaceMesh.CellData(.face, f32),
-    face_normal: SurfaceMesh.CellData(.face, Vec3f),
-    face_gradient: SurfaceMesh.CellData(.face, Vec3d),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_scalar_field: SurfaceMesh.VertexData(f64),
+    face_area: SurfaceMesh.FaceData(f32),
+    face_normal: SurfaceMesh.FaceData(Vec3f),
+    face_gradient: *SurfaceMesh.FaceData(Vec3d),
 ) !void {
     const Task = struct {
         const Task = @This();
 
         surface_mesh: *const SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        vertex_scalar_field: SurfaceMesh.CellData(.vertex, f64),
-        face_area: SurfaceMesh.CellData(.face, f32),
-        face_normal: SurfaceMesh.CellData(.face, Vec3f),
-        face_gradient: SurfaceMesh.CellData(.face, Vec3d),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        vertex_scalar_field: SurfaceMesh.VertexData(f64),
+        face_area: SurfaceMesh.FaceData(f32),
+        face_normal: SurfaceMesh.FaceData(Vec3f),
+        face_gradient: *SurfaceMesh.FaceData(Vec3d),
 
-        pub fn run(t: *const Task, face: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, face: SurfaceMesh.Face) void {
             t.face_gradient.valuePtr(face).* = scalarFieldFaceGradient(
                 t.surface_mesh,
                 face,
@@ -76,9 +75,9 @@ pub fn computeScalarFieldFaceGradients(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .face);
+    var pctr: SurfaceMesh.ParallelFaceTaskRunner = try .init(sm);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_scalar_field = vertex_scalar_field,
@@ -93,27 +92,26 @@ pub fn computeScalarFieldFaceGradients(
 /// Incident faces are assumed to be triangular.
 pub fn vectorFieldVertexDivergence(
     sm: *const SurfaceMesh,
-    vertex: SurfaceMesh.Cell,
-    halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_vector_field: SurfaceMesh.CellData(.face, Vec3d),
+    vertex: SurfaceMesh.Vertex,
+    halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_vector_field: SurfaceMesh.FaceData(Vec3d),
 ) f64 {
-    assert(vertex.cellType() == .vertex);
     var div: f64 = 0.0;
-    var dart_it = sm.cellDartIterator(vertex);
+    var dart_it = sm.vertexDartIterator(sm.dart(vertex));
     while (dart_it.next()) |d| {
         if (sm.isBoundaryDart(d)) continue;
         const d1 = sm.phi1(d);
         const d_1 = sm.phi_1(d);
-        const p1 = vertex_position.value(.{ .vertex = d });
-        const p2 = vertex_position.value(.{ .vertex = d1 });
-        const p3 = vertex_position.value(.{ .vertex = d_1 });
-        const X = face_vector_field.value(.{ .face = d });
-        div += halfedge_cotan_weight.value(.{ .halfedge = d }) * vec.dot3d(
+        const p1 = vertex_position.value(sm.vertex(d));
+        const p2 = vertex_position.value(sm.vertex(d1));
+        const p3 = vertex_position.value(sm.vertex(d_1));
+        const X = face_vector_field.value(sm.face(d));
+        div += halfedge_cotan_weight.data.value(d) * vec.dot3d(
             vec.vec3dFromVec3f(vec.sub3f(p2, p1)),
             X,
         );
-        div += halfedge_cotan_weight.value(.{ .halfedge = d_1 }) * vec.dot3d(
+        div += halfedge_cotan_weight.data.value(d_1) * vec.dot3d(
             vec.vec3dFromVec3f(vec.sub3f(p3, p1)),
             X,
         );
@@ -126,23 +124,23 @@ pub fn vectorFieldVertexDivergence(
 /// The given vector field and its computed divergence are of type f64 for improved precision.
 /// The faces of the SurfaceMesh are assumed to be triangular.
 pub fn computeVectorFieldVertexDivergences(
-    app_ctx: *AppContext,
+    io: std.Io,
     sm: *SurfaceMesh,
-    halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    face_vector_field: SurfaceMesh.CellData(.face, Vec3d),
-    vertex_divergence: SurfaceMesh.CellData(.vertex, f64),
+    halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    face_vector_field: SurfaceMesh.FaceData(Vec3d),
+    vertex_divergence: *SurfaceMesh.VertexData(f64),
 ) !void {
     const Task = struct {
         const Task = @This();
 
         surface_mesh: *const SurfaceMesh,
-        halfedge_cotan_weight: SurfaceMesh.CellData(.halfedge, f32),
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-        face_vector_field: SurfaceMesh.CellData(.face, Vec3d),
-        vertex_divergence: SurfaceMesh.CellData(.vertex, f64),
+        halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
+        face_vector_field: SurfaceMesh.FaceData(Vec3d),
+        vertex_divergence: *SurfaceMesh.VertexData(f64),
 
-        pub fn run(t: *const Task, vertex: SurfaceMesh.Cell) void {
+        pub fn run(t: *const Task, vertex: SurfaceMesh.Vertex) void {
             t.vertex_divergence.valuePtr(vertex).* = vectorFieldVertexDivergence(
                 t.surface_mesh,
                 vertex,
@@ -153,9 +151,9 @@ pub fn computeVectorFieldVertexDivergences(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCellTaskRunner = try .init(sm, .vertex);
+    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
     defer pctr.deinit();
-    try pctr.run(app_ctx, Task{
+    try pctr.run(io, Task{
         .surface_mesh = sm,
         .halfedge_cotan_weight = halfedge_cotan_weight,
         .vertex_position = vertex_position,

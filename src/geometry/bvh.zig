@@ -28,26 +28,25 @@ pub const TrianglesBVH = struct {
     initialized: bool = false,
     bvh_ptr: *anyopaque = undefined,
     surface_mesh: *SurfaceMesh = undefined,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f) = undefined,
-    surface_mesh_faces: std.ArrayList(SurfaceMesh.Cell) = .empty,
+    vertex_position: SurfaceMesh.VertexData(Vec3f) = undefined,
+    surface_mesh_faces: std.ArrayList(SurfaceMesh.Face) = .empty,
 
     pub fn init(
         sm: *SurfaceMesh,
-        vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+        vertex_position: SurfaceMesh.VertexData(Vec3f),
     ) !TrianglesBVH {
         var vertex_index = try sm.addData(.vertex, u32, "__vertex_index");
-        defer sm.removeData(.vertex, u32, vertex_index);
+        defer sm.removeData(vertex_index);
 
-        var surface_mesh_faces = try std.ArrayList(SurfaceMesh.Cell).initCapacity(sm.allocator, sm.nbCells(.face));
+        var surface_mesh_faces: std.ArrayList(SurfaceMesh.Face) = try .initCapacity(sm.allocator, sm.nbCells(.face));
         errdefer surface_mesh_faces.deinit(sm.allocator);
 
-        var triangles_indices_array = try std.ArrayList(Index).initCapacity(sm.allocator, 3 * sm.nbCells(.face));
+        var triangles_indices_array: std.ArrayList(Index) = try .initCapacity(sm.allocator, 3 * sm.nbCells(.face));
         defer triangles_indices_array.deinit(sm.allocator);
-        var position_array = try std.ArrayList(Vec3f).initCapacity(sm.allocator, sm.nbCells(.vertex));
+        var position_array: std.ArrayList(Vec3f) = try .initCapacity(sm.allocator, sm.nbCells(.vertex));
         defer position_array.deinit(sm.allocator);
 
-        var vertex_it: SurfaceMesh.CellIterator = try .init(sm, .vertex);
-        defer vertex_it.deinit();
+        var vertex_it = sm.vertexIterator();
         var nb_vertices: u32 = 0;
         while (vertex_it.next()) |v| : (nb_vertices += 1) {
             vertex_index.valuePtr(v).* = nb_vertices;
@@ -55,13 +54,12 @@ pub const TrianglesBVH = struct {
         }
 
         // TODO: this code makes the assumption that the mesh is made of triangle faces
-        var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
-        defer face_it.deinit();
+        var face_it = sm.faceIterator();
         while (face_it.next()) |f| {
             try surface_mesh_faces.append(sm.allocator, f);
-            var dart_it = sm.cellDartIterator(f);
+            var dart_it = sm.faceDartIterator(sm.dart(f));
             while (dart_it.next()) |d| {
-                try triangles_indices_array.append(sm.allocator, vertex_index.value(.{ .vertex = d }));
+                try triangles_indices_array.append(sm.allocator, vertex_index.value(sm.vertex(d)));
             }
         }
 
@@ -98,7 +96,7 @@ pub const TrianglesBVH = struct {
         return null;
     }
 
-    pub fn intersectedTriangle(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Cell {
+    pub fn intersectedTriangle(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Face {
         assert(tbvh.initialized);
         if (tbvh.intersect(ray)) |h| {
             return tbvh.surface_mesh_faces.items[h.triIndex];
@@ -106,42 +104,44 @@ pub const TrianglesBVH = struct {
         return null;
     }
 
-    pub fn intersectedEdge(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Cell {
+    pub fn intersectedEdge(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Edge {
         assert(tbvh.initialized);
         if (tbvh.intersect(ray)) |h| {
             const f = tbvh.surface_mesh_faces.items[h.triIndex];
+            const d = tbvh.surface_mesh.dart(f);
             if (h.bcoords[0] < h.bcoords[1]) {
                 if (h.bcoords[0] < h.bcoords[2]) { // bcoords[0] is smallest
-                    return .{ .edge = tbvh.surface_mesh.phi1(f.dart()) };
+                    return tbvh.surface_mesh.edge(tbvh.surface_mesh.phi1(d));
                 } else { // bcoords[2] is smallest
-                    return .{ .edge = f.dart() };
+                    return tbvh.surface_mesh.edge(d);
                 }
             } else {
                 if (h.bcoords[1] < h.bcoords[2]) { // bcoords[1] is smallest
-                    return .{ .edge = tbvh.surface_mesh.phi_1(f.dart()) };
+                    return tbvh.surface_mesh.edge(tbvh.surface_mesh.phi_1(d));
                 } else { // bcoords[2] is smallest
-                    return .{ .edge = f.dart() };
+                    return tbvh.surface_mesh.edge(d);
                 }
             }
         }
         return null;
     }
 
-    pub fn intersectedVertex(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Cell {
+    pub fn intersectedVertex(tbvh: TrianglesBVH, ray: Ray) ?SurfaceMesh.Vertex {
         assert(tbvh.initialized);
         if (tbvh.intersect(ray)) |h| {
             const f = tbvh.surface_mesh_faces.items[h.triIndex];
+            const d = tbvh.surface_mesh.dart(f);
             if (h.bcoords[0] > h.bcoords[1]) {
                 if (h.bcoords[0] > h.bcoords[2]) { // bcoords[0] is largest
-                    return .{ .vertex = f.dart() };
+                    return tbvh.surface_mesh.vertex(d);
                 } else { // bcoords[2] is largest
-                    return .{ .vertex = tbvh.surface_mesh.phi_1(f.dart()) };
+                    return tbvh.surface_mesh.vertex(tbvh.surface_mesh.phi_1(d));
                 }
             } else {
                 if (h.bcoords[1] > h.bcoords[2]) { // bcoords[1] is largest
-                    return .{ .vertex = tbvh.surface_mesh.phi1(f.dart()) };
+                    return tbvh.surface_mesh.vertex(tbvh.surface_mesh.phi1(d));
                 } else { // bcoords[2] is largest
-                    return .{ .vertex = tbvh.surface_mesh.phi_1(f.dart()) };
+                    return tbvh.surface_mesh.vertex(tbvh.surface_mesh.phi_1(d));
                 }
             }
         }
@@ -155,7 +155,7 @@ pub const TrianglesBVH = struct {
                 .surface_mesh = tbvh.surface_mesh,
                 .type = .{
                     .face = .{
-                        .cell = tbvh.surface_mesh_faces.items[h.triIndex],
+                        .dart = tbvh.surface_mesh.dart(tbvh.surface_mesh_faces.items[h.triIndex]),
                         .bcoords = h.bcoords,
                     },
                 },
@@ -185,7 +185,7 @@ pub const TrianglesBVH = struct {
                 .surface_mesh = tbvh.surface_mesh,
                 .type = .{
                     .face = .{
-                        .cell = tbvh.surface_mesh_faces.items[triIndex],
+                        .dart = tbvh.surface_mesh.dart(tbvh.surface_mesh_faces.items[triIndex]),
                         .bcoords = bcoords,
                     },
                 },

@@ -2,7 +2,6 @@ const std = @import("std");
 const assert = std.debug.assert;
 const zgp_log = std.log.scoped(.zgp);
 
-const AppContext = @import("../../main.zig").AppContext;
 const SurfaceMesh = @import("SurfaceMesh.zig");
 const SurfacePoint = @import("SurfacePoint.zig");
 
@@ -40,13 +39,13 @@ fn raySegmentIntersect(p: Vec2f, dir: Vec2f, a: Vec2f, b: Vec2f) ?struct { f32, 
 /// - the final angle (in the tangent space of the destination SurfacePoint)
 /// - the remaining length (should be zero if the geodesic is fully traced)
 pub fn traceGeodesic(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
     sm: *const SurfaceMesh,
     src_sp: SurfacePoint,
     angle: f32,
     length: f32,
-    corner_angle: SurfaceMesh.CellData(.corner, f32),
-    edge_length: SurfaceMesh.CellData(.edge, f32),
+    corner_angle: SurfaceMesh.CornerData(f32),
+    edge_length: SurfaceMesh.EdgeData(f32),
     trace: ?*std.ArrayList(SurfacePoint),
 ) !struct { SurfacePoint, f32, f32 } {
     if (trace) |t| {
@@ -56,28 +55,27 @@ pub fn traceGeodesic(
     // current SurfacePoint of the trace, updated at each step of the tracing
     var current_sp = src_sp;
     // the tracing direction is determined by the current angle,
-    // expressed in the tangent space of the current SurfacePoint
-    // (the reference Dart being the one representing the underlying Cell of the SurfacePoint)
+    // expressed in the tangent space of the current SurfacePoint (with the Dart of the current SurfacePoint as the reference Dart)
     var current_angle = angle;
     // the remaining geodesic length to trace
     var remaining_length = length;
 
     if (trace) |t| {
-        try t.append(app_ctx.allocator, current_sp);
+        try t.append(allocator, current_sp);
     }
 
     while (remaining_length > geometry_utils.epsilon) {
         switch (current_sp.type) {
             // for a vertex SurfacePoint, the angle is measured CCW from the direction of the reference Dart of the vertex
             // the value is in [0, angle_sum_at_vertex)
-            .vertex => |v| {
+            .vertex => |spv| {
                 // find the incident triangle containing the geodesic direction
                 var accumulated_angle: f32 = 0.0;
                 var angle_before: f32 = 0.0;
-                var d_it = sm.cellDartIterator(v);
+                var d_it = sm.vertexDartIterator(spv);
                 const face_dart: ?SurfaceMesh.Dart = while (d_it.next()) |vd| {
                     angle_before = accumulated_angle;
-                    accumulated_angle += corner_angle.value(.{ .corner = vd });
+                    accumulated_angle += corner_angle.value(sm.corner(vd));
                     if (accumulated_angle >= angle - geometry_utils.epsilon) {
                         break vd;
                     }
@@ -87,10 +85,12 @@ pub fn traceGeodesic(
                     current_angle = angle - angle_before;
                     current_sp = .{
                         .surface_mesh = sm,
-                        .type = .{ .face = .{
-                            .cell = .{ .face = fd },
-                            .bcoords = .{ 1.0, 0.0, 0.0 },
-                        } },
+                        .type = .{
+                            .face = .{
+                                .dart = fd,
+                                .bcoords = .{ 1.0, 0.0, 0.0 },
+                            },
+                        },
                     };
                     continue;
                 } else {
@@ -98,25 +98,24 @@ pub fn traceGeodesic(
                     return .{ current_sp, current_angle, remaining_length };
                 }
             },
-            .edge => |e| {
-                const face_dart: SurfaceMesh.Dart = if (current_angle < std.math.pi) e.cell.dart() else blk: {
+            .edge => |spe| {
+                const face_dart: SurfaceMesh.Dart = if (current_angle < std.math.pi) spe.dart else blk: {
                     current_angle -= std.math.pi;
-                    break :blk sm.phi2(e.cell.dart());
+                    break :blk sm.phi2(spe.dart);
                 };
                 // the tracing is expressed in the tangent space of the incident triangle
                 current_sp = .{
                     .surface_mesh = sm,
                     .type = .{ .face = .{
-                        .cell = .{ .face = face_dart },
-                        .bcoords = .{ e.t, 1.0 - e.t, 0.0 },
+                        .dart = face_dart,
+                        .bcoords = .{ spe.t, 1.0 - spe.t, 0.0 },
                     } },
                 };
                 continue;
             },
-            .face => |f| {
-                const fd = f.cell.dart();
+            .face => |spf| {
                 // Darts of the triangle
-                const darts: [3]SurfaceMesh.Dart = .{ fd, sm.phi1(fd), sm.phi_1(fd) };
+                const darts: [3]SurfaceMesh.Dart = .{ spf.dart, sm.phi1(spf.dart), sm.phi_1(spf.dart) };
                 // lengths of the triangle edges
                 const l_v0v1 = edge_length.value(.{ .edge = darts[0] });
                 const l_v1v2 = edge_length.value(.{ .edge = darts[1] });
@@ -134,11 +133,11 @@ pub fn traceGeodesic(
                 };
                 // position of the current SurfacePoint in the 2D triangle layout
                 const p: Vec2f = .{
-                    p2d[0][0] * f.bcoords[0] + p2d[1][0] * f.bcoords[1] + p2d[2][0] * f.bcoords[2],
-                    p2d[0][1] * f.bcoords[0] + p2d[1][1] * f.bcoords[1] + p2d[2][1] * f.bcoords[2],
+                    p2d[0][0] * spf.bcoords[0] + p2d[1][0] * spf.bcoords[1] + p2d[2][0] * spf.bcoords[2],
+                    p2d[0][1] * spf.bcoords[0] + p2d[1][1] * spf.bcoords[1] + p2d[2][1] * spf.bcoords[2],
                 };
 
-                // current_angle is expressed relative to fd
+                // current_angle is expressed relative to spf.dart
                 const in_face_dir: Vec2f = .{ @cos(current_angle), @sin(current_angle) };
                 // find the intersection of the ray (p, in_face_dir) with the triangle edges
                 var t_ray: f32 = 0.0;
@@ -159,13 +158,13 @@ pub fn traceGeodesic(
                         .surface_mesh = sm,
                         .type = .{
                             .face = .{
-                                .cell = f.cell,
+                                .dart = spf.dart,
                                 .bcoords = geometry_utils.barycentricCoordinates(p_end, p2d[0], p2d[1], p2d[2]),
                             },
                         },
                     };
                     if (trace) |t| {
-                        try t.append(app_ctx.allocator, current_sp);
+                        try t.append(allocator, current_sp);
                     }
                     continue; // will stop the loop since remaining_length is now 0
                 } else {
@@ -178,18 +177,18 @@ pub fn traceGeodesic(
                         .surface_mesh = sm,
                         .type = .{
                             .face = .{
-                                .cell = .{ .face = sm.phi2(intersected_dart) },
+                                .dart = sm.phi2(intersected_dart),
                                 .bcoords = .{ s_clamped, 1.0 - s_clamped, 0.0 },
                             },
                         },
                     };
                     if (trace) |t| {
                         // an edge SurfacePoint is added to the trace
-                        try t.append(app_ctx.allocator, .{
+                        try t.append(allocator, .{
                             .surface_mesh = sm,
                             .type = .{
                                 .edge = .{
-                                    .cell = .{ .edge = intersected_dart },
+                                    .dart = intersected_dart,
                                     .t = s_clamped,
                                 },
                             },

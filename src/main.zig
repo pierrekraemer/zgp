@@ -23,7 +23,7 @@ const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
 
 const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
 const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
-const SurfaceMeshIntrinsicTriangulation = @import("modules/SurfaceMeshIntrinsicTriangulation.zig");
+// const SurfaceMeshIntrinsicTriangulation = @import("modules/SurfaceMeshIntrinsicTriangulation.zig");
 const SurfaceMeshSelection = @import("modules/SurfaceMeshSelection.zig");
 const SurfaceMeshDeformation = @import("modules/SurfaceMeshDeformation.zig");
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
@@ -143,7 +143,6 @@ var incidence_graph_renderer: IncidenceGraphRenderer = undefined;
 var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
 var surface_mesh_distance: SurfaceMeshDistance = undefined;
 var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
-var surface_mesh_intrinsic_triangulation: SurfaceMeshIntrinsicTriangulation = undefined;
 var surface_mesh_selection: SurfaceMeshSelection = undefined;
 var surface_mesh_deformation: SurfaceMeshDeformation = undefined;
 var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
@@ -181,12 +180,11 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     vector_per_vertex_renderer = .init(&app_ctx);
     surface_mesh_distance = .init(&app_ctx);
     surface_mesh_curvature = .init(&app_ctx);
-    surface_mesh_intrinsic_triangulation = .init(&app_ctx);
     surface_mesh_selection = .init(&app_ctx);
     surface_mesh_deformation = .init(&app_ctx);
     surface_mesh_connectivity = .init(&app_ctx, &surface_mesh_curvature);
     surface_mesh_sampling = .init(&app_ctx);
-    surface_mesh_parameterization = .init(&app_ctx, &surface_mesh_intrinsic_triangulation);
+    surface_mesh_parameterization = .init(&app_ctx);
     surface_mesh_medial_axis = .init(&app_ctx);
     point_cloud_medial_axis = .init(&app_ctx);
     surface_mesh_procedural_texturing = .init(&app_ctx);
@@ -200,7 +198,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     errdefer vector_per_vertex_renderer.deinit();
     errdefer surface_mesh_distance.deinit();
     errdefer surface_mesh_curvature.deinit();
-    errdefer surface_mesh_intrinsic_triangulation.deinit();
     errdefer surface_mesh_selection.deinit();
     errdefer surface_mesh_deformation.deinit();
     errdefer surface_mesh_connectivity.deinit();
@@ -219,7 +216,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(app_ctx.allocator, &vector_per_vertex_renderer.module);
     try modules.append(app_ctx.allocator, &surface_mesh_distance.module);
     try modules.append(app_ctx.allocator, &surface_mesh_curvature.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_intrinsic_triangulation.module);
     try modules.append(app_ctx.allocator, &surface_mesh_selection.module);
     try modules.append(app_ctx.allocator, &surface_mesh_deformation.module);
     try modules.append(app_ctx.allocator, &surface_mesh_connectivity.module);
@@ -244,7 +240,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try app_ctx.surface_mesh_store.addListener(&vector_per_vertex_renderer.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_distance.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_curvature.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_intrinsic_triangulation.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_selection.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_deformation.module);
     try app_ctx.surface_mesh_store.addListener(&surface_mesh_connectivity.module);
@@ -335,7 +330,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
 
     const imgui_io = c.ImGui_GetIO();
     if (c.ImGui_IsMouseClicked(1) and !(imgui_io.*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow))) {
-        c.ImGui_OpenPopup("RightClickMenu", 0);
+        _ = c.ImGui_OpenPopup("RightClickMenu", 0);
     }
     if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
         defer c.ImGui_EndPopup();
@@ -398,7 +393,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         // FPS display (ImGui computed value) – right-aligned in the menu bar.
         const fps = imgui_io.*.Framerate;
         var fps_buf: [32]u8 = undefined;
-        const fps_str = std.fmt.bufPrintZ(&fps_buf, "FPS: {d:.1}", .{fps}) catch "FPS: ?";
+        const fps_str = std.fmt.bufPrintSentinel(&fps_buf, "FPS: {d:.1}", .{fps}, 0) catch "FPS: ?";
         const fps_text_width = c.ImGui_CalcTextSize(fps_str.ptr).x;
         c.ImGui_SetCursorPosX(c.ImGui_GetWindowWidth() - fps_text_width - 8.0);
         c.ImGui_TextUnformatted(fps_str.ptr);
@@ -562,7 +557,7 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
         c.ImGui_Separator();
         for (modules.items) |module| {
             if (!shouldCallOnModule(module, &app_ctx)) continue;
-            if (module.vtable.rightPanel == null) continue; // check if the module has a rightPanel function
+            if (module.vtable.rightPanel == Module.defaultRightPanel) continue; // check if the module has a custom rightPanel function
             c.ImGui_PushIDPtr(module);
             defer c.ImGui_PopID();
             c.ImGui_PushStyleColor(c.ImGuiCol_Text, c.IM_COL32(25, 25, 25, 255));
@@ -664,7 +659,6 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
     vector_per_vertex_renderer.deinit();
     surface_mesh_distance.deinit();
     surface_mesh_curvature.deinit();
-    surface_mesh_intrinsic_triangulation.deinit();
     surface_mesh_selection.deinit();
     surface_mesh_deformation.deinit();
     surface_mesh_connectivity.deinit();
@@ -680,7 +674,6 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
 }
 
 pub fn main(init: std.process.Init) !u8 {
-    app_err.reset();
     var empty_argv: [0:null]?[*:0]u8 = .{};
 
     const io = init.io;
@@ -756,14 +749,10 @@ const ErrorStore = struct {
     const status_storing = 1;
     const status_stored = 2;
 
-    status: c.SDL_AtomicInt = .{},
+    status: c.SDL_AtomicInt = .{ .value = status_not_stored },
     err: anyerror = undefined,
     trace_index: usize = undefined,
     trace_addrs: [32]usize = undefined,
-
-    fn reset(es: *ErrorStore) void {
-        _ = c.SDL_SetAtomicInt(&es.status, status_not_stored);
-    }
 
     fn store(es: *ErrorStore, err: anyerror) c.SDL_AppResult {
         if (c.SDL_CompareAndSwapAtomicInt(&es.status, status_not_stored, status_storing)) {

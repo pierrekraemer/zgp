@@ -103,16 +103,16 @@ pub fn deinit(pcs: *PointCloudStore) void {
     pcs.point_clouds_info.deinit(pcs.allocator);
 
     for (pcs.point_clouds.keys(), pcs.point_clouds.values()) |name, pc| {
-        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeZ in createPointCloud)
+        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeSentinel in registerPointCloud)
         pcs.allocator.free(nameZ); // free the name
         pc.deinit();
         pcs.allocator.destroy(pc); // destroy the PointCloud
     }
     pcs.point_clouds.deinit(pcs.allocator);
 
-    var vbo_it = pcs.data_vbo.iterator();
-    while (vbo_it.next()) |entry| {
-        entry.value_ptr.deinit();
+    var vbo_it = pcs.data_vbo.valueIterator();
+    while (vbo_it.next()) |vbo| {
+        vbo.deinit();
     }
     pcs.data_vbo.deinit(pcs.allocator);
 
@@ -136,8 +136,19 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     try pc.init(pcs.allocator, &pcs.point_buffer_pool);
     errdefer pc.deinit();
 
+    // register the PointCloud in the PointCloudStore to make it available in the UI and for other modules
+    try pcs.registerPointCloud(name, pc);
+
+    return pc;
+}
+
+pub fn registerPointCloud(pcs: *PointCloudStore, name: []const u8, pc: *PointCloud) !void {
+    if (pcs.point_clouds.contains(name)) {
+        return error.ModelNameAlreadyExists;
+    }
+
     // duplicate name and store the PointCloud pointer in the map
-    const owned_name = try pcs.allocator.dupeZ(u8, name);
+    const owned_name = try pcs.allocator.dupeSentinel(u8, name, 0); // duplicate the name with a null-terminator
     errdefer pcs.allocator.free(owned_name);
     try pcs.point_clouds.put(pcs.allocator, owned_name, pc);
     errdefer _ = pcs.point_clouds.swapRemove(owned_name);
@@ -148,11 +159,17 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     for (pcs.listeners.items) |module| {
         module.pointCloudCreated(pc);
     }
-
-    return pc;
 }
 
 pub fn destroyPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
+    // unregister the PointCloud from the PointCloudStore
+    pcs.unregisterPointCloud(pc);
+
+    pc.deinit();
+    pcs.allocator.destroy(pc); // destroy the PointCloud
+}
+
+pub fn unregisterPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
     const name = pcs.pointCloudName(pc) orelse {
         zgp_log.err("Could not find name for PointCloud to destroy it", .{});
         return;
@@ -176,9 +193,6 @@ pub fn destroyPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
 
     _ = pcs.point_clouds.swapRemove(name);
     pcs.allocator.free(name); // free the name
-
-    pc.deinit();
-    pcs.allocator.destroy(pc); // destroy the PointCloud
 }
 
 pub fn pointCloudDataUpdated(
@@ -190,7 +204,7 @@ pub fn pointCloudDataUpdated(
     // if it exists, update the VBO with the data
     const maybe_vbo = pcs.data_vbo.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
-        vbo.fillFrom(T, data.data);
+        vbo.fillFrom(T, data.data.storage.items);
     }
 
     // update the last known data update time
@@ -229,7 +243,7 @@ pub fn dataVBO(
     };
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
-        vbo.value_ptr.*.fillFrom(T, data.data); // on VBO creation, fill it with the data
+        vbo.value_ptr.*.fillFrom(T, data.data.storage.items); // on VBO creation, fill it with the data
     }
     return vbo.value_ptr.*;
 }
@@ -245,7 +259,7 @@ pub fn pointCloudInfo(pcs: *PointCloudStore, pc: *const PointCloud) *PointCloudI
 pub fn pointCloudName(pcs: *PointCloudStore, pc: *const PointCloud) ?[:0]const u8 {
     for (pcs.point_clouds.keys(), pcs.point_clouds.values()) |name, pc_ptr| {
         if (pc_ptr == pc) {
-            return @ptrCast(name); // the name is a null-terminated string (dupeZ in createPointCloud)
+            return @ptrCast(name); // the name is a null-terminated string (dupeSentinel in registerPointCloud)
         }
     }
     return null;
@@ -298,8 +312,8 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
         var buf_count: [16]u8 = undefined;
         // var buf_density: [16]u8 = undefined;
 
-        const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{pc.nbPoints()}) catch "";
-        // const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{pc.point_data.density() * 100}) catch "";
+        const count = std.fmt.bufPrintSentinel(&buf_count, "{d}", .{pc.nbPoints()}, 0) catch "";
+        // const density = std.fmt.bufPrintSentinel(&buf_density, "{d:.1}%", .{pc.point_data.density() * 100}, 0) catch "";
 
         c.ImGui_TableNextRow();
         _ = c.ImGui_TableNextColumn();
@@ -311,7 +325,7 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
     }
 
     if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-        c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
+        _ = c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
     }
     if (c.ImGui_BeginPopupModal("Create Cell Data", 0, c.ImGuiWindowFlags_AlwaysAutoResize)) {
         defer c.ImGui_EndPopup();
@@ -321,11 +335,12 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
         c.ImGui_PushID("data type");
         if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
             defer c.ImGui_EndCombo();
-            inline for (@typeInfo(CreateDataTypesTag).@"enum".fields) |*data_type| {
-                const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
-                if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+            const data_types_enum = @typeInfo(CreateDataTypesTag).@"enum";
+            inline for (data_types_enum.field_names, data_types_enum.field_values) |type_name, type_value| {
+                const is_selected = @backingInt(UiData.selected_data_type) == type_value;
+                if (c.ImGui_SelectableEx(type_name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                     if (!is_selected) {
-                        UiData.selected_data_type = @enumFromInt(data_type.value);
+                        UiData.selected_data_type = @fromBackingInt(type_value);
                     }
                 }
                 if (is_selected) {
@@ -378,7 +393,7 @@ pub fn leftPanel(pcs: *PointCloudStore) void {
             c.ImGui_PushStyleColor(c.ImGuiCol_ButtonActive, c.IM_COL32(128, 200, 128, 128));
         }
         var buf_kdtree_button: [32]u8 = undefined;
-        const kdtree_button = std.fmt.bufPrintZ(&buf_kdtree_button, c.ICON_FA_SITEMAP ++ " {s} KdTree", .{if (info.kdtree.initialized) "Update" else "Build"}) catch "";
+        const kdtree_button = std.fmt.bufPrintSentinel(&buf_kdtree_button, c.ICON_FA_SITEMAP ++ " {s} KdTree", .{if (info.kdtree.initialized) "Update" else "Build"}, 0) catch "";
         if (c.ImGui_ButtonEx(kdtree_button, c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
             info.kdtree.deinit();
             info.kdtree = kdtree.PointsKDTree.init(pc, info.std_datas.position.?) catch |err| blk: {

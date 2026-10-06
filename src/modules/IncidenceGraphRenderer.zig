@@ -45,10 +45,10 @@ const ColorType = enum {
 const ColorParameters = struct {
     defined_on: ColorDefinedOn,
     type: ColorType = .rgb,
-    vertex_scalar_data: ?IncidenceGraph.CellData(.vertex, f32) = null, // data used if defined_on is vertex & type is scalar
-    vertex_rgb_data: ?IncidenceGraph.CellData(.vertex, Vec3f) = null, // data used if defined_on is vertex & type is rgb
-    face_scalar_data: ?IncidenceGraph.CellData(.face, f32) = null, // data used if defined_on is face & type is scalar
-    face_rgb_data: ?IncidenceGraph.CellData(.face, Vec3f) = null, // data used if defined_on is face & type is rgb
+    vertex_scalar_data: ?IncidenceGraph.VertexData(f32) = null, // data used if defined_on is vertex & type is scalar
+    vertex_rgb_data: ?IncidenceGraph.VertexData(Vec3f) = null, // data used if defined_on is vertex & type is rgb
+    face_scalar_data: ?IncidenceGraph.FaceData(f32) = null, // data used if defined_on is face & type is scalar
+    face_rgb_data: ?IncidenceGraph.FaceData(Vec3f) = null, // data used if defined_on is face & type is rgb
 };
 
 const IncidenceGraphRendererParameters = struct {
@@ -308,9 +308,9 @@ fn setIncidenceGraphDrawFacesColorData(
             var max: f32 = std.math.floatMin(f32);
             if (data) |d| {
                 var it = d.data.iterator();
-                while (it.next()) |v| {
-                    if (v.* < min) min = v.*;
-                    if (v.* > max) max = v.*;
+                while (it.next()) |elem| {
+                    if (elem.value_ptr.* < min) min = elem.value_ptr.*;
+                    if (elem.value_ptr.* > max) max = elem.value_ptr.*;
                 }
             }
             switch (cell_type) {

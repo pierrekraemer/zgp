@@ -5,6 +5,9 @@ pub fn BufferPool(comptime T: type) type {
     return struct {
         const Self = @This();
 
+        // TODO: consider simplifying this by not storing the pool pointer in the Buffer struct,
+        // and instead passing the pool to release() as an argument; the buffer struct could then be a simple slice
+
         /// A handle to a buffer borrowed from the pool.
         /// `release()` must be called on this handle to return the buffer to the pool.
         pub const Buffer = struct {
@@ -42,7 +45,7 @@ pub fn BufferPool(comptime T: type) type {
                 const buf = try allocator.alloc(T, buffer_size);
                 free_list.appendAssumeCapacity(buf);
             }
-            return Self{
+            return .{
                 .io = io,
                 .allocator = allocator,
                 .mutex = .init,
@@ -71,12 +74,12 @@ pub fn BufferPool(comptime T: type) type {
             if (self.free_list.pop()) |buf| {
                 self.mutex.unlock(self.io);
                 // Reset memory if needed? Usually generic buffers are assumed "dirty"
-                return Buffer{ .data = buf, .pool = self };
+                return .{ .data = buf, .pool = self };
             }
             self.mutex.unlock(self.io);
             // Allocate new buffer if none available (outside lock to reduce contention)
             const buf = try self.allocator.alloc(T, self.buffer_size);
-            return Buffer{ .data = buf, .pool = self };
+            return .{ .data = buf, .pool = self };
         }
 
         /// Internal function to return a buffer to the free list.

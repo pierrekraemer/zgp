@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 
-const AppContext = @import("../../main.zig").AppContext;
 const PointCloud = @import("../point/PointCloud.zig");
 const SurfaceMesh = @import("../surface/SurfaceMesh.zig");
 
@@ -12,13 +11,13 @@ const geometry_utils = @import("../../geometry/utils.zig");
 /// Given a PointCloud, fills the given SurfaceMesh with the convex hull of the point cloud.
 /// The given SurfaceMesh is supposed to be empty.
 pub fn generateConvexHull(
-    app_ctx: *AppContext,
+    allocator: std.mem.Allocator,
     pc: *const PointCloud,
     point_position: PointCloud.CellData(Vec3f),
     sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
+    vertex_position: *SurfaceMesh.VertexData(Vec3f),
 ) !void {
-    // no convex hull for less than 3 points
+    // no convex hull for less than 4 points
     if (pc.nbPoints() < 4) {
         return error.NotEnoughPoints;
     }
@@ -28,18 +27,19 @@ pub fn generateConvexHull(
         var points: [4]Vec3f = undefined;
         var it = point_position.data.constIterator();
         var idx: u32 = 0;
-        while (it.next()) |p| : (idx += 1) {
-            points[idx] = p.*;
+        while (it.next()) |elem| : (idx += 1) {
+            points[idx] = elem.value_ptr.*;
         }
         var ids: [4]u32 = .{ 0, 1, 2, 3 };
         if (geometry_utils.planeOrientation(points[0], points[1], points[2], points[3]) == .over) {
             ids = .{ 0, 2, 1, 3 };
         }
         const tet = try sm.addPyramid(3);
-        vertex_position.valuePtr(.{ .vertex = tet.dart() }).* = points[ids[0]];
-        vertex_position.valuePtr(.{ .vertex = sm.phi1(tet.dart()) }).* = points[ids[1]];
-        vertex_position.valuePtr(.{ .vertex = sm.phi_1(tet.dart()) }).* = points[ids[2]];
-        vertex_position.valuePtr(.{ .vertex = sm.phi_1(sm.phi2(tet.dart())) }).* = points[ids[3]];
+        const d = sm.dart(tet);
+        vertex_position.valuePtr(sm.vertex(d)).* = points[ids[0]];
+        vertex_position.valuePtr(sm.vertex(sm.phi1(d))).* = points[ids[1]];
+        vertex_position.valuePtr(sm.vertex(sm.phi_1(d))).* = points[ids[2]];
+        vertex_position.valuePtr(sm.vertex(sm.phi_1(sm.phi2(d)))).* = points[ids[3]];
 
         return;
     }
@@ -119,44 +119,45 @@ pub fn generateConvexHull(
         base_triangle_ids = .{ 0, 2, 1 };
     }
     const tet = try sm.addPyramid(3);
-    vertex_position.valuePtr(.{ .vertex = tet.dart() }).* = base_triangle_pos[base_triangle_ids[0]];
-    vertex_position.valuePtr(.{ .vertex = sm.phi1(tet.dart()) }).* = base_triangle_pos[base_triangle_ids[1]];
-    vertex_position.valuePtr(.{ .vertex = sm.phi_1(tet.dart()) }).* = base_triangle_pos[base_triangle_ids[2]];
-    vertex_position.valuePtr(.{ .vertex = sm.phi_1(sm.phi2(tet.dart())) }).* = extreme_points[most_distant_index];
+    const tet_d = sm.dart(tet);
+    vertex_position.valuePtr(sm.vertex(tet_d)).* = base_triangle_pos[base_triangle_ids[0]];
+    vertex_position.valuePtr(sm.vertex(sm.phi1(tet_d))).* = base_triangle_pos[base_triangle_ids[1]];
+    vertex_position.valuePtr(sm.vertex(sm.phi_1(tet_d))).* = base_triangle_pos[base_triangle_ids[2]];
+    vertex_position.valuePtr(sm.vertex(sm.phi_1(sm.phi2(tet_d)))).* = extreme_points[most_distant_index];
 
     // create datas to keep track of points on the exterior side of each face
     var face_points_on_positive_side = try sm.addData(.face, std.ArrayList(u32), "points_on_positive_side");
     defer {
         var it = face_points_on_positive_side.data.iterator();
-        while (it.next()) |list| {
-            list.deinit(app_ctx.allocator);
+        while (it.next()) |elem| {
+            elem.value_ptr.deinit(allocator);
         }
-        sm.removeData(.face, std.ArrayList(u32), face_points_on_positive_side);
+        sm.removeData(face_points_on_positive_side);
     }
     var face_most_distant_point_dist = try sm.addData(.face, f32, "most_distant_point_dist");
-    defer sm.removeData(.face, f32, face_most_distant_point_dist);
+    defer sm.removeData(face_most_distant_point_dist);
     var face_most_distant_point_index = try sm.addData(.face, u32, "most_distant_point_index");
-    defer sm.removeData(.face, u32, face_most_distant_point_index);
+    defer sm.removeData(face_most_distant_point_index);
 
     face_points_on_positive_side.data.fill(.empty);
     face_most_distant_point_dist.data.fill(0.0);
     face_most_distant_point_index.data.fill(0);
 
     // register points outside the initial tetrahedron in the faces
-    var face_it: SurfaceMesh.CellIterator = try .init(sm, .face);
-    defer face_it.deinit();
+    var face_it = sm.faceIterator();
     var point_it = pc.pointIterator();
     while (point_it.next()) |p| {
         face_it.reset();
         while (face_it.next()) |f| {
+            const d = sm.dart(f);
             const dist = geometry_utils.signedDistancePlanePoint(
-                vertex_position.value(.{ .vertex = f.dart() }),
-                vertex_position.value(.{ .vertex = sm.phi1(f.dart()) }),
-                vertex_position.value(.{ .vertex = sm.phi_1(f.dart()) }),
+                vertex_position.value(sm.vertex(d)),
+                vertex_position.value(sm.vertex(sm.phi1(d))),
+                vertex_position.value(sm.vertex(sm.phi_1(d))),
                 point_position.value(p),
             );
             if (dist > 0.0) {
-                try face_points_on_positive_side.valuePtr(f).append(app_ctx.allocator, p);
+                try face_points_on_positive_side.valuePtr(f).append(allocator, p);
                 if (dist > face_most_distant_point_dist.value(f)) {
                     face_most_distant_point_dist.valuePtr(f).* = dist;
                     face_most_distant_point_index.valuePtr(f).* = p;
@@ -167,12 +168,12 @@ pub fn generateConvexHull(
     }
 
     // initialize active faces list (faces with points on their exterior side)
-    var active_faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
-    defer active_faces.deinit(app_ctx.allocator);
+    var active_faces: std.ArrayList(SurfaceMesh.Face) = .empty;
+    defer active_faces.deinit(allocator);
     face_it.reset();
     while (face_it.next()) |f| {
         if (face_points_on_positive_side.value(f).items.len > 0) {
-            try active_faces.append(app_ctx.allocator, f);
+            try active_faces.append(allocator, f);
         }
     }
 
@@ -183,17 +184,17 @@ pub fn generateConvexHull(
         const active_point = point_position.value(active_point_index);
 
         // create the list of horizon halfedges
-        var horizon_darts, var visible_faces = try buildHorizon(sm, vertex_position, active_point, f, app_ctx.allocator);
-        defer horizon_darts.deinit(app_ctx.allocator);
-        defer visible_faces.deinit(app_ctx.allocator);
+        var horizon_darts, var visible_faces = try buildHorizon(allocator, sm, vertex_position.*, active_point, f);
+        defer horizon_darts.deinit(allocator);
+        defer visible_faces.deinit(allocator);
 
         // save visible faces points
         var visible_points: std.ArrayList(u32) = .empty;
-        defer visible_points.deinit(app_ctx.allocator);
+        defer visible_points.deinit(allocator);
         for (visible_faces.items) |vf| {
             var vp = face_points_on_positive_side.value(vf);
-            try visible_points.appendSlice(app_ctx.allocator, vp.items);
-            vp.deinit(app_ctx.allocator);
+            try visible_points.appendSlice(allocator, vp.items);
+            vp.deinit(allocator);
         }
 
         // remove faces & fill hole with new umbrella
@@ -204,9 +205,9 @@ pub fn generateConvexHull(
         vertex_position.valuePtr(v).* = active_point;
 
         // clear the face datas for the new umbrella faces
-        var dart_it = sm.cellDartIterator(v);
+        var dart_it = sm.vertexDartIterator(sm.dart(v));
         while (dart_it.next()) |d| {
-            const uf: SurfaceMesh.Cell = .{ .face = d };
+            const uf = sm.face(d);
             face_points_on_positive_side.valuePtr(uf).* = .empty;
             face_most_distant_point_dist.valuePtr(uf).* = 0.0;
             face_most_distant_point_index.valuePtr(uf).* = 0;
@@ -219,15 +220,15 @@ pub fn generateConvexHull(
             }
             dart_it.reset();
             while (dart_it.next()) |d| {
-                const uf: SurfaceMesh.Cell = .{ .face = d };
+                const uf = sm.face(d);
                 const dist = geometry_utils.signedDistancePlanePoint(
-                    vertex_position.value(.{ .vertex = d }),
-                    vertex_position.value(.{ .vertex = sm.phi1(d) }),
-                    vertex_position.value(.{ .vertex = sm.phi_1(d) }),
+                    vertex_position.value(sm.vertex(d)),
+                    vertex_position.value(sm.vertex(sm.phi1(d))),
+                    vertex_position.value(sm.vertex(sm.phi_1(d))),
                     point_position.value(p),
                 );
                 if (dist > 0.0) {
-                    try face_points_on_positive_side.valuePtr(uf).append(app_ctx.allocator, p);
+                    try face_points_on_positive_side.valuePtr(uf).append(allocator, p);
                     if (dist > face_most_distant_point_dist.value(uf)) {
                         face_most_distant_point_dist.valuePtr(uf).* = dist;
                         face_most_distant_point_index.valuePtr(uf).* = p;
@@ -240,50 +241,51 @@ pub fn generateConvexHull(
         // add faces with points on their exterior side to the active faces list
         dart_it.reset();
         while (dart_it.next()) |d| {
-            const uf: SurfaceMesh.Cell = .{ .face = d };
+            const uf = sm.face(d);
             if (face_points_on_positive_side.value(uf).items.len > 0) {
-                try active_faces.append(app_ctx.allocator, uf);
+                try active_faces.append(allocator, uf);
             }
         }
     }
 }
 
+// caller owns the returned lists and must deinit them
 fn buildHorizon(
-    sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.CellData(.vertex, Vec3f),
-    point: Vec3f,
-    face: SurfaceMesh.Cell,
     allocator: std.mem.Allocator,
+    sm: *SurfaceMesh,
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    point: Vec3f,
+    face: SurfaceMesh.Face,
 ) !struct {
     std.ArrayList(SurfaceMesh.Dart), // horizon darts
-    std.ArrayList(SurfaceMesh.Cell), // visible faces
+    std.ArrayList(SurfaceMesh.Face), // visible faces
 } {
     var horizon_darts: std.ArrayList(SurfaceMesh.Dart) = .empty;
-    var visible_faces: std.ArrayList(SurfaceMesh.Cell) = .empty;
+    var visible_faces: std.ArrayList(SurfaceMesh.Face) = .empty;
 
     try visible_faces.append(allocator, face);
-    var visible_faces_marker: SurfaceMesh.CellMarker = try .init(sm, .face);
+    var visible_faces_marker: SurfaceMesh.FaceMarker = try .init(sm);
     defer visible_faces_marker.deinit();
     visible_faces_marker.mark(face);
 
     var i: usize = 0;
     while (i < visible_faces.items.len) : (i += 1) {
         const f = visible_faces.items[i];
-        var dart_it = sm.cellDartIterator(f);
+        var dart_it = sm.faceDartIterator(sm.dart(f));
         while (dart_it.next()) |d| {
             // iterate over the adjacent faces of f
             const d2 = sm.phi2(d);
-            if (visible_faces_marker.isMarked(.{ .face = d2 })) {
+            const af = sm.face(d2);
+            if (visible_faces_marker.isMarked(af)) {
                 continue;
             }
             const dist = geometry_utils.signedDistancePlanePoint(
-                vertex_position.value(.{ .vertex = d2 }),
-                vertex_position.value(.{ .vertex = sm.phi1(d2) }),
-                vertex_position.value(.{ .vertex = sm.phi_1(d2) }),
+                vertex_position.value(sm.vertex(d2)),
+                vertex_position.value(sm.vertex(sm.phi1(d2))),
+                vertex_position.value(sm.vertex(sm.phi_1(d2))),
                 point,
             );
             if (dist > 0.0) {
-                const af: SurfaceMesh.Cell = .{ .face = d2 };
                 try visible_faces.append(allocator, af);
                 visible_faces_marker.mark(af);
             } else {

@@ -1,9 +1,10 @@
 const std = @import("std");
+const Translator = @import("translate_c").Translator;
 
 const zigglgen = @import("zigglgen");
 const cimgui = @import("cimgui_zig");
 
-fn addIncludePathsToTranslateC(translate_c: *std.Build.Step.TranslateC, lib: *std.Build.Step.Compile) void {
+fn addIncludePathsToTranslateC(translate_c: *const Translator, lib: *std.Build.Step.Compile) void {
     for (lib.root_module.include_dirs.items) |*included| {
         switch (included.*) {
             .path => translate_c.addIncludePath(included.path),
@@ -29,17 +30,19 @@ pub fn build(b: *std.Build) void {
 
     // TRANSLATE C
 
-    const translate_c = b.addTranslateC(.{
-        .root_source_file = b.path("src/c.h"),
+    const translate_c = b.dependency("translate_c", .{});
+    const translator: Translator = .init(translate_c, .{
+        .c_source_file = b.path("src/c.h"),
         .target = target,
         .optimize = optimize,
     });
-    const c_mod = translate_c.createModule();
+
+    const c_mod = translator.mod;
     exe_mod.addImport("c", c_mod);
 
     // FOR INCLUDE-ONLY THIRDPARTY HEADERS (WITHOUT BUILD STEPS)
 
-    translate_c.addIncludePath(b.path("src/thirdparty"));
+    translator.addIncludePath(b.path("src/thirdparty"));
 
     // PREDICATES
 
@@ -49,7 +52,7 @@ pub fn build(b: *std.Build) void {
         // .lto = lto,
     });
     const predicates_lib = predicates_dep.artifact("predicates");
-    addIncludePathsToTranslateC(translate_c, predicates_lib);
+    addIncludePathsToTranslateC(&translator, predicates_lib);
     c_mod.linkLibrary(predicates_lib);
     // exe_mod.addImport("predicates", predicates_dep.module("predicates"));
 
@@ -61,7 +64,7 @@ pub fn build(b: *std.Build) void {
         // .lto = lto,
     });
     const ceigen_lib = ceigen_dep.artifact("ceigen");
-    addIncludePathsToTranslateC(translate_c, ceigen_lib);
+    addIncludePathsToTranslateC(&translator, ceigen_lib);
     c_mod.linkLibrary(ceigen_lib);
     // exe_mod.addImport("ceigen", ceigen_dep.module("ceigen"));
 
@@ -73,7 +76,7 @@ pub fn build(b: *std.Build) void {
         // .lto = lto,
     });
     const clibacc_lib = clibacc_dep.artifact("clibacc");
-    addIncludePathsToTranslateC(translate_c, clibacc_lib);
+    addIncludePathsToTranslateC(&translator, clibacc_lib);
     c_mod.linkLibrary(clibacc_lib);
     // exe_mod.addImport("clibacc", clibacc_dep.module("clibacc"));
 
@@ -101,7 +104,7 @@ pub fn build(b: *std.Build) void {
         //.install_build_config_h = false,
     });
     const sdl_lib = sdl_dep.artifact("SDL3");
-    addIncludePathsToTranslateC(translate_c, sdl_lib);
+    addIncludePathsToTranslateC(&translator, sdl_lib);
     c_mod.linkLibrary(sdl_lib);
 
     // CIMGUI
@@ -110,12 +113,12 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         // .lto = lto,
-        .platforms = &[_]cimgui.Platform{.SDL3},
-        .renderers = &[_]cimgui.Renderer{.OpenGL3},
-        .docking = true,
+        .platforms = &[_]cimgui.Platform{.sdl3},
+        .renderers = &[_]cimgui.Renderer{.opengl3},
+        .features = &[_]cimgui.Feature{ .internal, .docking },
     });
     const cimgui_lib = cimgui_dep.artifact("cimgui");
-    addIncludePathsToTranslateC(translate_c, cimgui_lib);
+    addIncludePathsToTranslateC(&translator, cimgui_lib);
     c_mod.linkLibrary(cimgui_lib);
 
     // BUILD EXE
@@ -131,22 +134,20 @@ pub fn build(b: *std.Build) void {
     // RUN CMD
 
     const run_cmd = b.addRunArtifact(exe);
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
-    }
     run_cmd.step.dependOn(b.getInstallStep());
+    run_cmd.addPassthruArgs();
 
     const run_step = b.step("run", "Run the app");
     run_step.dependOn(&run_cmd.step);
 
     // TESTS
 
-    const exe_unit_tests = b.addTest(.{
+    const exe_tests = b.addTest(.{
         .root_module = exe_mod,
     });
 
-    const run_exe_unit_tests = b.addRunArtifact(exe_unit_tests);
+    const run_exe_tests = b.addRunArtifact(exe_tests);
 
-    const test_step = b.step("test", "Run unit tests");
-    test_step.dependOn(&run_exe_unit_tests.step);
+    const test_step = b.step("test", "Run tests");
+    test_step.dependOn(&run_exe_tests.step);
 }

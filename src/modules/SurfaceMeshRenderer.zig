@@ -48,11 +48,11 @@ const ColorType = enum {
 const ColorParameters = struct {
     defined_on: ColorDefinedOn,
     type: ColorType = .rgb,
-    vertex_scalar_data: ?SurfaceMesh.CellData(.vertex, f32) = null, // data used if defined_on is vertex & type is scalar
-    vertex_uv_data: ?SurfaceMesh.CellData(.vertex, Vec2f) = null, // data used if defined_on is vertex & type is uv
-    vertex_rgb_data: ?SurfaceMesh.CellData(.vertex, Vec3f) = null, // data used if defined_on is vertex & type is rgb
-    face_scalar_data: ?SurfaceMesh.CellData(.face, f32) = null, // data used if defined_on is face & type is scalar
-    face_rgb_data: ?SurfaceMesh.CellData(.face, Vec3f) = null, // data used if defined_on is face & type is rgb
+    vertex_scalar_data: ?SurfaceMesh.VertexData(f32) = null, // data used if defined_on is vertex & type is scalar
+    vertex_uv_data: ?SurfaceMesh.VertexData(Vec2f) = null, // data used if defined_on is vertex & type is uv
+    vertex_rgb_data: ?SurfaceMesh.VertexData(Vec3f) = null, // data used if defined_on is vertex & type is rgb
+    face_scalar_data: ?SurfaceMesh.FaceData(f32) = null, // data used if defined_on is face & type is scalar
+    face_rgb_data: ?SurfaceMesh.FaceData(Vec3f) = null, // data used if defined_on is face & type is rgb
 };
 
 const SurfaceMeshRendererParameters = struct {
@@ -69,9 +69,9 @@ const SurfaceMeshRendererParameters = struct {
     tri_flat_rgb_per_face_shader_parameters: TriFlatRGBPerFace.Parameters,
     boundary_shader_parameters: LineCylinder.Parameters,
 
-    draw_vertices: bool = true,
+    draw_vertices: bool = false,
     draw_edges: bool = true,
-    draw_edges_as_cylinders: bool = true,
+    draw_edges_as_cylinders: bool = false,
     draw_faces: bool = true,
     draw_boundaries: bool = false,
 
@@ -318,9 +318,9 @@ fn setSurfaceMeshDrawFacesColorData(
             var max: f32 = std.math.floatMin(f32);
             if (data) |d| {
                 var it = d.data.iterator();
-                while (it.next()) |v| {
-                    if (v.* < min) min = v.*;
-                    if (v.* > max) max = v.*;
+                while (it.next()) |elem| {
+                    if (elem.value_ptr.* < min) min = elem.value_ptr.*;
+                    if (elem.value_ptr.* > max) max = elem.value_ptr.*;
                 }
             }
             switch (cell_type) {

@@ -28,7 +28,7 @@ const Vec3f = vec.Vec3f;
 
 /// This struct defines the standard datas of a IncidenceGraph
 pub const IncidenceGraphStdDatas = struct {
-    vertex_position: ?IncidenceGraph.CellData(.vertex, Vec3f) = null,
+    vertex_position: ?IncidenceGraph.VertexData(Vec3f) = null,
 };
 /// This tagged union is generated from the IncidenceGraphStdDatas struct and allows to
 /// easily provide a single data entry to the setIncidenceGraphStdData function
@@ -78,7 +78,7 @@ data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
 // updated upon calls to incidenceGraphDataUpdated
 data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.Io.Timestamp),
 
-cell_buffer_pool: BufferPool(IncidenceGraph.Cell),
+index_buffer_pool: BufferPool(u32),
 
 pub fn init(io: std.Io, allocator: std.mem.Allocator) !IncidenceGraphStore {
     return .{
@@ -89,7 +89,7 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !IncidenceGraphStore {
         .incidence_graphs_info = .empty,
         .data_vbo = .empty,
         .data_last_update = .empty,
-        .cell_buffer_pool = try .init(io, allocator, 2048, 64, 32),
+        .index_buffer_pool = try .init(io, allocator, 2048, 64, 32),
     };
 }
 
@@ -103,22 +103,22 @@ pub fn deinit(igs: *IncidenceGraphStore) void {
     igs.incidence_graphs_info.deinit(igs.allocator);
 
     for (igs.incidence_graphs.keys(), igs.incidence_graphs.values()) |name, ig| {
-        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeZ in createIncidenceGraph)
+        const nameZ: [:0]const u8 = @ptrCast(name); // the name is a null-terminated string (dupeSentinel in registerIncidenceGraph)
         igs.allocator.free(nameZ); // free the name
         ig.deinit();
         igs.allocator.destroy(ig); // destroy the IncidenceGraph
     }
     igs.incidence_graphs.deinit(igs.allocator);
 
-    var vbo_it = igs.data_vbo.iterator();
-    while (vbo_it.next()) |entry| {
-        entry.value_ptr.deinit();
+    var vbo_it = igs.data_vbo.valueIterator();
+    while (vbo_it.next()) |vbo| {
+        vbo.deinit();
     }
     igs.data_vbo.deinit(igs.allocator);
 
     igs.data_last_update.deinit(igs.allocator);
 
-    igs.cell_buffer_pool.deinit();
+    igs.index_buffer_pool.deinit();
 }
 
 pub fn addListener(igs: *IncidenceGraphStore, module: *Module) !void {
@@ -133,11 +133,22 @@ pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*Incid
     // create and init the IncidenceGraph
     const ig = try igs.allocator.create(IncidenceGraph);
     errdefer igs.allocator.destroy(ig);
-    try ig.init(igs.allocator, &igs.cell_buffer_pool);
+    try ig.init(igs.allocator, &igs.index_buffer_pool);
     errdefer ig.deinit();
 
+    // register the IncidenceGraph in the IncidenceGraphStore to make it available in the UI and for other modules
+    try igs.registerIncidenceGraph(name, ig);
+
+    return ig;
+}
+
+pub fn registerIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8, ig: *IncidenceGraph) !void {
+    if (igs.incidence_graphs.contains(name)) {
+        return error.ModelNameAlreadyExists;
+    }
+
     // duplicate name and store the IncidenceGraph pointer in the map
-    const owned_name = try igs.allocator.dupeZ(u8, name);
+    const owned_name = try igs.allocator.dupeSentinel(u8, name, 0); // duplicate the name with a null-terminator
     errdefer igs.allocator.free(owned_name);
     try igs.incidence_graphs.put(igs.allocator, owned_name, ig);
     errdefer _ = igs.incidence_graphs.swapRemove(owned_name);
@@ -148,11 +159,17 @@ pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*Incid
     for (igs.listeners.items) |module| {
         module.incidenceGraphCreated(ig);
     }
-
-    return ig;
 }
 
 pub fn destroyIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) void {
+    // unregister the IncidenceGraph from the IncidenceGraphStore
+    igs.unregisterIncidenceGraph(ig);
+
+    ig.deinit();
+    igs.allocator.destroy(ig); // destroy the IncidenceGraph
+}
+
+pub fn unregisterIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) void {
     const name = igs.incidenceGraphName(ig) orelse {
         zgp_log.err("Could not find name for IncidenceGraph to destroy it", .{});
         return;
@@ -176,9 +193,6 @@ pub fn destroyIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) voi
 
     _ = igs.incidence_graphs.swapRemove(name);
     igs.allocator.free(name); // free the name
-
-    ig.deinit();
-    igs.allocator.destroy(ig); // destroy the IncidenceGraph
 }
 
 pub fn incidenceGraphDataUpdated(
@@ -191,7 +205,7 @@ pub fn incidenceGraphDataUpdated(
     // if it exists, update the VBO with the data
     const maybe_vbo = igs.data_vbo.getPtr(data.gen());
     if (maybe_vbo) |vbo| {
-        vbo.fillFrom(T, data.data);
+        vbo.fillFrom(T, data.data.storage.items);
     }
 
     // update the last known data update time
@@ -239,7 +253,7 @@ pub fn dataVBO(
     };
     if (!vbo.found_existing) {
         vbo.value_ptr.* = VBO.init();
-        vbo.value_ptr.*.fillFrom(T, data.data); // on VBO creation, fill it with the data
+        vbo.value_ptr.*.fillFrom(T, data.data.storage.items); // on VBO creation, fill it with the data
     }
     return vbo.value_ptr.*;
 }
@@ -255,7 +269,7 @@ pub fn incidenceGraphInfo(igs: *IncidenceGraphStore, ig: *const IncidenceGraph) 
 pub fn incidenceGraphName(igs: *IncidenceGraphStore, ig: *const IncidenceGraph) ?[:0]const u8 {
     for (igs.incidence_graphs.keys(), igs.incidence_graphs.values()) |name, ig_ptr| {
         if (ig_ptr == ig) {
-            return @ptrCast(name); // the name is a null-terminated string (dupeZ in createIncidenceGraph)
+            return @ptrCast(name); // the name is a null-terminated string (dupeSentinel in registerIncidenceGraph)
         }
     }
     return null;
@@ -311,9 +325,9 @@ pub fn leftPanel(igs: *IncidenceGraphStore) void {
             var buf_count: [16]u8 = undefined;
             // var buf_density: [16]u8 = undefined;
 
-            const cells = std.fmt.bufPrintZ(&buf_name, "{s}", .{@tagName(cell_type)}) catch "";
-            const count = std.fmt.bufPrintZ(&buf_count, "{d}", .{ig.nbCells(cell_type)}) catch "";
-            // const density = std.fmt.bufPrintZ(&buf_density, "{d:.1}%", .{ig.dataContainerPtr(cell_type).density() * 100}) catch "";
+            const cells = std.fmt.bufPrintSentinel(&buf_name, "{s}", .{@tagName(cell_type)}, 0) catch "";
+            const count = std.fmt.bufPrintSentinel(&buf_count, "{d}", .{ig.nbCells(cell_type)}, 0) catch "";
+            // const density = std.fmt.bufPrintSentinel(&buf_density, "{d:.1}%", .{ig.dataContainerPtr(cell_type).density() * 100}, 0) catch "";
 
             c.ImGui_TableNextRow();
             _ = c.ImGui_TableNextColumn();
@@ -326,7 +340,7 @@ pub fn leftPanel(igs: *IncidenceGraphStore) void {
     }
 
     if (c.ImGui_ButtonEx("Create cell data", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-        c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
+        _ = c.ImGui_OpenPopup("Create Cell Data", c.ImGuiPopupFlags_NoReopen);
     }
     if (c.ImGui_BeginPopupModal("Create Cell Data", 0, c.ImGuiWindowFlags_AlwaysAutoResize)) {
         defer c.ImGui_EndPopup();
@@ -342,11 +356,12 @@ pub fn leftPanel(igs: *IncidenceGraphStore) void {
         c.ImGui_PushID("data type");
         if (c.ImGui_BeginCombo("", @tagName(UiData.selected_data_type), 0)) {
             defer c.ImGui_EndCombo();
-            inline for (@typeInfo(CreateDataTypesTag).@"enum".fields) |*data_type| {
-                const is_selected = @intFromEnum(UiData.selected_data_type) == data_type.value;
-                if (c.ImGui_SelectableEx(data_type.name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
+            const data_types_enum = @typeInfo(CreateDataTypesTag).@"enum";
+            inline for (data_types_enum.field_names, data_types_enum.field_values) |type_name, type_value| {
+                const is_selected = @backingInt(UiData.selected_data_type) == type_value;
+                if (c.ImGui_SelectableEx(type_name, is_selected, 0, c.ImVec2{ .x = 0, .y = 0 })) {
                     if (!is_selected) {
-                        UiData.selected_data_type = @enumFromInt(data_type.value);
+                        UiData.selected_data_type = @fromBackingInt(type_value);
                     }
                 }
                 if (is_selected) {

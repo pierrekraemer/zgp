@@ -12,6 +12,7 @@ extern "C"
     void computeInverseWithCheck4d(const SCALAR (*mat)[16], SCALAR (*inv)[16], bool *invertible);
     void solveSymmetricLinearSystem4d(const SCALAR (*mat)[16], const SCALAR (*b)[4], SCALAR (*x)[4]);
     void eigenSolver3d(const SCALAR (*mat)[9], SCALAR (*eigenvalues)[3], SCALAR (*eigenvectors)[9]);
+    void svd3d(const SCALAR (*mat)[9], SCALAR (*U)[9], SCALAR (*S)[3], SCALAR (*V)[9]);
 
 #ifdef __cplusplus
 }
