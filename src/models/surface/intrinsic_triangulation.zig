@@ -103,7 +103,7 @@ pub const ITContext = struct {
             // the halfedge angle of v_dart is 0 within the tangent space of the SurfacePoint
             // the OrbitDartIterator iterates around the vertex in CCW order starting from this Dart
             var angle_sum: f32 = 0.0;
-            var d_it = intrinsic_surface_mesh.orbitDartIterator(v_dart, .vertex);
+            var d_it = intrinsic_surface_mesh.vertexDartIterator(v_dart);
             while (d_it.next()) |d| {
                 intrinsic_halfedge_extrinsic_sp_angle.data.valuePtr(d).* = angle_sum;
                 angle_sum += extrinsic_corner_angle.data.value(d);

@@ -142,7 +142,7 @@ pub fn computeVertexQEMsSimd(
             mat.simdOuterProduct4f(plane, plane),
             face_area.value(face) / 3.0,
         );
-        var dart_it = sm.orbitDartIterator(sm.dart(face), .face);
+        var dart_it = sm.faceDartIterator(sm.dart(face));
         while (dart_it.next()) |d| {
             const v = sm.vertex(d);
             vertex_qem.valuePtr(v).* = mat.simdAdd4f(

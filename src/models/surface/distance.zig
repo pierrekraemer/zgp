@@ -66,7 +66,7 @@ pub const ShortestEdgePathContext = struct {
 
         // initialize the queue with the darts outgoing from the starting vertex
         {
-            var dart_it = sep_ctx.surface_mesh.orbitDartIterator(sep_ctx.surface_mesh.dart(v_start), .vertex);
+            var dart_it = sep_ctx.surface_mesh.vertexDartIterator(sep_ctx.surface_mesh.dart(v_start));
             while (dart_it.next()) |d| {
                 try sep_ctx.dart_queue.push(
                     allocator,
@@ -98,7 +98,7 @@ pub const ShortestEdgePathContext = struct {
                 return path;
             }
             // otherwise, expand the search to the neighbors of the current pointed vertex
-            var dart_it = sep_ctx.surface_mesh.orbitDartIterator(sep_ctx.surface_mesh.dart(pointed_v), .vertex);
+            var dart_it = sep_ctx.surface_mesh.vertexDartIterator(sep_ctx.surface_mesh.dart(pointed_v));
             while (dart_it.next()) |d| {
                 const nv = sep_ctx.surface_mesh.vertex(sep_ctx.surface_mesh.phi1(d));
                 if (sep_ctx.incoming_dart.value(nv) == null) {
@@ -162,7 +162,7 @@ pub fn multiSourceDijkstraDistancesAndSources(
             continue; // this vertex has already been reached with a smaller distance, skip it
         }
         // expand the neighbors of the current vertex
-        var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
+        var dart_it = sm.vertexDartIterator(sm.dart(v));
         while (dart_it.next()) |d| {
             const nv = sm.vertex(sm.phi1(d));
             const weight = edge_weight.value(sm.edge(d));

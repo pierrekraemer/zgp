@@ -72,7 +72,7 @@ pub fn traceGeodesic(
                 // find the incident triangle containing the geodesic direction
                 var accumulated_angle: f32 = 0.0;
                 var angle_before: f32 = 0.0;
-                var d_it = sm.orbitDartIterator(spv, .vertex);
+                var d_it = sm.vertexDartIterator(spv);
                 const face_dart: ?SurfaceMesh.Dart = while (d_it.next()) |vd| {
                     angle_before = accumulated_angle;
                     accumulated_angle += corner_angle.value(sm.corner(vd));

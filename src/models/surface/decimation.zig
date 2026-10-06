@@ -130,14 +130,15 @@ pub fn decimateQEM(
     };
     const EdgeQueue = PriorityQueue(EdgeInfo, EdgeQueueContext, EdgeInfo.cmp, EdgeInfo.setEdgeIndexInQueue);
     const EdgeQueueUtil = struct {
-        fn addEdgeToQueue(queue: *EdgeQueue, edge: SurfaceMesh.Edge, alloc: std.mem.Allocator) !void {
+        fn edgeCost(queue: *EdgeQueue, edge: SurfaceMesh.Edge) f32 {
             const p, const q = queue.context.qem_ctx.edgeCollapsePositionAndQuadric(edge);
             const p_hom: SimdVec4f = .{ p[0], p[1], p[2], 1.0 };
             // cost = p^T * Q * p  (in f32!)
             const qp = mat.simdMulVec4f(q, p_hom);
-            const cost = vec.simdDot4f(p_hom, qp);
-
-            try queue.push(alloc, .{ .edge = edge, .cost = cost });
+            return vec.simdDot4f(p_hom, qp);
+        }
+        fn addEdgeToQueue(queue: *EdgeQueue, edge: SurfaceMesh.Edge, alloc: std.mem.Allocator) !void {
+            try queue.push(alloc, .{ .edge = edge, .cost = edgeCost(queue, edge) });
         }
         fn removeEdgeFromQueue(queue: *EdgeQueue, edge: SurfaceMesh.Edge) void {
             if (queue.context.edge_queue_index.value(edge)) |index| {
@@ -145,8 +146,21 @@ pub fn decimateQEM(
             }
             queue.context.edge_queue_index.valuePtr(edge).* = null;
         }
+        /// For edges whose collapse cost changed.
+        /// If the edge is already in the queue, its cost is updated in place (its topological validity
+        /// is checked when it is popped). Otherwise, it is added if it is collapsible.
         fn updateEdgeInQueue(queue: *EdgeQueue, edge: SurfaceMesh.Edge, alloc: std.mem.Allocator) !void {
-            removeEdgeFromQueue(queue, edge);
+            if (queue.context.edge_queue_index.value(edge)) |index| {
+                _ = queue.updateIndex(index, .{ .edge = edge, .cost = edgeCost(queue, edge) });
+            } else if (queue.context.qem_ctx.surface_mesh.canCollapseEdge(edge)) {
+                try addEdgeToQueue(queue, edge, alloc);
+            }
+        }
+        /// For edges whose collapse cost did not change but which may have become collapsible.
+        /// If the edge is already in the queue, nothing is done: its cost is still valid and its
+        /// topological validity is checked when it is popped.
+        fn addEdgeToQueueIfNeeded(queue: *EdgeQueue, edge: SurfaceMesh.Edge, alloc: std.mem.Allocator) !void {
+            if (queue.context.edge_queue_index.value(edge) != null) return;
             if (queue.context.qem_ctx.surface_mesh.canCollapseEdge(edge)) {
                 try addEdgeToQueue(queue, edge, alloc);
             }
@@ -185,21 +199,34 @@ pub fn decimateQEM(
     while (queue.items.len > 0 and nb_removed_vertices < nb_vertices_to_remove) {
         const info = queue.popIndex(0);
         const edge = info.edge;
+        edge_queue_index.valuePtr(edge).* = null; // popIndex does not reset the queue index of the popped edge
+
+        // the topological validity of the collapse may have changed since the edge was pushed in the queue
+        // (e.g. condition 4 of canCollapseEdge depends on the 2-ring neighborhood of the edge,
+        // which is not entirely covered by the update loop below)
+        if (!sm.canCollapseEdge(edge)) {
+            continue;
+        }
 
         const d = sm.dart(edge);
         const dd = sm.phi2(d);
-        const d1 = sm.phi1(d);
-        const d_1 = sm.phi_1(d);
-        const dd1 = sm.phi1(dd);
-        const dd_1 = sm.phi_1(dd);
-        const d_12 = sm.phi2(d_1);
-        const dd_12 = sm.phi2(dd_1);
+        const d_face_is_triangle = !sm.isBoundaryDart(d) and sm.phi1(sm.phi1(sm.phi1(d))) == d;
+        const dd_face_is_triangle = !sm.isBoundaryDart(dd) and sm.phi1(sm.phi1(sm.phi1(dd))) == dd;
 
-        EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(d1));
-        EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(d_1));
-        if (!sm.isBoundaryDart(dd)) { // if the edge is incident to a boundary face, the boundary dart is necessarily dd
-            EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(dd1));
-            EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(dd_1));
+        // the incident triangle faces are removed by the collapse: their other edges are either removed or merged
+        // (the merged edges are incident to the resulting vertex and are re-inserted below if collapsible)
+        // the third vertices of these triangles lose an incident edge
+        var v3: ?SurfaceMesh.Vertex = null;
+        var v4: ?SurfaceMesh.Vertex = null;
+        if (d_face_is_triangle) {
+            EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(sm.phi1(d)));
+            EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(sm.phi_1(d)));
+            v3 = sm.vertex(sm.phi_1(d));
+        }
+        if (dd_face_is_triangle) {
+            EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(sm.phi1(dd)));
+            EdgeQueueUtil.removeEdgeFromQueue(&queue, sm.edge(sm.phi_1(dd)));
+            v4 = sm.vertex(sm.phi_1(dd));
         }
 
         // TODO: check for potential face flips before collapsing
@@ -210,16 +237,23 @@ pub fn decimateQEM(
         qem_ctx.vertex_position_simd.valuePtr(v).* = p;
         qem_ctx.vertex_qem_simd.valuePtr(v).* = q;
 
-        var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex); // sm.dart(v) == d_12
+        // Update the queue
+        // - edges incident to v: their cost changed (new position & quadric of v) -> cost update (or insertion if collapsible)
+        // - link edges of v: cost unchanged, may have become collapsible (degree of v, their opposite vertex, increased)
+        // - edges incident to the third vertices V3 / V4: cost unchanged, may have become collapsible (degree limit)
+        // - link edges of V3 / V4: cost unchanged, can only have become non-collapsible (degree of V3 / V4,
+        //   their opposite vertex, decreased) -> nothing to do, handled by the pop-time check
+        var dart_it = sm.vertexDartIterator(sm.dart(v));
         while (dart_it.next()) |dv| {
             try EdgeQueueUtil.updateEdgeInQueue(&queue, sm.edge(dv), allocator);
-            try EdgeQueueUtil.updateEdgeInQueue(&queue, sm.edge(sm.phi1(dv)), allocator);
-            if (dv == d_12 or dv == dd_12) {
-                var d_it = sm.phi1(sm.phi2(sm.phi1(dv)));
-                const d_stop = sm.phi2(dv);
-                while (d_it != d_stop) : (d_it = sm.phi1(sm.phi2(d_it))) {
-                    try EdgeQueueUtil.updateEdgeInQueue(&queue, sm.edge(d_it), allocator);
-                    try EdgeQueueUtil.updateEdgeInQueue(&queue, sm.edge(sm.phi1(d_it)), allocator);
+            try EdgeQueueUtil.addEdgeToQueueIfNeeded(&queue, sm.edge(sm.phi1(dv)), allocator);
+            const dv2 = sm.phi2(dv); // dart of the adjacent vertex
+            const w = sm.vertex(dv2);
+            if ((v3 != null and w.index == v3.?.index) or (v4 != null and w.index == v4.?.index)) {
+                var w_it = sm.vertexDartIterator(dv2);
+                while (w_it.next()) |dw| {
+                    if (dw == dv2) continue; // edge incident to v: already updated
+                    try EdgeQueueUtil.addEdgeToQueueIfNeeded(&queue, sm.edge(dw), allocator);
                 }
             }
         }

@@ -34,7 +34,7 @@ pub fn computeVertexOneRingRotation(
     var S: SimdMat4f = .{ @splat(0.0), @splat(0.0), @splat(0.0), @splat(0.0) };
     const p_rest = vertex_position_rest.value(v);
     const p_current = vec.simdFromVec3f(vertex_position.value(v));
-    var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
+    var dart_it = sm.vertexDartIterator(sm.dart(v));
     while (dart_it.next()) |d| {
         const nv = sm.vertex(sm.phi1(d));
         const nv_current = vec.simdFromVec3f(vertex_position.value(nv));
@@ -264,7 +264,7 @@ pub const ARAPContext = struct {
                 const v_pos_rest = t.vertex_position_rest.value(v);
 
                 // iterate over one-ring neighbors
-                var dart_it = t.surface_mesh.orbitDartIterator(t.surface_mesh.dart(v), .vertex);
+                var dart_it = t.surface_mesh.vertexDartIterator(t.surface_mesh.dart(v));
                 while (dart_it.next()) |d| {
                     const vn = t.surface_mesh.vertex(t.surface_mesh.phi1(d));
 

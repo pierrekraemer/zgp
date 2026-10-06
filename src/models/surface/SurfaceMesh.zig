@@ -441,6 +441,17 @@ pub fn orbitDartIterator(sm: *const SurfaceMesh, d: Dart, comptime cell_type: Ce
     return .init(sm, d);
 }
 
+// Convenience functions to get the orbit iterators for the different Cell types.
+pub fn vertexDartIterator(sm: *const SurfaceMesh, d: Dart) OrbitDartIterator(.vertex) {
+    return sm.orbitDartIterator(d, .vertex);
+}
+pub fn edgeDartIterator(sm: *const SurfaceMesh, d: Dart) OrbitDartIterator(.edge) {
+    return sm.orbitDartIterator(d, .edge);
+}
+pub fn faceDartIterator(sm: *const SurfaceMesh, d: Dart) OrbitDartIterator(.face) {
+    return sm.orbitDartIterator(d, .face);
+}
+
 /// Return the first dart of the orbit of d of the given CellType that is not marked as a boundary dart.
 /// The only case in which an invalid index can be returned is when called on an orbit that is
 /// entirely composed of boundary darts, i.e. boundary face, boundary halfedge, boundary corner.
@@ -1090,7 +1101,7 @@ pub fn nbBoundaryFaces(sm: *SurfaceMesh) !u32 {
         if (dm.isMarked(d)) continue;
         if (sm.isBoundaryDart(d)) {
             count += 1;
-            var dart_it = sm.orbitDartIterator(d, .face);
+            var dart_it = sm.faceDartIterator(d);
             while (dart_it.next()) |cd| {
                 dm.mark(cd);
             }
@@ -1212,6 +1223,10 @@ pub fn checkIntegrity(sm: *SurfaceMesh) !bool {
             }
             const d_count = darts_count.valuePtr(c);
             const c_dart = sm.dart(c);
+            if (sm.isBoundaryDart(c_dart)) {
+                zgp_log.warn("Representative dart for {s} cell {d} is a boundary dart", .{ @tagName(cell_type), c.index });
+                ok = false;
+            }
             var found_c_dart = false;
             var dart_it = sm.orbitDartIterator(d, cell_type);
             while (dart_it.next()) |cd| {
@@ -1301,7 +1316,7 @@ pub fn addUnboundedFace(sm: *SurfaceMesh, nb_vertices: u32) !Dart {
 /// This function is only intended for use in SurfaceMesh creation process (import, ...) as the SurfaceMesh is not
 /// valid after this function is called.
 pub fn removeFace(sm: *SurfaceMesh, f: Face) void {
-    var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
+    var dart_it = sm.faceDartIterator(sm.dart(f));
     while (dart_it.next()) |d| {
         sm.phi2Unsew(d);
         sm.removeDart(d);
@@ -1349,7 +1364,7 @@ pub fn close(sm: *SurfaceMesh) !u32 {
     while (dart_it.next()) |d| {
         if (sm.phi2(d) == d) {
             const f = try closeHoleWithPolygon(sm, d);
-            var f_it = sm.orbitDartIterator(f, .face);
+            var f_it = sm.faceDartIterator(f);
             while (f_it.next()) |fd| {
                 sm.dart_boundary_marker.valuePtr(fd).* = true;
             }
@@ -1391,7 +1406,7 @@ pub fn closeHoleWithUmbrella(sm: *SurfaceMesh, d: Dart) !Vertex {
     // manage cells
     const cv = try sm.addCell(.vertex); // new cell for central vertex
     sm.setCellDart(cv, cv_dart); // set the representative dart of the central vertex
-    var dart_it = sm.orbitDartIterator(cv_dart, .vertex); // turn around central vertex
+    var dart_it = sm.vertexDartIterator(cv_dart); // turn around central vertex
     while (dart_it.next()) |cvd| {
         sm.setDartCell(cvd, cv);
         const d1 = sm.phi1(cvd);
@@ -1435,7 +1450,7 @@ pub fn addPyramid(sm: *SurfaceMesh, baseSize: u32) !Face {
     const base_face = try sm.closeHoleWithPolygon(first);
 
     // manage cells
-    var dart_it = sm.orbitDartIterator(base_face, .face);
+    var dart_it = sm.faceDartIterator(base_face);
     while (dart_it.next()) |bfd| {
         // base vertices
         const v = try sm.addCell(.vertex);
@@ -1506,11 +1521,13 @@ pub fn cutEdge(sm: *SurfaceMesh, e: Edge) !Vertex {
     const new_edge = try sm.addCell(.edge);
     sm.setDartCell(dd, new_edge);
     sm.setDartCell(d1, new_edge);
-    sm.setCellDart(new_edge, dd); // set the representative dart of the new edge
+    sm.setCellDart(new_edge, d1); // d should not be a boundary dart, and so is d1
 
     // Face cells
-    sm.setDartCell(d1, sm.face(d));
-    sm.setDartCell(dd1, sm.face(dd));
+    sm.setDartCell(d1, sm.face(d)); // d should not be a boundary dart, so its face should have a cell
+    if (!sm.isBoundaryDart(dd)) { // dd can be a boundary dart, in which case its face has no cell
+        sm.setDartCell(dd1, sm.face(dd));
+    }
     // incident faces only gained new darts, so their representative darts remain the same
 
     return v;
@@ -1638,34 +1655,56 @@ pub fn canUnflipEdge(sm: *SurfaceMesh, e: Edge) bool {
 
 /// Collapses the given edge.
 /// Should only be called after a call to `canCollapseEdge`.
-/// TODO: write a more detailed comment
+/// Let d be the non-boundary dart of the edge (i.e. its representative dart) and dd = phi2(d).
+/// The two incident vertices are merged: the resulting vertex keeps the index of the vertex of d.
+/// The incident (non-boundary) triangle faces would become 2-sided faces: they are removed and their two remaining
+/// edges are merged (the resulting edge keeps the index of the edge of phi1(d) (resp. phi1(dd))).
+/// Incident boundary faces simply lose one dart (canCollapseEdge prevents collapsing 3-sided boundary faces).
+/// Representative darts of the modified cells are updated, ensuring that they are never boundary darts.
+/// Notes on degenerate configurations (allowed by canCollapseEdge) where an incident vertex has degree 2
+/// (boundary triangle with 2 boundary edges):
+///  - if the vertex of dd has degree 2, then phi_1(dd) == phi2(phi1(d)) and phi2(phi_1(dd)) == phi1(d) is removed
+///  - if the vertex of d has degree 2, then phi1(dd) == phi2(phi_1(d)) is a boundary dart
+/// This is why the darts used after the topological modifications are carefully chosen.
 pub fn collapseEdge(sm: *SurfaceMesh, e: Edge) Vertex {
-    const d = sm.dart(e);
+    var d = sm.dart(e);
+    if (sm.isBoundaryDart(d)) d = sm.phi2(d); // should not happen: edge representative darts are never boundary darts
+    const dd = sm.phi2(d);
     const d1 = sm.phi1(d);
     const d12 = sm.phi2(d1);
     const d_1 = sm.phi_1(d);
     const d_12 = sm.phi2(d_1);
-    const dd = sm.phi2(d);
     const dd1 = sm.phi1(dd);
     const dd12 = sm.phi2(dd1);
     const dd_1 = sm.phi_1(dd);
     const dd_12 = sm.phi2(dd_1);
+
+    // d is not a boundary dart: its face is removed if it is a triangle
+    const remove_d_face = sm.phi1(d1) == d_1;
+    // dd may be a boundary dart: boundary faces are never removed (3-sided boundary faces cannot be collapsed)
+    assert(!(sm.isBoundaryDart(dd) and sm.phi1(dd1) == dd_1));
+    const remove_dd_face = !sm.isBoundaryDart(dd) and sm.phi1(dd1) == dd_1;
+
+    // use the index of the vertex of d for the resulting vertex
+    // (keep a reference on it during the operation so that it cannot be released by the darts removals below)
+    const v = sm.vertex(d);
+    sm.vertex_data.refIndex(v.index);
 
     sm.phi1Sew(d_1, d);
     sm.removeDart(d);
     sm.phi1Sew(dd_1, dd);
     sm.removeDart(dd);
 
-    // remove a potential 2-sided face on the side of d
-    if (sm.phi1(d1) == d_1) {
+    // remove the 2-sided face on the side of d
+    if (remove_d_face) {
         sm.phi2Unsew(d1);
         sm.phi2Unsew(d_1);
         sm.phi2Sew(d_12, d12);
         sm.removeDart(d1);
         sm.removeDart(d_1);
     }
-    // remove a potential 2-sided face on the side of dd
-    if (sm.phi1(dd1) == dd_1) {
+    // remove the 2-sided face on the side of dd
+    if (remove_dd_face) {
         sm.phi2Unsew(dd1);
         sm.phi2Unsew(dd_1);
         sm.phi2Sew(dd_12, dd12);
@@ -1674,47 +1713,46 @@ pub fn collapseEdge(sm: *SurfaceMesh, e: Edge) Vertex {
     }
 
     // Vertex cells
-    // use the index of the vertex of d for the resulting vertex
-    const v = sm.vertex(d_12);
-    sm.setOrbitCell(d_12, v);
-    sm.setCellDart(v, d_12); // set the representative dart of the resulting vertex
-    // if the 2-sided face on the side of d has been removed, then d12 is now the representative dart of the vertex of d12
-    if (sm.phi2(d12) == d_12) {
-        sm.setCellDart(sm.vertex(d12), d12);
+    // a dart of the resulting vertex that is guaranteed to still exist:
+    // - d1 (vertex of dd) if the face of d has not been removed
+    // - d_12 (vertex of d) otherwise
+    const vd = if (remove_d_face) d_12 else d1;
+    sm.setOrbitCell(vd, v);
+    sm.setCellDart(v, sm.orbitNonBoundaryDart(vd, .vertex));
+    sm.vertex_data.unrefIndex(v.index); // release the temporary reference (the resulting vertex has darts)
+    // the third vertex of a removed face lost a dart (that may have been its representative dart)
+    if (remove_d_face) {
+        sm.setCellDart(sm.vertex(d12), sm.orbitNonBoundaryDart(d12, .vertex));
     }
-    // if the 2-sided face on the side of dd has been removed, then dd12 is now the representative dart of the vertex of dd12
-    if (sm.phi2(dd12) == dd_12) {
-        sm.setCellDart(sm.vertex(dd12), dd12);
+    if (remove_dd_face) {
+        sm.setCellDart(sm.vertex(dd12), sm.orbitNonBoundaryDart(dd12, .vertex));
     }
 
     // Edge cells
-    // these statements are correct wether 2-sided faces have been deleted or not
-    sm.setDartCell(d_12, sm.edge(sm.phi2(d_12)));
-    sm.setDartCell(dd_12, sm.edge(sm.phi2(dd_12)));
-    // if the 2-sided face on the side of d has been removed, then:
-    // - use the index of the edge of d12 for the resulting edge
-    // - d12 is now the representative dart of this edge
-    if (sm.phi2(d12) == d_12) {
+    // the collapsed edge has been entirely removed (its 2 darts have been removed)
+    // if a face has been removed, its 2 remaining edges are merged:
+    // - use the index of the edge of d12 (resp. dd12) for the resulting edge
+    //   (the edge of d_12 (resp. dd_12) is released when its last dart is re-associated)
+    // - choose the non-boundary dart of the resulting edge as its representative dart
+    if (remove_d_face) {
         const ee = sm.edge(d12);
         sm.setDartCell(d_12, ee);
-        sm.setCellDart(ee, d12);
+        sm.setCellDart(ee, if (sm.isBoundaryDart(d12)) d_12 else d12);
     }
-    // if the 2-sided face on the side of dd has been removed, then:
-    // - use the index of the edge of dd12 for the resulting edge
-    // - dd12 is now the representative dart of the edge of dd12
-    if (sm.phi2(dd12) == dd_12) {
+    if (remove_dd_face) {
         const ee = sm.edge(dd12);
         sm.setDartCell(dd_12, ee);
-        sm.setCellDart(ee, dd12);
+        sm.setCellDart(ee, if (sm.isBoundaryDart(dd12)) dd_12 else dd12);
     }
 
     // Face cells
-    // if the face on the side of d is still present and is not a boundary face, update its representative dart to d1
-    if (sm.phi2(d12) != d_12 and !sm.isBoundaryDart(d1)) {
+    // if the face of d has not been removed, d may have been its representative dart: use d1 instead
+    // (d1 belongs to the same non-boundary face as d)
+    if (!remove_d_face) {
         sm.setCellDart(sm.face(d1), d1);
     }
-    // if the face on the side of dd is still present and is not a boundary face, update its representative dart to dd1
-    if (sm.phi2(dd12) != dd_12 and !sm.isBoundaryDart(dd1)) {
+    // same for the face of dd if it has not been removed and is not a boundary face
+    if (!remove_dd_face and !sm.isBoundaryDart(dd1)) {
         sm.setCellDart(sm.face(dd1), dd1);
     }
 
@@ -1723,18 +1761,17 @@ pub fn collapseEdge(sm: *SurfaceMesh, e: Edge) Vertex {
 
 /// Checks if the given edge can be collapsed. Edges that cannot be collapsed:
 ///  1 - edges whose incident triangle face has the third vertex of degree < 4
-///  2 - edges whose incident vertices are both boundary vertices but the edge is not a boundary edge
-///  3 - edges whose incident vertices share a common adjacent vertex other than themselves and the third vertex of incident triangle faces
+///  2 - boundary edges incident to a 3-sided boundary face
+///  3 - edges whose incident vertices are both boundary vertices but the edge is not a boundary edge
+///  4 - edges whose incident vertices share a common adjacent vertex other than the third vertex of incident triangle faces
+///      (including the case where both incident triangles share the same third vertex, or where the incident vertices
+///      are already linked by another edge)
 /// No geometry conditions are checked here.
 pub fn canCollapseEdge(sm: *const SurfaceMesh, e: Edge) bool {
     const d = sm.dart(e);
-    const d12 = sm.phi2(sm.phi1(d));
     const d_1 = sm.phi_1(d);
-    const d_12 = sm.phi2(d_1);
     const dd = sm.phi2(d);
-    const dd12 = sm.phi2(sm.phi1(dd));
     const dd_1 = sm.phi_1(dd);
-    const dd_12 = sm.phi2(dd_1);
 
     // condition 1: avoid creating vertices of degree 2
     if (!sm.isBoundaryDart(d)) {
@@ -1742,7 +1779,7 @@ pub fn canCollapseEdge(sm: *const SurfaceMesh, e: Edge) bool {
             return false;
         }
     } else {
-        if (sm.phi1(sm.phi1(d)) == d_1) { // avoid collapsing triangular boundary faces
+        if (sm.phi1(sm.phi1(d)) == d_1) { // condition 2: avoid collapsing triangular boundary faces
             return false;
         }
     }
@@ -1751,7 +1788,7 @@ pub fn canCollapseEdge(sm: *const SurfaceMesh, e: Edge) bool {
             return false;
         }
     } else {
-        if (sm.phi1(sm.phi1(dd)) == dd_1) { // avoid collapsing triangular boundary faces
+        if (sm.phi1(sm.phi1(dd)) == dd_1) { // condition 2: avoid collapsing triangular boundary faces
             return false;
         }
     }
@@ -1761,33 +1798,56 @@ pub fn canCollapseEdge(sm: *const SurfaceMesh, e: Edge) bool {
         return false;
     }
 
-    // condition 2: avoid collapsing incident boundary vertices of a non-boundary edge
+    // condition 3: avoid collapsing incident boundary vertices of a non-boundary edge
     if (!sm.isOrbitIncidentToBoundary(d, .edge)) {
         if (sm.isOrbitIncidentToBoundary(d, .vertex) and sm.isOrbitIncidentToBoundary(dd, .vertex)) {
             return false;
         }
     }
 
-    // condition 3: avoid _pinching_ the surface
-    // var adjacent_vertices: std.AutoArrayHashMapUnmanaged(u32, void) = .empty;
-    // defer adjacent_vertices.deinit(sm.allocator);
-    // adjacent_vertices.ensureTotalCapacity(sm.allocator, sm.degree(sm.vertex(d)) + sm.degree(sm.vertex(dd))) catch |err| {
-    //     std.debug.print("Error: cannot check edge collapse condition 2: {}\n", .{err});
-    // };
+    // condition 4: avoid _pinching_ the surface (i.e. creating multi-edges / non-manifold configurations)
+    // The only vertices allowed to be adjacent to both v1 = vertex(d) and v2 = vertex(dd) are the third vertices
+    // of the (non-boundary) triangle faces incident to the edge, and each of them only once.
+    const v2_index = sm.vertex(dd).index;
+    // third vertices of the incident triangle faces (if any)
+    const d_face_is_triangle = !sm.isBoundaryDart(d) and sm.phi1(sm.phi1(d)) == d_1;
+    const dd_face_is_triangle = !sm.isBoundaryDart(dd) and sm.phi1(sm.phi1(dd)) == dd_1;
+    var allowed_buf: [2]u32 = undefined;
+    var allowed_common_vertices: std.ArrayList(u32) = .initBuffer(&allowed_buf);
+    if (d_face_is_triangle) allowed_common_vertices.appendAssumeCapacity(sm.vertex(d_1).index);
+    if (dd_face_is_triangle) allowed_common_vertices.appendAssumeCapacity(sm.vertex(dd_1).index);
+    // both incident triangles share the same third vertex: collapsing would create a double edge
+    // (this also covers the case of an endpoint of degree 2 lying inside a "lens" bounded by a double edge)
+    if (allowed_common_vertices.items.len == 2 and allowed_common_vertices.items[0] == allowed_common_vertices.items[1]) {
+        return false;
+    }
     var buf: [64]u32 = undefined; // TODO: arbitrary and dangerous limit of 64 only to avoid dynamic memory allocation here
     var adjacent_vertices: std.ArrayList(u32) = .initBuffer(&buf);
-    var d_it = sm.phi_1(d_12);
-    while (d_it != dd12) : (d_it = sm.phi_1(sm.phi2(d_it))) {
-        // adjacent_vertices.putAssumeCapacity(sm.vertex(d_it).index(), {});
-        adjacent_vertices.appendBounded(sm.vertex(d_it).index) catch |err| {
-            std.debug.panic("Error: cannot check edge collapse condition 2 because the number of adjacent vertices exceeds {d}: {}\n", .{ buf.len, err });
+    // collect the vertices adjacent to v1 (except through d itself)
+    var v1_it = sm.vertexDartIterator(d);
+    while (v1_it.next()) |vd| {
+        if (vd == d) continue;
+        const adj_index = sm.vertex(sm.phi1(vd)).index;
+        if (adj_index == v2_index) {
+            return false; // v1 & v2 are already linked by another edge: collapsing would create a loop
+        }
+        adjacent_vertices.appendBounded(adj_index) catch |err| {
+            std.debug.panic("Error: cannot check edge collapse condition 4 because the number of adjacent vertices exceeds {d}: {}\n", .{ buf.len, err });
         };
     }
-    d_it = sm.phi_1(dd_12);
-    while (d_it != d12) : (d_it = sm.phi_1(sm.phi2(d_it))) {
+    // check the vertices adjacent to v2 (except through dd itself)
+    var v2_it = sm.vertexDartIterator(dd);
+    while (v2_it.next()) |vd| {
+        if (vd == dd) continue;
+        const adj_index = sm.vertex(sm.phi1(vd)).index;
         // if (adjacent_vertices.contains(sm.vertex(d_it).index())) {
-        if (std.mem.findScalar(u32, adjacent_vertices.items, sm.vertex(d_it).index) != null) {
-            return false;
+        if (std.mem.findScalar(u32, adjacent_vertices.items, adj_index) != null) {
+            // common adjacent vertex: only allowed if it is the third vertex of an incident triangle (each one only once)
+            if (std.mem.findScalar(u32, allowed_common_vertices.items, adj_index)) |i| {
+                _ = allowed_common_vertices.swapRemove(i);
+            } else {
+                return false;
+            }
         }
     }
 
@@ -1843,7 +1903,7 @@ pub fn removeVertex(sm: *SurfaceMesh, v: Vertex) !void {
 
     var darts: std.ArrayList(Dart) = try .initCapacity(sm.allocator, sm.degree(v) * 2);
     defer darts.deinit(sm.allocator);
-    var dart_it = sm.orbitDartIterator(d, .vertex);
+    var dart_it = sm.vertexDartIterator(d);
     while (dart_it.next()) |it| {
         try darts.appendSlice(sm.allocator, &.{ it, sm.phi2(it) });
         sm.phi1Sew(it, sm.phi_1(sm.phi2(it)));
@@ -1854,7 +1914,7 @@ pub fn removeVertex(sm: *SurfaceMesh, v: Vertex) !void {
 
     // Vertex cells
     // the representative dart of the vertices of the resulting face must be updated, as they may have been removed
-    var face_it = sm.orbitDartIterator(d1, .face);
+    var face_it = sm.faceDartIterator(d1);
     while (face_it.next()) |fd| {
         sm.setCellDart(sm.vertex(fd), fd);
     }

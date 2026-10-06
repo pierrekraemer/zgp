@@ -122,7 +122,7 @@ pub fn fillFromSurfaceMeshCellSlice(i: *IBO, sm: *SurfaceMesh, cells: anytype, a
         .face => {
             for (cells) |f| {
                 // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
-                var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
+                var dart_it = sm.faceDartIterator(sm.dart(f));
                 const dart_start = dart_it.next() orelse continue;
                 const start_v = sm.vertex(dart_start);
                 var dart_v1 = dart_it.next() orelse continue;
@@ -187,7 +187,7 @@ pub fn fillFromSurfaceMesh(i: *IBO, sm: *SurfaceMesh, comptime cell_type: Surfac
             var f_it = sm.faceIterator();
             while (f_it.next()) |f| {
                 // TODO: should perform ear-triangulation on polygonal faces instead of just a triangle fan
-                var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
+                var dart_it = sm.faceDartIterator(sm.dart(f));
                 const dart_start = dart_it.next() orelse continue;
                 const start_v = sm.vertex(dart_start);
                 var dart_v1 = dart_it.next() orelse continue;
@@ -222,7 +222,7 @@ pub fn fillFromSurfaceMeshBoundary(i: *IBO, sm: *SurfaceMesh, allocator: std.mem
     while (it.next()) |d| {
         if (dm.isMarked(d)) continue;
         if (sm.isBoundaryDart(d)) {
-            var dart_it = sm.orbitDartIterator(d, .face);
+            var dart_it = sm.faceDartIterator(d);
             while (dart_it.next()) |bd| {
                 dm.mark(bd);
                 try indices.append(allocator, sm.vertex(bd).index);

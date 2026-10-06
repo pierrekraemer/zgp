@@ -57,7 +57,7 @@ pub const TrianglesBVH = struct {
         var face_it = sm.faceIterator();
         while (face_it.next()) |f| {
             try surface_mesh_faces.append(sm.allocator, f);
-            var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
+            var dart_it = sm.faceDartIterator(sm.dart(f));
             while (dart_it.next()) |d| {
                 try triangles_indices_array.append(sm.allocator, vertex_index.value(sm.vertex(d)));
             }

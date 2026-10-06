@@ -205,7 +205,7 @@ pub fn generateConvexHull(
         vertex_position.valuePtr(v).* = active_point;
 
         // clear the face datas for the new umbrella faces
-        var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
+        var dart_it = sm.vertexDartIterator(sm.dart(v));
         while (dart_it.next()) |d| {
             const uf = sm.face(d);
             face_points_on_positive_side.valuePtr(uf).* = .empty;
@@ -271,7 +271,7 @@ fn buildHorizon(
     var i: usize = 0;
     while (i < visible_faces.items.len) : (i += 1) {
         const f = visible_faces.items[i];
-        var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
+        var dart_it = sm.faceDartIterator(sm.dart(f));
         while (dart_it.next()) |d| {
             // iterate over the adjacent faces of f
             const d2 = sm.phi2(d);

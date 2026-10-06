@@ -14,7 +14,7 @@ pub fn faceNormal(
     face: SurfaceMesh.Face,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
 ) Vec3f {
-    var dart_it = sm.orbitDartIterator(sm.dart(face), .face);
+    var dart_it = sm.faceDartIterator(sm.dart(face));
     var normal = vec.zero3f;
     while (dart_it.next()) |dF| {
         var d = dF;
@@ -77,7 +77,7 @@ pub fn vertexNormal(
     face_normal: SurfaceMesh.FaceData(Vec3f),
 ) Vec3f {
     var normal = vec.zero3f;
-    var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
+    var dart_it = sm.vertexDartIterator(sm.dart(vertex));
     while (dart_it.next()) |d| {
         if (!sm.isBoundaryDart(d)) {
             normal = vec.add3f(

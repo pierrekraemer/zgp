@@ -15,7 +15,7 @@ fn includeVertex(
     face_buffer: *std.ArrayList(SurfaceMesh.Face),
 ) !void {
     try vertex_buffer.append(sm.allocator, v);
-    var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
+    var dart_it = sm.vertexDartIterator(sm.dart(v));
     while (dart_it.next()) |d| {
         dm.mark(d);
         // if all darts of the edge are now marked, include edge in result
@@ -24,7 +24,7 @@ fn includeVertex(
         }
         // if all darts of the face are now marked, include face in result
         const face = sm.face(d);
-        var face_dart_it = sm.orbitDartIterator(sm.dart(face), .face);
+        var face_dart_it = sm.faceDartIterator(sm.dart(face));
         const face_in = while (face_dart_it.next()) |fd| {
             if (!dm.isMarked(fd)) {
                 break false;
@@ -61,7 +61,7 @@ pub fn cellsWithinSphereAroundVertex(
     var i: u32 = 0;
     while (i < vertex_buffer.items.len) : (i += 1) {
         const v = vertex_buffer.items[i];
-        var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
+        var dart_it = sm.vertexDartIterator(sm.dart(v));
         while (dart_it.next()) |d| {
             const d2 = sm.phi2(d);
             if (dm.isMarked(d2)) {

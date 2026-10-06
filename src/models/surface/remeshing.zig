@@ -92,7 +92,7 @@ pub fn isotropicRemeshing(
         while (vertex_it.next()) |vertex| {
             if (feature_vertex.isMarked(vertex)) {
                 var nb_incident_feature_edge: u32 = 0;
-                var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
+                var dart_it = sm.vertexDartIterator(sm.dart(vertex));
                 while (dart_it.next()) |d| {
                     const e = sm.edge(d);
                     if (feature_edge.isMarked(e)) {
@@ -178,7 +178,7 @@ pub fn isotropicRemeshing(
             if (sm.degree(vertex) != 3 or feature_vertex.isMarked(vertex) or sm.isOrbitIncidentToBoundary(d, .vertex)) {
                 continue;
             }
-            var dart_it = sm.orbitDartIterator(d, .vertex);
+            var dart_it = sm.vertexDartIterator(d);
             const remove: bool = while (dart_it.next()) |dd| {
                 if (sm.degree(sm.vertex(sm.phi1(dd))) < 4 or
                     @abs(edge_dihedral_angle.value(sm.edge(dd))) > (10.0 * (std.math.pi / 180.0)))
@@ -337,7 +337,7 @@ pub fn isotropicRemeshing(
             // after collapsing, iterate over all the edges incident to the new vertex and update their length
             // if any of these edges is in the collapse queue, start by removing it from the queue and then
             // insert it if it is still satisfying the collapse conditions
-            var dart_it = sm.orbitDartIterator(sm.dart(v), .vertex);
+            var dart_it = sm.vertexDartIterator(sm.dart(v));
             while (dart_it.next()) |dv| {
                 const e = sm.edge(dv);
                 const el = length.edgeLength(sm, e, vertex_position.*);
@@ -384,13 +384,13 @@ pub fn isotropicRemeshing(
             var q = vec.zero3f;
             var w: f32 = 0.0;
             if (adaptive and iteration > 0) {
-                var dart_it = sm.orbitDartIterator(vd, .vertex);
+                var dart_it = sm.vertexDartIterator(vd);
                 while (dart_it.next()) |d| {
                     const f = sm.face(d);
                     var avg_sizing_field: f32 = 0.0;
                     var avg_position = vec.zero3f;
                     var count: u32 = 0;
-                    var face_dart_it = sm.orbitDartIterator(d, .face);
+                    var face_dart_it = sm.faceDartIterator(d);
                     while (face_dart_it.next()) |fd| {
                         const iv = sm.vertex(fd);
                         avg_sizing_field += vertex_sizing_field.value(iv);
@@ -404,7 +404,7 @@ pub fn isotropicRemeshing(
                     w += a;
                 }
             } else {
-                var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
+                var dart_it = sm.vertexDartIterator(vd);
                 while (dart_it.next()) |d| {
                     const nv = sm.vertex(sm.phi1(d));
                     const a = vertex_area.value(nv);

@@ -559,7 +559,7 @@ const ParameterizationData = struct {
             patch_boundary_edge_indices.clearRetainingCapacity();
             patch_boundary_segments.clearRetainingCapacity();
             {
-                var dart_it = pd.samples_surface_mesh.?.orbitDartIterator(pd.samples_surface_mesh.?.dart(ssm_v), .vertex);
+                var dart_it = pd.samples_surface_mesh.?.vertexDartIterator(pd.samples_surface_mesh.?.dart(ssm_v));
                 while (dart_it.next()) |d| {
                     const d1 = pd.samples_surface_mesh.?.phi1(d);
                     const edge_path = pd.ssm_edge_path.value(pd.samples_surface_mesh.?.edge(d1));
@@ -583,7 +583,7 @@ const ParameterizationData = struct {
             patch_faces.clearRetainingCapacity();
             {
                 var problematic = false;
-                var origin_dart_it = pd.surface_mesh.orbitDartIterator(pd.surface_mesh.dart(origin_v), .vertex);
+                var origin_dart_it = pd.surface_mesh.vertexDartIterator(pd.surface_mesh.dart(origin_v));
                 while (origin_dart_it.next()) |d| {
                     const f = pd.surface_mesh.face(d);
                     if (!patch_faces_visited.isMarked(f)) {
@@ -599,7 +599,7 @@ const ParameterizationData = struct {
                 var i: usize = 0;
                 while (i < patch_faces.items.len) : (i += 1) {
                     const f = patch_faces.items[i];
-                    var face_dart_it = pd.surface_mesh.orbitDartIterator(pd.surface_mesh.dart(f), .face);
+                    var face_dart_it = pd.surface_mesh.faceDartIterator(pd.surface_mesh.dart(f));
                     while (face_dart_it.next()) |d| {
                         try patch_vertex_indices_set.put(pd.app_ctx.allocator, pd.surface_mesh.vertex(d).index, {});
                         if (patch_boundary_edge_indices.contains(pd.surface_mesh.edge(d).index)) {
@@ -633,7 +633,7 @@ const ParameterizationData = struct {
             dart_queue.clearRetainingCapacity();
             {
                 const origin_v_angle_sum = pd.it_ctx.?.extrinsic_vertex_angle_sum.value(origin_v);
-                var dart_it = pd.it_ctx.?.intrinsic_surface_mesh.orbitDartIterator(pd.it_ctx.?.intrinsic_surface_mesh.dart(origin_v), .vertex);
+                var dart_it = pd.it_ctx.?.intrinsic_surface_mesh.vertexDartIterator(pd.it_ctx.?.intrinsic_surface_mesh.dart(origin_v));
                 while (dart_it.next()) |d| {
                     try dart_queue.push(
                         pd.app_ctx.allocator,
@@ -675,7 +675,7 @@ const ParameterizationData = struct {
                     }
                 }
                 // otherwise, enqueue the edges outgoing from pointed_v
-                var dart_it = pd.it_ctx.?.intrinsic_surface_mesh.orbitDartIterator(pd.it_ctx.?.intrinsic_surface_mesh.dart(pointed_v), .vertex);
+                var dart_it = pd.it_ctx.?.intrinsic_surface_mesh.vertexDartIterator(pd.it_ctx.?.intrinsic_surface_mesh.dart(pointed_v));
                 // a_prev is the angle of the edge from pointed_v to v (i.e. looking back in the shortest path towards the origin vertex)
                 // in the local tangent space of pointed_v
                 const pointed_v_angle_sum = pd.it_ctx.?.extrinsic_vertex_angle_sum.value(pointed_v);

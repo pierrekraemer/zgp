@@ -22,7 +22,7 @@ pub fn scalarFieldFaceGradient(
     face_normal: SurfaceMesh.FaceData(Vec3f),
 ) Vec3d {
     var g = vec.zero3d;
-    var dart_it = sm.orbitDartIterator(sm.dart(face), .face);
+    var dart_it = sm.faceDartIterator(sm.dart(face));
     while (dart_it.next()) |d| {
         const v0 = vertex_position.value(sm.vertex(sm.phi1(d)));
         const v1 = vertex_position.value(sm.vertex(sm.phi_1(d)));
@@ -98,7 +98,7 @@ pub fn vectorFieldVertexDivergence(
     face_vector_field: SurfaceMesh.FaceData(Vec3d),
 ) f64 {
     var div: f64 = 0.0;
-    var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
+    var dart_it = sm.vertexDartIterator(sm.dart(vertex));
     while (dart_it.next()) |d| {
         if (sm.isBoundaryDart(d)) continue;
         const d1 = sm.phi1(d);

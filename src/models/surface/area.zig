@@ -144,7 +144,7 @@ pub fn computeVertexAreas(
     while (it.next()) |f| {
         const cd: f32 = @floatFromInt(sm.codegree(f));
         const a = face_area.value(f) / cd;
-        var dart_it = sm.orbitDartIterator(sm.dart(f), .face);
+        var dart_it = sm.faceDartIterator(sm.dart(f));
         while (dart_it.next()) |d| {
             vertex_area.valuePtr(sm.vertex(d)).* += a;
         }

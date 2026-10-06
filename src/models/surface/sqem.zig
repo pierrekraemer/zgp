@@ -20,7 +20,7 @@ pub fn vertexSQEM(
 ) SQEM {
     var vsq = SQEM.zero;
     const p = vertex_position.value(vertex);
-    var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
+    var dart_it = sm.vertexDartIterator(sm.dart(vertex));
     while (dart_it.next()) |d| {
         if (!sm.isBoundaryDart(d)) {
             const face = sm.face(d);

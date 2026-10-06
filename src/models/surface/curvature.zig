@@ -68,7 +68,7 @@ pub fn vertexCurvature(
     // accumulate edge contributions to the curvature tensor & face area
     // in the 2-ring around the vertex
     // TODO: compare to the results obtained using selection.cellsWithinSphereAroundVertex (multithread warning for markers)
-    var dart_it = sm.orbitDartIterator(sm.dart(vertex), .vertex);
+    var dart_it = sm.vertexDartIterator(sm.dart(vertex));
     while (dart_it.next()) |d| {
         var d_it = sm.phi2(d);
         const d_end = sm.phi2(sm.phi_1(d_it));
