@@ -13,12 +13,14 @@ const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
+const Vec4f = vec.Vec4f;
+const mat = @import("../geometry/mat.zig");
 
 const arap = @import("../models/surface/arap.zig");
 const intrinsic_triangulation = @import("../models/surface/intrinsic_triangulation.zig");
 
 const DeformationMode = enum {
-    SimpleTranslation,
+    DirectManipulation,
     ARAP,
 };
 
@@ -97,10 +99,12 @@ module: Module = .{
     },
 },
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, DeformationData) = .empty,
-deformation_mode: DeformationMode = .SimpleTranslation,
+deformation_mode: DeformationMode = .DirectManipulation,
 use_intrinsic_delaunay: bool = false,
 dragging: bool = false,
 drag_z: f32 = 0,
+rotating: bool = false,
+rotate_pivot: Vec3f = vec.zero3f,
 
 pub fn init(app_ctx: *AppContext) SurfaceMeshDeformation {
     return .{
@@ -155,7 +159,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
         info.std_datas.halfedge_cotan_weight != null and
         dd.handle_vertex_set != null and
         dd.handle_vertex_set.?.cells.items.len > 0 and
-        (smd.deformation_mode == .SimpleTranslation or (smd.deformation_mode == .ARAP and dd.arap_ctx != null));
+        (smd.deformation_mode == .DirectManipulation or (smd.deformation_mode == .ARAP and dd.arap_ctx != null));
 
     if (!can_drag) {
         return false;
@@ -176,6 +180,17 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                     smd.drag_z /= @floatFromInt(dd.handle_vertex_set.?.cells.items.len);
                     smd.dragging = true;
                 },
+                c.SDLK_R => {
+                    smd.rotate_pivot = vec.zero3f;
+                    for (dd.handle_vertex_set.?.cells.items) |v| {
+                        smd.rotate_pivot = vec.add3f(smd.rotate_pivot, info.std_datas.vertex_position.?.value(v));
+                    }
+                    smd.rotate_pivot = vec.mulScalar3f(
+                        smd.rotate_pivot,
+                        1.0 / @as(f32, @floatFromInt(dd.handle_vertex_set.?.cells.items.len)),
+                    );
+                    smd.rotating = true;
+                },
                 else => {},
             }
             break :blk false;
@@ -183,6 +198,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
         c.SDL_EVENT_KEY_UP => blk: {
             switch (event.key.key) {
                 c.SDLK_D => smd.dragging = false,
+                c.SDLK_R => smd.rotating = false,
                 else => {},
             }
             break :blk false;
@@ -208,6 +224,30 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                     smd.app_ctx.requestRedraw();
                     break :blk true;
                 }
+            } else if (smd.rotating) {
+                const screen_axis4: Vec4f = .{ -event.motion.yrel, -event.motion.xrel, 0.0, 0.0 };
+                const angle = vec.norm4f(screen_axis4) * 0.01; // TODO: normalize with window dimensions
+                const world_axis4 = mat.preMulVec4f(screen_axis4, smd.app_ctx.view.camera.view_matrix);
+                const world_axis3: Vec3f = vec.normalized3f(.{ world_axis4[0], world_axis4[1], world_axis4[2] });
+                const rot = mat.rotMat3FromNormalizedAxisAndAngle(world_axis3, angle);
+                for (dd.handle_vertex_set.?.cells.items) |v| {
+                    const pos = info.std_datas.vertex_position.?.valuePtr(v);
+                    pos.* = vec.add3f(
+                        smd.rotate_pivot,
+                        mat.preMulVec3f(
+                            vec.sub3f(pos.*, smd.rotate_pivot),
+                            rot,
+                        ),
+                    );
+                }
+                if (smd.deformation_mode == .ARAP) {
+                    dd.arap_ctx.?.solve() catch |err| {
+                        std.debug.print("Failed to solve ARAP: {}\n", .{err});
+                        break :blk false;
+                    };
+                }
+                sm_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, info.std_datas.vertex_position.?);
+                smd.app_ctx.requestRedraw();
             }
             break :blk false;
         },
@@ -227,8 +267,8 @@ pub fn rightPanel(m: *Module) void {
     const info = sm_store.surfaceMeshInfo(sm);
 
     c.ImGui_SeparatorText("Deformation mode");
-    if (c.ImGui_RadioButton("Simple Translation", smd.deformation_mode == .SimpleTranslation)) {
-        smd.deformation_mode = .SimpleTranslation;
+    if (c.ImGui_RadioButton("Direct manipulation", smd.deformation_mode == .DirectManipulation)) {
+        smd.deformation_mode = .DirectManipulation;
     }
     c.ImGui_SameLine();
     if (c.ImGui_RadioButton("ARAP", smd.deformation_mode == .ARAP)) {
