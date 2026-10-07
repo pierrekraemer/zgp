@@ -64,6 +64,17 @@ pub const Vertex = Cell(.vertex);
 pub const Edge = Cell(.edge);
 pub const Face = Cell(.face);
 
+/// DartProps stores the properties of a dart: topological relations (phi1, phi_1, phi2), Cells (vertex, edge, face) and a boundary marker.
+const DartProps = struct {
+    phi1: Dart,
+    phi_1: Dart,
+    phi2: Dart,
+    vertex: Vertex,
+    edge: Edge,
+    face: Face,
+    boundary: bool,
+};
+
 // ------------------------------------------------------------------------- //
 // Fields
 // ------------------------------------------------------------------------- //
@@ -77,19 +88,10 @@ vertex_data: DataContainer,
 edge_data: DataContainer,
 face_data: DataContainer,
 
-/// Dart data: connectivity.
-dart_phi1: *Data(Dart),
-dart_phi_1: *Data(Dart),
-dart_phi2: *Data(Dart),
+/// Dart properties
+dart_props: *Data(DartProps),
 
-/// Dart data: boundary marker.
-dart_boundary_marker: *Data(bool), // true if the dart is a boundary dart (i.e. belongs to a boundary face)
 nb_boundary_darts: u32, // number of boundary darts; only updated upon calls to SurfaceMeshStore.surfaceMeshConnectivityUpdated
-
-/// Dart data: a Cell of each type (index in the respective DataContainer) associated with each dart.
-dart_vertex: *Data(Vertex),
-dart_edge: *Data(Edge),
-dart_face: *Data(Face),
 
 /// Cell data: a representative dart for each cell, stored in the respective DataContainer.
 /// These representative darts are used to iterate over the cells of the mesh.
@@ -121,9 +123,9 @@ pub fn cell(sm: *const SurfaceMesh, d: Dart, comptime cell_type: CellType) Cell(
     switch (cell_type) {
         .halfedge => return .{ .index = d },
         .corner => return .{ .index = d },
-        .vertex => return sm.dart_vertex.value(d),
-        .edge => return sm.dart_edge.value(d),
-        .face => return sm.dart_face.value(d),
+        .vertex => return sm.dart_props.value(d).vertex,
+        .edge => return sm.dart_props.value(d).edge,
+        .face => return sm.dart_props.value(d).face,
     }
 }
 
@@ -135,13 +137,13 @@ pub fn corner(_: *const SurfaceMesh, d: Dart) Corner {
     return .{ .index = d };
 }
 pub fn vertex(sm: *const SurfaceMesh, d: Dart) Vertex {
-    return sm.dart_vertex.value(d);
+    return sm.dart_props.value(d).vertex;
 }
 pub fn edge(sm: *const SurfaceMesh, d: Dart) Edge {
-    return sm.dart_edge.value(d);
+    return sm.dart_props.value(d).edge;
 }
 pub fn face(sm: *const SurfaceMesh, d: Dart) Face {
-    return sm.dart_face.value(d);
+    return sm.dart_props.value(d).face;
 }
 
 /// Return a pointer to the data container for the given CellType.
@@ -177,16 +179,9 @@ pub fn init(sm: *SurfaceMesh, allocator: std.mem.Allocator, index_buffer_pool: *
     try sm.edge_data.init(allocator);
     try sm.face_data.init(allocator);
 
-    sm.dart_phi1 = try sm.dart_data.addData(Dart, "phi1");
-    sm.dart_phi_1 = try sm.dart_data.addData(Dart, "phi_1");
-    sm.dart_phi2 = try sm.dart_data.addData(Dart, "phi2");
+    sm.dart_props = try sm.dart_data.addData(DartProps, "dart_props");
 
-    sm.dart_boundary_marker = try sm.dart_data.acquireMarker();
     sm.nb_boundary_darts = 0;
-
-    sm.dart_vertex = try sm.dart_data.addData(Vertex, "vertex");
-    sm.dart_edge = try sm.dart_data.addData(Edge, "edge");
-    sm.dart_face = try sm.dart_data.addData(Face, "face");
 
     sm.vertex_dart = try sm.vertex_data.addData(Dart, "dart");
     sm.edge_dart = try sm.edge_data.addData(Dart, "dart");
@@ -258,20 +253,10 @@ pub fn clone(sm: *const SurfaceMesh, allocator: std.mem.Allocator) !*SurfaceMesh
     try cloned_sm.edge_data.initFrom(&sm.edge_data, true, allocator);
     try cloned_sm.face_data.initFrom(&sm.face_data, true, allocator);
 
-    // recover the topological relations from the copied Dart DataContainer
-    cloned_sm.dart_phi1 = cloned_sm.dart_data.getData(Dart, "phi1").?;
-    cloned_sm.dart_phi_1 = cloned_sm.dart_data.getData(Dart, "phi_1").?;
-    cloned_sm.dart_phi2 = cloned_sm.dart_data.getData(Dart, "phi2").?;
+    // recover the dart properties from the copied Dart DataContainer
+    cloned_sm.dart_props = cloned_sm.dart_data.getData(DartProps, "dart_props").?;
 
-    // create the boundary marker and copy its values from the source SurfaceMesh
-    cloned_sm.dart_boundary_marker = try cloned_sm.dart_data.getMarker();
-    cloned_sm.dart_boundary_marker.copyFrom(sm.dart_boundary_marker);
     cloned_sm.nb_boundary_darts = sm.nb_boundary_darts;
-
-    // recover the cells from the copied Dart DataContainer
-    cloned_sm.dart_vertex = cloned_sm.dart_data.getData(Vertex, "vertex").?;
-    cloned_sm.dart_edge = cloned_sm.dart_data.getData(Edge, "edge").?;
-    cloned_sm.dart_face = cloned_sm.dart_data.getData(Face, "face").?;
 
     // recover the representative darts for each cell type from the respective copied DataContainers
     cloned_sm.vertex_dart = cloned_sm.vertex_data.getData(Dart, "dart").?;
@@ -299,26 +284,11 @@ pub fn cloneWithoutCellData(sm: *const SurfaceMesh, allocator: std.mem.Allocator
     try cloned_sm.edge_data.initFrom(&sm.edge_data, false, allocator);
     try cloned_sm.face_data.initFrom(&sm.face_data, false, allocator);
 
-    // create the topological relations and copy them from the source Dart DataContainer
-    cloned_sm.dart_phi1 = try cloned_sm.dart_data.addData(Dart, "phi1");
-    cloned_sm.dart_phi1.copyFrom(sm.dart_phi1);
-    cloned_sm.dart_phi_1 = try cloned_sm.dart_data.addData(Dart, "phi_1");
-    cloned_sm.dart_phi_1.copyFrom(sm.dart_phi_1);
-    cloned_sm.dart_phi2 = try cloned_sm.dart_data.addData(Dart, "phi2");
-    cloned_sm.dart_phi2.copyFrom(sm.dart_phi2);
+    // create the dart properties and copy them from the source Dart DataContainer
+    cloned_sm.dart_props = try cloned_sm.dart_data.addData(DartProps, "dart_props");
+    cloned_sm.dart_props.copyFrom(sm.dart_props);
 
-    // create the boundary marker and copy its values from the source SurfaceMesh
-    cloned_sm.dart_boundary_marker = try cloned_sm.dart_data.acquireMarker();
-    cloned_sm.dart_boundary_marker.copyFrom(sm.dart_boundary_marker);
     cloned_sm.nb_boundary_darts = sm.nb_boundary_darts;
-
-    // create the cells and copy their values from the source SurfaceMesh
-    cloned_sm.dart_vertex = try cloned_sm.dart_data.addData(Vertex, "vertex");
-    cloned_sm.dart_vertex.copyFrom(sm.dart_vertex);
-    cloned_sm.dart_edge = try cloned_sm.dart_data.addData(Edge, "edge");
-    cloned_sm.dart_edge.copyFrom(sm.dart_edge);
-    cloned_sm.dart_face = try cloned_sm.dart_data.addData(Face, "face");
-    cloned_sm.dart_face.copyFrom(sm.dart_face);
 
     // create the representative darts for each cell type and copy them from the source DataContainers
     cloned_sm.vertex_dart = try cloned_sm.vertex_data.addData(Dart, "dart");
@@ -900,13 +870,15 @@ pub fn removeCellSet(sm: *SurfaceMesh, cell_set: anytype) void {
 
 fn addDart(sm: *SurfaceMesh) !Dart {
     const d = try sm.dart_data.acquireIndex();
-    sm.dart_phi1.valuePtr(d).* = d;
-    sm.dart_phi_1.valuePtr(d).* = d;
-    sm.dart_phi2.valuePtr(d).* = d;
-    sm.dart_vertex.valuePtr(d).* = .{ .index = invalid_index };
-    sm.dart_edge.valuePtr(d).* = .{ .index = invalid_index };
-    sm.dart_face.valuePtr(d).* = .{ .index = invalid_index };
-    // boundary marker is already false on a new index
+    sm.dart_props.valuePtr(d).* = .{
+        .phi1 = d,
+        .phi_1 = d,
+        .phi2 = d,
+        .vertex = .{ .index = invalid_index },
+        .edge = .{ .index = invalid_index },
+        .face = .{ .index = invalid_index },
+        .boundary = false,
+    };
     return d;
 }
 
@@ -921,41 +893,45 @@ fn removeDart(sm: *SurfaceMesh, d: Dart) void {
 }
 
 pub fn phi1(sm: *const SurfaceMesh, d: Dart) Dart {
-    return sm.dart_phi1.value(d);
+    return sm.dart_props.value(d).phi1;
 }
 pub fn phi_1(sm: *const SurfaceMesh, d: Dart) Dart {
-    return sm.dart_phi_1.value(d);
+    return sm.dart_props.value(d).phi_1;
 }
 pub fn phi2(sm: *const SurfaceMesh, d: Dart) Dart {
-    return sm.dart_phi2.value(d);
+    return sm.dart_props.value(d).phi2;
 }
 
 pub fn phi1Sew(sm: *SurfaceMesh, d1: Dart, d2: Dart) void {
     assert(d1 != d2);
     const d3 = sm.phi1(d1);
     const d4 = sm.phi1(d2);
-    sm.dart_phi1.valuePtr(d1).* = d4;
-    sm.dart_phi1.valuePtr(d2).* = d3;
-    sm.dart_phi_1.valuePtr(d4).* = d1;
-    sm.dart_phi_1.valuePtr(d3).* = d2;
+    sm.dart_props.valuePtr(d1).*.phi1 = d4;
+    sm.dart_props.valuePtr(d2).*.phi1 = d3;
+    sm.dart_props.valuePtr(d4).*.phi_1 = d1;
+    sm.dart_props.valuePtr(d3).*.phi_1 = d2;
 }
 
 pub fn phi2Sew(sm: *SurfaceMesh, d1: Dart, d2: Dart) void {
     assert(d1 != d2);
     assert(sm.phi2(d1) == d1);
     assert(sm.phi2(d2) == d2);
-    sm.dart_phi2.valuePtr(d1).* = d2;
-    sm.dart_phi2.valuePtr(d2).* = d1;
+    sm.dart_props.valuePtr(d1).*.phi2 = d2;
+    sm.dart_props.valuePtr(d2).*.phi2 = d1;
 }
 
 pub fn phi2Unsew(sm: *SurfaceMesh, d: Dart) void {
     const d2 = sm.phi2(d);
-    sm.dart_phi2.valuePtr(d).* = d;
-    sm.dart_phi2.valuePtr(d2).* = d2;
+    sm.dart_props.valuePtr(d).*.phi2 = d;
+    sm.dart_props.valuePtr(d2).*.phi2 = d2;
 }
 
 pub fn isBoundaryDart(sm: *const SurfaceMesh, d: Dart) bool {
-    return sm.dart_boundary_marker.value(d);
+    return sm.dart_props.value(d).boundary;
+}
+
+pub fn setBoundaryDart(sm: *SurfaceMesh, d: Dart, is_boundary: bool) void {
+    sm.dart_props.valuePtr(d).*.boundary = is_boundary;
 }
 
 /// Return true if the orbit of the given dart is incident to a boundary face, false otherwise.
@@ -1002,9 +978,9 @@ pub fn setDartCell(sm: *SurfaceMesh, d: Dart, c: anytype) void {
     assert(c.index != invalid_index);
 
     const old_index = switch (@TypeOf(c).CellType) {
-        .vertex => sm.dart_vertex.value(d).index,
-        .edge => sm.dart_edge.value(d).index,
-        .face => sm.dart_face.value(d).index,
+        .vertex => sm.dart_props.value(d).vertex.index,
+        .edge => sm.dart_props.value(d).edge.index,
+        .face => sm.dart_props.value(d).face.index,
         else => unreachable,
     };
     if (old_index == c.index) return; // no change
@@ -1016,9 +992,9 @@ pub fn setDartCell(sm: *SurfaceMesh, d: Dart, c: anytype) void {
     }
 
     switch (@TypeOf(c).CellType) {
-        .vertex => sm.dart_vertex.valuePtr(d).* = Vertex{ .index = c.index },
-        .edge => sm.dart_edge.valuePtr(d).* = Edge{ .index = c.index },
-        .face => sm.dart_face.valuePtr(d).* = Face{ .index = c.index },
+        .vertex => sm.dart_props.valuePtr(d).*.vertex = Vertex{ .index = c.index },
+        .edge => sm.dart_props.valuePtr(d).*.edge = Edge{ .index = c.index },
+        .face => sm.dart_props.valuePtr(d).*.face = Face{ .index = c.index },
         else => unreachable,
     }
 }
@@ -1368,7 +1344,7 @@ pub fn close(sm: *SurfaceMesh) !u32 {
             const f = try closeHoleWithPolygon(sm, d);
             var f_it = sm.faceDartIterator(f);
             while (f_it.next()) |fd| {
-                sm.dart_boundary_marker.valuePtr(fd).* = true;
+                sm.setBoundaryDart(fd, true);
             }
             nb_boundary_faces += 1;
         }
@@ -1505,8 +1481,8 @@ pub fn cutEdge(sm: *SurfaceMesh, e: Edge) !Vertex {
     sm.phi2Sew(d, dd1);
     sm.phi2Sew(dd, d1);
 
-    sm.dart_boundary_marker.valuePtr(d1).* = sm.dart_boundary_marker.value(d);
-    sm.dart_boundary_marker.valuePtr(dd1).* = sm.dart_boundary_marker.value(dd);
+    sm.setBoundaryDart(d1, sm.isBoundaryDart(d));
+    sm.setBoundaryDart(dd1, sm.isBoundaryDart(dd));
 
     // Vertex cells
     const v = try sm.addCell(.vertex);
