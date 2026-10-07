@@ -166,7 +166,7 @@ pub fn tangentBasis(v: Vec3f) [2]Vec3f {
 /// as a pair of minimum and maximum corners.
 pub fn boundingBox(data: *const Data(Vec3f)) struct { Vec3f, Vec3f } {
     var bb_min = vec.splat3f(std.math.floatMax(f32));
-    var bb_max = vec.splat3f(std.math.floatMin(f32));
+    var bb_max = vec.splat3f(-std.math.floatMax(f32));
     var it = data.constIterator();
     while (it.next()) |elem| {
         bb_min = vec.componentwiseMin3f(bb_min, elem.value_ptr.*);
@@ -180,7 +180,7 @@ pub fn boundingBox(data: *const Data(Vec3f)) struct { Vec3f, Vec3f } {
 /// (a point can be present multiple times)
 pub fn extremePoints(data: *const Data(Vec3f)) [6]Vec3f {
     var bb_min = vec.splat3f(std.math.floatMax(f32));
-    var bb_max = vec.splat3f(std.math.floatMin(f32));
+    var bb_max = vec.splat3f(-std.math.floatMax(f32));
     var result: [6]Vec3f = undefined;
     var it = data.constIterator();
     while (it.next()) |elem| {

@@ -217,7 +217,7 @@ fn setPointCloudDrawPointsColorData(
     switch (@typeInfo(T)) {
         .float => {
             var min: f32 = std.math.floatMax(f32);
-            var max: f32 = std.math.floatMin(f32);
+            var max: f32 = -std.math.floatMax(f32);
             if (data) |d| {
                 min, max = d.data.minMaxValues(CompareScalarContext{}, compareScalar);
             }

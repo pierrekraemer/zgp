@@ -213,7 +213,7 @@ pub const HeatMethodContext = struct {
         face_area: SurfaceMesh.FaceData(f32),
         face_normal: SurfaceMesh.FaceData(Vec3f),
         diffusion_time: f32,
-        // it_ctx: ?intrinsic_triangulation.ITContext,
+        // it_ctx: ?intrinsic_triangulation.ITContext, // TODO: support intrinsic triangulation for heat method
     ) !HeatMethodContext {
         // Create consecutive indices for vertices
         var vertex_index = try sm.addData(.vertex, u32, "__heat_method_vertex_index");

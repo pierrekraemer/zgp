@@ -253,7 +253,7 @@ fn setIncidenceGraphDrawVerticesColorData(
     switch (@typeInfo(T)) {
         .float => {
             var min: f32 = std.math.floatMax(f32);
-            var max: f32 = std.math.floatMin(f32);
+            var max: f32 = -std.math.floatMax(f32);
             if (data) |d| {
                 min, max = d.data.minMaxValues(CompareScalarContext{}, compareScalar);
             }
@@ -305,13 +305,9 @@ fn setIncidenceGraphDrawFacesColorData(
     switch (@typeInfo(T)) {
         .float => {
             var min: f32 = std.math.floatMax(f32);
-            var max: f32 = std.math.floatMin(f32);
+            var max: f32 = -std.math.floatMax(f32);
             if (data) |d| {
-                var it = d.data.iterator();
-                while (it.next()) |elem| {
-                    if (elem.value_ptr.* < min) min = elem.value_ptr.*;
-                    if (elem.value_ptr.* > max) max = elem.value_ptr.*;
-                }
+                min, max = d.data.minMaxValues(CompareScalarContext{}, compareScalar);
             }
             switch (cell_type) {
                 .vertex => {
