@@ -133,14 +133,14 @@ pub fn poissonDiskSamplePointsOnSurface(
                 continue; // if the grid cell of the candidate point is already occupied, it is not valid
             }
             var candidate_is_valid = true;
-            // check if the neighboring grid cells are occupied by points that are too close to the candidate point
-            for (0..3) |x| blk: {
-                for (0..3) |y| {
-                    for (0..3) |z| {
+            // check if the 5x5x5 neighboring grid cells are occupied by a point that is too close to the candidate point
+            for (0..5) |x| blk: {
+                for (0..5) |y| {
+                    for (0..5) |z| {
                         const grid_idx: [3]i32 = .{
-                            @as(i32, @intFromFloat(candidate_pos_grid_coord[0])) + @as(i32, @intCast(x)) - 1,
-                            @as(i32, @intFromFloat(candidate_pos_grid_coord[1])) + @as(i32, @intCast(y)) - 1,
-                            @as(i32, @intFromFloat(candidate_pos_grid_coord[2])) + @as(i32, @intCast(z)) - 1,
+                            @as(i32, @intFromFloat(candidate_pos_grid_coord[0])) + @as(i32, @intCast(x)) - 2,
+                            @as(i32, @intFromFloat(candidate_pos_grid_coord[1])) + @as(i32, @intCast(y)) - 2,
+                            @as(i32, @intFromFloat(candidate_pos_grid_coord[2])) + @as(i32, @intCast(z)) - 2,
                         };
                         if (grid.get(grid_idx)) |p| { // if it is occupied
                             if (vec.norm3f(vec.sub3f(candidate_pos, sample_position.value(p))) < poisson_radius) { // and its content is too close to the candidate point
