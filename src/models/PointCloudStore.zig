@@ -210,7 +210,6 @@ pub fn pointCloudDataUpdated(
     // update the last known data update time
     pcs.data_last_update.put(pcs.allocator, data.gen(), std.Io.Timestamp.now(pcs.io, .real)) catch |err| {
         zgp_log.err("Failed to update last update time for PointCloud data: {}", .{err});
-        return;
     };
 
     // dispatch call to listeners
@@ -224,7 +223,6 @@ pub fn pointCloudConnectivityUpdated(pcs: *PointCloudStore, pc: *PointCloud) voi
 
     info.points_ibo.fillFromPointCloud(pc, pcs.allocator) catch |err| {
         zgp_log.err("Failed to fill points IBO for PointCloud: {}", .{err});
-        return;
     };
 
     for (pcs.listeners.items) |module| {

@@ -251,11 +251,9 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
     if (builtin.mode == .debug) {
         const ok = sm.checkIntegrity() catch |err| {
             zgp_log.err("Failed to check integrity after connectivity update: {}", .{err});
-            return;
         };
         if (!ok) {
             zgp_log.err("SurfaceMesh integrity check failed after connectivity update", .{});
-            return;
         }
     }
 
@@ -274,19 +272,15 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
     // update the different primitives IBO
     info.points_ibo.fillFromSurfaceMesh(sm, .vertex, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill points IBO for SurfaceMesh: {}", .{err});
-        return;
     };
     info.lines_ibo.fillFromSurfaceMesh(sm, .edge, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill lines IBO for SurfaceMesh: {}", .{err});
-        return;
     };
     info.triangles_ibo.fillFromSurfaceMesh(sm, .face, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill triangles IBO for SurfaceMesh: {}", .{err});
-        return;
     };
     info.boundaries_ibo.fillFromSurfaceMeshBoundary(sm, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill boundaries IBO for SurfaceMesh: {}", .{err});
-        return;
     };
 
     // update the cells sets
@@ -329,7 +323,6 @@ pub fn surfaceMeshCellSetUpdated(
     if (maybe_ibo) |ibo| {
         ibo.fillFromSurfaceMeshCellSlice(sm, cell_set.cells.items, sms.allocator) catch |err| {
             zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
-            return;
         };
     }
 
@@ -715,6 +708,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
     }
 
     const sm = try sms.createSurfaceMesh(std.fs.path.basename(filename));
+    errdefer sms.destroySurfaceMesh(sm);
 
     var vertex_position = try sm.addData(.vertex, Vec3f, "position");
     var darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");

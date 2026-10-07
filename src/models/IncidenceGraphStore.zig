@@ -211,7 +211,6 @@ pub fn incidenceGraphDataUpdated(
     // update the last known data update time
     igs.data_last_update.put(igs.allocator, data.gen(), std.Io.Timestamp.now(igs.io, .real)) catch |err| {
         zgp_log.err("Failed to update last update time for IncidenceGraph data: {}", .{err});
-        return;
     };
 
     // dispatch call to listeners
@@ -225,15 +224,12 @@ pub fn incidenceGraphConnectivityUpdated(igs: *IncidenceGraphStore, ig: *Inciden
 
     info.points_ibo.fillFromIncidenceGraph(ig, .vertex, igs.allocator) catch |err| {
         zgp_log.err("Failed to fill points IBO for IncidenceGraph: {}", .{err});
-        return;
     };
     info.lines_ibo.fillFromIncidenceGraph(ig, .edge, igs.allocator) catch |err| {
         zgp_log.err("Failed to fill lines IBO for IncidenceGraph: {}", .{err});
-        return;
     };
     info.triangles_ibo.fillFromIncidenceGraph(ig, .face, igs.allocator) catch |err| {
         zgp_log.err("Failed to fill triangles IBO for IncidenceGraph: {}", .{err});
-        return;
     };
 
     for (igs.listeners.items) |module| {

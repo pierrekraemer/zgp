@@ -4,6 +4,8 @@ const PointCloud = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 
+const zgp_log = std.log.scoped(.zgp);
+
 const data = @import("../../utils/data.zig");
 const DataContainer = data.DataContainer;
 const DataGen = data.DataGen;
@@ -85,47 +87,49 @@ pub fn pointIterator(pc: *const PointCloud) PointIterator {
 /// This process is repeated until all points have been processed.
 pub const ParallelPointTaskRunner = struct {
     const PointBuffer = BufferPool(Point).Buffer;
+    const max_workers = 32;
 
     point_cloud: *PointCloud,
     iterator: PointIterator,
     // manage two groups of buffers to be able to run tasks on one group while filling the other
-    buffers: [2][]PointBuffer,
+    buffers: [2][max_workers]PointBuffer,
+    nb_workers: usize,
     // one Group per group of buffers to be able to wait for the completion of tasks on each group independently
     wg: [2]std.Io.Group,
 
-    pub fn init(pc: *PointCloud) !ParallelPointTaskRunner {
-        const cpu_count = try std.Thread.getCpuCount();
-        return .{
+    pub fn init(pc: *PointCloud) !@This() {
+        return initWithWorkerCount(pc, try std.Thread.getCpuCount());
+    }
+
+    pub fn initWithWorkerCount(pc: *PointCloud, nb_workers: usize) !@This() {
+        if (nb_workers == 0 or nb_workers > max_workers) {
+            return error.InvalidWorkerCount;
+        }
+
+        var pctr: @This() = .{
             .point_cloud = pc,
             .iterator = pointIterator(pc),
-            .buffers = .{
-                blk: {
-                    // acquire buffers from the pool (one buffer per thread) - first group
-                    const buffers: []PointBuffer = try pc.allocator.alloc(PointBuffer, cpu_count);
-                    for (buffers) |*buffer| {
-                        buffer.* = try pc.point_buffer_pool.acquire();
-                    }
-                    break :blk buffers;
-                },
-                blk: {
-                    // acquire buffers from the pool (one buffer per thread) - second group
-                    const buffers: []PointBuffer = try pc.allocator.alloc(PointBuffer, cpu_count);
-                    for (buffers) |*buffer| {
-                        buffer.* = try pc.point_buffer_pool.acquire();
-                    }
-                    break :blk buffers;
-                },
-            },
+            .buffers = undefined,
+            .nb_workers = nb_workers,
             .wg = .{ .init, .init },
         };
+
+        for (0..2) |group| {
+            for (0..nb_workers) |worker| {
+                pctr.buffers[group][worker] = try pc.point_buffer_pool.acquire();
+            }
+        }
+
+        return pctr;
     }
 
     pub fn deinit(pctr: *ParallelPointTaskRunner) void {
         for (0..2) |i| {
-            for (pctr.buffers[i]) |*buffer| {
-                buffer.release();
+            for (pctr.buffers[i][0..pctr.nb_workers]) |*buffer| {
+                buffer.release() catch |err| {
+                    zgp_log.warn("Failed to release buffer: {}", .{err});
+                };
             }
-            pctr.point_cloud.allocator.free(pctr.buffers[i]);
         }
     }
 
@@ -161,7 +165,7 @@ pub const ParallelPointTaskRunner = struct {
                 current_index_in_buffer = 0;
             }
             // if we have used all the buffers of the current buffer group, switch to the next buffer group
-            if (current_buf_index == pptr.buffers[current_buf_group].len) {
+            if (current_buf_index == pptr.nb_workers) {
                 current_buf_group = (current_buf_group + 1) % 2;
                 // threads working on this buffer group are waited on before we can reuse the buffers of this group
                 try pptr.wg[current_buf_group].await(io);
@@ -233,6 +237,7 @@ pub fn getOrAddData(pc: *PointCloud, comptime T: type, name: []const u8) !struct
     return .{ .{ .data = d }, created };
 }
 
+/// Remove the given CellData.
 pub fn removeData(pc: *PointCloud, cell_data: anytype) void {
     pc.point_data.removeData(cell_data.gen());
 }

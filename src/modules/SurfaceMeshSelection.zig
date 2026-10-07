@@ -108,6 +108,7 @@ pub fn deinit(sms: *SurfaceMeshSelection) void {
         sd.deinit();
     }
     sms.surface_meshes_data.deinit(sms.app_ctx.allocator);
+    sms.hovered_cell_ibo.deinit();
 }
 
 /// Part of the Module interface.

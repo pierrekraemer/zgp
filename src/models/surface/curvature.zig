@@ -113,9 +113,9 @@ pub fn vertexCurvature(
 
     return .{
         .kmin = @floatCast(evals[imin]),
-        .Kmin = vec.vec3fFromVec3d(evecs[imax]),
+        .Kmin = vec.vec3fFromVec3d(evecs[imin]),
         .kmax = @floatCast(evals[imax]),
-        .Kmax = vec.vec3fFromVec3d(evecs[imin]),
+        .Kmax = vec.vec3fFromVec3d(evecs[imax]),
     };
 }
 

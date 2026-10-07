@@ -16,8 +16,8 @@ pub fn BufferPool(comptime T: type) type {
 
             /// Returns this buffer to the pool.
             /// The data slice is invalidated after this call.
-            pub fn release(self: *Buffer) void {
-                self.pool.release(self.data);
+            pub fn release(self: *Buffer) !void {
+                try self.pool.release(self.data);
                 self.data = &.{};
             }
         };
@@ -58,7 +58,7 @@ pub fn BufferPool(comptime T: type) type {
         /// Deinitialize the pool and free all pooled buffers.
         /// Note: This does not free buffers currently acquired by users of the pool.
         pub fn deinit(self: *Self) void {
-            self.mutex.lock(self.io) catch {};
+            self.mutex.lockUncancelable(self.io);
             defer self.mutex.unlock(self.io);
             for (self.free_list.items) |buf| {
                 self.allocator.free(buf);
@@ -69,7 +69,7 @@ pub fn BufferPool(comptime T: type) type {
         /// Acquire a buffer from the pool.
         /// If the pool is empty, a new buffer is allocated.
         pub fn acquire(self: *Self) !Buffer {
-            try self.mutex.lock(self.io);
+            self.mutex.lockUncancelable(self.io);
             // Try to pop from free list first
             if (self.free_list.pop()) |buf| {
                 self.mutex.unlock(self.io);
@@ -83,17 +83,15 @@ pub fn BufferPool(comptime T: type) type {
         }
 
         /// Internal function to return a buffer to the free list.
-        pub fn release(self: *Self, buf: []T) void {
-            self.mutex.lock(self.io) catch {};
+        pub fn release(self: *Self, buf: []T) !void {
+            self.mutex.lockUncancelable(self.io);
             defer self.mutex.unlock(self.io);
             // If we have hit the max capacity of the pool, discard the buffer
             if (self.free_list.items.len >= self.max_pool_size) {
                 self.allocator.free(buf);
             } else {
                 // Return to stack for reuse
-                self.free_list.append(self.allocator, buf) catch {
-                    self.allocator.free(buf);
-                };
+                try self.free_list.append(self.allocator, buf);
             }
         }
     };

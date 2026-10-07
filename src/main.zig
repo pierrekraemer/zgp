@@ -189,24 +189,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     point_cloud_medial_axis = .init(&app_ctx);
     surface_mesh_procedural_texturing = .init(&app_ctx);
 
-    errdefer point_cloud_std_datas.deinit();
-    errdefer surface_mesh_std_datas.deinit();
-    errdefer incidence_graph_std_datas.deinit();
-    errdefer point_cloud_renderer.deinit();
-    errdefer surface_mesh_renderer.deinit();
-    errdefer incidence_graph_renderer.deinit();
-    errdefer vector_per_vertex_renderer.deinit();
-    errdefer surface_mesh_distance.deinit();
-    errdefer surface_mesh_curvature.deinit();
-    errdefer surface_mesh_selection.deinit();
-    errdefer surface_mesh_deformation.deinit();
-    errdefer surface_mesh_connectivity.deinit();
-    errdefer surface_mesh_sampling.deinit();
-    errdefer surface_mesh_parameterization.deinit();
-    errdefer surface_mesh_medial_axis.deinit();
-    errdefer point_cloud_medial_axis.deinit();
-    errdefer surface_mesh_procedural_texturing.deinit();
-
     try modules.append(app_ctx.allocator, &point_cloud_std_datas.module);
     try modules.append(app_ctx.allocator, &surface_mesh_std_datas.module);
     try modules.append(app_ctx.allocator, &incidence_graph_std_datas.module);
@@ -224,7 +206,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     try modules.append(app_ctx.allocator, &surface_mesh_medial_axis.module);
     try modules.append(app_ctx.allocator, &point_cloud_medial_axis.module);
     try modules.append(app_ctx.allocator, &surface_mesh_procedural_texturing.module);
-    errdefer modules.deinit(app_ctx.allocator);
 
     // register modules with model stores they want to get events from
 
@@ -258,8 +239,6 @@ fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
         const t = std.Io.Timestamp.now(app_ctx.io, .real);
 
         const sm = try app_ctx.surface_mesh_store.loadSurfaceMeshFromFile(mesh_file);
-        errdefer sm.deinit();
-
         const vertex_position = sm.getData(.vertex, Vec3f, "position").?;
 
         if (cli_args.normalize) {

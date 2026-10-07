@@ -103,6 +103,13 @@ pub fn simdFromMat3d(m: Mat3d) SimdMat4d {
     };
 }
 
+pub fn simdFromMat4f(m: Mat4f) SimdMat4f {
+    return .{ m[0], m[1], m[2], m[3] };
+}
+pub fn simdFromMat4d(m: Mat4d) SimdMat4d {
+    return .{ m[0], m[1], m[2], m[3] };
+}
+
 // -------------------------------------------------------------------- //
 
 pub fn mul3f(a: Mat3f, b: Mat3f) Mat3f {

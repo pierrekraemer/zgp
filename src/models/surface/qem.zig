@@ -176,7 +176,7 @@ pub fn computeVertexQEMsSimd(
 /// Given a QEM matrix, compute the optimal point minimizing the quadric error.
 /// Return null if the QEM is not invertible.
 pub fn optimalPoint(q: Mat4f) ?Vec3f {
-    if (optimalPointSimd(mat.loadMat4f(q))) |p_simd| {
+    if (optimalPointSimd(mat.simdFromMat4f(q))) |p_simd| {
         return vec.storeVec3f(p_simd);
     }
     return null;
