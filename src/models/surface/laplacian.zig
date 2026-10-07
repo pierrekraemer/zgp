@@ -77,7 +77,7 @@ pub fn halfedgeCotanWeightIntrinsic(
     const l_jk = edge_length.value(sm.edge(sm.phi1(d)));
     const l_ki = edge_length.value(sm.edge(sm.phi_1(d)));
     const area = face_area.value(sm.face(d));
-    return (-l_ij * l_ij + l_jk * l_jk + l_ki * l_ki) / (4.0 * area);
+    return 0.5 * (-l_ij * l_ij + l_jk * l_jk + l_ki * l_ki) / (4.0 * area);
 }
 
 /// Compute the cotan weights of all halfedges of the given SurfaceMesh
