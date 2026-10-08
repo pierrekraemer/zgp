@@ -8,13 +8,15 @@ const sdl_log = std.log.scoped(.sdl);
 
 const errify = @import("../main.zig").errify;
 
-sdl_window: *c.SDL_Window = undefined,
+// GL proc table
+var gl_procs: gl.ProcTable = undefined;
+
+sdl_window: *c.SDL_Window,
+gl_context: c.SDL_GLContext,
 width: c_int = 1200,
 height: c_int = 800,
-gl_context: c.SDL_GLContext = undefined,
-gl_procs: gl.ProcTable = undefined,
 
-pub fn init(w: *Window) !void {
+pub fn init() !Window {
     const platform: [*:0]const u8 = c.SDL_GetPlatform();
     sdl_log.info("SDL platform: {s}", .{platform});
     sdl_log.info("SDL build time version: {d}.{d}.{d}", .{
@@ -59,35 +61,44 @@ pub fn init(w: *Window) !void {
 
     var nb_displays: c_int = 0;
     const displays = try errify(c.SDL_GetDisplays(&nb_displays));
+    var width: c_int = 0;
+    var height: c_int = 0;
     if (nb_displays > 0) {
         for (0..@intCast(nb_displays)) |i| {
             const display_name = c.SDL_GetDisplayName(displays[i]);
             sdl_log.info("Display {d}: {s}", .{ i, display_name });
         }
         const display_mode = try errify(c.SDL_GetDesktopDisplayMode(displays[0]));
-        w.width = display_mode.*.w - 200;
-        w.height = display_mode.*.h;
+        width = display_mode.*.w - 200;
+        height = display_mode.*.h;
     } else {
         sdl_log.warn("No display found", .{});
     }
     c.SDL_free(displays);
 
-    w.sdl_window = try errify(c.SDL_CreateWindow("zgp", w.width, w.height, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_RESIZABLE));
-    errdefer c.SDL_DestroyWindow(w.sdl_window);
+    const sdl_window = try errify(c.SDL_CreateWindow("zgp", width, height, c.SDL_WINDOW_OPENGL | c.SDL_WINDOW_RESIZABLE));
+    errdefer c.SDL_DestroyWindow(sdl_window);
 
-    w.gl_context = try errify(c.SDL_GL_CreateContext(w.sdl_window));
-    errdefer errify(c.SDL_GL_DestroyContext(w.gl_context)) catch {};
+    const gl_context = try errify(c.SDL_GL_CreateContext(sdl_window));
+    errdefer errify(c.SDL_GL_DestroyContext(gl_context)) catch {};
 
-    try errify(c.SDL_GL_MakeCurrent(w.sdl_window, w.gl_context));
-    errdefer errify(c.SDL_GL_MakeCurrent(w.sdl_window, null)) catch {};
+    try errify(c.SDL_GL_MakeCurrent(sdl_window, gl_context));
+    errdefer errify(c.SDL_GL_MakeCurrent(sdl_window, null)) catch {};
 
     // try errify(c.SDL_GL_SetSwapInterval(0));
     try errify(c.SDL_GL_SetSwapInterval(1));
 
-    if (!w.gl_procs.init(c.SDL_GL_GetProcAddress)) return error.GlInitFailed;
+    if (!gl_procs.init(c.SDL_GL_GetProcAddress)) return error.GlInitFailed;
 
-    gl.makeProcTableCurrent(&w.gl_procs);
+    gl.makeProcTableCurrent(&gl_procs);
     errdefer gl.makeProcTableCurrent(null);
+
+    return .{
+        .sdl_window = sdl_window,
+        .gl_context = gl_context,
+        .width = width,
+        .height = height,
+    };
 }
 
 pub fn deinit(w: *Window) void {

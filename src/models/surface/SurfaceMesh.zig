@@ -90,7 +90,6 @@ face_data: DataContainer,
 
 /// Dart properties
 dart_props: *Data(DartProps),
-
 nb_boundary_darts: u32, // number of boundary darts; only updated upon calls to SurfaceMeshStore.surfaceMeshConnectivityUpdated
 
 /// Cell data: a representative dart for each cell, stored in the respective DataContainer.
@@ -180,7 +179,6 @@ pub fn init(sm: *SurfaceMesh, allocator: std.mem.Allocator, index_buffer_pool: *
     try sm.face_data.init(allocator);
 
     sm.dart_props = try sm.dart_data.addData(DartProps, "dart_props");
-
     sm.nb_boundary_darts = 0;
 
     sm.vertex_dart = try sm.vertex_data.addData(Dart, "dart");
@@ -234,10 +232,13 @@ pub fn clearRetainingCapacity(sm: *SurfaceMesh) void {
     while (face_sets_it.next()) |fs| {
         fs.clear();
     }
+
     sm.dart_data.clearRetainingCapacity();
     sm.vertex_data.clearRetainingCapacity();
     sm.edge_data.clearRetainingCapacity();
     sm.face_data.clearRetainingCapacity();
+
+    sm.nb_boundary_darts = 0;
 }
 
 pub fn clone(sm: *const SurfaceMesh, allocator: std.mem.Allocator) !*SurfaceMesh {
@@ -353,10 +354,10 @@ pub fn cellIterator(sm: *const SurfaceMesh, comptime cell_type: CellType) CellIt
 
 // Convenience functions to get the iterators for the different Cell types.
 pub fn halfedgeIterator(sm: *const SurfaceMesh) CellIterator(.halfedge) {
-    return sm.cellIterator(.halfedge);
+    return sm.cellIterator(.halfedge); // WARNING: iterates over all darts, including boundary darts
 }
 pub fn cornerIterator(sm: *const SurfaceMesh) CellIterator(.corner) {
-    return sm.cellIterator(.corner);
+    return sm.cellIterator(.corner); // WARNING: iterates over all darts, including boundary darts
 }
 pub fn vertexIterator(sm: *const SurfaceMesh) CellIterator(.vertex) {
     return sm.cellIterator(.vertex);

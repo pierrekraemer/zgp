@@ -13,7 +13,7 @@ const imgui_utils = @import("../ui/imgui.zig");
 const types_utils = @import("../utils/types.zig");
 
 const Module = @import("../modules/Module.zig");
-const ModelSelection = @import("../main.zig").ModelSelection;
+const ModelSelection = @import("../AppContext.zig").ModelSelection;
 const IncidenceGraph = @import("incidenceGraph/IncidenceGraph.zig");
 
 const Data = @import("../utils/data.zig").Data;

@@ -24,25 +24,25 @@ const Texture2D = @import("Texture2D.zig");
 const FullscreenTexture = @import("shaders/fullscreen_texture/FullscreenTexture.zig");
 const InfiniteGrid = @import("shaders/infinite_grid/InfiniteGrid.zig");
 
-camera: Camera = undefined,
+camera: Camera,
 
 width: c_int = 0,
 height: c_int = 0,
 
-screen_color_tex: Texture2D = undefined,
-screen_depth_tex: Texture2D = undefined,
+screen_color_tex: Texture2D,
+screen_depth_tex: Texture2D,
 
-fbo: FBO = undefined,
-fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = undefined,
-infinite_grid_parameters: InfiniteGrid.Parameters = undefined,
+fbo: FBO,
+fullscreen_texture_shader_parameters: FullscreenTexture.Parameters,
+infinite_grid_parameters: InfiniteGrid.Parameters,
 
 background_color: Vec4f = .{ 0.35, 0.35, 0.35, 1 },
 show_grid: bool = true,
 
 needs_redraw: bool = true,
 
-pub fn init(view: *View) void {
-    view.camera = .init(
+pub fn init() View {
+    const camera: Camera = .init(
         .{ -0.5, 0.5, 2.0 },
         .{ 0.0, 1.0, 0.0 },
         .{ 0.0, 0.0, 0.0 },
@@ -51,27 +51,38 @@ pub fn init(view: *View) void {
         .perspective,
     );
 
-    view.screen_color_tex = .init(&[_]Texture2D.Parameter{
+    const screen_color_tex: Texture2D = .init(&[_]Texture2D.Parameter{
         .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
         .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
     });
-    view.screen_depth_tex = .init(&[_]Texture2D.Parameter{
+    const screen_depth_tex: Texture2D = .init(&[_]Texture2D.Parameter{
         .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
         .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
     });
 
-    view.fbo = FBO.init();
-    view.fbo.attachTexture(gl.COLOR_ATTACHMENT0, view.screen_color_tex);
-    view.fbo.attachTexture(gl.DEPTH_ATTACHMENT, view.screen_depth_tex);
+    const fbo: FBO = .init();
+    fbo.attachTexture(gl.COLOR_ATTACHMENT0, screen_color_tex);
+    fbo.attachTexture(gl.DEPTH_ATTACHMENT, screen_depth_tex);
 
     const status = gl.CheckFramebufferStatus(gl.FRAMEBUFFER);
     if (status != gl.FRAMEBUFFER_COMPLETE) {
         gl_log.err("Framebuffer not complete: {d}", .{status});
     }
 
-    view.fullscreen_texture_shader_parameters = .init();
-    view.fullscreen_texture_shader_parameters.setTexture(view.screen_color_tex);
-    view.infinite_grid_parameters = .init();
+    var fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = .init();
+    fullscreen_texture_shader_parameters.setTexture(screen_color_tex);
+    const infinite_grid_parameters: InfiniteGrid.Parameters = .init();
+
+    return .{
+        .camera = camera,
+        .width = 0,
+        .height = 0,
+        .screen_color_tex = screen_color_tex,
+        .screen_depth_tex = screen_depth_tex,
+        .fbo = fbo,
+        .fullscreen_texture_shader_parameters = fullscreen_texture_shader_parameters,
+        .infinite_grid_parameters = infinite_grid_parameters,
+    };
 }
 
 pub fn deinit(view: *View) void {

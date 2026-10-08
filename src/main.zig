@@ -2,6 +2,8 @@ const std = @import("std");
 const builtin = @import("builtin");
 const c = @import("c");
 
+const AppContext = @import("AppContext.zig");
+
 const SurfaceMesh = @import("models/surface/SurfaceMesh.zig");
 const PointCloud = @import("models/point/PointCloud.zig");
 const IncidenceGraph = @import("models/incidenceGraph/IncidenceGraph.zig");
@@ -56,73 +58,6 @@ const zgp_log = std.log.scoped(.zgp);
 // https://github.com/zig-utils/zig-cli
 const CLIArgs = @import("utils/CLIArgs.zig");
 var cli_args: CLIArgs = undefined;
-
-// TODO: parallel execution of quantity computations over cells using ParallelCellTaskRunner
-// is actually only beneficial for heavy computations or on meshes with a very large number of cells.
-// Should benchmark and switch between parallel and sequential execution based on the mesh size and the type of quantity computed.
-
-/// Application Context:
-/// - io instance
-/// - allocator instance
-/// - PointCloud / SurfaceMesh / VolumeMesh stores
-/// - current selected model
-/// - random number generator
-/// - window
-/// - view
-pub const AppContext = struct {
-    io: std.Io,
-    allocator: std.mem.Allocator,
-    point_cloud_store: PointCloudStore,
-    surface_mesh_store: SurfaceMeshStore,
-    incidence_graph_store: IncidenceGraphStore,
-    selected_model: ModelSelection = .none,
-    rng: std.Random.DefaultPrng,
-    window: Window = .{},
-    view: View = .{},
-
-    pub fn init(io: std.Io, allocator: std.mem.Allocator) !AppContext {
-        var seed: u64 = undefined;
-        io.random(std.mem.asBytes(&seed));
-        return .{
-            .io = io,
-            .allocator = allocator,
-            .point_cloud_store = try .init(io, allocator),
-            .surface_mesh_store = try .init(io, allocator),
-            .incidence_graph_store = try .init(io, allocator),
-            .rng = .init(seed),
-        };
-    }
-
-    pub fn wireUp(self: *AppContext) void {
-        self.point_cloud_store.selected_model = &self.selected_model;
-        self.surface_mesh_store.selected_model = &self.selected_model;
-        self.incidence_graph_store.selected_model = &self.selected_model;
-    }
-
-    pub fn deinit(self: *AppContext) void {
-        self.point_cloud_store.deinit();
-        self.surface_mesh_store.deinit();
-        self.incidence_graph_store.deinit();
-        self.view.deinit();
-        self.window.deinit();
-    }
-
-    pub fn requestRedraw(self: *AppContext) void {
-        self.view.needs_redraw = true;
-    }
-};
-
-pub const ModelSelection = union(enum) {
-    none,
-    surface_mesh: *SurfaceMesh,
-    point_cloud: *PointCloud,
-    incidence_graph: *IncidenceGraph,
-
-    pub fn modelType(self: ModelSelection) ModelType {
-        return std.meta.activeTag(self);
-    }
-};
-pub const ModelType = std.meta.Tag(ModelSelection);
 
 /// Main application context passed to modules
 var app_ctx: AppContext = undefined;
@@ -658,13 +593,11 @@ pub fn main(init: std.process.Init) !u8 {
     const io = init.io;
     const allocator = init.gpa;
 
+    try Shader.initRegistry(allocator);
+
     app_ctx = try .init(io, allocator);
     app_ctx.wireUp();
     defer app_ctx.deinit();
-
-    try app_ctx.window.init();
-    try Shader.initRegistry(allocator);
-    app_ctx.view.init();
 
     zgp_log.info("Thread mode: {s}", .{if (builtin.single_threaded) "single-threaded" else "multi-threaded"});
 
