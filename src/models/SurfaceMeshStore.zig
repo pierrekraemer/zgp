@@ -166,6 +166,20 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     // register the SurfaceMesh in the SurfaceMeshStore to make it available in the UI and for other modules
     try sms.registerSurfaceMesh(name, sm);
 
+    // create the standard datas for the SurfaceMesh
+    const info = sms.surface_meshes_info.getPtr(sm).?;
+    const std_data_info = @typeInfo(SurfaceMeshStdData).@"union";
+    inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
+        if (@field(info.std_datas, field_name) == null) {
+            const maybe_data = sm.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
+            if (maybe_data) |data| {
+                sms.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, data));
+            } else |err| {
+                zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
+            }
+        }
+    }
+
     return sm;
 }
 

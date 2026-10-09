@@ -139,6 +139,20 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     // register the PointCloud in the PointCloudStore to make it available in the UI and for other modules
     try pcs.registerPointCloud(name, pc);
 
+    // create the standard datas for the PointCloud
+    const info = pcs.point_clouds_info.getPtr(pc).?;
+    const std_data_info = @typeInfo(PointCloudStdData).@"union";
+    inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
+        if (@field(info.std_datas, field_name) == null) {
+            const maybe_data = pc.addData(@typeInfo(field_type).optional.child.DataType, field_name);
+            if (maybe_data) |data| {
+                pcs.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field_name, data));
+            } else |err| {
+                zgp_log.err("Error adding {s} ({s}) data: {}", .{ field_name, @typeName(@typeInfo(field_type).optional.child.DataType), err });
+            }
+        }
+    }
+
     return pc;
 }
 

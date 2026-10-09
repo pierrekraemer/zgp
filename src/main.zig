@@ -25,7 +25,6 @@ const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
 
 const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
 const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
-// const SurfaceMeshIntrinsicTriangulation = @import("modules/SurfaceMeshIntrinsicTriangulation.zig");
 const SurfaceMeshSelection = @import("modules/SurfaceMeshSelection.zig");
 const SurfaceMeshDeformation = @import("modules/SurfaceMeshDeformation.zig");
 const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
@@ -498,8 +497,8 @@ fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     c.ImGui_UpdatePlatformWindows();
     c.ImGui_RenderPlatformWindowsDefault();
 
-    try errify(c.SDL_GL_MakeCurrent(app_ctx.window.sdl_window, app_ctx.window.gl_context));
-    try errify(c.SDL_GL_SwapWindow(app_ctx.window.sdl_window));
+    try Window.errify(c.SDL_GL_MakeCurrent(app_ctx.window.sdl_window, app_ctx.window.gl_context));
+    try Window.errify(c.SDL_GL_SwapWindow(app_ctx.window.sdl_window));
 
     return c.SDL_APP_CONTINUE;
 }
@@ -631,27 +630,6 @@ fn sdlAppEventC(appstate: ?*anyopaque, event: ?*c.SDL_Event) callconv(.c) c.SDL_
 
 fn sdlAppQuitC(appstate: ?*anyopaque, result: c.SDL_AppResult) callconv(.c) void {
     sdlAppQuit(appstate, app_err.load() orelse result);
-}
-
-/// Converts the return value of an SDL function to an error union.
-pub inline fn errify(value: anytype) error{SdlError}!switch (@typeInfo(@TypeOf(value))) {
-    .bool => void,
-    .pointer, .optional => @TypeOf(value.?),
-    .int => |info| switch (info.signedness) {
-        .signed => @TypeOf(@max(0, value)),
-        .unsigned => @TypeOf(value),
-    },
-    else => @compileError("unerrifiable type: " ++ @typeName(@TypeOf(value))),
-} {
-    return switch (@typeInfo(@TypeOf(value))) {
-        .bool => if (!value) error.SdlError,
-        .pointer, .optional => value orelse error.SdlError,
-        .int => |info| switch (info.signedness) {
-            .signed => if (value >= 0) @max(0, value) else error.SdlError,
-            .unsigned => if (value != 0) value else error.SdlError,
-        },
-        else => comptime unreachable,
-    };
 }
 
 var app_err: ErrorStore = .{};

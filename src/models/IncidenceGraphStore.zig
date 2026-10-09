@@ -139,6 +139,20 @@ pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*Incid
     // register the IncidenceGraph in the IncidenceGraphStore to make it available in the UI and for other modules
     try igs.registerIncidenceGraph(name, ig);
 
+    // create the standard datas for the IncidenceGraph
+    const info = igs.incidence_graphs_info.getPtr(ig).?;
+    const std_data_info = @typeInfo(IncidenceGraphStdData).@"union";
+    inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
+        if (@field(info.std_datas, field_name) == null) {
+            const maybe_data = ig.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
+            if (maybe_data) |data| {
+                igs.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field_name, data));
+            } else |err| {
+                zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
+            }
+        }
+    }
+
     return ig;
 }
 
