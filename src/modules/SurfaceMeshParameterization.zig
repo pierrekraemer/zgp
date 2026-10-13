@@ -236,7 +236,7 @@ const ParameterizationData = struct {
         pd.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(pd.samples.?);
         pd.app_ctx.point_cloud_store.pointCloudDataUpdated(pd.samples.?, Vec3f, pd.sample_position);
         pd.app_ctx.point_cloud_store.pointCloudDataUpdated(pd.samples.?, Vec3f, pd.sample_color);
-        pd.app_ctx.requestRedraw();
+        pd.app_ctx.view.requestRedraw();
     }
 
     fn connectSamples(
@@ -458,7 +458,7 @@ const ParameterizationData = struct {
             pd.ssm_edge_path.valuePtr(e).* = path;
         }
         pd.app_ctx.surface_mesh_store.surfaceMeshCellSetUpdated(pd.surface_mesh, .edge, shortest_paths_set);
-        pd.app_ctx.requestRedraw();
+        pd.app_ctx.view.requestRedraw();
 
         const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, pd.app_ctx.io, .real).nanoseconds);
         zgp_log.info("Samples SurfaceMesh computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
@@ -765,7 +765,7 @@ const ParameterizationData = struct {
 
         pd.app_ctx.surface_mesh_store.surfaceMeshCellSetUpdated(pd.surface_mesh, .face, problematic_faces);
         pd.app_ctx.surface_mesh_store.surfaceMeshCellSetUpdated(pd.surface_mesh, .vertex, problematic_vertices);
-        pd.app_ctx.requestRedraw();
+        pd.app_ctx.view.requestRedraw();
 
         pd.uv_computed = true;
 
@@ -808,7 +808,7 @@ const ParameterizationData = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Parameterization",
     .supported_models = .{ .surface_mesh = true },
@@ -821,10 +821,11 @@ module: Module = .{
 },
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, ParameterizationData) = .empty,
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshParameterization {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(smp: *SurfaceMeshParameterization, app_ctx: *AppContext) !void {
+    smp.app_ctx = app_ctx;
+    try app_ctx.point_cloud_store.addListener(&smp.module);
+    try app_ctx.surface_mesh_store.addListener(&smp.module);
 }
 
 pub fn deinit(smp: *SurfaceMeshParameterization) void {
@@ -841,6 +842,8 @@ pub fn deinit(smp: *SurfaceMeshParameterization) void {
         }
     }
     smp.surface_meshes_data.deinit(smp.app_ctx.allocator);
+    smp.app_ctx.point_cloud_store.removeListener(&smp.module);
+    smp.app_ctx.surface_mesh_store.removeListener(&smp.module);
 }
 
 pub fn surfaceMeshParameterizationData(smp: *SurfaceMeshParameterization, surface_mesh: *SurfaceMesh) *ParameterizationData {
@@ -1077,7 +1080,7 @@ pub fn rightPanel(m: *Module) void {
                 }
                 sm_store.surfaceMeshDataUpdated(sm, .vertex, Vec2f, vertex_uv);
                 sm_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_boundary_dist);
-                smp.app_ctx.requestRedraw();
+                smp.app_ctx.view.requestRedraw();
             }
             if (disabled) {
                 c.ImGui_EndDisabled();

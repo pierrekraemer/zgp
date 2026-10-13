@@ -6,6 +6,8 @@ const c = @import("c");
 
 const sdl_log = std.log.scoped(.sdl);
 
+const AppContext = @import("../AppContext.zig");
+
 // GL proc table
 var gl_procs: gl.ProcTable = undefined;
 

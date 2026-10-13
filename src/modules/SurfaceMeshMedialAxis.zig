@@ -85,7 +85,7 @@ const MedialAxisData = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Medial Axis",
     .supported_models = .{ .surface_mesh = true },
@@ -99,10 +99,10 @@ module: Module = .{
 },
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, MedialAxisData) = .empty,
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshMedialAxis {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(smma: *SurfaceMeshMedialAxis, app_ctx: *AppContext) !void {
+    smma.app_ctx = app_ctx;
+    try app_ctx.surface_mesh_store.addListener(&smma.module);
 }
 
 pub fn deinit(smma: *SurfaceMeshMedialAxis) void {
@@ -111,6 +111,7 @@ pub fn deinit(smma: *SurfaceMeshMedialAxis) void {
         mad.deinit();
     }
     smma.surface_meshes_data.deinit(smma.app_ctx.allocator);
+    smma.app_ctx.surface_mesh_store.removeListener(&smma.module);
 }
 
 /// Part of the Module interface.
@@ -201,7 +202,7 @@ pub fn rightPanel(m: *Module) void {
                 mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-                mad.app_ctx.requestRedraw();
+                mad.app_ctx.view.requestRedraw();
             }
         }
         if (disabled) {
@@ -243,7 +244,7 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-            mad.app_ctx.requestRedraw();
+            mad.app_ctx.view.requestRedraw();
         }
 
         if (c.ImGui_ButtonEx("Update spheres", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
@@ -261,7 +262,7 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-            mad.app_ctx.requestRedraw();
+            mad.app_ctx.view.requestRedraw();
         }
 
         if (c.ImGui_ButtonEx("Split worst sphere", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
@@ -280,7 +281,7 @@ pub fn rightPanel(m: *Module) void {
                 mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-                mad.app_ctx.requestRedraw();
+                mad.app_ctx.view.requestRedraw();
             }
         }
         _ = c.ImGui_InputInt("Number of spheres", @ptrCast(&UiData.nb_spheres));
@@ -312,7 +313,7 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-            mad.app_ctx.requestRedraw();
+            mad.app_ctx.view.requestRedraw();
 
             const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smma.app_ctx.io, .real).nanoseconds);
             zgp_log.info("Medial Axis skeleton computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});

@@ -19,7 +19,7 @@ const types_utils = @import("../utils/types.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Incidence Graph Std Datas",
     .supported_models = .{ .incidence_graph = true },
@@ -28,13 +28,15 @@ module: Module = .{
     },
 },
 
-pub fn init(app_ctx: *AppContext) IncidenceGraphStdDatas {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(igsd: *IncidenceGraphStdDatas, app_ctx: *AppContext) !void {
+    igsd.app_ctx = app_ctx;
+    try app_ctx.incidence_graph_store.addListener(&igsd.module);
 }
 
-pub fn deinit(_: *IncidenceGraphStdDatas) void {}
+pub fn deinit(icsd: *IncidenceGraphStdDatas) void {
+    icsd.app_ctx.incidence_graph_store.removeListener(&icsd.module);
+}
 
 /// Part of the Module interface.
 /// Show a UI panel to control the standard datas of the selected IncidenceGraph.
@@ -92,11 +94,11 @@ pub fn leftPanel(m: *Module) void {
                     .unchanged => {},
                     .cleared => {
                         ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field_name, null));
-                        igsd.app_ctx.requestRedraw();
+                        igsd.app_ctx.view.requestRedraw();
                     },
                     .changed => |data| {
                         ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field_name, data));
-                        igsd.app_ctx.requestRedraw();
+                        igsd.app_ctx.view.requestRedraw();
                     },
                 }
             }

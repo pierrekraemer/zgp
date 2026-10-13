@@ -80,6 +80,7 @@ const DartProps = struct {
 // ------------------------------------------------------------------------- //
 
 allocator: std.mem.Allocator,
+io: std.Io,
 index_buffer_pool: *BufferPool(u32), // the BufferPool is shared between SurfaceMeshes (owned by the SurfaceMeshStore)
 
 /// Data containers for darts & the different cell types.
@@ -169,14 +170,15 @@ pub fn cellSetContainerPtr(sm: anytype, comptime cell_type: CellType) if (@typeI
 // Initialization, deinitialization and cloning
 // ------------------------------------------------------------------------- //
 
-pub fn init(sm: *SurfaceMesh, allocator: std.mem.Allocator, index_buffer_pool: *BufferPool(u32)) !void {
+pub fn init(sm: *SurfaceMesh, allocator: std.mem.Allocator, io: std.Io, index_buffer_pool: *BufferPool(u32)) !void {
     sm.allocator = allocator;
+    sm.io = io;
     sm.index_buffer_pool = index_buffer_pool;
 
-    try sm.dart_data.init(allocator);
-    try sm.vertex_data.init(allocator);
-    try sm.edge_data.init(allocator);
-    try sm.face_data.init(allocator);
+    try sm.dart_data.init(allocator, io);
+    try sm.vertex_data.init(allocator, io);
+    try sm.edge_data.init(allocator, io);
+    try sm.face_data.init(allocator, io);
 
     sm.dart_props = try sm.dart_data.addData(DartProps, "dart_props");
     sm.nb_boundary_darts = 0;
@@ -580,9 +582,9 @@ pub fn ParallelCellTaskRunner(comptime cell_type: CellType) type {
         }
 
         pub fn deinit(pctr: *@This()) void {
-            for (0..2) |i| {
-                for (pctr.buffers[i][0..pctr.nb_workers]) |*buffer| {
-                    buffer.release() catch |err| {
+            for (0..2) |group| {
+                for (0..pctr.nb_workers) |worker| {
+                    pctr.buffers[group][worker].release() catch |err| {
                         zgp_log.warn("Failed to release buffer: {}", .{err});
                     };
                 }
@@ -648,6 +650,131 @@ pub const ParallelCornerTaskRunner = ParallelCellTaskRunner(.corner);
 pub const ParallelVertexTaskRunner = ParallelCellTaskRunner(.vertex);
 pub const ParallelEdgeTaskRunner = ParallelCellTaskRunner(.edge);
 pub const ParallelFaceTaskRunner = ParallelCellTaskRunner(.face);
+
+/// The Context type must have an `initialized` field of type bool and a `deinit(self: *Self) void` function.
+pub fn ParallelCellTaskRunnerWithContext(comptime cell_type: CellType, Context: type) type {
+    const IndexBuffer = BufferPool(u32).Buffer;
+    const max_workers = 32;
+
+    return struct {
+        surface_mesh: *SurfaceMesh,
+        iterator: CellIterator(cell_type),
+        // manage two groups of buffers to be able to run tasks on one group while filling the other
+        buffers: [2][max_workers]IndexBuffer,
+        // each worker thread will have its own context, which can be used to store any data needed for the task
+        contexts: [2][max_workers]Context,
+        nb_workers: usize,
+        // one Group per group of buffers to be able to wait for the completion of tasks on each group independently
+        wg: [2]std.Io.Group,
+
+        pub fn init(sm: *SurfaceMesh) !@This() {
+            return initWithWorkerCount(sm, try std.Thread.getCpuCount());
+        }
+
+        pub fn initWithWorkerCount(sm: *SurfaceMesh, nb_workers: usize) !@This() {
+            if (nb_workers == 0 or nb_workers > max_workers) {
+                return error.InvalidWorkerCount;
+            }
+
+            var pctr: @This() = .{
+                .surface_mesh = sm,
+                .iterator = sm.cellIterator(cell_type),
+                .buffers = undefined,
+                .contexts = undefined,
+                .nb_workers = nb_workers,
+                .wg = .{ .init, .init },
+            };
+
+            for (0..2) |group| {
+                for (0..nb_workers) |worker| {
+                    pctr.buffers[group][worker] = try sm.index_buffer_pool.acquire();
+                    pctr.contexts[group][worker].initialized = false;
+                }
+            }
+
+            return pctr;
+        }
+
+        pub fn deinit(pctr: *@This()) void {
+            for (0..2) |group| {
+                for (0..pctr.nb_workers) |worker| {
+                    pctr.buffers[group][worker].release() catch |err| {
+                        zgp_log.warn("Failed to release buffer: {}", .{err});
+                    };
+                    pctr.contexts[group][worker].deinit();
+                }
+            }
+        }
+
+        pub fn reset(pctr: *@This()) void {
+            pctr.iterator.reset();
+        }
+
+        fn runTaskOnBufferFunction(Task: type) fn (*Task, *Context, []u32) void {
+            return struct {
+                fn f(task: *Task, ctx: *Context, buf: []u32) void {
+                    for (buf) |idx| task.run(ctx, Cell(cell_type){ .index = idx });
+                }
+            }.f;
+        }
+
+        // The `task` must expose a `run(self: *Self, ctx: *Context, cell: Cell(cell_type)) void` function
+        pub fn run(pctr: *@This(), io: std.Io, task: anytype) !void {
+            var current_buf_group: usize = 0;
+            var current_buf_index: usize = 0;
+            var current_index_in_buffer: usize = 0;
+            while (pctr.iterator.next()) |c| {
+                // add cell to current buffer of current buffer group
+                pctr.buffers[current_buf_group][current_buf_index].data[current_index_in_buffer] = c.index;
+                current_index_in_buffer += 1;
+                // if the current buffer is full, run the task on it and switch to the next buffer of the current buffer group
+                if (current_index_in_buffer == pctr.buffers[current_buf_group][current_buf_index].data.len) {
+                    pctr.wg[current_buf_group].async(
+                        io,
+                        runTaskOnBufferFunction(@TypeOf(task)),
+                        .{ @constCast(&task), &pctr.contexts[current_buf_group][current_buf_index], pctr.buffers[current_buf_group][current_buf_index].data },
+                    );
+                    current_buf_index += 1;
+                    current_index_in_buffer = 0;
+                }
+                // if we have used all the buffers of the current buffer group, switch to the next buffer group
+                if (current_buf_index == pctr.nb_workers) {
+                    current_buf_group = (current_buf_group + 1) % 2;
+                    // threads working on this buffer group are waited on before we can reuse the buffers of this group
+                    try pctr.wg[current_buf_group].await(io);
+                    current_buf_index = 0;
+                }
+            }
+            // run the task on the last potentially partially filled buffer and wait for the threads to finish
+            if (current_index_in_buffer > 0) {
+                pctr.wg[current_buf_group].async(
+                    io,
+                    runTaskOnBufferFunction(@TypeOf(task)),
+                    .{ @constCast(&task), &pctr.contexts[current_buf_group][current_buf_index], pctr.buffers[current_buf_group][current_buf_index].data[0..current_index_in_buffer] },
+                );
+            }
+            try pctr.wg[0].await(io);
+            try pctr.wg[1].await(io);
+        }
+    };
+}
+
+// Convenience type aliases for the different ParallelCellTaskRunnerWithContext types.
+pub fn ParallelHalfedgeTaskRunnerWithContext(Context: type) type {
+    return ParallelCellTaskRunnerWithContext(.halfedge, Context);
+}
+pub fn ParallelCornerTaskRunnerWithContext(Context: type) type {
+    return ParallelCellTaskRunnerWithContext(.corner, Context);
+}
+pub fn ParallelVertexTaskRunnerWithContext(Context: type) type {
+    return ParallelCellTaskRunnerWithContext(.vertex, Context);
+}
+pub fn ParallelEdgeTaskRunnerWithContext(Context: type) type {
+    return ParallelCellTaskRunnerWithContext(.edge, Context);
+}
+pub fn ParallelFaceTaskRunnerWithContext(Context: type) type {
+    return ParallelCellTaskRunnerWithContext(.face, Context);
+}
 
 // ------------------------------------------------------------------------- //
 // Cell Data

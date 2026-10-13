@@ -125,6 +125,15 @@ pub fn addListener(igs: *IncidenceGraphStore, module: *Module) !void {
     try igs.listeners.append(igs.allocator, module);
 }
 
+pub fn removeListener(igs: *IncidenceGraphStore, module: *Module) void {
+    for (igs.listeners.items, 0..) |m, i| {
+        if (m == module) {
+            _ = igs.listeners.swapRemove(i);
+            return;
+        }
+    }
+}
+
 pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*IncidenceGraph {
     if (igs.incidence_graphs.contains(name)) {
         return error.ModelNameAlreadyExists;
@@ -133,7 +142,7 @@ pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*Incid
     // create and init the IncidenceGraph
     const ig = try igs.allocator.create(IncidenceGraph);
     errdefer igs.allocator.destroy(ig);
-    try ig.init(igs.allocator, &igs.index_buffer_pool);
+    try ig.init(igs.allocator, igs.io, &igs.index_buffer_pool);
     errdefer ig.deinit();
 
     // register the IncidenceGraph in the IncidenceGraphStore to make it available in the UI and for other modules
@@ -170,6 +179,7 @@ pub fn registerIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8, ig: *
     // store the IncidenceGraphInfo in the map
     try igs.incidence_graphs_info.put(igs.allocator, ig, .init());
 
+    // dispatch call to listeners
     for (igs.listeners.items) |module| {
         module.incidenceGraphCreated(ig);
     }
@@ -198,6 +208,7 @@ pub fn unregisterIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) 
         else => {},
     }
 
+    // dispatch call to listeners
     for (igs.listeners.items) |module| {
         module.incidenceGraphDestroyed(ig);
     }
@@ -246,6 +257,7 @@ pub fn incidenceGraphConnectivityUpdated(igs: *IncidenceGraphStore, ig: *Inciden
         zgp_log.err("Failed to fill triangles IBO for IncidenceGraph: {}", .{err});
     };
 
+    // dispatch call to listeners
     for (igs.listeners.items) |module| {
         module.incidenceGraphConnectivityUpdated(ig);
     }
@@ -297,6 +309,7 @@ pub fn setIncidenceGraphStdData(
         },
     }
 
+    // dispatch call to listeners
     for (igs.listeners.items) |module| {
         module.incidenceGraphStdDataChanged(ig, data);
     }

@@ -14,35 +14,8 @@ const IncidenceGraphStore = @import("models/IncidenceGraphStore.zig");
 
 const Module = @import("modules/Module.zig");
 
-const PointCloudStdDatas = @import("modules/PointCloudStdDatas.zig");
-const SurfaceMeshStdDatas = @import("modules/SurfaceMeshStdDatas.zig");
-const IncidenceGraphStdDatas = @import("modules/IncidenceGraphStdDatas.zig");
-
-const PointCloudRenderer = @import("modules/PointCloudRenderer.zig");
-const SurfaceMeshRenderer = @import("modules/SurfaceMeshRenderer.zig");
-const IncidenceGraphRenderer = @import("modules/IncidenceGraphRenderer.zig");
-const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
-
-const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
-const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
-const SurfaceMeshSelection = @import("modules/SurfaceMeshSelection.zig");
-const SurfaceMeshDeformation = @import("modules/SurfaceMeshDeformation.zig");
-const SurfaceMeshConnectivity = @import("modules/SurfaceMeshConnectivity.zig");
-const SurfaceMeshSampling = @import("modules/SurfaceMeshSampling.zig");
-const SurfaceMeshParameterization = @import("modules/SurfaceMeshParameterization.zig");
-const SurfaceMeshMedialAxis = @import("modules/SurfaceMeshMedialAxis.zig");
-const PointCloudMedialAxis = @import("modules/PointCloudMedialAxis.zig");
-const SurfaceMeshProceduralTexturing = @import("modules/SurfaceMeshProceduralTexturing.zig");
-
-const geometry_utils = @import("geometry/utils.zig");
-const vec = @import("geometry/vec.zig");
-const Vec3f = vec.Vec3f;
-
 const Window = @import("ui/Window.zig");
 const imgui = @import("ui/imgui.zig");
-
-const View = @import("rendering/View.zig");
-const Shader = @import("rendering/Shader.zig");
 
 pub const std_options: std.Options = .{
     .log_level = .debug,
@@ -51,464 +24,46 @@ pub const std_options: std.Options = .{
 const sdl_log = std.log.scoped(.sdl);
 const zgp_log = std.log.scoped(.zgp);
 
-// TODO: use a lib like:
+// TODO: could use a config file with a lib like:
+// https://github.com/zig-utils/zig-config
+
+// TODO: use a lib for command-line argument parsing like:
 // https://github.com/joegm/flags
 // https://github.com/Hejsil/zig-clap
 // https://github.com/zig-utils/zig-cli
 const CLIArgs = @import("utils/CLIArgs.zig");
 var cli_args: CLIArgs = undefined;
 
-/// Main application context passed to modules
+/// Io and allocator for the application
+var io: std.Io = undefined;
+var allocator: std.mem.Allocator = undefined;
+
+/// Main application context
 var app_ctx: AppContext = undefined;
-
-/// List of type-erased modules
-/// Used to dispatch UI, View and Window events
-var modules: std.ArrayList(*Module) = .empty;
-
-/// ZGP modules
-/// TODO: could be declared in a config file and loaded at runtime
-/// https://github.com/zig-utils/zig-config
-var point_cloud_std_datas: PointCloudStdDatas = undefined;
-var surface_mesh_std_datas: SurfaceMeshStdDatas = undefined;
-var incidence_graph_std_datas: IncidenceGraphStdDatas = undefined;
-var point_cloud_renderer: PointCloudRenderer = undefined;
-var surface_mesh_renderer: SurfaceMeshRenderer = undefined;
-var incidence_graph_renderer: IncidenceGraphRenderer = undefined;
-var vector_per_vertex_renderer: VectorPerVertexRenderer = undefined;
-var surface_mesh_distance: SurfaceMeshDistance = undefined;
-var surface_mesh_curvature: SurfaceMeshCurvature = undefined;
-var surface_mesh_selection: SurfaceMeshSelection = undefined;
-var surface_mesh_deformation: SurfaceMeshDeformation = undefined;
-var surface_mesh_connectivity: SurfaceMeshConnectivity = undefined;
-var surface_mesh_sampling: SurfaceMeshSampling = undefined;
-var surface_mesh_parameterization: SurfaceMeshParameterization = undefined;
-var surface_mesh_medial_axis: SurfaceMeshMedialAxis = undefined;
-var point_cloud_medial_axis: PointCloudMedialAxis = undefined;
-var surface_mesh_procedural_texturing: SurfaceMeshProceduralTexturing = undefined;
-
-// TODO: add a console bar at the bottom of the window to display logs & info messages
 
 fn sdlAppInit(appstate: ?*?*anyopaque, argv: [][*:0]u8) !c.SDL_AppResult {
     _ = appstate;
     _ = argv;
 
-    // View initialization
-    // *******************
-
-    app_ctx.view.resize(app_ctx.window.width, app_ctx.window.height);
-
-    // ImGui initialization
-    // ********************
-
-    imgui.init(app_ctx.window.sdl_window, app_ctx.window.gl_context);
-
-    // Modules initialization
-    // **********************
-
-    point_cloud_std_datas = .init(&app_ctx);
-    surface_mesh_std_datas = .init(&app_ctx);
-    incidence_graph_std_datas = .init(&app_ctx);
-    point_cloud_renderer = .init(&app_ctx);
-    surface_mesh_renderer = .init(&app_ctx);
-    incidence_graph_renderer = .init(&app_ctx);
-    vector_per_vertex_renderer = .init(&app_ctx);
-    surface_mesh_distance = .init(&app_ctx);
-    surface_mesh_curvature = .init(&app_ctx);
-    surface_mesh_selection = .init(&app_ctx);
-    surface_mesh_deformation = .init(&app_ctx);
-    surface_mesh_connectivity = .init(&app_ctx, &surface_mesh_curvature);
-    surface_mesh_sampling = .init(&app_ctx);
-    surface_mesh_parameterization = .init(&app_ctx);
-    surface_mesh_medial_axis = .init(&app_ctx);
-    point_cloud_medial_axis = .init(&app_ctx);
-    surface_mesh_procedural_texturing = .init(&app_ctx);
-
-    try modules.append(app_ctx.allocator, &point_cloud_std_datas.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_std_datas.module);
-    try modules.append(app_ctx.allocator, &incidence_graph_std_datas.module);
-    try modules.append(app_ctx.allocator, &point_cloud_renderer.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_renderer.module);
-    try modules.append(app_ctx.allocator, &incidence_graph_renderer.module);
-    try modules.append(app_ctx.allocator, &vector_per_vertex_renderer.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_distance.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_curvature.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_selection.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_deformation.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_connectivity.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_sampling.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_parameterization.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_medial_axis.module);
-    try modules.append(app_ctx.allocator, &point_cloud_medial_axis.module);
-    try modules.append(app_ctx.allocator, &surface_mesh_procedural_texturing.module);
-
-    // register modules with model stores they want to get events from
-
-    try app_ctx.point_cloud_store.addListener(&point_cloud_std_datas.module);
-    try app_ctx.point_cloud_store.addListener(&point_cloud_renderer.module);
-    try app_ctx.point_cloud_store.addListener(&vector_per_vertex_renderer.module);
-    try app_ctx.point_cloud_store.addListener(&surface_mesh_sampling.module);
-    try app_ctx.point_cloud_store.addListener(&surface_mesh_parameterization.module);
-    try app_ctx.point_cloud_store.addListener(&point_cloud_medial_axis.module);
-
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_std_datas.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_renderer.module);
-    try app_ctx.surface_mesh_store.addListener(&vector_per_vertex_renderer.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_distance.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_curvature.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_selection.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_deformation.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_connectivity.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_sampling.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_parameterization.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_medial_axis.module);
-    try app_ctx.surface_mesh_store.addListener(&surface_mesh_procedural_texturing.module);
-
-    try app_ctx.incidence_graph_store.addListener(&incidence_graph_std_datas.module);
-    try app_ctx.incidence_graph_store.addListener(&incidence_graph_renderer.module);
-
-    // CLI arguments parsing
-    // *********************
-
-    for (cli_args.mesh_files) |mesh_file| {
-        const t = std.Io.Timestamp.now(app_ctx.io, .real);
-
-        const sm = try app_ctx.surface_mesh_store.loadSurfaceMeshFromFile(mesh_file);
-        const vertex_position = sm.getData(.vertex, Vec3f, "position").?;
-
-        if (cli_args.normalize) {
-            // scale the mesh position in the range [0, 1] and center it on the origin
-            const bb_min, const bb_max = geometry_utils.boundingBox(vertex_position.data);
-            geometry_utils.scale(vertex_position.data, 1.0 / vec.maxComponent3f(vec.sub3f(bb_max, bb_min)));
-        }
-        if (cli_args.center) {
-            geometry_utils.centerAround(vertex_position.data, vec.zero3f);
-        }
-
-        // TODO: why not configure this Data as standard Data directly in the loadSurfaceMeshFromFile function?
-        app_ctx.surface_mesh_store.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
-
-        app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
-        app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
-
-        const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, app_ctx.io, .real).nanoseconds);
-        zgp_log.info("Mesh loaded in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
-    }
+    app_ctx = try .init(io, allocator);
+    try app_ctx.wireUp();
+    try app_ctx.readArgs(cli_args);
 
     return c.SDL_APP_CONTINUE;
-}
-
-/// Helper function to encapsulate module filtering logic.
-/// Return true if:
-///  - the module does not declare any supported model type
-///  - the module declares supported model types and the currently selected model is of one of those types
-fn shouldCallOnModule(module: *Module, ctx: *AppContext) bool {
-    // Fast path: if no models are exclusively supported, it's a global module
-    if (!module.supported_models.point_cloud and
-        !module.supported_models.surface_mesh and
-        !module.supported_models.incidence_graph)
-    {
-        return true;
-    }
-
-    // Check specific capabilities against currently selected models
-    return switch (ctx.selected_model) {
-        .point_cloud => module.supported_models.point_cloud,
-        .surface_mesh => module.supported_models.surface_mesh,
-        .incidence_graph => module.supported_models.incidence_graph,
-        .none => false,
-    };
 }
 
 fn sdlAppIterate(appstate: ?*anyopaque) !c.SDL_AppResult {
     _ = appstate;
 
-    const style = c.ImGui_GetStyle();
-
-    // Draw the main view
-    // ******************
-
-    app_ctx.view.draw(modules.items);
-
-    // ImGui frame initialization
-    // **************************
-
-    c.cImGui_ImplOpenGL3_NewFrame();
-    c.cImGui_ImplSDL3_NewFrame();
-    c.ImGui_NewFrame();
-
-    const imgui_viewport = c.ImGui_GetMainViewport();
-
-    // Right-click context menu
-    // ************************
-
-    const imgui_io = c.ImGui_GetIO();
-    if (c.ImGui_IsMouseClicked(1) and !(imgui_io.*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow))) {
-        _ = c.ImGui_OpenPopup("RightClickMenu", 0);
+    if (!try app_ctx.mainUI()) {
+        return c.SDL_APP_SUCCESS;
     }
-    if (c.ImGui_BeginPopup("RightClickMenu", 0)) {
-        defer c.ImGui_EndPopup();
-        switch (app_ctx.selected_model) {
-            .point_cloud => {
-                c.ImGui_TextDisabled("Point Cloud:");
-                c.ImGui_SameLine();
-                c.ImGui_TextDisabled(app_ctx.point_cloud_store.pointCloudName(app_ctx.selected_model.point_cloud).?);
-            },
-            .surface_mesh => {
-                c.ImGui_TextDisabled("Surface Mesh:");
-                c.ImGui_SameLine();
-                c.ImGui_TextDisabled(app_ctx.surface_mesh_store.surfaceMeshName(app_ctx.selected_model.surface_mesh).?);
-            },
-            .incidence_graph => {
-                c.ImGui_TextDisabled("Incidence Graph:");
-                c.ImGui_SameLine();
-                c.ImGui_TextDisabled(app_ctx.incidence_graph_store.incidenceGraphName(app_ctx.selected_model.incidence_graph).?);
-            },
-            .none => c.ImGui_TextDisabled("No selected model"),
-        }
-        for (modules.items) |module| {
-            if (shouldCallOnModule(module, &app_ctx)) {
-                module.rightClickMenu();
-            }
-        }
-        c.ImGui_Separator();
-        if (c.ImGui_MenuItem("Quit")) {
-            return c.SDL_APP_SUCCESS;
-        }
-    }
-
-    // Main menu bar
-    // *************
-
-    var main_menu_bar_size: c.ImVec2 = undefined;
-
-    if (c.ImGui_BeginMainMenuBar()) {
-        defer c.ImGui_EndMainMenuBar();
-
-        main_menu_bar_size = c.ImGui_GetWindowSize();
-
-        if (c.ImGui_BeginMenu("ZGP")) {
-            defer c.ImGui_EndMenu();
-            if (c.ImGui_MenuItem("Quit")) {
-                return c.SDL_APP_SUCCESS;
-            }
-        }
-
-        app_ctx.view.menuBar();
-        app_ctx.point_cloud_store.menuBar();
-        app_ctx.surface_mesh_store.menuBar();
-        app_ctx.incidence_graph_store.menuBar();
-        for (modules.items) |module| {
-            if (shouldCallOnModule(module, &app_ctx)) {
-                module.menuBar();
-            }
-        }
-
-        // FPS display (ImGui computed value) – right-aligned in the menu bar.
-        const fps = imgui_io.*.Framerate;
-        var fps_buf: [32]u8 = undefined;
-        const fps_str = std.fmt.bufPrintSentinel(&fps_buf, "FPS: {d:.1}", .{fps}, 0) catch "FPS: ?";
-        const fps_text_width = c.ImGui_CalcTextSize(fps_str.ptr).x;
-        c.ImGui_SetCursorPosX(c.ImGui_GetWindowWidth() - fps_text_width - 8.0);
-        c.ImGui_TextUnformatted(fps_str.ptr);
-    }
-
-    c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowRounding, 0.0);
-    c.ImGui_PushStyleVar(c.ImGuiStyleVar_WindowBorderSize, 0.0);
-
-    // Left panel + models stores
-    // **************************
-
-    c.ImGui_SetNextWindowPos(c.ImVec2{
-        .x = imgui_viewport.*.Pos.x,
-        .y = imgui_viewport.*.Pos.y + main_menu_bar_size.y,
-    }, 0);
-    c.ImGui_SetNextWindowSize(c.ImVec2{
-        .x = imgui_viewport.*.Size.x * 0.22,
-        .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
-    }, 0);
-    c.ImGui_SetNextWindowBgAlpha(0.5);
-    if (c.ImGui_Begin("Left panel", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
-        c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
-    {
-        defer c.ImGui_End();
-
-        {
-            c.ImGui_PushItemWidth(c.ImGui_GetWindowWidth() - style.*.ItemSpacing.x * 2);
-            defer c.ImGui_PopItemWidth();
-
-            var selected_model_changed = false;
-
-            c.ImGui_SeparatorText("Point Clouds");
-            const nb_point_clouds_f = @as(f32, @floatFromInt(app_ctx.point_cloud_store.point_clouds.count() + 1));
-            switch (imgui.pointCloudListBox(
-                &app_ctx.point_cloud_store,
-                style.*.FontSizeBase * nb_point_clouds_f + style.*.ItemSpacing.y * nb_point_clouds_f,
-            )) {
-                .unchanged => {},
-                .cleared => {
-                    app_ctx.selected_model = .none;
-                    selected_model_changed = true;
-                    app_ctx.requestRedraw();
-                },
-                .changed => |new_pc| {
-                    app_ctx.selected_model = .{ .point_cloud = new_pc };
-                    selected_model_changed = true;
-                    app_ctx.requestRedraw();
-                },
-            }
-
-            c.ImGui_SeparatorText("Surface Meshes");
-            const nb_surface_meshes_f = @as(f32, @floatFromInt(app_ctx.surface_mesh_store.surface_meshes.count() + 1));
-            switch (imgui.surfaceMeshListBox(
-                &app_ctx.surface_mesh_store,
-                style.*.FontSizeBase * nb_surface_meshes_f + style.*.ItemSpacing.y * nb_surface_meshes_f,
-            )) {
-                .unchanged => {},
-                .cleared => {
-                    app_ctx.selected_model = .none;
-                    selected_model_changed = true;
-                    app_ctx.requestRedraw();
-                },
-                .changed => |new_sm| {
-                    app_ctx.selected_model = .{ .surface_mesh = new_sm };
-                    selected_model_changed = true;
-                    app_ctx.requestRedraw();
-                },
-            }
-
-            c.ImGui_SeparatorText("Incidence Graphs");
-            const nb_incidence_graphs_f = @as(f32, @floatFromInt(app_ctx.incidence_graph_store.incidence_graphs.count() + 1));
-            switch (imgui.incidenceGraphListBox(
-                &app_ctx.incidence_graph_store,
-                style.*.FontSizeBase * nb_incidence_graphs_f + style.*.ItemSpacing.y * nb_incidence_graphs_f,
-            )) {
-                .unchanged => {},
-                .cleared => {
-                    app_ctx.selected_model = .none;
-                    selected_model_changed = true;
-                    app_ctx.requestRedraw();
-                },
-                .changed => |new_ig| {
-                    app_ctx.selected_model = .{ .incidence_graph = new_ig };
-                    selected_model_changed = true;
-                    app_ctx.requestRedraw();
-                },
-            }
-
-            if (selected_model_changed) {
-                for (modules.items) |module| {
-                    module.selectedModelChanged();
-                }
-            }
-        }
-
-        c.ImGui_Separator();
-
-        switch (app_ctx.selected_model) {
-            .point_cloud => {
-                c.ImGui_PushIDPtr(&app_ctx.point_cloud_store);
-                app_ctx.point_cloud_store.leftPanel();
-                c.ImGui_PopID();
-            },
-            .surface_mesh => {
-                c.ImGui_PushIDPtr(&app_ctx.surface_mesh_store);
-                app_ctx.surface_mesh_store.leftPanel();
-                c.ImGui_PopID();
-            },
-            .incidence_graph => {
-                c.ImGui_PushIDPtr(&app_ctx.incidence_graph_store);
-                app_ctx.incidence_graph_store.leftPanel();
-                c.ImGui_PopID();
-            },
-            .none => {},
-        }
-
-        c.ImGui_Separator();
-
-        for (modules.items) |module| {
-            if (!shouldCallOnModule(module, &app_ctx)) continue;
-            c.ImGui_PushIDPtr(module);
-            module.leftPanel();
-            c.ImGui_PopID();
-        }
-    }
-
-    // Right panel
-    // ***********
-
-    c.ImGui_SetNextWindowPos(c.ImVec2{
-        .x = imgui_viewport.*.Pos.x + imgui_viewport.*.Size.x * 0.78,
-        .y = imgui_viewport.*.Pos.y + main_menu_bar_size.y,
-    }, 0);
-    c.ImGui_SetNextWindowSize(c.ImVec2{
-        .x = imgui_viewport.*.Size.x * 0.22,
-        .y = imgui_viewport.*.Size.y - main_menu_bar_size.y,
-    }, 0);
-    c.ImGui_SetNextWindowBgAlpha(0.5);
-    if (c.ImGui_Begin("Right panel", null, c.ImGuiWindowFlags_NoTitleBar | c.ImGuiWindowFlags_NoCollapse | c.ImGuiWindowFlags_NoResize |
-        c.ImGuiWindowFlags_NoMove | c.ImGuiWindowFlags_NoBringToFrontOnFocus | c.ImGuiWindowFlags_NoNavFocus | c.ImGuiWindowFlags_NoScrollbar))
-    {
-        defer c.ImGui_End();
-        switch (app_ctx.selected_model) {
-            .point_cloud => {
-                c.ImGui_TextDisabled("Point Cloud: ");
-                c.ImGui_SameLine();
-                c.ImGui_Text(app_ctx.point_cloud_store.pointCloudName(app_ctx.selected_model.point_cloud).?);
-            },
-            .surface_mesh => {
-                c.ImGui_TextDisabled("Surface Mesh: ");
-                c.ImGui_SameLine();
-                c.ImGui_Text(app_ctx.surface_mesh_store.surfaceMeshName(app_ctx.selected_model.surface_mesh).?);
-            },
-            .incidence_graph => {
-                c.ImGui_TextDisabled("Incidence Graph: ");
-                c.ImGui_SameLine();
-                c.ImGui_Text(app_ctx.incidence_graph_store.incidenceGraphName(app_ctx.selected_model.incidence_graph).?);
-            },
-            .none => c.ImGui_TextDisabled("No selected model"),
-        }
-        c.ImGui_Separator();
-        for (modules.items) |module| {
-            if (!shouldCallOnModule(module, &app_ctx)) continue;
-            if (module.vtable.rightPanel == Module.defaultRightPanel) continue; // check if the module has a custom rightPanel function
-            c.ImGui_PushIDPtr(module);
-            defer c.ImGui_PopID();
-            c.ImGui_PushStyleColor(c.ImGuiCol_Text, c.IM_COL32(25, 25, 25, 255));
-            c.ImGui_PushStyleColor(c.ImGuiCol_Header, c.IM_COL32(65, 255, 130, 200));
-            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderActive, c.IM_COL32(65, 255, 130, 255));
-            c.ImGui_PushStyleColor(c.ImGuiCol_HeaderHovered, c.IM_COL32(65, 255, 130, 128));
-            if (c.ImGui_CollapsingHeader(module.name.ptr, 0)) {
-                c.ImGui_PopStyleColorEx(4);
-                module.rightPanel();
-            } else {
-                c.ImGui_PopStyleColorEx(4);
-            }
-        }
-    }
-
-    c.ImGui_PopStyleVarEx(2);
-
-    // c.ImGui_ShowDemoWindow(null);
-    // c.ImGui_ShowStyleEditor(null);
-
-    c.ImGui_Render();
-    c.cImGui_ImplOpenGL3_RenderDrawData(c.ImGui_GetDrawData());
-
-    c.ImGui_UpdatePlatformWindows();
-    c.ImGui_RenderPlatformWindowsDefault();
-
-    try Window.errify(c.SDL_GL_MakeCurrent(app_ctx.window.sdl_window, app_ctx.window.gl_context));
-    try Window.errify(c.SDL_GL_SwapWindow(app_ctx.window.sdl_window));
-
     return c.SDL_APP_CONTINUE;
 }
 
 fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
     _ = appstate;
 
-    _ = c.cImGui_ImplSDL3_ProcessEvent(event);
-
-    // handle app events
     switch (event.type) {
         c.SDL_EVENT_QUIT => {
             return c.SDL_APP_SUCCESS;
@@ -519,30 +74,9 @@ fn sdlAppEvent(appstate: ?*anyopaque, event: *c.SDL_Event) !c.SDL_AppResult {
                 else => {},
             }
         },
-        c.SDL_EVENT_WINDOW_RESIZED => {
-            _ = c.SDL_GetWindowSizeInPixels(app_ctx.window.sdl_window, &app_ctx.window.width, &app_ctx.window.height);
-            app_ctx.view.resize(app_ctx.window.width, app_ctx.window.height);
-            app_ctx.requestRedraw();
-        },
         else => {},
     }
-
-    // if ImGui wants to capture the mouse, do not process mouse events further
-    if (c.ImGui_GetIO().*.WantCaptureMouse or c.ImGui_IsWindowHovered(c.ImGuiHoveredFlags_AnyWindow)) {
-        return c.SDL_APP_CONTINUE;
-    }
-
-    // dispatch event to modules
-    for (modules.items) |module| {
-        if (shouldCallOnModule(module, &app_ctx)) {
-            if (module.sdlEvent(event)) { // if the module handled the event,
-                return c.SDL_APP_CONTINUE; // do not pass it further
-            }
-        }
-    }
-
-    // dispatch event to view
-    app_ctx.view.sdlEvent(event);
+    app_ctx.sdlEvent(event);
 
     return c.SDL_APP_CONTINUE;
 }
@@ -555,50 +89,14 @@ fn sdlAppQuit(appstate: ?*anyopaque, result: anyerror!c.SDL_AppResult) void {
     };
 
     imgui.deinit();
-
-    // clear the list of modules and store listeners before deinitializing modules
-    // to avoid potential inter-dependencies issues
-    modules.clearRetainingCapacity();
-    app_ctx.point_cloud_store.listeners.clearRetainingCapacity();
-    app_ctx.surface_mesh_store.listeners.clearRetainingCapacity();
-    app_ctx.incidence_graph_store.listeners.clearRetainingCapacity();
-
-    point_cloud_std_datas.deinit();
-    surface_mesh_std_datas.deinit();
-    incidence_graph_std_datas.deinit();
-    point_cloud_renderer.deinit();
-    surface_mesh_renderer.deinit();
-    incidence_graph_renderer.deinit();
-    vector_per_vertex_renderer.deinit();
-    surface_mesh_distance.deinit();
-    surface_mesh_curvature.deinit();
-    surface_mesh_selection.deinit();
-    surface_mesh_deformation.deinit();
-    surface_mesh_connectivity.deinit();
-    surface_mesh_sampling.deinit();
-    surface_mesh_parameterization.deinit();
-    surface_mesh_medial_axis.deinit();
-    point_cloud_medial_axis.deinit();
-    surface_mesh_procedural_texturing.deinit();
-
-    modules.deinit(app_ctx.allocator);
-
-    Shader.deinitRegistry();
+    app_ctx.deinit();
 }
 
 pub fn main(init: std.process.Init) !u8 {
     var empty_argv: [0:null]?[*:0]u8 = .{};
 
-    const io = init.io;
-    const allocator = init.gpa;
-
-    try Shader.initRegistry(allocator);
-
-    app_ctx = try .init(io, allocator);
-    app_ctx.wireUp();
-    defer app_ctx.deinit();
-
-    zgp_log.info("Thread mode: {s}", .{if (builtin.single_threaded) "single-threaded" else "multi-threaded"});
+    io = init.io;
+    allocator = init.gpa;
 
     const args = try init.minimal.args.toSlice(init.arena.allocator());
     cli_args = CLIArgs.init(args) catch |err| {
@@ -607,6 +105,8 @@ pub fn main(init: std.process.Init) !u8 {
             error.InvalidArgs => return c.SDL_APP_FAILURE,
         }
     };
+
+    zgp_log.info("Thread mode: {s}", .{if (builtin.single_threaded) "single-threaded" else "multi-threaded"});
 
     const status: u8 = @truncate(@as(c_uint, @bitCast(c.SDL_RunApp(@intCast(empty_argv.len), @ptrCast(&empty_argv), sdlMainC, null))));
     return app_err.load() orelse status;

@@ -87,7 +87,7 @@ const DeformationData = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Deformation",
     .supported_models = .{ .surface_mesh = true },
@@ -106,10 +106,10 @@ drag_z: f32 = 0,
 rotating: bool = false,
 rotate_pivot: Vec3f = vec.zero3f,
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshDeformation {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(smd: *SurfaceMeshDeformation, app_ctx: *AppContext) !void {
+    smd.app_ctx = app_ctx;
+    try app_ctx.surface_mesh_store.addListener(&smd.module);
 }
 
 pub fn deinit(smd: *SurfaceMeshDeformation) void {
@@ -118,6 +118,7 @@ pub fn deinit(smd: *SurfaceMeshDeformation) void {
         dd.deinit();
     }
     smd.surface_meshes_data.deinit(smd.app_ctx.allocator);
+    smd.app_ctx.surface_mesh_store.removeListener(&smd.module);
 }
 
 /// Part of the Module interface.
@@ -221,7 +222,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                         };
                     }
                     sm_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, info.std_datas.vertex_position.?);
-                    smd.app_ctx.requestRedraw();
+                    smd.app_ctx.view.requestRedraw();
                     break :blk true;
                 }
             } else if (smd.rotating) {
@@ -247,7 +248,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                     };
                 }
                 sm_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, info.std_datas.vertex_position.?);
-                smd.app_ctx.requestRedraw();
+                smd.app_ctx.view.requestRedraw();
             }
             break :blk false;
         },

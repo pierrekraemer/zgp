@@ -47,7 +47,7 @@ const TnBData = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Procedural Texturing",
     .supported_models = .{ .surface_mesh = true },
@@ -60,14 +60,15 @@ module: Module = .{
 },
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, TnBData) = .empty,
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshProceduralTexturing {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(smpt: *SurfaceMeshProceduralTexturing, app_ctx: *AppContext) !void {
+    smpt.app_ctx = app_ctx;
+    try app_ctx.surface_mesh_store.addListener(&smpt.module);
 }
 
 pub fn deinit(smpt: *SurfaceMeshProceduralTexturing) void {
     smpt.surface_meshes_data.deinit(smpt.app_ctx.allocator);
+    smpt.app_ctx.surface_mesh_store.removeListener(&smpt.module);
 }
 
 /// Part of the Module interface.

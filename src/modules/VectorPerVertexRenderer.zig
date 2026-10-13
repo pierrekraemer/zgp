@@ -51,7 +51,7 @@ const VectorPerVertexRendererParameters = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Vector Per Vertex Renderer",
     .supported_models = .{
@@ -72,10 +72,11 @@ module: Module = .{
 point_cloud_parameters: std.AutoHashMapUnmanaged(*PointCloud, VectorPerVertexRendererParameters) = .empty,
 surface_mesh_parameters: std.AutoHashMapUnmanaged(*SurfaceMesh, VectorPerVertexRendererParameters) = .empty,
 
-pub fn init(app_ctx: *AppContext) VectorPerVertexRenderer {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(vpvr: *VectorPerVertexRenderer, app_ctx: *AppContext) !void {
+    vpvr.app_ctx = app_ctx;
+    try app_ctx.point_cloud_store.addListener(&vpvr.module);
+    try app_ctx.surface_mesh_store.addListener(&vpvr.module);
 }
 
 pub fn deinit(vpvr: *VectorPerVertexRenderer) void {
@@ -89,6 +90,8 @@ pub fn deinit(vpvr: *VectorPerVertexRenderer) void {
     }
     vpvr.point_cloud_parameters.deinit(vpvr.app_ctx.allocator);
     vpvr.surface_mesh_parameters.deinit(vpvr.app_ctx.allocator);
+    vpvr.app_ctx.point_cloud_store.removeListener(&vpvr.module);
+    vpvr.app_ctx.surface_mesh_store.removeListener(&vpvr.module);
 }
 
 /// Part of the Module interface.
@@ -180,7 +183,7 @@ fn setPointCloudVectorData(
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);
     }
-    vpvr.app_ctx.requestRedraw();
+    vpvr.app_ctx.view.requestRedraw();
 }
 
 fn setSurfaceMeshVectorData(
@@ -196,7 +199,7 @@ fn setSurfaceMeshVectorData(
     } else {
         p.point_vector_shader_parameters.unsetVertexAttribArray(.vector);
     }
-    vpvr.app_ctx.requestRedraw();
+    vpvr.app_ctx.view.requestRedraw();
 }
 
 /// Part of the Module interface.
@@ -279,16 +282,16 @@ pub fn rightPanel(m: *Module) void {
     c.ImGui_Text("Vector scale");
     c.ImGui_PushID("VectorScale");
     if (c.ImGui_SliderFloatEx("", &p.point_vector_shader_parameters.vector_scale, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-        vpvr.app_ctx.requestRedraw();
+        vpvr.app_ctx.view.requestRedraw();
     }
     c.ImGui_PopID();
     c.ImGui_Text("Vector radius");
     c.ImGui_PushID("VectorRadius");
     if (c.ImGui_SliderFloatEx("", &p.point_vector_shader_parameters.cone_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-        vpvr.app_ctx.requestRedraw();
+        vpvr.app_ctx.view.requestRedraw();
     }
     c.ImGui_PopID();
     if (c.ImGui_ColorEdit3("Vector color", &p.point_vector_shader_parameters.vector_color, c.ImGuiColorEditFlags_NoInputs)) {
-        vpvr.app_ctx.requestRedraw();
+        vpvr.app_ctx.view.requestRedraw();
     }
 }

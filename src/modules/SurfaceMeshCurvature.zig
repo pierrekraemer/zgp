@@ -17,7 +17,7 @@ const Vec3f = vec.Vec3f;
 
 const curvature = @import("../models/surface/curvature.zig");
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Curvature",
     .supported_models = .{ .surface_mesh = true },
@@ -29,14 +29,15 @@ module: Module = .{
 },
 surface_meshes_curvature_datas: std.AutoHashMapUnmanaged(*SurfaceMesh, curvature.SurfaceMeshCurvatureDatas) = .empty,
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshCurvature {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(smc: *SurfaceMeshCurvature, app_ctx: *AppContext) !void {
+    smc.app_ctx = app_ctx;
+    try app_ctx.surface_mesh_store.addListener(&smc.module);
 }
 
 pub fn deinit(smc: *SurfaceMeshCurvature) void {
     smc.surface_meshes_curvature_datas.deinit(smc.app_ctx.allocator);
+    smc.app_ctx.surface_mesh_store.removeListener(&smc.module);
 }
 
 pub fn surfaceMeshCurvatureDatas(smc: *SurfaceMeshCurvature, surface_mesh: *SurfaceMesh) curvature.SurfaceMeshCurvatureDatas {
@@ -67,6 +68,7 @@ fn computeVertexCurvatures(
     edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
     edge_length: SurfaceMesh.EdgeData(f32),
     face_area: SurfaceMesh.FaceData(f32),
+    vertex_neighborhood_radius: f32,
     vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
@@ -79,16 +81,18 @@ fn computeVertexCurvatures(
         edge_dihedral_angle,
         edge_length,
         face_area,
+        vertex_neighborhood_radius,
         vertex_curvature,
     );
+
+    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smc.app_ctx.io, .real).nanoseconds);
+    zgp_log.info("Curvatures computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_curvature.vertex_kmin.?);
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_curvature.vertex_Kmin.?);
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, vertex_curvature.vertex_kmax.?);
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_curvature.vertex_Kmax.?);
-    smc.app_ctx.requestRedraw();
-
-    const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smc.app_ctx.io, .real).nanoseconds);
-    zgp_log.info("Curvatures computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
+    smc.app_ctx.view.requestRedraw();
 }
 
 /// Part of the Module interface.
@@ -99,6 +103,12 @@ pub fn rightClickMenu(m: *Module) void {
 
     assert(smc.app_ctx.selected_model.modelType() == .surface_mesh);
     const sm = smc.app_ctx.selected_model.surface_mesh;
+    var curvature_datas = smc.surface_meshes_curvature_datas.getPtr(sm).?;
+    const info = sm_store.surfaceMeshInfo(sm);
+
+    const UiData = struct {
+        var vertex_neighborhood_radius: f32 = 1.5;
+    };
 
     const style = c.ImGui_GetStyle();
 
@@ -107,9 +117,6 @@ pub fn rightClickMenu(m: *Module) void {
 
     if (c.ImGui_BeginMenu(m.name.ptr)) {
         defer c.ImGui_EndMenu();
-
-        const info = sm_store.surfaceMeshInfo(sm);
-        var curvature_datas = smc.surface_meshes_curvature_datas.getPtr(sm).?;
 
         if (c.ImGui_BeginMenu("Curvature")) {
             defer c.ImGui_EndMenu();
@@ -173,6 +180,10 @@ pub fn rightClickMenu(m: *Module) void {
             if (disabled) {
                 c.ImGui_BeginDisabled(true);
             }
+            c.ImGui_Text("Neighborhood ratio (w.r.t. mean edge length)");
+            c.ImGui_PushID("Neighborhood ratio");
+            _ = c.ImGui_SliderFloatEx("", &UiData.vertex_neighborhood_radius, 1.0, 10.0, "%.1f", c.ImGuiSliderFlags_Logarithmic);
+            c.ImGui_PopID();
             if (c.ImGui_ButtonEx(c.ICON_FA_GEAR ++ " Compute curvatures", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 smc.computeVertexCurvatures(
                     sm,
@@ -181,21 +192,22 @@ pub fn rightClickMenu(m: *Module) void {
                     info.std_datas.edge_dihedral_angle.?,
                     info.std_datas.edge_length.?,
                     info.std_datas.face_area.?,
+                    UiData.vertex_neighborhood_radius,
                     curvature_datas,
                 ) catch |err| {
                     std.debug.print("Error computing curvatures: {}\n", .{err});
                 };
             }
-            imgui_utils.tooltip(
-                \\ Following data should be available:
-                \\ - std vertex_position
-                \\ - std vertex_normal
-                \\ - std edge_dihedral_angle
-                \\ - std edge_length
-                \\ - std face_area
-                \\ - selected curvature data (kmin, Kmin, kmax, Kmax)
-            );
             if (disabled) {
+                imgui_utils.tooltip(
+                    \\ Following data should be available:
+                    \\ - std vertex_position
+                    \\ - std vertex_normal
+                    \\ - std edge_dihedral_angle
+                    \\ - std edge_length
+                    \\ - std face_area
+                    \\ - selected curvature data (kmin, Kmin, kmax, Kmax)
+                );
                 c.ImGui_EndDisabled();
             }
         }

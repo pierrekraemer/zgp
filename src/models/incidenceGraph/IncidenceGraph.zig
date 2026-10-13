@@ -51,6 +51,7 @@ pub fn cellType(C: type) CellType {
 // ------------------------------------------------------------------------- //
 
 allocator: std.mem.Allocator,
+io: std.Io,
 index_buffer_pool: *BufferPool(u32), // the BufferPool is shared between IncidenceGraphs (owned by the IncidenceGraphStore)
 
 vertex_data: DataContainer,
@@ -80,12 +81,12 @@ pub fn dataContainerPtr(ig: anytype, cell_type: CellType) if (@typeInfo(@TypeOf(
 // Initialization, deinitialization
 // ------------------------------------------------------------------------- //
 
-pub fn init(ig: *IncidenceGraph, allocator: std.mem.Allocator, index_buffer_pool: *BufferPool(u32)) !void {
+pub fn init(ig: *IncidenceGraph, allocator: std.mem.Allocator, io: std.Io, index_buffer_pool: *BufferPool(u32)) !void {
     ig.allocator = allocator;
     ig.index_buffer_pool = index_buffer_pool;
-    try ig.vertex_data.init(allocator);
-    try ig.edge_data.init(allocator);
-    try ig.face_data.init(allocator);
+    try ig.vertex_data.init(allocator, io);
+    try ig.edge_data.init(allocator, io);
+    try ig.face_data.init(allocator, io);
     ig.vertex_incident_edges = try ig.vertex_data.addData(std.ArrayList(Edge), "vertex_incident_edges");
     ig.edge_incident_vertices = try ig.edge_data.addData([2]Vertex, "edge_incident_vertices");
     ig.edge_incident_faces = try ig.edge_data.addData(std.ArrayList(Face), "edge_incident_faces");

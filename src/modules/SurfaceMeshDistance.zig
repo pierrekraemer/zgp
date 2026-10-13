@@ -62,7 +62,7 @@ const DistanceData = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Distance",
     .supported_models = .{ .surface_mesh = true },
@@ -74,10 +74,10 @@ module: Module = .{
 },
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, DistanceData) = .empty,
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshDistance {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(smd: *SurfaceMeshDistance, app_ctx: *AppContext) !void {
+    smd.app_ctx = app_ctx;
+    try app_ctx.surface_mesh_store.addListener(&smd.module);
 }
 
 pub fn deinit(smd: *SurfaceMeshDistance) void {
@@ -86,6 +86,7 @@ pub fn deinit(smd: *SurfaceMeshDistance) void {
         dd.deinit();
     }
     smd.surface_meshes_data.deinit(smd.app_ctx.allocator);
+    smd.app_ctx.surface_mesh_store.removeListener(&smd.module);
 }
 
 /// Part of the Module interface.
@@ -264,7 +265,7 @@ pub fn rightClickMenu(m: *Module) void {
                         std.debug.print("Failed to compute geodesic distance: {}\n", .{err});
                     };
                     smd.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, f32, dd.vertex_distance.?);
-                    smd.app_ctx.requestRedraw();
+                    smd.app_ctx.view.requestRedraw();
 
                     const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smd.app_ctx.io, .real).nanoseconds);
                     zgp_log.info("Geodesic distance computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});

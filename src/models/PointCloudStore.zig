@@ -125,6 +125,15 @@ pub fn addListener(pcs: *PointCloudStore, module: *Module) !void {
     try pcs.listeners.append(pcs.allocator, module);
 }
 
+pub fn removeListener(pcs: *PointCloudStore, module: *Module) void {
+    for (pcs.listeners.items, 0..) |m, i| {
+        if (m == module) {
+            _ = pcs.listeners.swapRemove(i);
+            return;
+        }
+    }
+}
+
 pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     if (pcs.point_clouds.contains(name)) {
         return error.ModelNameAlreadyExists;
@@ -133,7 +142,7 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     // create and init the PointCloud
     const pc = try pcs.allocator.create(PointCloud);
     errdefer pcs.allocator.destroy(pc);
-    try pc.init(pcs.allocator, &pcs.point_buffer_pool);
+    try pc.init(pcs.allocator, pcs.io, &pcs.point_buffer_pool);
     errdefer pc.deinit();
 
     // register the PointCloud in the PointCloudStore to make it available in the UI and for other modules
@@ -170,6 +179,7 @@ pub fn registerPointCloud(pcs: *PointCloudStore, name: []const u8, pc: *PointClo
     // store the PointCloudInfo in the map
     try pcs.point_clouds_info.put(pcs.allocator, pc, .init());
 
+    // dispatch call to listeners
     for (pcs.listeners.items) |module| {
         module.pointCloudCreated(pc);
     }
@@ -198,6 +208,7 @@ pub fn unregisterPointCloud(pcs: *PointCloudStore, pc: *PointCloud) void {
         else => {},
     }
 
+    // dispatch call to listeners
     for (pcs.listeners.items) |module| {
         module.pointCloudDestroyed(pc);
     }
@@ -239,6 +250,7 @@ pub fn pointCloudConnectivityUpdated(pcs: *PointCloudStore, pc: *PointCloud) voi
         zgp_log.err("Failed to fill points IBO for PointCloud: {}", .{err});
     };
 
+    // dispatch call to listeners
     for (pcs.listeners.items) |module| {
         module.pointCloudConnectivityUpdated(pc);
     }
@@ -289,6 +301,7 @@ pub fn setPointCloudStdData(
         },
     }
 
+    // dispatch call to listeners
     for (pcs.listeners.items) |module| {
         module.pointCloudStdDataChanged(pc, data);
     }

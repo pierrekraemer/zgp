@@ -442,7 +442,17 @@ pub fn isotropicRemeshing(
             try angle.computeEdgeDihedralAngles(io, sm, vertex_position.*, face_normal.*, edge_dihedral_angle);
             try area.computeVertexAreas(sm, face_area.*, vertex_area);
             try normal.computeVertexNormals(io, sm, corner_angle.*, face_normal.*, vertex_normal);
-            try curvature.computeVertexCurvatures(io, sm, vertex_position.*, vertex_normal.*, edge_dihedral_angle.*, edge_length.*, face_area.*, vertex_curvature);
+            try curvature.computeVertexCurvatures(
+                io,
+                sm,
+                vertex_position.*,
+                vertex_normal.*,
+                edge_dihedral_angle.*,
+                edge_length.*,
+                face_area.*,
+                1.5, // TODO: this value could be tuned
+                vertex_curvature,
+            );
             mean_edge_length = edge_length.data.meanValue();
             const approx_tolerance = mean_edge_length * 0.025; // TODO: this value could be tuned
             vertex_it.reset();

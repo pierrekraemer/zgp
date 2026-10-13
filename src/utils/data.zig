@@ -279,6 +279,7 @@ pub fn Data(comptime T: type) type {
 
 pub const DataContainer = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     datas: std.StringHashMapUnmanaged(*DataGen),
     markers: std.ArrayList(*Data(bool)),
     available_markers: std.ArrayList(*Data(bool)),
@@ -300,9 +301,12 @@ pub const DataContainer = struct {
     first_inactive_index: u32,
     // nb_inactive_indices is used to quickly check if there are any inactive indices and quickly compute nbElements
     nb_inactive_indices: u32,
+    // mutex for acquiring and releasing markers
+    mutex: std.Io.Mutex,
 
-    pub fn init(dc: *DataContainer, allocator: std.mem.Allocator) !void {
+    pub fn init(dc: *DataContainer, allocator: std.mem.Allocator, io: std.Io) !void {
         dc.allocator = allocator;
+        dc.io = io;
         dc.datas = .empty;
         dc.markers = try .initCapacity(allocator, 16);
         dc.available_markers = try .initCapacity(allocator, 16);
@@ -311,6 +315,7 @@ pub const DataContainer = struct {
         dc.nb_refs = try dc.addData(u32, "__nb_refs");
         dc.first_inactive_index = invalid_index;
         dc.nb_inactive_indices = 0;
+        dc.mutex = .init;
     }
 
     pub fn initFrom(dst: *DataContainer, src: *const DataContainer, copy_data: bool, allocator: std.mem.Allocator) !void {
@@ -487,24 +492,32 @@ pub const DataContainer = struct {
 
     // TODO: should probably better be thread-safe!
     pub fn acquireMarker(dc: *DataContainer) !*Data(bool) {
+        try dc.mutex.lock(dc.io);
+        // no defer unlock here, because we want to unlock as soon as possible
+
         if (dc.available_markers.pop()) |marker| {
+            dc.mutex.unlock(dc.io); // unlock mutex
             marker.fill(false); // reset the marker to false before reuse
             return marker;
         }
 
         // same as for addData, but the name is not used (the marker is not stored in the hashmap)
         const marker = try dc.allocator.create(Data(bool));
+        try dc.markers.append(dc.allocator, marker);
+        dc.mutex.unlock(dc.io); // unlock mutex
+
         marker.init("", dc);
         errdefer marker.data_gen.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
 
         try marker.data_gen.ensureSize(dc.size);
         marker.fill(false); // marker is filled with false before use
-        try dc.markers.append(dc.allocator, marker);
         return marker;
     }
 
     pub fn releaseMarker(dc: *DataContainer, marker: *Data(bool)) void {
         assert(marker.data_gen.container == dc); // check that this marker belongs to this container
+        dc.mutex.lockUncancelable(dc.io);
+        defer dc.mutex.unlock(dc.io);
         dc.available_markers.append(dc.allocator, marker) catch |err| {
             std.debug.print("Error releasing marker: {}\n", .{err});
         };

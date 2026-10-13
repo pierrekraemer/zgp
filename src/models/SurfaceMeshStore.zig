@@ -110,7 +110,7 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !SurfaceMeshStore {
         .data_vbo = .empty,
         .cell_set_ibo = .empty,
         .data_last_update = .empty,
-        .index_buffer_pool = try .init(io, allocator, 2048, 64, 32),
+        .index_buffer_pool = try .init(io, allocator, 1024, 64, 32),
     };
 }
 
@@ -152,6 +152,15 @@ pub fn addListener(sms: *SurfaceMeshStore, module: *Module) !void {
     try sms.listeners.append(sms.allocator, module);
 }
 
+pub fn removeListener(sms: *SurfaceMeshStore, module: *Module) void {
+    for (sms.listeners.items, 0..) |m, i| {
+        if (m == module) {
+            _ = sms.listeners.swapRemove(i);
+            return;
+        }
+    }
+}
+
 pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh {
     if (sms.surface_meshes.contains(name)) {
         return error.ModelNameAlreadyExists;
@@ -160,7 +169,7 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     // create and init the SurfaceMesh
     var sm = try sms.allocator.create(SurfaceMesh);
     errdefer sms.allocator.destroy(sm);
-    try sm.init(sms.allocator, &sms.index_buffer_pool);
+    try sm.init(sms.allocator, sms.io, &sms.index_buffer_pool);
     errdefer sm.deinit();
 
     // register the SurfaceMesh in the SurfaceMeshStore to make it available in the UI and for other modules
@@ -197,6 +206,7 @@ pub fn registerSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8, sm: *Surfac
     // store the SurfaceMeshInfo in the map
     try sms.surface_meshes_info.put(sms.allocator, sm, .init());
 
+    // dispatch call to listeners
     for (sms.listeners.items) |module| {
         module.surfaceMeshCreated(sm);
     }
@@ -226,6 +236,7 @@ pub fn unregisterSurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
         else => {},
     }
 
+    // dispatch call to listeners
     for (sms.listeners.items) |module| {
         module.surfaceMeshDestroyed(sm);
     }

@@ -24,6 +24,7 @@ pub const Point = u32;
 // ------------------------------------------------------------------------- //
 
 allocator: std.mem.Allocator,
+io: std.Io,
 point_buffer_pool: *BufferPool(Point), // the BufferPool is shared between PointClouds (owned by the PointCloudStore)
 
 point_data: DataContainer,
@@ -32,10 +33,10 @@ point_data: DataContainer,
 // Initialization, deinitialization
 // ------------------------------------------------------------------------- //
 
-pub fn init(pc: *PointCloud, allocator: std.mem.Allocator, point_buffer_pool: *BufferPool(Point)) !void {
+pub fn init(pc: *PointCloud, allocator: std.mem.Allocator, io: std.Io, point_buffer_pool: *BufferPool(Point)) !void {
     pc.allocator = allocator;
     pc.point_buffer_pool = point_buffer_pool;
-    try pc.point_data.init(allocator);
+    try pc.point_data.init(allocator, io);
 }
 
 pub fn deinit(pc: *PointCloud) void {

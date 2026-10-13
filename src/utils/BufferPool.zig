@@ -69,7 +69,7 @@ pub fn BufferPool(comptime T: type) type {
         /// Acquire a buffer from the pool.
         /// If the pool is empty, a new buffer is allocated.
         pub fn acquire(self: *Self) !Buffer {
-            self.mutex.lockUncancelable(self.io);
+            try self.mutex.lock(self.io);
             // Try to pop from free list first
             if (self.free_list.pop()) |buf| {
                 self.mutex.unlock(self.io);
@@ -84,7 +84,7 @@ pub fn BufferPool(comptime T: type) type {
 
         /// Internal function to return a buffer to the free list.
         pub fn release(self: *Self, buf: []T) !void {
-            self.mutex.lockUncancelable(self.io);
+            try self.mutex.lock(self.io);
             defer self.mutex.unlock(self.io);
             // If we have hit the max capacity of the pool, discard the buffer
             if (self.free_list.items.len >= self.max_pool_size) {

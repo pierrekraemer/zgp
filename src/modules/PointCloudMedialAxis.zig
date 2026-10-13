@@ -75,7 +75,7 @@ const MedialAxisData = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Point Cloud Medial Axis",
     .supported_models = .{ .point_cloud = true },
@@ -89,10 +89,10 @@ module: Module = .{
 },
 point_clouds_data: std.AutoHashMapUnmanaged(*PointCloud, MedialAxisData) = .empty,
 
-pub fn init(app_ctx: *AppContext) PointCloudMedialAxis {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(pcma: *PointCloudMedialAxis, app_ctx: *AppContext) !void {
+    pcma.app_ctx = app_ctx;
+    try app_ctx.point_cloud_store.addListener(&pcma.module);
 }
 
 pub fn deinit(pcma: *PointCloudMedialAxis) void {
@@ -101,6 +101,7 @@ pub fn deinit(pcma: *PointCloudMedialAxis) void {
         mad.deinit();
     }
     pcma.point_clouds_data.deinit(pcma.app_ctx.allocator);
+    pcma.app_ctx.point_cloud_store.removeListener(&pcma.module);
 }
 
 /// Part of the Module interface.
@@ -183,7 +184,7 @@ pub fn rightPanel(m: *Module) void {
                 mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-                mad.app_ctx.requestRedraw();
+                mad.app_ctx.view.requestRedraw();
             }
         }
         if (disabled) {
@@ -221,7 +222,7 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-            mad.app_ctx.requestRedraw();
+            mad.app_ctx.view.requestRedraw();
         }
 
         if (c.ImGui_ButtonEx("Update spheres", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
@@ -239,7 +240,7 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-            mad.app_ctx.requestRedraw();
+            mad.app_ctx.view.requestRedraw();
         }
 
         if (c.ImGui_ButtonEx("Split worst sphere", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
@@ -258,7 +259,7 @@ pub fn rightPanel(m: *Module) void {
                 mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-                mad.app_ctx.requestRedraw();
+                mad.app_ctx.view.requestRedraw();
             }
         }
         _ = c.ImGui_InputInt("Number of spheres", @ptrCast(&UiData.nb_spheres));
@@ -290,7 +291,7 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-            mad.app_ctx.requestRedraw();
+            mad.app_ctx.view.requestRedraw();
 
             const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, pcma.app_ctx.io, .real).nanoseconds);
             zgp_log.info("Medial Axis skeleton computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});

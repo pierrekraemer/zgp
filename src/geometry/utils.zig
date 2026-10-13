@@ -130,6 +130,34 @@ pub fn planeOrientation(a: Vec3f, b: Vec3f, c: Vec3f, p: Vec3f) PlaneOrientation
     }
 }
 
+/// Return true if the given point is inside the sphere defined by the given center and radius, false otherwise.
+pub fn pointInSphere(p: Vec3f, center: Vec3f, radius: f32) bool {
+    return vec.squaredNorm3f(vec.sub3f(p, center)) <= radius * radius;
+}
+
+/// Return the 1D coordinates of the intersection points of the given sphere and segment, if any.
+/// Return null if there is no intersection.
+/// The returned coordinates are actually on the line defined by the segment, and can be outside the segment.
+/// An intersection point is on the segment if its coordinate is in [0, 1].
+pub fn intersectionSphereSegment(center: Vec3f, radius: f32, a: Vec3f, b: Vec3f) ?struct { f32, f32 } {
+    const ab = vec.sub3f(b, a);
+    const ac = vec.sub3f(center, a);
+    const ab_dot_ab = vec.dot3f(ab, ab);
+    const ab_dot_ac = vec.dot3f(ab, ac);
+    const ac_dot_ac = vec.dot3f(ac, ac);
+    const radius_sq = radius * radius;
+
+    const discriminant = ab_dot_ac * ab_dot_ac - ab_dot_ab * (ac_dot_ac - radius_sq);
+    if (discriminant < 0.0) {
+        return null; // no intersection
+    }
+    const sqrt_discriminant = @sqrt(discriminant);
+    return .{
+        (ab_dot_ac - sqrt_discriminant) / ab_dot_ab,
+        (ab_dot_ac + sqrt_discriminant) / ab_dot_ab,
+    };
+}
+
 /// Rotate a vector by a quaternion.
 pub fn rotateVectorByQuaternion(quat: SimdVec4f, vector: SimdVec4f) SimdVec4f {
     const qw: SimdVec4f = @splat(quat[0]);

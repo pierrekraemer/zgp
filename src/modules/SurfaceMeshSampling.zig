@@ -90,11 +90,11 @@ const SamplingData = struct {
         });
 
         sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, T, dst_data);
-        sd.app_ctx.requestRedraw();
+        sd.app_ctx.view.requestRedraw();
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Sampling",
     .supported_models = .{ .surface_mesh = true },
@@ -107,14 +107,17 @@ module: Module = .{
 },
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, SamplingData) = .empty,
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshSampling {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(sms: *SurfaceMeshSampling, app_ctx: *AppContext) !void {
+    sms.app_ctx = app_ctx;
+    try app_ctx.point_cloud_store.addListener(&sms.module);
+    try app_ctx.surface_mesh_store.addListener(&sms.module);
 }
 
 pub fn deinit(sms: *SurfaceMeshSampling) void {
     sms.surface_meshes_data.deinit(sms.app_ctx.allocator);
+    sms.app_ctx.point_cloud_store.removeListener(&sms.module);
+    sms.app_ctx.surface_mesh_store.removeListener(&sms.module);
 }
 
 /// Part of the Module interface.
@@ -185,7 +188,7 @@ fn uniformSampling(
     sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, Vec3f, sd.sample_position);
 
-    sms.app_ctx.requestRedraw();
+    sms.app_ctx.view.requestRedraw();
 }
 
 fn poissonDiskSampling(
@@ -219,7 +222,7 @@ fn poissonDiskSampling(
     sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, Vec3f, sd.sample_position);
 
-    sms.app_ctx.requestRedraw();
+    sms.app_ctx.view.requestRedraw();
 }
 
 /// Part of the Module interface.

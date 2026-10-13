@@ -26,7 +26,7 @@ const length = @import("../models/surface/length.zig");
 const normal = @import("../models/surface/normal.zig");
 const tangent_basis = @import("../models/surface/tangent_basis.zig");
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Std Datas",
     .supported_models = .{ .surface_mesh = true },
@@ -35,13 +35,15 @@ module: Module = .{
     },
 },
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshStdDatas {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(smsd: *SurfaceMeshStdDatas, app_ctx: *AppContext) !void {
+    smsd.app_ctx = app_ctx;
+    try app_ctx.surface_mesh_store.addListener(&smsd.module);
 }
 
-pub fn deinit(_: *SurfaceMeshStdDatas) void {}
+pub fn deinit(smsd: *SurfaceMeshStdDatas) void {
+    smsd.app_ctx.surface_mesh_store.removeListener(&smsd.module);
+}
 
 pub fn updateComputableStdDatas(smsd: *SurfaceMeshStdDatas, sm: *SurfaceMesh) void {
     const sm_store = &smsd.app_ctx.surface_mesh_store;
@@ -109,11 +111,11 @@ pub fn leftPanel(m: *Module) void {
                     .unchanged => {},
                     .cleared => {
                         sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, null));
-                        smsd.app_ctx.requestRedraw();
+                        smsd.app_ctx.view.requestRedraw();
                     },
                     .changed => |data| {
                         sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, data));
-                        smsd.app_ctx.requestRedraw();
+                        smsd.app_ctx.view.requestRedraw();
                     },
                 }
             }

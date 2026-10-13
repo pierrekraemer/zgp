@@ -1,5 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
+const zgp_log = std.log.scoped(.zgp);
 
 const SurfaceMesh = @import("SurfaceMesh.zig");
 
@@ -9,6 +10,8 @@ const mat = @import("../../geometry/mat.zig");
 const Mat3f = mat.Mat3f;
 const geometry_utils = @import("../../geometry/utils.zig");
 const eigen = @import("../../geometry/eigen.zig");
+
+const selection = @import("selection.zig");
 
 const VertexCurvatureValues = struct {
     kmin: f32,
@@ -24,71 +27,77 @@ pub const SurfaceMeshCurvatureDatas = struct {
     vertex_Kmax: ?SurfaceMesh.VertexData(Vec3f) = null,
 };
 
-fn addEdgeContributionToTensor(
-    sm: *const SurfaceMesh,
-    d: SurfaceMesh.Dart,
-    vertex_position: SurfaceMesh.VertexData(Vec3f),
-    edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
-    edge_length: SurfaceMesh.EdgeData(f32),
-    n: Vec3f,
-    tensor: *Mat3f,
-) void {
-    const d2 = sm.phi2(d);
-    const ev = vec.sub3f(
-        vertex_position.value(sm.vertex(d2)),
-        vertex_position.value(sm.vertex(d)),
-    );
-    const proj_ev = geometry_utils.removeComponent(ev, n);
-    const e = sm.edge(d);
-    tensor.* = mat.add3f(
-        tensor.*,
-        mat.mulScalar3f(
-            mat.outerProduct3f(proj_ev, proj_ev),
-            edge_dihedral_angle.value(e) / edge_length.value(e),
-        ),
-    );
-}
-
 /// Compute and return the principal curvatures magnitudes and directions of the given vertex.
 /// Results are returned as (kmin, Kmin, kmax, Kmax).
 pub fn vertexCurvature(
-    sm: *const SurfaceMesh,
+    sm: *SurfaceMesh,
     vertex: SurfaceMesh.Vertex,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     vertex_normal: SurfaceMesh.VertexData(Vec3f),
     edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
     edge_length: SurfaceMesh.EdgeData(f32),
     face_area: SurfaceMesh.FaceData(f32),
+    sel_ctx: *selection.WithinSphereSelectionContext,
 ) !VertexCurvatureValues {
+    const p = vertex_position.value(vertex);
     const n = vertex_normal.value(vertex);
-
     var tensor = mat.zero3f;
     var area: f32 = 0.0;
 
-    // accumulate edge contributions to the curvature tensor & face area
-    // in the 2-ring around the vertex
-    // TODO: compare to the results obtained using selection.cellsWithinSphereAroundVertex (multithread warning for markers)
-    var dart_it = sm.vertexDartIterator(sm.dart(vertex));
-    while (dart_it.next()) |d| {
-        var d_it = sm.phi2(d);
-        const d_end = sm.phi2(sm.phi_1(d_it));
-        var i: u32 = 0;
-        while (d_it != d_end) : ({
-            d_it = sm.phi1(sm.phi2(d_it));
-            i += 1;
-        }) {
-            addEdgeContributionToTensor(sm, d_it, vertex_position, edge_dihedral_angle, edge_length, n, &tensor);
-            const d_it2 = sm.phi2(d_it);
-            if (d_it2 != d and !sm.isBoundaryDart(d_it)) {
-                area += face_area.value(sm.face(d_it));
-            }
-            if (i >= 3) { // gather exterior 2-ring edges
-                addEdgeContributionToTensor(sm, sm.phi1(d_it), vertex_position, edge_dihedral_angle, edge_length, n, &tensor);
-            }
+    // collect the cells in a sphere of the given radius around the vertex
+    try sel_ctx.cellsWithinSphereAroundVertex(vertex);
+    // accumulate edge contributions to the curvature tensor
+    for (sel_ctx.edge_buffer.items) |e| {
+        const d = sm.dart(e);
+        const ev = vec.sub3f(
+            vertex_position.value(sm.vertex(sm.phi1(d))),
+            vertex_position.value(sm.vertex(d)),
+        );
+        tensor = mat.add3f(
+            tensor,
+            mat.mulScalar3f(
+                mat.outerProduct3f(ev, ev),
+                edge_dihedral_angle.value(e) / edge_length.value(e),
+            ),
+        );
+    }
+    // accumulate face areas
+    for (sel_ctx.face_buffer.items) |f| {
+        area += face_area.value(f);
+    }
+    // account for the contribution of edges and faces that are crossed by the sphere
+    for (sel_ctx.crossed_dart_buffer.items) |d| {
+        const p1 = vertex_position.value(sm.vertex(d));
+        const p2 = vertex_position.value(sm.vertex(sm.phi1(d)));
+        const p3 = vertex_position.value(sm.vertex(sm.phi_1(d)));
+        const ev = vec.sub3f(p2, p1);
+        _, const tp1p2 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p1, p2) orelse continue;
+        // we know that p1 is inside the sphere and p2 is outside, so tp1p2 is the coordinate of the intersection point
+        assert(tp1p2 >= 0.0 and tp1p2 <= 1.0);
+        const e = sm.edge(d);
+        tensor = mat.add3f(
+            tensor,
+            mat.mulScalar3f(
+                mat.outerProduct3f(ev, ev),
+                tp1p2 * edge_dihedral_angle.value(e) / edge_length.value(e),
+            ),
+        );
+        const farea = face_area.value(sm.face(d));
+        // we know that p1 is inside the sphere and p2 is outside
+        if (geometry_utils.pointInSphere(p3, p, sel_ctx.radius)) { // p3 is inside the sphere
+            _, const tp3p2 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p3, p2) orelse continue;
+            assert(tp3p2 >= 0.0 and tp3p2 <= 1.0);
+            area += (tp1p2 + tp3p2 - tp1p2 * tp3p2) * farea;
+        } else { // p3 is outside the sphere
+            _, const tp1p3 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p1, p3) orelse continue;
+            assert(tp1p3 >= 0.0 and tp1p3 <= 1.0);
+            area += (tp1p2 * tp1p3) * farea;
         }
     }
 
     tensor = mat.mulScalar3f(tensor, 1.0 / area);
+    const proj = mat.sub3f(mat.identity3f, mat.outerProduct3f(n, n));
+    tensor = mat.mul3f(proj, mat.mul3f(tensor, proj));
 
     const evals, const evecs = eigen.eigenSolver(mat.mat3dFromMat3f(tensor));
 
@@ -129,19 +138,27 @@ pub fn computeVertexCurvatures(
     edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
     edge_length: SurfaceMesh.EdgeData(f32),
     face_area: SurfaceMesh.FaceData(f32),
+    vertex_neighborhood_ratio: f32, // this value is multiplied by the mean edge length to get the neighborhood radius for each vertex
     vertex_curvature: *SurfaceMeshCurvatureDatas,
 ) !void {
     const Task = struct {
-        surface_mesh: *const SurfaceMesh,
+        surface_mesh: *SurfaceMesh,
         vertex_position: SurfaceMesh.VertexData(Vec3f),
         vertex_normal: SurfaceMesh.VertexData(Vec3f),
         edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
         edge_length: SurfaceMesh.EdgeData(f32),
         face_area: SurfaceMesh.FaceData(f32),
+        vertex_neighborhood_radius: f32,
         vertex_curvature: *SurfaceMeshCurvatureDatas,
 
-        pub fn run(t: *const @This(), vertex: SurfaceMesh.Vertex) void {
-            const curvature_values = try vertexCurvature(
+        pub fn run(t: *const @This(), sel_ctx: *selection.WithinSphereSelectionContext, vertex: SurfaceMesh.Vertex) void {
+            if (!sel_ctx.initialized) {
+                sel_ctx.init(t.surface_mesh, t.vertex_position, t.vertex_neighborhood_radius) catch |err| {
+                    zgp_log.err("Failed to initialize selection context for vertex curvature computation: {}", .{err});
+                    return;
+                };
+            }
+            const curvature_values = vertexCurvature(
                 t.surface_mesh,
                 vertex,
                 t.vertex_position,
@@ -149,7 +166,8 @@ pub fn computeVertexCurvatures(
                 t.edge_dihedral_angle,
                 t.edge_length,
                 t.face_area,
-            );
+                sel_ctx,
+            ) catch VertexCurvatureValues{ .kmin = 0.0, .Kmin = vec.zero3f, .kmax = 0.0, .Kmax = vec.zero3f };
             t.vertex_curvature.vertex_kmin.?.valuePtr(vertex).* = curvature_values.kmin;
             t.vertex_curvature.vertex_Kmin.?.valuePtr(vertex).* = curvature_values.Kmin;
             t.vertex_curvature.vertex_kmax.?.valuePtr(vertex).* = curvature_values.kmax;
@@ -157,7 +175,7 @@ pub fn computeVertexCurvatures(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
+    var pctr: SurfaceMesh.ParallelVertexTaskRunnerWithContext(selection.WithinSphereSelectionContext) = try .init(sm);
     defer pctr.deinit();
     try pctr.run(io, Task{
         .surface_mesh = sm,
@@ -166,6 +184,7 @@ pub fn computeVertexCurvatures(
         .edge_dihedral_angle = edge_dihedral_angle,
         .edge_length = edge_length,
         .face_area = face_area,
+        .vertex_neighborhood_radius = edge_length.data.meanValue() * vertex_neighborhood_ratio,
         .vertex_curvature = vertex_curvature,
     });
 }

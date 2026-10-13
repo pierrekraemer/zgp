@@ -103,6 +103,10 @@ pub fn resize(view: *View, width: c_int, height: c_int) void {
     view.camera.updateProjectionMatrix();
 }
 
+pub fn requestRedraw(view: *View) void {
+    view.needs_redraw = true;
+}
+
 pub fn draw(view: *View, modules: []*Module) void {
     gl.ClearColor(
         view.background_color[0],

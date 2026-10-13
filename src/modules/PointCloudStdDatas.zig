@@ -19,7 +19,7 @@ const types_utils = @import("../utils/types.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Point Cloud Std Datas",
     .supported_models = .{ .point_cloud = true },
@@ -28,13 +28,15 @@ module: Module = .{
     },
 },
 
-pub fn init(app_ctx: *AppContext) PointCloudStdDatas {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(pcsd: *PointCloudStdDatas, app_ctx: *AppContext) !void {
+    pcsd.app_ctx = app_ctx;
+    try app_ctx.point_cloud_store.addListener(&pcsd.module);
 }
 
-pub fn deinit(_: *PointCloudStdDatas) void {}
+pub fn deinit(pcsd: *PointCloudStdDatas) void {
+    pcsd.app_ctx.point_cloud_store.removeListener(&pcsd.module);
+}
 
 /// Part of the Module interface.
 /// Show a UI panel to control the standard datas of the selected PointCloud.
@@ -89,11 +91,11 @@ pub fn leftPanel(m: *Module) void {
                     .unchanged => {},
                     .cleared => {
                         pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field_name, null));
-                        pcsd.app_ctx.requestRedraw();
+                        pcsd.app_ctx.view.requestRedraw();
                     },
                     .changed => |data| {
                         pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field_name, data));
-                        pcsd.app_ctx.requestRedraw();
+                        pcsd.app_ctx.view.requestRedraw();
                     },
                 }
             }
