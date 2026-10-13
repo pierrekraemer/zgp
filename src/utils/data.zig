@@ -320,6 +320,7 @@ pub const DataContainer = struct {
 
     pub fn initFrom(dst: *DataContainer, src: *const DataContainer, copy_data: bool, allocator: std.mem.Allocator) !void {
         dst.allocator = allocator;
+        dst.io = src.io;
         dst.datas = .empty;
         dst.markers = try .initCapacity(dst.allocator, 16);
         dst.available_markers = try .initCapacity(dst.allocator, 16);
@@ -347,6 +348,7 @@ pub const DataContainer = struct {
         }
         dst.first_inactive_index = src.first_inactive_index;
         dst.nb_inactive_indices = src.nb_inactive_indices;
+        dst.mutex = .init;
     }
 
     pub fn deinit(dc: *DataContainer) void {
@@ -490,7 +492,6 @@ pub const DataContainer = struct {
         };
     }
 
-    // TODO: should probably better be thread-safe!
     pub fn acquireMarker(dc: *DataContainer) !*Data(bool) {
         try dc.mutex.lock(dc.io);
         // no defer unlock here, because we want to unlock as soon as possible

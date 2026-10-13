@@ -72,16 +72,18 @@ pub const WithinSphereSelectionContext = struct {
             if (sel_ctx.dm.isMarked(d) and sel_ctx.dm.isMarked(sel_ctx.sm.phi2(d))) {
                 try sel_ctx.edge_buffer.append(sel_ctx.sm.allocator, sel_ctx.sm.edge(d));
             }
-            // if all darts of the face are now marked, include face in result
-            const face = sel_ctx.sm.face(d);
-            var face_dart_it = sel_ctx.sm.faceDartIterator(sel_ctx.sm.dart(face));
-            const face_in = while (face_dart_it.next()) |fd| {
-                if (!sel_ctx.dm.isMarked(fd)) {
-                    break false;
+            // if all darts of the face are now marked, include face in result (after checking that the face is not a boundary face)
+            if (!sel_ctx.sm.isBoundaryDart(d)) {
+                const face = sel_ctx.sm.face(d);
+                var face_dart_it = sel_ctx.sm.faceDartIterator(sel_ctx.sm.dart(face));
+                const face_in = while (face_dart_it.next()) |fd| {
+                    if (!sel_ctx.dm.isMarked(fd)) {
+                        break false;
+                    }
+                } else true;
+                if (face_in) {
+                    try sel_ctx.face_buffer.append(sel_ctx.sm.allocator, face);
                 }
-            } else true;
-            if (face_in) {
-                try sel_ctx.face_buffer.append(sel_ctx.sm.allocator, face);
             }
         }
     }

@@ -248,6 +248,7 @@ pub fn clone(sm: *const SurfaceMesh, allocator: std.mem.Allocator) !*SurfaceMesh
     errdefer allocator.destroy(cloned_sm);
 
     cloned_sm.allocator = allocator;
+    cloned_sm.io = sm.io;
     cloned_sm.index_buffer_pool = sm.index_buffer_pool;
 
     // Markers are not copied by ths initFrom function
@@ -278,6 +279,7 @@ pub fn cloneWithoutCellData(sm: *const SurfaceMesh, allocator: std.mem.Allocator
     errdefer allocator.destroy(cloned_sm);
 
     cloned_sm.allocator = allocator;
+    cloned_sm.io = sm.io;
     cloned_sm.index_buffer_pool = sm.index_buffer_pool;
 
     // Copy only the structure of the DataContainers (i.e. size, capacity, indices management) but not the CellData

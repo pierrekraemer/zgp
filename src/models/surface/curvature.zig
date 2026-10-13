@@ -82,16 +82,18 @@ pub fn vertexCurvature(
                 tp1p2 * edge_dihedral_angle.value(e) / edge_length.value(e),
             ),
         );
-        const farea = face_area.value(sm.face(d));
-        // we know that p1 is inside the sphere and p2 is outside
-        if (geometry_utils.pointInSphere(p3, p, sel_ctx.radius)) { // p3 is inside the sphere
-            _, const tp3p2 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p3, p2) orelse continue;
-            assert(tp3p2 >= 0.0 and tp3p2 <= 1.0);
-            area += (tp1p2 + tp3p2 - tp1p2 * tp3p2) * farea;
-        } else { // p3 is outside the sphere
-            _, const tp1p3 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p1, p3) orelse continue;
-            assert(tp1p3 >= 0.0 and tp1p3 <= 1.0);
-            area += (tp1p2 * tp1p3) * farea;
+        if (!sm.isBoundaryDart(d)) {
+            const farea = face_area.value(sm.face(d));
+            // we know that p1 is inside the sphere and p2 is outside
+            if (geometry_utils.pointInSphere(p3, p, sel_ctx.radius)) { // p3 is inside the sphere
+                _, const tp3p2 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p3, p2) orelse continue;
+                assert(tp3p2 >= 0.0 and tp3p2 <= 1.0);
+                area += (tp1p2 + tp3p2 - tp1p2 * tp3p2) * farea;
+            } else { // p3 is outside the sphere
+                _, const tp1p3 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p1, p3) orelse continue;
+                assert(tp1p3 >= 0.0 and tp1p3 <= 1.0);
+                area += (tp1p2 * tp1p3) * farea;
+            }
         }
     }
 
