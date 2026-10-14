@@ -14,12 +14,12 @@ pub const PointsKDTree = struct {
     initialized: bool = false,
     kdtree_ptr: *anyopaque = undefined,
     point_cloud: *PointCloud = undefined,
-    point_position: PointCloud.CellData(Vec3f) = undefined,
+    point_position: PointCloud.PointData(Vec3f) = undefined,
     pc_points: std.ArrayList(PointCloud.Point) = .empty,
 
     pub fn init(
         pc: *PointCloud,
-        point_position: PointCloud.CellData(Vec3f),
+        point_position: PointCloud.PointData(Vec3f),
     ) !PointsKDTree {
         var pc_points = try std.ArrayList(PointCloud.Point).initCapacity(pc.allocator, pc.nbPoints());
         errdefer pc_points.deinit(pc.allocator);

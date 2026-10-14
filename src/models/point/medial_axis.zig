@@ -20,23 +20,23 @@ pub fn shrinkingBall(
     n: Vec3f,
 ) ?Vec4f {
     var r: f32 = 0.5; // TODO: arbitrary value for the initial radius
-    var c = vec.sub3f(p, vec.mulScalar3f(n, r));
-    var q = vec.sub3f(p, vec.mulScalar3f(n, 2.0 * r));
+    var c = vec.sub(p, vec.mulScalar(n, r));
+    var q = vec.sub(p, vec.mulScalar(n, 2.0 * r));
     var j: u32 = 0;
     while (true) {
         const q_next = pc_kdtree.nearestNeighbor(c) orelse return null;
-        const dist = vec.norm3f(vec.sub3f(q_next, c));
-        if (@abs(dist - r) < 1e-4 or vec.norm3f(vec.sub3f(q_next, q)) < 1e-4 or vec.norm3f(vec.sub3f(p, q_next)) < 1e-4) { // TODO: use a better epsilon?
+        const dist = vec.norm(vec.sub(q_next, c));
+        if (@abs(dist - r) < 1e-4 or vec.norm(vec.sub(q_next, q)) < 1e-4 or vec.norm(vec.sub(p, q_next)) < 1e-4) { // TODO: use a better epsilon?
             break;
         }
         const r_next = blk: {
-            const qp = vec.sub3f(p, q_next);
-            const d = vec.norm3f(qp);
+            const qp = vec.sub(p, q_next);
+            const d = vec.norm(qp);
             const cos_theta = geometry_utils.cosAngle(n, qp);
             break :blk d / (2.0 * cos_theta);
         };
-        const c_next = vec.sub3f(p, vec.mulScalar3f(n, r_next));
-        const sep_angle = geometry_utils.angle(vec.sub3f(p, c_next), vec.sub3f(q_next, c_next));
+        const c_next = vec.sub(p, vec.mulScalar(n, r_next));
+        const sep_angle = geometry_utils.angle(vec.sub(p, c_next), vec.sub(q_next, c_next));
         if (j > 0 and sep_angle < 35.0 * std.math.pi / 180.0) { // TODO: use a configurable angle threshold?
             break;
         }
@@ -49,7 +49,7 @@ pub fn shrinkingBall(
             break;
         }
     }
-    if (vec.norm3f(vec.sub3f(p, q)) < 1e-4) {
+    if (vec.norm(vec.sub(p, q)) < 1e-4) {
         std.debug.print("Warning: shrinking ball center is too close to the point\n", .{});
     }
     return .{ c[0], c[1], c[2], r };
@@ -60,24 +60,24 @@ pub fn computePointShrinkingBalls(
     io: std.Io,
     pc: *PointCloud,
     pc_kdtree: *kdtree.PointsKDTree,
-    point_position: PointCloud.CellData(Vec3f),
-    point_normal: PointCloud.CellData(Vec3f),
-    point_shrinking_ball: *PointCloud.CellData(?Vec4f),
+    point_position: PointCloud.PointData(Vec3f),
+    point_normal: PointCloud.PointData(Vec3f),
+    point_shrinking_ball: *PointCloud.PointData(?Vec4f),
 ) !void {
     const Task = struct {
         const Task = @This();
 
         point_cloud: *const PointCloud,
         pc_kdtree: *kdtree.PointsKDTree,
-        point_position: PointCloud.CellData(Vec3f),
-        point_normal: PointCloud.CellData(Vec3f),
-        point_shrinking_ball: *PointCloud.CellData(?Vec4f),
+        point_position: PointCloud.PointData(Vec3f),
+        point_normal: PointCloud.PointData(Vec3f),
+        point_shrinking_ball: *PointCloud.PointData(?Vec4f),
 
         pub fn run(t: *const Task, point: PointCloud.Point) void {
             const n = t.point_normal.value(point);
             t.point_shrinking_ball.valuePtr(point).* = shrinkingBall(
                 t.pc_kdtree,
-                vec.add3f(t.point_position.value(point), vec.mulScalar3f(n, -1e-4)),
+                vec.add(t.point_position.value(point), vec.mulScalar(n, -1e-4)),
                 n,
             );
         }
@@ -102,24 +102,24 @@ pub const VMASContext = struct {
     point_cloud: *PointCloud,
     // given data
     point_cloud_kdtree: *kdtree.PointsKDTree,
-    point_position: PointCloud.CellData(Vec3f),
-    point_normal: PointCloud.CellData(Vec3f),
+    point_position: PointCloud.PointData(Vec3f),
+    point_normal: PointCloud.PointData(Vec3f),
     // created data
-    point_knn: PointCloud.CellData(std.ArrayList(PointCloud.Point)),
-    point_tangent_basis: PointCloud.CellData([2]Vec3f),
-    // point_area: PointCloud.CellData(f32), // or point weight
-    point_sqem: PointCloud.CellData(SQEM),
-    point_shrinking_ball: PointCloud.CellData(?Vec4f),
-    point_sphere: PointCloud.CellData(?PointCloud.Point),
-    point_sphere_error: PointCloud.CellData(f32),
+    point_knn: PointCloud.PointData(std.ArrayList(PointCloud.Point)),
+    point_tangent_basis: PointCloud.PointData([2]Vec3f),
+    // point_area: PointCloud.PointData(f32), // or point weight
+    point_sqem: PointCloud.PointData(SQEM),
+    point_shrinking_ball: PointCloud.PointData(?Vec4f),
+    point_sphere: PointCloud.PointData(?PointCloud.Point),
+    point_sphere_error: PointCloud.PointData(f32),
 
     spheres: *PointCloud,
     // created data
-    sphere_center: PointCloud.CellData(Vec3f),
-    sphere_radius: PointCloud.CellData(f32),
-    sphere_cluster: PointCloud.CellData(std.ArrayList(PointCloud.Point)),
-    sphere_error: PointCloud.CellData(f32),
-    sphere_neighbor_spheres: PointCloud.CellData(std.AutoArrayHashMapUnmanaged(PointCloud.Point, void)),
+    sphere_center: PointCloud.PointData(Vec3f),
+    sphere_radius: PointCloud.PointData(f32),
+    sphere_cluster: PointCloud.PointData(std.ArrayList(PointCloud.Point)),
+    sphere_error: PointCloud.PointData(f32),
+    sphere_neighbor_spheres: PointCloud.PointData(std.AutoArrayHashMapUnmanaged(PointCloud.Point, void)),
 
     skeleton: *IncidenceGraph,
     // created data
@@ -132,10 +132,13 @@ pub const VMASContext = struct {
         io: std.Io,
         point_cloud: *PointCloud,
         point_cloud_kdtree: *kdtree.PointsKDTree,
-        point_position: PointCloud.CellData(Vec3f),
-        point_normal: PointCloud.CellData(Vec3f),
+        point_position: PointCloud.PointData(Vec3f),
+        point_normal: PointCloud.PointData(Vec3f),
         spheres: *PointCloud,
+        sphere_center: PointCloud.PointData(Vec3f),
+        sphere_radius: PointCloud.PointData(f32),
         skeleton: *IncidenceGraph,
+        skeleton_vertex_position: IncidenceGraph.VertexData(Vec3f),
         line_quadric_epsilon: f32,
     ) !VMASContext {
         // create point_cloud data
@@ -151,16 +154,11 @@ pub const VMASContext = struct {
         spheres.clearRetainingCapacity();
 
         // create medial spheres PointCloud data
-        const sphere_center = try spheres.addData(Vec3f, "center");
-        const sphere_radius = try spheres.addData(f32, "radius");
         const sphere_cluster = try spheres.addData(std.ArrayList(PointCloud.Point), "cluster");
         const sphere_error = try spheres.addData(f32, "error");
         const sphere_neighbor_spheres = try spheres.addData(std.AutoArrayHashMapUnmanaged(PointCloud.Point, void), "neighbor_spheres");
 
         skeleton.clearRetainingCapacity();
-
-        // create skeleton IncidenceGraph data
-        const skeleton_vertex_position = try skeleton.addData(.vertex, Vec3f, "position");
 
         try tangent_basis.computePointTangentBases(
             io,
@@ -419,14 +417,14 @@ pub const VMASContext = struct {
                     const s_center = .{ opt_s[0], opt_s[1], opt_s[2] };
                     const cp = vmas_ctx.point_cloud_kdtree.nearestNeighborIndex(s_center) orelse continue;
                     const cp_pos = vmas_ctx.point_position.value(cp);
-                    var cp_dir = vec.normalized3f(vec.sub3f(cp_pos, s_center));
+                    var cp_dir = vec.normalized(vec.sub(cp_pos, s_center));
                     const cp_normal = vmas_ctx.point_normal.value(cp);
-                    if (vec.dot3f(cp_dir, cp_normal) <= 0.0) {
-                        cp_dir = vec.mulScalar3f(cp_dir, -1.0);
+                    if (vec.dot(cp_dir, cp_normal) <= 0.0) {
+                        cp_dir = vec.mulScalar(cp_dir, -1.0);
                     }
                     const corrected_sphere = shrinkingBall(
                         vmas_ctx.point_cloud_kdtree,
-                        vec.add3f(cp_pos, vec.mulScalar3f(cp_dir, -1e-4)),
+                        vec.add(cp_pos, vec.mulScalar(cp_dir, -1e-4)),
                         cp_dir,
                     );
                     if (corrected_sphere) |cs| {
@@ -546,9 +544,9 @@ pub const VMASContext = struct {
             vmas_ctx.sphere_radius.valuePtr(s).* = ball[3];
         } else {
             const n = vmas_ctx.point_normal.value(worst_point.?);
-            vmas_ctx.sphere_center.valuePtr(s).* = vec.add3f(
+            vmas_ctx.sphere_center.valuePtr(s).* = vec.add(
                 vmas_ctx.point_position.value(worst_point.?),
-                vec.mulScalar3f(n, -0.01),
+                vec.mulScalar(n, -0.01),
             );
             vmas_ctx.sphere_radius.valuePtr(s).* = 0.01;
         }

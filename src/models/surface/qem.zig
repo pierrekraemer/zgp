@@ -41,7 +41,7 @@ pub fn vertexQEM(
         if (!sm.isBoundaryDart(d)) {
             const face = sm.face(d);
             const n = face_normal.value(face);
-            const plane: Vec4f = .{ n[0], n[1], n[2], -vec.dot3f(p, n) };
+            const plane: Vec4f = .{ n[0], n[1], n[2], -vec.dot(p, n) };
             const fq = mat.mulScalar4f(
                 mat.outerProduct4f(plane, plane),
                 face_area.value(face) / 3.0, // TODO: should divide by sm.codegree(face) to avoid triangular hypothesis
@@ -50,8 +50,8 @@ pub fn vertexQEM(
         }
     }
     const tb = vertex_tangent_basis.value(vertex);
-    const plane_tb1 = Vec4f{ tb[0][0], tb[0][1], tb[0][2], -vec.dot3f(p, tb[0]) };
-    const plane_tb2 = Vec4f{ tb[1][0], tb[1][1], tb[1][2], -vec.dot3f(p, tb[1]) };
+    const plane_tb1 = Vec4f{ tb[0][0], tb[0][1], tb[0][2], -vec.dot(p, tb[0]) };
+    const plane_tb2 = Vec4f{ tb[1][0], tb[1][1], tb[1][2], -vec.dot(p, tb[1]) };
     const reg = mat.mulScalar4f(
         mat.add4f(
             mat.outerProduct4f(plane_tb1, plane_tb1),
@@ -82,70 +82,21 @@ pub fn computeVertexQEMs(
     face_normal: SurfaceMesh.FaceData(Vec3f),
     vertex_qem: *SurfaceMesh.VertexData(Mat4f),
 ) !void {
-    vertex_qem.data.fill(mat.zero4f);
+    vertex_qem.data.fill(mat.zero(Mat4f));
     var face_it = sm.faceIterator();
     while (face_it.next()) |face| {
         const fd = sm.dart(face);
         const n = face_normal.value(face);
         const p = vertex_position.value(sm.vertex(fd));
-        const plane: Vec4f = .{ n[0], n[1], n[2], -vec.dot3f(p, n) };
-        const fq = mat.mulScalar4f(
-            mat.outerProduct4f(plane, plane),
+        const plane: Vec4f = .{ n[0], n[1], n[2], -vec.dot(p, n) };
+        const fq = mat.mulScalar(
+            mat.outerProduct(plane, plane),
             face_area.value(face) / 3.0, // TODO: should divide by sm.codegree(face) to avoid triangular hypothesis
-        );
-        var dart_it = sm.cellDartIterator(face);
-        while (dart_it.next()) |d| {
-            const v = sm.vertex(d);
-            vertex_qem.valuePtr(v).* = mat.add4f(
-                vertex_qem.value(v),
-                fq,
-            );
-        }
-    }
-    var vertex_it = sm.vertexIterator();
-    while (vertex_it.next()) |vertex| {
-        const p = vertex_position.value(vertex);
-        const tb = vertex_tangent_basis.value(vertex);
-        const plane_tb1 = Vec4f{ tb[0][0], tb[0][1], tb[0][2], -vec.dot3f(p, tb[0]) };
-        const plane_tb2 = Vec4f{ tb[1][0], tb[1][1], tb[1][2], -vec.dot3f(p, tb[1]) };
-        const reg = mat.mulScalar4f(
-            mat.add4f(
-                mat.outerProduct4f(plane_tb1, plane_tb1),
-                mat.outerProduct4f(plane_tb2, plane_tb2),
-            ),
-            line_quadric_epsilon * vertex_area.value(vertex),
-        );
-        vertex_qem.valuePtr(vertex).* = mat.add4f(
-            vertex_qem.value(vertex),
-            reg,
-        );
-    }
-}
-
-pub fn computeVertexQEMsSimd(
-    sm: *SurfaceMesh,
-    vertex_position: SurfaceMesh.VertexData(SimdVec4f),
-    vertex_area: SurfaceMesh.VertexData(f32),
-    vertex_tangent_basis: SurfaceMesh.VertexData([2]Vec3f),
-    face_area: SurfaceMesh.FaceData(f32),
-    face_normal: SurfaceMesh.FaceData(Vec3f),
-    vertex_qem: *SurfaceMesh.VertexData(SimdMat4f),
-) !void {
-    vertex_qem.data.fill(@splat(vec.zero4f));
-    var face_it = sm.faceIterator();
-    while (face_it.next()) |face| {
-        const fd = sm.dart(face);
-        const n = vec.simdFromVec3f(face_normal.value(face));
-        const p = vertex_position.value(sm.vertex(fd));
-        const plane: SimdVec4f = .{ n[0], n[1], n[2], -vec.simdDot4f(p, n) };
-        const fq = mat.simdMulScalar4f(
-            mat.simdOuterProduct4f(plane, plane),
-            face_area.value(face) / 3.0,
         );
         var dart_it = sm.faceDartIterator(sm.dart(face));
         while (dart_it.next()) |d| {
             const v = sm.vertex(d);
-            vertex_qem.valuePtr(v).* = mat.simdAdd4f(
+            vertex_qem.valuePtr(v).* = mat.add(
                 vertex_qem.value(v),
                 fq,
             );
@@ -155,18 +106,16 @@ pub fn computeVertexQEMsSimd(
     while (vertex_it.next()) |vertex| {
         const p = vertex_position.value(vertex);
         const tb = vertex_tangent_basis.value(vertex);
-        const tb1 = vec.simdFromVec3f(tb[0]);
-        const tb2 = vec.simdFromVec3f(tb[1]);
-        const plane_tb1: SimdVec4f = .{ tb1[0], tb1[1], tb1[2], -vec.simdDot4f(p, tb1) };
-        const plane_tb2: SimdVec4f = .{ tb2[0], tb2[1], tb2[2], -vec.simdDot4f(p, tb2) };
-        const reg = mat.simdMulScalar4f(
-            mat.simdAdd4f(
-                mat.simdOuterProduct4f(plane_tb1, plane_tb1),
-                mat.simdOuterProduct4f(plane_tb2, plane_tb2),
+        const plane_tb1: Vec4f = .{ tb[0][0], tb[0][1], tb[0][2], -vec.dot(p, tb[0]) };
+        const plane_tb2: Vec4f = .{ tb[1][0], tb[1][1], tb[1][2], -vec.dot(p, tb[1]) };
+        const reg = mat.mulScalar(
+            mat.add(
+                mat.outerProduct(plane_tb1, plane_tb1),
+                mat.outerProduct(plane_tb2, plane_tb2),
             ),
             line_quadric_epsilon * vertex_area.value(vertex),
         );
-        vertex_qem.valuePtr(vertex).* = mat.simdAdd4f(
+        vertex_qem.valuePtr(vertex).* = mat.add(
             vertex_qem.value(vertex),
             reg,
         );
@@ -176,13 +125,6 @@ pub fn computeVertexQEMsSimd(
 /// Given a QEM matrix, compute the optimal point minimizing the quadric error.
 /// Return null if the QEM is not invertible.
 pub fn optimalPoint(q: Mat4f) ?Vec3f {
-    if (optimalPointSimd(mat.loadMat4f(q))) |p_simd| {
-        return vec.storeVec3f(p_simd);
-    }
-    return null;
-}
-
-pub fn optimalPointSimd(q: mat.SimdMat4f) ?vec.SimdVec4f {
     // The QEM matrix is symmetric. We want to find the point p = [x, y, z]
     // that minimizes the error. This is equivalent to solving the linear system:
     // A * p = -b, where A is the top-left 3x3 block and b is the top-right 3x1 block.
@@ -192,16 +134,19 @@ pub fn optimalPointSimd(q: mat.SimdMat4f) ?vec.SimdVec4f {
     // The determinant is dot(C0, C1 x C2).
 
     // Compute the adjugate matrix rows
-    const r0 = vec.simdCross4f(q[1], q[2]);
-    const r1 = vec.simdCross4f(q[2], q[0]);
-    const r2 = vec.simdCross4f(q[0], q[1]);
+    const r0 = vec.cross(vec.truncate(3, q[1]), vec.truncate(3, q[2]));
+    const r1 = vec.cross(vec.truncate(3, q[2]), vec.truncate(3, q[0]));
+    const r2 = vec.cross(vec.truncate(3, q[0]), vec.truncate(3, q[1]));
     // Compute determinant
-    const det = vec.simdDot4f(q[0], r0);
+    const det = vec.dot(vec.truncate(3, q[0]), r0);
     if (@abs(det) < 1e-6) {
-        return null; // Matrix is singular or poorly conditioned
+        return null; // matrix is singular or poorly conditioned
     }
-    const b = q[3]; // The translation column
+    const b = vec.truncate(3, q[3]); // translation column
     // p = -(adj(A) * b) / det
-    const inv_det: SimdVec4f = @splat(-1.0 / det);
-    return SimdVec4f{ vec.simdDot4f(r0, b), vec.simdDot4f(r1, b), vec.simdDot4f(r2, b), 0.0 } * inv_det;
+    return vec.mulScalar(Vec3f{
+        vec.dot(r0, b),
+        vec.dot(r1, b),
+        vec.dot(r2, b),
+    }, -1.0 / det);
 }

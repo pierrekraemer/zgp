@@ -8,7 +8,7 @@ const zgp_log = std.log.scoped(.zgp);
 
 const c = @import("c");
 
-const AppContext = @import("../main.zig").AppContext;
+const AppContext = @import("../AppContext.zig");
 const Module = @import("Module.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
 const IncidenceGraph = @import("../models/incidenceGraph/IncidenceGraph.zig");
@@ -32,18 +32,22 @@ const MedialAxisData = struct {
     pub fn initVMASContext(
         mad: *MedialAxisData,
         point_cloud_kdtree: *kdtree.PointsKDTree,
-        point_position: PointCloud.CellData(Vec3f),
-        point_normal: PointCloud.CellData(Vec3f),
+        point_position: PointCloud.PointData(Vec3f),
+        point_normal: PointCloud.PointData(Vec3f),
         line_quadric_epsilon: f32,
     ) !void {
         assert(mad.vmas_ctx == null);
         assert(point_cloud_kdtree.point_cloud == mad.point_cloud and point_cloud_kdtree.initialized);
 
         var buf: [64]u8 = undefined;
+
         const spheres_name = std.fmt.bufPrintSentinel(&buf, "{s}_spheres", .{mad.app_ctx.point_cloud_store.pointCloudName(mad.point_cloud).?}, 0) catch "__spheres";
         mad.spheres = try mad.app_ctx.point_cloud_store.createPointCloud(spheres_name);
+        const spheres_info = mad.app_ctx.point_cloud_store.pointCloudInfo(mad.spheres);
+
         const skeleton_name = std.fmt.bufPrintSentinel(&buf, "{s}_skeleton", .{mad.app_ctx.point_cloud_store.pointCloudName(mad.point_cloud).?}, 0) catch "__skeleton";
         mad.skeleton = try mad.app_ctx.incidence_graph_store.createIncidenceGraph(skeleton_name);
+        const skeleton_info = mad.app_ctx.incidence_graph_store.incidenceGraphInfo(mad.skeleton);
 
         mad.vmas_ctx = try .init(
             mad.app_ctx.allocator,
@@ -53,7 +57,10 @@ const MedialAxisData = struct {
             point_position,
             point_normal,
             mad.spheres,
+            spheres_info.std_datas.position.?, // the PointCloud has just been created, its std datas are available
+            spheres_info.std_datas.radius.?,
             mad.skeleton,
+            skeleton_info.std_datas.vertex_position.?, // the IncidenceGraph has just been created, its std datas are available
             line_quadric_epsilon,
         );
 
@@ -75,7 +82,7 @@ const MedialAxisData = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Point Cloud Medial Axis",
     .supported_models = .{ .point_cloud = true },
@@ -89,10 +96,10 @@ module: Module = .{
 },
 point_clouds_data: std.AutoHashMapUnmanaged(*PointCloud, MedialAxisData) = .empty,
 
-pub fn init(app_ctx: *AppContext) PointCloudMedialAxis {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(pcma: *PointCloudMedialAxis, app_ctx: *AppContext) !void {
+    pcma.app_ctx = app_ctx;
+    try app_ctx.point_cloud_store.addListener(&pcma.module);
 }
 
 pub fn deinit(pcma: *PointCloudMedialAxis) void {
@@ -101,6 +108,7 @@ pub fn deinit(pcma: *PointCloudMedialAxis) void {
         mad.deinit();
     }
     pcma.point_clouds_data.deinit(pcma.app_ctx.allocator);
+    pcma.app_ctx.point_cloud_store.removeListener(&pcma.module);
 }
 
 /// Part of the Module interface.
@@ -183,7 +191,7 @@ pub fn rightPanel(m: *Module) void {
                 mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-                mad.app_ctx.requestRedraw();
+                mad.app_ctx.view.requestRedraw();
             }
         }
         if (disabled) {
@@ -221,7 +229,7 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-            mad.app_ctx.requestRedraw();
+            mad.app_ctx.view.requestRedraw();
         }
 
         if (c.ImGui_ButtonEx("Update spheres", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
@@ -239,7 +247,7 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-            mad.app_ctx.requestRedraw();
+            mad.app_ctx.view.requestRedraw();
         }
 
         if (c.ImGui_ButtonEx("Split worst sphere", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
@@ -258,7 +266,7 @@ pub fn rightPanel(m: *Module) void {
                 mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
                 // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-                mad.app_ctx.requestRedraw();
+                mad.app_ctx.view.requestRedraw();
             }
         }
         _ = c.ImGui_InputInt("Number of spheres", @ptrCast(&UiData.nb_spheres));
@@ -290,7 +298,7 @@ pub fn rightPanel(m: *Module) void {
             mad.app_ctx.incidence_graph_store.incidenceGraphConnectivityUpdated(mad.skeleton);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, Vec3f, mad.point_sphere_color);
             // mad.app_ctx.point_cloud_store.pointCloudDataUpdated(mad.point_cloud, f32, mad.point_sphere_error);
-            mad.app_ctx.requestRedraw();
+            mad.app_ctx.view.requestRedraw();
 
             const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, pcma.app_ctx.io, .real).nanoseconds);
             zgp_log.info("Medial Axis skeleton computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});

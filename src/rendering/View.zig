@@ -24,25 +24,25 @@ const Texture2D = @import("Texture2D.zig");
 const FullscreenTexture = @import("shaders/fullscreen_texture/FullscreenTexture.zig");
 const InfiniteGrid = @import("shaders/infinite_grid/InfiniteGrid.zig");
 
-camera: Camera = undefined,
+camera: Camera,
 
 width: c_int = 0,
 height: c_int = 0,
 
-screen_color_tex: Texture2D = undefined,
-screen_depth_tex: Texture2D = undefined,
+screen_color_tex: Texture2D,
+screen_depth_tex: Texture2D,
 
-fbo: FBO = undefined,
-fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = undefined,
-infinite_grid_parameters: InfiniteGrid.Parameters = undefined,
+fbo: FBO,
+fullscreen_texture_shader_parameters: FullscreenTexture.Parameters,
+infinite_grid_parameters: InfiniteGrid.Parameters,
 
 background_color: Vec4f = .{ 0.35, 0.35, 0.35, 1 },
 show_grid: bool = true,
 
 needs_redraw: bool = true,
 
-pub fn init(view: *View) void {
-    view.camera = .init(
+pub fn init() View {
+    const camera: Camera = .init(
         .{ -0.5, 0.5, 2.0 },
         .{ 0.0, 1.0, 0.0 },
         .{ 0.0, 0.0, 0.0 },
@@ -51,27 +51,38 @@ pub fn init(view: *View) void {
         .perspective,
     );
 
-    view.screen_color_tex = .init(&[_]Texture2D.Parameter{
+    const screen_color_tex: Texture2D = .init(&[_]Texture2D.Parameter{
         .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
         .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
     });
-    view.screen_depth_tex = .init(&[_]Texture2D.Parameter{
+    const screen_depth_tex: Texture2D = .init(&[_]Texture2D.Parameter{
         .{ .name = gl.TEXTURE_MIN_FILTER, .value = gl.NEAREST },
         .{ .name = gl.TEXTURE_MAG_FILTER, .value = gl.NEAREST },
     });
 
-    view.fbo = FBO.init();
-    view.fbo.attachTexture(gl.COLOR_ATTACHMENT0, view.screen_color_tex);
-    view.fbo.attachTexture(gl.DEPTH_ATTACHMENT, view.screen_depth_tex);
+    const fbo: FBO = .init();
+    fbo.attachTexture(gl.COLOR_ATTACHMENT0, screen_color_tex);
+    fbo.attachTexture(gl.DEPTH_ATTACHMENT, screen_depth_tex);
 
     const status = gl.CheckFramebufferStatus(gl.FRAMEBUFFER);
     if (status != gl.FRAMEBUFFER_COMPLETE) {
         gl_log.err("Framebuffer not complete: {d}", .{status});
     }
 
-    view.fullscreen_texture_shader_parameters = .init();
-    view.fullscreen_texture_shader_parameters.setTexture(view.screen_color_tex);
-    view.infinite_grid_parameters = .init();
+    var fullscreen_texture_shader_parameters: FullscreenTexture.Parameters = .init();
+    fullscreen_texture_shader_parameters.setTexture(screen_color_tex);
+    const infinite_grid_parameters: InfiniteGrid.Parameters = .init();
+
+    return .{
+        .camera = camera,
+        .width = 0,
+        .height = 0,
+        .screen_color_tex = screen_color_tex,
+        .screen_depth_tex = screen_depth_tex,
+        .fbo = fbo,
+        .fullscreen_texture_shader_parameters = fullscreen_texture_shader_parameters,
+        .infinite_grid_parameters = infinite_grid_parameters,
+    };
 }
 
 pub fn deinit(view: *View) void {
@@ -90,6 +101,10 @@ pub fn resize(view: *View, width: c_int, height: c_int) void {
 
     view.camera.aspect_ratio = @as(f32, @floatFromInt(width)) / @as(f32, @floatFromInt(height));
     view.camera.updateProjectionMatrix();
+}
+
+pub fn requestRedraw(view: *View) void {
+    view.needs_redraw = true;
 }
 
 pub fn draw(view: *View, modules: []*Module) void {
@@ -221,13 +236,13 @@ pub fn viewToWorldZ(view: *const View, x: f32, y: f32, z: f32) ?Vec3f {
         z * 2.0 - 1.0,
         1.0,
     };
-    var p_view = mat.mulVec4f(view.camera.projection_matrix_inv, p_ndc);
+    var p_view = mat.mulVec(view.camera.projection_matrix_inv, p_ndc);
     if (p_view[3] == 0.0) {
         gl_log.err("Cannot divide by zero w component", .{});
         return null;
     }
-    p_view = vec.divScalar4f(p_view, p_view[3]);
-    const p_world_f = mat.mulVec4f(view.camera.view_matrix_inv, p_view);
+    p_view = vec.divScalar(p_view, p_view[3]);
+    const p_world_f = mat.mulVec(view.camera.view_matrix_inv, p_view);
     return .{ p_world_f[0], p_world_f[1], p_world_f[2] };
 }
 
@@ -260,7 +275,7 @@ pub fn viewToWorldRayIfGeometry(view: *const View, x: f32, y: f32) ?Ray {
     const pwp = viewToWorld(view, x, y);
     return if (pwp == null) null else .{
         .origin = view.camera.position,
-        .direction = vec.normalized3f(vec.sub3f(pwp.?, view.camera.position)),
+        .direction = vec.normalized(vec.sub(pwp.?, view.camera.position)),
     };
 }
 
@@ -277,7 +292,7 @@ pub fn viewToWorldRay(view: *const View, x: f32, y: f32) Ray {
         view.camera.position[1] + view.camera.look_dir[1],
         view.camera.position[2] + view.camera.look_dir[2],
     };
-    const direction = vec.normalized3f(vec.sub3f(far_world, near_world));
+    const direction = vec.normalized(vec.sub(far_world, near_world));
 
     return switch (view.camera.projection_type) {
         .perspective => .{
@@ -293,12 +308,12 @@ pub fn viewToWorldRay(view: *const View, x: f32, y: f32) Ray {
 
 pub fn worldToView(view: *const View, world_pos: Vec3f) ?Vec3f {
     const p_world: Vec4f = .{ world_pos[0], world_pos[1], world_pos[2], 1.0 };
-    const p_clip = mat.mulVec4f(view.camera.projection_matrix, mat.mulVec4f(view.camera.view_matrix, p_world));
+    const p_clip = mat.mulVec(view.camera.projection_matrix, mat.mulVec(view.camera.view_matrix, p_world));
     if (p_clip[3] == 0.0) {
         gl_log.err("Cannot divide by zero w component", .{});
         return null;
     }
-    const p_ndc = vec.divScalar4f(p_clip, p_clip[3]);
+    const p_ndc = vec.divScalar(p_clip, p_clip[3]);
     return .{
         ((p_ndc[0] + 1.0) / 2.0) * @as(f32, @floatFromInt(view.width)),
         ((1.0 - p_ndc[1]) / 2.0) * @as(f32, @floatFromInt(view.height)),

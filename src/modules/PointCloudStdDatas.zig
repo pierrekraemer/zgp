@@ -7,7 +7,7 @@ const zgp_log = std.log.scoped(.zgp);
 
 const c = @import("c");
 
-const AppContext = @import("../main.zig").AppContext;
+const AppContext = @import("../AppContext.zig");
 const Module = @import("Module.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
 const PointCloudStore = @import("../models/PointCloudStore.zig");
@@ -19,7 +19,7 @@ const types_utils = @import("../utils/types.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Point Cloud Std Datas",
     .supported_models = .{ .point_cloud = true },
@@ -28,13 +28,15 @@ module: Module = .{
     },
 },
 
-pub fn init(app_ctx: *AppContext) PointCloudStdDatas {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(pcsd: *PointCloudStdDatas, app_ctx: *AppContext) !void {
+    pcsd.app_ctx = app_ctx;
+    try app_ctx.point_cloud_store.addListener(&pcsd.module);
 }
 
-pub fn deinit(_: *PointCloudStdDatas) void {}
+pub fn deinit(pcsd: *PointCloudStdDatas) void {
+    pcsd.app_ctx.point_cloud_store.removeListener(&pcsd.module);
+}
 
 /// Part of the Module interface.
 /// Show a UI panel to control the standard datas of the selected PointCloud.
@@ -89,29 +91,12 @@ pub fn leftPanel(m: *Module) void {
                     .unchanged => {},
                     .cleared => {
                         pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field_name, null));
-                        pcsd.app_ctx.requestRedraw();
+                        pcsd.app_ctx.view.requestRedraw();
                     },
                     .changed => |data| {
                         pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field_name, data));
-                        pcsd.app_ctx.requestRedraw();
+                        pcsd.app_ctx.view.requestRedraw();
                     },
-                }
-            }
-        }
-    }
-
-    c.ImGui_Separator();
-
-    if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-        const std_data_info = @typeInfo(PointCloudStdData).@"union";
-        inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
-            if (@field(info.std_datas, field_name) == null) {
-                const maybe_data = pc.addData(@typeInfo(field_type).optional.child.DataType, field_name);
-                if (maybe_data) |data| {
-                    pc_store.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field_name, data));
-                    pcsd.app_ctx.requestRedraw();
-                } else |err| {
-                    zgp_log.err("Error adding {s} ({s}) data: {}", .{ field_name, @typeName(@typeInfo(field_type).optional.child.DataType), err });
                 }
             }
         }
@@ -125,10 +110,10 @@ pub fn leftPanel(m: *Module) void {
 /// The function must have the following signature:
 /// fn(
 ///     pc: *PointCloud,
-///     read_data_1: PointCloud.CellData(...),
-///     read_data_2: PointCloud.CellData(...),
+///     read_data_1: PointCloud.PointData(...),
+///     read_data_2: PointCloud.PointData(...),
 ///     ...
-///     computed_data: PointCloud.CellData(...),
+///     computed_data: PointCloud.PointData(...),
 /// ) !void
 const StdDataComputation = struct {
     reads: []const PointCloudStdDataTag,
@@ -168,9 +153,9 @@ const StdDataComputation = struct {
 /// The order of declaration matters: some computations depend on the result of previous ones
 /// and the "Update outdated std datas" button of the PointCloudStore
 /// computes them in the order of declaration.
-pub const std_data_computations: []const StdDataComputation = &.{};
+const std_data_computations: []const StdDataComputation = &.{};
 
-pub fn dataComputableAndUpToDate(
+fn dataComputableAndUpToDate(
     pcs: *PointCloudStore,
     pc: *PointCloud,
     comptime tag: PointCloudStdDataTag,

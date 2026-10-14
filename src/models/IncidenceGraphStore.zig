@@ -13,7 +13,7 @@ const imgui_utils = @import("../ui/imgui.zig");
 const types_utils = @import("../utils/types.zig");
 
 const Module = @import("../modules/Module.zig");
-const ModelSelection = @import("../main.zig").ModelSelection;
+const ModelSelection = @import("../AppContext.zig").ModelSelection;
 const IncidenceGraph = @import("incidenceGraph/IncidenceGraph.zig");
 
 const Data = @import("../utils/data.zig").Data;
@@ -89,7 +89,7 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !IncidenceGraphStore {
         .incidence_graphs_info = .empty,
         .data_vbo = .empty,
         .data_last_update = .empty,
-        .index_buffer_pool = try .init(io, allocator, 2048, 64, 32),
+        .index_buffer_pool = try .init(io, allocator, 1024, 64, 32),
     };
 }
 
@@ -125,6 +125,15 @@ pub fn addListener(igs: *IncidenceGraphStore, module: *Module) !void {
     try igs.listeners.append(igs.allocator, module);
 }
 
+pub fn removeListener(igs: *IncidenceGraphStore, module: *Module) void {
+    for (igs.listeners.items, 0..) |m, i| {
+        if (m == module) {
+            _ = igs.listeners.swapRemove(i);
+            return;
+        }
+    }
+}
+
 pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*IncidenceGraph {
     if (igs.incidence_graphs.contains(name)) {
         return error.ModelNameAlreadyExists;
@@ -133,11 +142,25 @@ pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*Incid
     // create and init the IncidenceGraph
     const ig = try igs.allocator.create(IncidenceGraph);
     errdefer igs.allocator.destroy(ig);
-    try ig.init(igs.allocator, &igs.index_buffer_pool);
+    try ig.init(igs.allocator, igs.io, &igs.index_buffer_pool);
     errdefer ig.deinit();
 
     // register the IncidenceGraph in the IncidenceGraphStore to make it available in the UI and for other modules
     try igs.registerIncidenceGraph(name, ig);
+
+    // create the standard datas for the IncidenceGraph
+    const info = igs.incidence_graphs_info.getPtr(ig).?;
+    const std_data_info = @typeInfo(IncidenceGraphStdData).@"union";
+    inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
+        if (@field(info.std_datas, field_name) == null) {
+            const maybe_data = ig.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
+            if (maybe_data) |data| {
+                igs.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field_name, data));
+            } else |err| {
+                zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
+            }
+        }
+    }
 
     return ig;
 }
@@ -156,6 +179,7 @@ pub fn registerIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8, ig: *
     // store the IncidenceGraphInfo in the map
     try igs.incidence_graphs_info.put(igs.allocator, ig, .init());
 
+    // dispatch call to listeners
     for (igs.listeners.items) |module| {
         module.incidenceGraphCreated(ig);
     }
@@ -184,6 +208,7 @@ pub fn unregisterIncidenceGraph(igs: *IncidenceGraphStore, ig: *IncidenceGraph) 
         else => {},
     }
 
+    // dispatch call to listeners
     for (igs.listeners.items) |module| {
         module.incidenceGraphDestroyed(ig);
     }
@@ -211,7 +236,6 @@ pub fn incidenceGraphDataUpdated(
     // update the last known data update time
     igs.data_last_update.put(igs.allocator, data.gen(), std.Io.Timestamp.now(igs.io, .real)) catch |err| {
         zgp_log.err("Failed to update last update time for IncidenceGraph data: {}", .{err});
-        return;
     };
 
     // dispatch call to listeners
@@ -225,17 +249,15 @@ pub fn incidenceGraphConnectivityUpdated(igs: *IncidenceGraphStore, ig: *Inciden
 
     info.points_ibo.fillFromIncidenceGraph(ig, .vertex, igs.allocator) catch |err| {
         zgp_log.err("Failed to fill points IBO for IncidenceGraph: {}", .{err});
-        return;
     };
     info.lines_ibo.fillFromIncidenceGraph(ig, .edge, igs.allocator) catch |err| {
         zgp_log.err("Failed to fill lines IBO for IncidenceGraph: {}", .{err});
-        return;
     };
     info.triangles_ibo.fillFromIncidenceGraph(ig, .face, igs.allocator) catch |err| {
         zgp_log.err("Failed to fill triangles IBO for IncidenceGraph: {}", .{err});
-        return;
     };
 
+    // dispatch call to listeners
     for (igs.listeners.items) |module| {
         module.incidenceGraphConnectivityUpdated(ig);
     }
@@ -287,6 +309,7 @@ pub fn setIncidenceGraphStdData(
         },
     }
 
+    // dispatch call to listeners
     for (igs.listeners.items) |module| {
         module.incidenceGraphStdDataChanged(ig, data);
     }

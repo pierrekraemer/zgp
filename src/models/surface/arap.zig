@@ -7,11 +7,11 @@ const invalid_index = @import("../../utils//data.zig").invalid_index;
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 const Vec3d = vec.Vec3d;
-const SimdVec4f = vec.SimdVec4f;
+const Vec4f = vec.Vec4f;
 const mat = @import("../../geometry/mat.zig");
 const Mat3f = mat.Mat3f;
 const Mat3d = mat.Mat3d;
-const SimdMat4f = mat.SimdMat4f;
+const Mat4f = mat.Mat4f;
 const geometry_utils = @import("../../geometry/utils.zig");
 const eigen = @import("../../geometry/eigen.zig");
 const SparseMatrix = eigen.SparseMatrix;
@@ -25,53 +25,53 @@ const intrinsic_triangulation = @import("intrinsic_triangulation.zig");
 pub fn computeVertexOneRingRotation(
     sm: *const SurfaceMesh,
     v: SurfaceMesh.Vertex,
-    previous_rotation: SimdVec4f,
+    previous_rotation: Vec4f,
     halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
-    vertex_position_rest: SurfaceMesh.VertexData(SimdVec4f),
+    vertex_position_rest: SurfaceMesh.VertexData(Vec3f),
     vertex_position: SurfaceMesh.VertexData(Vec3f),
-) SimdVec4f {
+) Vec4f {
     // Build the covariance matrix S = sum_j w_ij * e_ij_rest * e_ij_current^T
-    var S: SimdMat4f = .{ @splat(0.0), @splat(0.0), @splat(0.0), @splat(0.0) };
+    var S = mat.zero(Mat3f);
     const p_rest = vertex_position_rest.value(v);
-    const p_current = vec.simdFromVec3f(vertex_position.value(v));
+    const p_current = vertex_position.value(v);
     var dart_it = sm.vertexDartIterator(sm.dart(v));
     while (dart_it.next()) |d| {
         const nv = sm.vertex(sm.phi1(d));
-        const nv_current = vec.simdFromVec3f(vertex_position.value(nv));
+        const nv_current = vertex_position.value(nv);
         // edge vectors in rest and current poses
-        const e_rest = vertex_position_rest.value(nv) - p_rest;
-        const e_current = nv_current - p_current;
+        const e_rest = vec.sub(vertex_position_rest.value(nv), p_rest);
+        const e_current = vec.sub(nv_current, p_current);
         // cotan weight of the edge (sum of both halfedge cotan weights)
         const w = laplacian.edgeCotanWeight(sm, sm.edge(d), halfedge_cotan_weight);
         // S += w * e_rest * e_current^T
-        S = mat.simdAdd4f(S, mat.simdMulScalar4f(mat.simdOuterProduct4f(e_rest, e_current), w));
+        S = mat.add(S, mat.mulScalar(mat.outerProduct(e_rest, e_current), w));
     }
 
     // Horn's Absolute Orientation Method:
     // The dominant eigenvector of N is the unit quaternion representing the optimal rotation.
     // S is column-major so S_ij = S[j][i]
-    var N = SimdMat4f{
-        SimdVec4f{ S[0][0] + S[1][1] + S[2][2], S[2][1] - S[1][2], S[0][2] - S[2][0], S[1][0] - S[0][1] },
-        SimdVec4f{ S[2][1] - S[1][2], S[0][0] - S[1][1] - S[2][2], S[1][0] + S[0][1], S[0][2] + S[2][0] },
-        SimdVec4f{ S[0][2] - S[2][0], S[1][0] + S[0][1], -S[0][0] + S[1][1] - S[2][2], S[2][1] + S[1][2] },
-        SimdVec4f{ S[1][0] - S[0][1], S[0][2] + S[2][0], S[2][1] + S[1][2], -S[0][0] - S[1][1] + S[2][2] },
+    var N = Mat4f{
+        Vec4f{ S[0][0] + S[1][1] + S[2][2], S[2][1] - S[1][2], S[0][2] - S[2][0], S[1][0] - S[0][1] },
+        Vec4f{ S[2][1] - S[1][2], S[0][0] - S[1][1] - S[2][2], S[1][0] + S[0][1], S[0][2] + S[2][0] },
+        Vec4f{ S[0][2] - S[2][0], S[1][0] + S[0][1], -S[0][0] + S[1][1] - S[2][2], S[2][1] + S[1][2] },
+        Vec4f{ S[1][0] - S[0][1], S[0][2] + S[2][0], S[2][1] + S[1][2], -S[0][0] - S[1][1] + S[2][2] },
     };
     // Shift N to make it positive definite (prevents power iteration from oscillating to negative eigenvalues)
     // Use the L1 matrix norm (max absolute column sum) as a safe upper bound on the spectral radius (Gershgorin Circle Theorem).
-    const c0 = @reduce(.Add, @abs(N[0]));
-    const c1 = @reduce(.Add, @abs(N[1]));
-    const c2 = @reduce(.Add, @abs(N[2]));
-    const c3 = @reduce(.Add, @abs(N[3]));
+    const c0 = vec.sumComponentsAbs(N[0]);
+    const c1 = vec.sumComponentsAbs(N[1]);
+    const c2 = vec.sumComponentsAbs(N[2]);
+    const c3 = vec.sumComponentsAbs(N[3]);
     const max_eval_bound = @max(@max(c0, c1), @max(c2, c3));
     if (max_eval_bound < 1e-8) return previous_rotation;
     // Pre-normalize N so its eigenvalues are strictly between [-1, 1],
     // then shift the diagonal by 1.0 so eigenvalues are strictly in [0, 2].
     // This prevents f32 overflow, eliminating the need to normalize the vector inside the loop.
-    const inv_shift = @as(SimdVec4f, @splat(1.0 / max_eval_bound));
-    N[0] = N[0] * inv_shift;
-    N[1] = N[1] * inv_shift;
-    N[2] = N[2] * inv_shift;
-    N[3] = N[3] * inv_shift;
+    const inv_shift: f32 = 1.0 / max_eval_bound;
+    N[0] = vec.mulScalar(N[0], inv_shift);
+    N[1] = vec.mulScalar(N[1], inv_shift);
+    N[2] = vec.mulScalar(N[2], inv_shift);
+    N[3] = vec.mulScalar(N[3], inv_shift);
     N[0][0] += 1.0;
     N[1][1] += 1.0;
     N[2][2] += 1.0;
@@ -79,12 +79,12 @@ pub fn computeVertexOneRingRotation(
     var q = previous_rotation; // already guaranteed to be a valid unit quaternion
     // 3 iterations of Power Iteration
     inline for (0..3) |_| {
-        q = mat.simdMulVec4f(N, q);
+        q = mat.mulVec(N, q);
     }
     // Normalize just once at the end
-    const len2 = vec.simdDot4f(q, q);
+    const len2 = vec.squaredNorm(q);
     if (len2 > 1e-16) {
-        q = q * @as(SimdVec4f, @splat(1.0 / @sqrt(len2)));
+        q = vec.mulScalar(q, 1.0 / @sqrt(len2));
     } else {
         q = previous_rotation;
     }
@@ -98,8 +98,8 @@ pub const ARAPContext = struct {
     surface_mesh: *SurfaceMesh, // the original SurfaceMesh
     vertex_position: SurfaceMesh.VertexData(Vec3f), // defined on the original SurfaceMesh, updated by the ARAP solver
 
-    vertex_position_rest: SurfaceMesh.VertexData(SimdVec4f), // created on the original SurfaceMesh
-    vertex_rotation: SurfaceMesh.VertexData(SimdVec4f), // created on the original SurfaceMesh
+    vertex_position_rest: SurfaceMesh.VertexData(Vec3f), // created on the original SurfaceMesh
+    vertex_rotation: SurfaceMesh.VertexData(Vec4f), // created on the original SurfaceMesh
     nb_free: u32,
     free_vertex_index: SurfaceMesh.VertexData(u32), // created on the original SurfaceMesh
 
@@ -134,14 +134,11 @@ pub const ARAPContext = struct {
         handle_set: *SurfaceMesh.VertexSet,
         it_ctx: ?intrinsic_triangulation.ITContext,
     ) !ARAPContext {
-        // Create & initialize vertex rest positions (stored as SimdVec4f)
-        const vertex_position_rest = try sm.addData(.vertex, SimdVec4f, "__arap_rest_position_simd");
-        var it = vertex_position.data.constIterator();
-        while (it.next()) |elem| {
-            vertex_position_rest.data.valuePtr(elem.idx).* = vec.simdFromVec3f(elem.value_ptr.*);
-        }
-        // Create & initialize vertex rotation matrices (stored as quaternions in SimdVec4f)
-        var vertex_rotation = try sm.addData(.vertex, SimdVec4f, "__arap_vertex_rotation_simd");
+        // Create & initialize vertex rest positions
+        const vertex_position_rest = try sm.addData(.vertex, Vec3f, "__arap_rest_position");
+        vertex_position_rest.data.copyFrom(vertex_position.data);
+        // Create & initialize vertex rotation matrices (stored as quaternions in Vec4f)
+        var vertex_rotation = try sm.addData(.vertex, Vec4f, "__arap_vertex_rotation");
         vertex_rotation.data.fill(.{ 1.0, 0.0, 0.0, 0.0 });
 
         // Create consecutive indices for free vertices
@@ -230,9 +227,9 @@ pub const ARAPContext = struct {
         const ComputeVertexRotationTask = struct {
             surface_mesh: *const SurfaceMesh,
             halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
-            vertex_position_rest: SurfaceMesh.VertexData(SimdVec4f),
+            vertex_position_rest: SurfaceMesh.VertexData(Vec3f),
             vertex_position: SurfaceMesh.VertexData(Vec3f),
-            vertex_rotation: *SurfaceMesh.VertexData(SimdVec4f),
+            vertex_rotation: *SurfaceMesh.VertexData(Vec4f),
 
             pub fn run(t: *const @This(), v: SurfaceMesh.Vertex) void {
                 const v_rotation = t.vertex_rotation.valuePtr(v);
@@ -250,9 +247,9 @@ pub const ARAPContext = struct {
         const SetupVertexRHSTask = struct {
             surface_mesh: *const SurfaceMesh,
             halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
-            vertex_position_rest: SurfaceMesh.VertexData(SimdVec4f),
+            vertex_position_rest: SurfaceMesh.VertexData(Vec3f),
             vertex_position: SurfaceMesh.VertexData(Vec3f),
-            vertex_rotation: SurfaceMesh.VertexData(SimdVec4f),
+            vertex_rotation: SurfaceMesh.VertexData(Vec4f),
             free_vertex_index: SurfaceMesh.VertexData(u32),
             rhs_mat: eigen.DenseMatrix,
 
@@ -260,7 +257,7 @@ pub const ARAPContext = struct {
                 const fi = t.free_vertex_index.value(v);
                 if (fi == invalid_index) return; // constrained vertex
 
-                var rhs_val: SimdVec4f = vec.zero4f;
+                var rhs_val = vec.zero(Vec3f);
                 const v_pos_rest = t.vertex_position_rest.value(v);
 
                 // iterate over one-ring neighbors
@@ -271,23 +268,23 @@ pub const ARAPContext = struct {
                     const w_ij = laplacian.edgeCotanWeight(t.surface_mesh, t.surface_mesh.edge(d), t.halfedge_cotan_weight);
 
                     // Rest edge vector
-                    const e_rest: SimdVec4f = t.vertex_position_rest.value(vn) - v_pos_rest;
+                    const e_rest = vec.sub(t.vertex_position_rest.value(vn), v_pos_rest);
                     // Rotated edge: (R_i + R_j) / 2 * e_rest
                     const rotated_e_i = geometry_utils.rotateVectorByQuaternion(t.vertex_rotation.value(v), e_rest);
                     const rotated_e_j = geometry_utils.rotateVectorByQuaternion(t.vertex_rotation.value(vn), e_rest);
-                    const rotated_e = (rotated_e_i + rotated_e_j) * @as(SimdVec4f, @splat(0.5 * w_ij));
-                    rhs_val += rotated_e;
+                    const rotated_e = vec.mulScalar(vec.add(rotated_e_i, rotated_e_j), 0.5 * w_ij);
+                    rhs_val = vec.add(rhs_val, rotated_e);
 
                     // if neighbor is constrained, move its contribution to the RHS
                     // L_ij = w_ij, so: rhs -= L_ij * p_j => rhs -= w_ij * p_j
                     if (t.free_vertex_index.value(vn) == invalid_index) {
-                        rhs_val -= vec.simdFromVec3f(t.vertex_position.value(vn)) * @as(SimdVec4f, @splat(w_ij));
+                        rhs_val = vec.sub(rhs_val, vec.mulScalar(t.vertex_position.value(vn), w_ij));
                     }
                 }
 
                 // set the right-hand side for this free vertex
-                const rhs_array: [3]f64 = .{ @floatCast(rhs_val[0]), @floatCast(rhs_val[1]), @floatCast(rhs_val[2]) };
-                t.rhs_mat.setRow(@intCast(fi), &rhs_array);
+                const rhs_val_f64: [3]eigen.Scalar = vec.cast(f64, rhs_val);
+                t.rhs_mat.setRow(@intCast(fi), &rhs_val_f64);
             }
         };
 
@@ -302,7 +299,7 @@ pub const ARAPContext = struct {
                 if (fi == invalid_index) return; // constrained vertex
                 var solved_row: [3]eigen.Scalar = undefined;
                 t.solve_mat.getRow(@intCast(fi), &solved_row);
-                t.vertex_position.valuePtr(v).* = vec.vec3fFromVec3d(.{ solved_row[0], solved_row[1], solved_row[2] });
+                t.vertex_position.valuePtr(v).* = vec.cast(f32, Vec3d{ solved_row[0], solved_row[1], solved_row[2] });
             }
         };
 

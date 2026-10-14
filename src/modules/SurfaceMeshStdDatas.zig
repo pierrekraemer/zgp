@@ -7,7 +7,7 @@ const zgp_log = std.log.scoped(.zgp);
 
 const c = @import("c");
 
-const AppContext = @import("../main.zig").AppContext;
+const AppContext = @import("../AppContext.zig");
 const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfaceMeshStore = @import("../models/SurfaceMeshStore.zig");
@@ -15,7 +15,6 @@ const SurfaceMeshStdData = SurfaceMeshStore.SurfaceMeshStdData;
 const SurfaceMeshStdDataTag = SurfaceMeshStore.SurfaceMeshStdDataTag;
 
 const imgui_utils = @import("../ui/imgui.zig");
-const types_utils = @import("../utils/types.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
@@ -27,7 +26,7 @@ const length = @import("../models/surface/length.zig");
 const normal = @import("../models/surface/normal.zig");
 const tangent_basis = @import("../models/surface/tangent_basis.zig");
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Std Datas",
     .supported_models = .{ .surface_mesh = true },
@@ -36,13 +35,25 @@ module: Module = .{
     },
 },
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshStdDatas {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(smsd: *SurfaceMeshStdDatas, app_ctx: *AppContext) !void {
+    smsd.app_ctx = app_ctx;
+    try app_ctx.surface_mesh_store.addListener(&smsd.module);
 }
 
-pub fn deinit(_: *SurfaceMeshStdDatas) void {}
+pub fn deinit(smsd: *SurfaceMeshStdDatas) void {
+    smsd.app_ctx.surface_mesh_store.removeListener(&smsd.module);
+}
+
+pub fn updateComputableStdDatas(smsd: *SurfaceMeshStdDatas, sm: *SurfaceMesh) void {
+    const sm_store = &smsd.app_ctx.surface_mesh_store;
+    inline for (std_data_computations) |comp| {
+        const computable, const upToDate = dataComputableAndUpToDate(sm_store, sm, comp.computes);
+        if (computable and !upToDate) {
+            comp.compute(smsd.app_ctx, sm);
+        }
+    }
+}
 
 /// Part of the Module interface.
 /// Show a UI panel to control the standard datas of the selected SurfaceMesh.
@@ -100,11 +111,11 @@ pub fn leftPanel(m: *Module) void {
                     .unchanged => {},
                     .cleared => {
                         sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, null));
-                        smsd.app_ctx.requestRedraw();
+                        smsd.app_ctx.view.requestRedraw();
                     },
                     .changed => |data| {
                         sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, data));
-                        smsd.app_ctx.requestRedraw();
+                        smsd.app_ctx.view.requestRedraw();
                     },
                 }
             }
@@ -150,28 +161,8 @@ pub fn leftPanel(m: *Module) void {
 
     c.ImGui_Separator();
 
-    if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-        const std_data_info = @typeInfo(SurfaceMeshStdData).@"union";
-        inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
-            if (@field(info.std_datas, field_name) == null) {
-                const maybe_data = sm.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
-                if (maybe_data) |data| {
-                    sm_store.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, data));
-                    smsd.app_ctx.requestRedraw();
-                } else |err| {
-                    zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
-                }
-            }
-        }
-    }
-
     if (c.ImGui_ButtonEx(c.ICON_FA_GEAR ++ " Update outdated std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-        inline for (std_data_computations) |comp| {
-            const computable, const upToDate = dataComputableAndUpToDate(sm_store, sm, comp.computes);
-            if (computable and !upToDate) {
-                comp.compute(smsd.app_ctx, sm);
-            }
-        }
+        updateComputableStdDatas(smsd, sm);
     }
 }
 
@@ -226,7 +217,7 @@ const StdDataComputation = struct {
 /// The order of declaration matters: some computations depend on the result of previous ones
 /// (e.g. vertex normal depends on face normal) and the "Update outdated std datas" button of the SurfaceMeshStore
 /// computes them in the order of declaration.
-pub const std_data_computations: []const StdDataComputation = &.{
+const std_data_computations: []const StdDataComputation = &.{
     .{
         .reads = &.{.vertex_position},
         .computes = .corner_angle,
@@ -274,7 +265,7 @@ pub const std_data_computations: []const StdDataComputation = &.{
     },
 };
 
-pub fn dataComputableAndUpToDate(
+fn dataComputableAndUpToDate(
     sms: *SurfaceMeshStore,
     sm: *SurfaceMesh,
     comptime tag: SurfaceMeshStdDataTag,

@@ -8,7 +8,7 @@ const zgp_log = std.log.scoped(.zgp);
 
 const c = @import("c");
 
-const AppContext = @import("../main.zig").AppContext;
+const AppContext = @import("../AppContext.zig");
 const Module = @import("Module.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
@@ -28,7 +28,7 @@ const decimation = @import("../models/surface/decimation.zig");
 const curvature = @import("../models/surface/curvature.zig");
 const convex_hull = @import("../models/point/convex_hull.zig");
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Connectivity",
     .supported_models = .{ .surface_mesh = true },
@@ -36,17 +36,16 @@ module: Module = .{
         .rightClickMenu = rightClickMenu,
     },
 },
-// explicit dependency on curvature module to access curvature datas
-surface_mesh_curvature: *SurfaceMeshCurvature,
 
-pub fn init(app_ctx: *AppContext, surface_mesh_curvature: *SurfaceMeshCurvature) SurfaceMeshConnectivity {
-    return .{
-        .app_ctx = app_ctx,
-        .surface_mesh_curvature = surface_mesh_curvature,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(smc: *SurfaceMeshConnectivity, app_ctx: *AppContext) !void {
+    smc.app_ctx = app_ctx;
+    try app_ctx.surface_mesh_store.addListener(&smc.module);
 }
 
-pub fn deinit(_: *SurfaceMeshConnectivity) void {}
+pub fn deinit(smc: *SurfaceMeshConnectivity) void {
+    smc.app_ctx.surface_mesh_store.removeListener(&smc.module);
+}
 
 fn cutAllEdges(
     smc: *SurfaceMeshConnectivity,
@@ -56,7 +55,7 @@ fn cutAllEdges(
     try subdivision.cutAllEdges(smc.app_ctx.allocator, sm, vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position.*);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
-    smc.app_ctx.requestRedraw();
+    smc.app_ctx.view.requestRedraw();
 }
 
 fn triangulateFaces(
@@ -65,7 +64,7 @@ fn triangulateFaces(
 ) !void {
     try subdivision.triangulateFaces(smc.app_ctx.allocator, sm);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
-    smc.app_ctx.requestRedraw();
+    smc.app_ctx.view.requestRedraw();
 }
 
 fn remesh(
@@ -107,7 +106,7 @@ fn remesh(
     );
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position.*);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
-    smc.app_ctx.requestRedraw();
+    smc.app_ctx.view.requestRedraw();
 
     const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smc.app_ctx.io, .real).nanoseconds);
     zgp_log.info("Remeshing computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
@@ -137,7 +136,7 @@ fn decimate(
     );
     smc.app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
     smc.app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);
-    smc.app_ctx.requestRedraw();
+    smc.app_ctx.view.requestRedraw();
 
     const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smc.app_ctx.io, .real).nanoseconds);
     zgp_log.info("Decimation computed in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
@@ -152,7 +151,7 @@ fn generateConvexHull(
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
     var pc: PointCloud = undefined;
-    try pc.init(smc.app_ctx.allocator, &smc.app_ctx.point_cloud_store.point_buffer_pool);
+    try pc.init(smc.app_ctx.allocator, smc.app_ctx.io, &smc.app_ctx.point_cloud_store.point_buffer_pool);
     defer pc.deinit();
     const point_position = try pc.addData(Vec3f, "position");
     var vertex_it = sm.vertexIterator();
@@ -178,7 +177,7 @@ fn generateConvexHull(
     const elapsed: f64 = @floatFromInt(std.Io.Timestamp.untilNow(t, smc.app_ctx.io, .real).nanoseconds);
     zgp_log.info("Convex hull generated in : {d:.3}ms", .{elapsed / std.time.ns_per_ms});
 
-    smc.app_ctx.requestRedraw();
+    smc.app_ctx.view.requestRedraw();
 }
 
 /// Part of the Module interface.
@@ -298,7 +297,7 @@ pub fn rightClickMenu(m: *Module) void {
                 info.std_datas.edge_dihedral_angle == null or
                 info.std_datas.vertex_area == null or
                 info.std_datas.vertex_normal == null;
-            var curvature_datas = smc.surface_mesh_curvature.surfaceMeshCurvatureDatas(sm);
+            var curvature_datas = smc.app_ctx.surface_mesh_curvature.surfaceMeshCurvatureDatas(sm);
             if (UiData.adaptive_remeshing) {
                 if (curvature_datas.vertex_kmin == null or curvature_datas.vertex_Kmin == null or curvature_datas.vertex_kmax == null or curvature_datas.vertex_Kmax == null) {
                     disabled = true;

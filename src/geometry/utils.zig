@@ -5,7 +5,7 @@ const Data = @import("../utils/data.zig").Data;
 const vec = @import("../geometry/vec.zig");
 const Vec2f = vec.Vec2f;
 const Vec3f = vec.Vec3f;
-const SimdVec4f = vec.SimdVec4f;
+const Vec4f = vec.Vec4f;
 
 pub const epsilon: f32 = 1e-5;
 
@@ -16,17 +16,17 @@ pub fn angle(a: Vec3f, b: Vec3f) f32 {
 
 /// Compute and return the cosine of the angle between two vectors.
 pub fn cosAngle(a: Vec3f, b: Vec3f) f32 {
-    return vec.dot3f(
-        vec.normalized3f(a),
-        vec.normalized3f(b),
+    return vec.dot(
+        vec.normalized(a),
+        vec.normalized(b),
     );
 }
 
 /// Compute and return the area of the triangle defined by the given three points.
 pub fn triangleArea(a: Vec3f, b: Vec3f, c: Vec3f) f32 {
-    return 0.5 * vec.norm3f(vec.cross3f(
-        vec.sub3f(b, a),
-        vec.sub3f(c, a),
+    return 0.5 * vec.norm(vec.cross(
+        vec.sub(b, a),
+        vec.sub(c, a),
     ));
 }
 
@@ -39,9 +39,9 @@ pub fn triangleAreaIntrinsic(lAB: f32, lBC: f32, lCA: f32) f32 {
 
 /// Compute and return the _unnormalized_ normal vector of the triangle defined by the given three points.
 pub fn triangleNormal(a: Vec3f, b: Vec3f, c: Vec3f) Vec3f {
-    return vec.cross3f(
-        vec.sub3f(b, a),
-        vec.sub3f(c, a),
+    return vec.cross(
+        vec.sub(b, a),
+        vec.sub(c, a),
     );
 }
 
@@ -49,19 +49,19 @@ pub fn triangleNormal(a: Vec3f, b: Vec3f, c: Vec3f) Vec3f {
 // For triangle A,B,C, given vertex positions pA and pB, compute pC, such that lengths lBC and lCA are realized.
 // pC will be placed on the side which gives CCW winding of ABC.
 pub fn layoutTriangleVertex(pA: Vec2f, pB: Vec2f, lBC: f32, lCA: f32) Vec2f {
-    const lAB = vec.norm2f(vec.sub2f(pB, pA));
+    const lAB = vec.norm(vec.sub(pB, pA));
     const tArea = triangleAreaIntrinsic(lAB, lBC, lCA);
     // Compute (signed) width and height of right triangle formed via altitude from C
     const h = 2.0 * tArea / lAB;
     const w = (lAB * lAB - lBC * lBC + lCA * lCA) / (2.0 * lAB);
     // Project some vectors to get the actual position
-    const vABn = vec.mulScalar2f(vec.sub2f(pB, pA), 1.0 / lAB);
+    const vABn = vec.mulScalar(vec.sub(pB, pA), 1.0 / lAB);
     const vABnPerp: Vec2f = .{ -vABn[1], vABn[0] };
-    return vec.add2f(
+    return vec.add(
         pA,
-        vec.add2f(
-            vec.mulScalar2f(vABn, w),
-            vec.mulScalar2f(vABnPerp, h),
+        vec.add(
+            vec.mulScalar(vABn, w),
+            vec.mulScalar(vABnPerp, h),
         ),
     );
 }
@@ -69,14 +69,14 @@ pub fn layoutTriangleVertex(pA: Vec2f, pB: Vec2f, lBC: f32, lCA: f32) Vec2f {
 /// Compute and return the barycentric coordinates of the given point p
 /// with respect to the triangle defined by the given three points a, b, c.
 pub fn barycentricCoordinates(p: Vec2f, a: Vec2f, b: Vec2f, c: Vec2f) Vec3f {
-    const ab = vec.sub2f(b, a);
-    const ac = vec.sub2f(c, a);
-    const ap = vec.sub2f(p, a);
-    const d00 = vec.squaredNorm2f(ab);
-    const d01 = vec.dot2f(ab, ac);
-    const d11 = vec.squaredNorm2f(ac);
-    const d20 = vec.dot2f(ap, ab);
-    const d21 = vec.dot2f(ap, ac);
+    const ab = vec.sub(b, a);
+    const ac = vec.sub(c, a);
+    const ap = vec.sub(p, a);
+    const d00 = vec.squaredNorm(ab);
+    const d01 = vec.dot(ab, ac);
+    const d11 = vec.squaredNorm(ac);
+    const d20 = vec.dot(ap, ab);
+    const d21 = vec.dot(ap, ac);
     const denom = d00 * d11 - d01 * d01;
     const v = (d11 * d20 - d01 * d21) / denom;
     const w = (d00 * d21 - d01 * d20) / denom;
@@ -86,25 +86,25 @@ pub fn barycentricCoordinates(p: Vec2f, a: Vec2f, b: Vec2f, c: Vec2f) Vec3f {
 
 /// compute the distance between the given point p and the segment defined by the given two points a and b
 pub fn squaredDistanceSegmentPoint(a: Vec2f, b: Vec2f, p: Vec2f) f32 {
-    const ab = vec.sub2f(b, a);
-    const ap = vec.sub2f(p, a);
-    const t = std.math.clamp(vec.dot2f(ap, ab) / vec.squaredNorm2f(ab), 0.0, 1.0);
-    const closest = vec.add2f(a, vec.mulScalar2f(ab, t));
-    return vec.squaredNorm2f(vec.sub2f(p, closest));
+    const ab = vec.sub(b, a);
+    const ap = vec.sub(p, a);
+    const t = std.math.clamp(vec.dot(ap, ab) / vec.squaredNorm(ab), 0.0, 1.0);
+    const closest = vec.add(a, vec.mulScalar(ab, t));
+    return vec.squaredNorm(vec.sub(p, closest));
 }
 
 /// Compute the squared distance between the given point p and the line defined by the given two points a and b.
 pub fn squaredDistanceLinePoint(a: Vec3f, b: Vec3f, p: Vec3f) f32 {
-    const ab = vec.normalized3f(vec.sub3f(b, a));
-    const ap = vec.sub3f(p, a);
-    return vec.squaredNorm3f(vec.cross3f(ap, ab));
+    const ab = vec.normalized(vec.sub(b, a));
+    const ap = vec.sub(p, a);
+    return vec.squaredNorm(vec.cross(ap, ab));
 }
 
 /// Compute the signed distance between the given point p and the plane defined by the given three points a, b, c.
 pub fn signedDistancePlanePoint(a: Vec3f, b: Vec3f, c: Vec3f, p: Vec3f) f32 {
-    const n = vec.normalized3f(triangleNormal(a, b, c));
-    const d = vec.dot3f(n, a);
-    return vec.dot3f(n, p) - d;
+    const n = vec.normalized(triangleNormal(a, b, c));
+    const d = vec.dot(n, a);
+    return vec.dot(n, p) - d;
 }
 
 /// Compute the distance between the given point p and the plane defined by the given three points a, b, c.
@@ -130,47 +130,78 @@ pub fn planeOrientation(a: Vec3f, b: Vec3f, c: Vec3f, p: Vec3f) PlaneOrientation
     }
 }
 
+/// Return true if the given point is inside the sphere defined by the given center and radius, false otherwise.
+pub fn pointInSphere(p: Vec3f, center: Vec3f, radius: f32) bool {
+    return vec.squaredNorm(vec.sub(p, center)) <= radius * radius;
+}
+
+/// Return the 1D coordinates of the intersection points of the given sphere and segment, if any.
+/// Return null if there is no intersection.
+/// The returned coordinates are actually on the line defined by the segment, and can be outside the segment.
+/// An intersection point is on the segment if its coordinate is in [0, 1].
+pub fn intersectionSphereSegment(center: Vec3f, radius: f32, a: Vec3f, b: Vec3f) ?struct { f32, f32 } {
+    const ab = vec.sub(b, a);
+    const ac = vec.sub(center, a);
+    const ab_dot_ab = vec.dot(ab, ab);
+    const ab_dot_ac = vec.dot(ab, ac);
+    const ac_dot_ac = vec.dot(ac, ac);
+    const radius_sq = radius * radius;
+
+    const discriminant = ab_dot_ac * ab_dot_ac - ab_dot_ab * (ac_dot_ac - radius_sq);
+    if (discriminant < 0.0) {
+        return null; // no intersection
+    }
+    const sqrt_discriminant = @sqrt(discriminant);
+    return .{
+        (ab_dot_ac - sqrt_discriminant) / ab_dot_ab,
+        (ab_dot_ac + sqrt_discriminant) / ab_dot_ab,
+    };
+}
+
 /// Rotate a vector by a quaternion.
-pub fn rotateVectorByQuaternion(quat: SimdVec4f, vector: SimdVec4f) SimdVec4f {
-    const qw: SimdVec4f = @splat(quat[0]);
-    const qv: SimdVec4f = .{ quat[1], quat[2], quat[3], 0.0 };
-    const t_vec = vec.simdCross4f(qv, vector) + qw * vector;
-    return vector + vec.simdCross4f(qv, t_vec) * @as(SimdVec4f, @splat(2.0));
+pub fn rotateVectorByQuaternion(quat: Vec4f, vector: Vec3f) Vec3f {
+    const qw = quat[0];
+    const qv: Vec3f = .{ quat[1], quat[2], quat[3] };
+    const t_vec = vec.add(
+        vec.cross(qv, vector),
+        vec.mulScalar(vector, qw),
+    );
+    return vec.add(vector, vec.mulScalar(vec.cross(qv, t_vec), 2.0));
 }
 
 /// Return a vector where the component of v along unitDir has been removed.
 /// As the name suggests, unitDir must be a unit vector.
 pub fn removeComponent(v: Vec3f, unitDir: Vec3f) Vec3f {
-    return vec.sub3f(
+    return vec.sub(
         v,
-        vec.mulScalar3f(
+        vec.mulScalar(
             unitDir,
-            vec.dot3f(v, unitDir),
+            vec.dot(v, unitDir),
         ),
     );
 }
 
 /// Compute and return a tangent basis orthogonal to the given normal vector.
 pub fn tangentBasis(v: Vec3f) [2]Vec3f {
-    const vn = vec.normalized3f(v);
+    const vn = vec.normalized(v);
     var X: Vec3f = .{ 1.0, 0.0, 0.0 };
-    if (@abs(vec.dot3f(X, vn)) > 0.9) {
+    if (@abs(vec.dot(X, vn)) > 0.9) {
         X = .{ 0.0, 1.0, 0.0 };
     }
-    X = vec.cross3f(X, vn); // X and vn are both unit vectors
-    const Y = vec.cross3f(vn, X);
+    X = vec.cross(X, vn); // X and vn are both unit vectors
+    const Y = vec.cross(vn, X);
     return .{ X, Y };
 }
 
 /// Compute and return the axis-aligned bounding box of the given data points
 /// as a pair of minimum and maximum corners.
 pub fn boundingBox(data: *const Data(Vec3f)) struct { Vec3f, Vec3f } {
-    var bb_min = vec.splat3f(std.math.floatMax(f32));
-    var bb_max = vec.splat3f(std.math.floatMin(f32));
+    var bb_min = vec.splat(Vec3f, std.math.floatMax(f32));
+    var bb_max = vec.splat(Vec3f, -std.math.floatMax(f32));
     var it = data.constIterator();
     while (it.next()) |elem| {
-        bb_min = vec.componentwiseMin3f(bb_min, elem.value_ptr.*);
-        bb_max = vec.componentwiseMax3f(bb_max, elem.value_ptr.*);
+        bb_min = vec.componentwiseMin(bb_min, elem.value_ptr.*);
+        bb_max = vec.componentwiseMax(bb_max, elem.value_ptr.*);
     }
     return .{ bb_min, bb_max };
 }
@@ -179,8 +210,8 @@ pub fn boundingBox(data: *const Data(Vec3f)) struct { Vec3f, Vec3f } {
 /// in the following order: xmin, xmax, ymin ymax, zmin, zmax
 /// (a point can be present multiple times)
 pub fn extremePoints(data: *const Data(Vec3f)) [6]Vec3f {
-    var bb_min = vec.splat3f(std.math.floatMax(f32));
-    var bb_max = vec.splat3f(std.math.floatMin(f32));
+    var bb_min = vec.splat(Vec3f, std.math.floatMax(f32));
+    var bb_max = vec.splat(Vec3f, -std.math.floatMax(f32));
     var result: [6]Vec3f = undefined;
     var it = data.constIterator();
     while (it.next()) |elem| {
@@ -216,16 +247,16 @@ pub fn extremePoints(data: *const Data(Vec3f)) [6]Vec3f {
 pub fn scale(data: *Data(Vec3f), s: f32) void {
     var it = data.iterator();
     while (it.next()) |elem| {
-        elem.value_ptr.* = vec.mulScalar3f(elem.value_ptr.*, s);
+        elem.value_ptr.* = vec.mulScalar(elem.value_ptr.*, s);
     }
 }
 
 /// Translate the given data points to center around the given point.
 pub fn centerAround(data: *Data(Vec3f), v: Vec3f) void {
     const c = data.meanValue();
-    const offset = vec.sub3f(v, c);
+    const offset = vec.sub(v, c);
     var it = data.iterator();
     while (it.next()) |elem| {
-        elem.value_ptr.* = vec.add3f(elem.value_ptr.*, offset);
+        elem.value_ptr.* = vec.add(elem.value_ptr.*, offset);
     }
 }

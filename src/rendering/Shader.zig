@@ -9,8 +9,8 @@ const gl_log = std.log.scoped(.gl);
 var shader_registry: std.ArrayList(*Shader) = .empty;
 var allocator: std.mem.Allocator = undefined;
 /// Store an allocator to use in register and deinitRegistry
-pub fn initRegistry(gpa: std.mem.Allocator) !void {
-    allocator = gpa;
+pub fn initRegistry(alloc: std.mem.Allocator) !void {
+    allocator = alloc;
     try shader_registry.ensureTotalCapacity(allocator, 32);
 }
 /// Each Shader registers itself upon singleton initialization

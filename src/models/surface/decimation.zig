@@ -7,9 +7,9 @@ const SurfaceMesh = @import("SurfaceMesh.zig");
 
 const vec = @import("../../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
-const SimdVec4f = vec.SimdVec4f;
+const Vec4f = vec.Vec4f;
 const mat = @import("../../geometry/mat.zig");
-const SimdMat4f = mat.SimdMat4f;
+const Mat4f = mat.Mat4f;
 
 const subdivision = @import("subdivision.zig");
 const qem = @import("qem.zig");
@@ -17,8 +17,8 @@ const qem = @import("qem.zig");
 const QEMDecimationContext = struct {
     surface_mesh: *SurfaceMesh,
 
-    vertex_position_simd: SurfaceMesh.VertexData(SimdVec4f),
-    vertex_qem_simd: SurfaceMesh.VertexData(SimdMat4f),
+    vertex_position: SurfaceMesh.VertexData(Vec3f),
+    vertex_qem: SurfaceMesh.VertexData(Mat4f),
 
     pub fn init(
         sm: *SurfaceMesh,
@@ -28,68 +28,54 @@ const QEMDecimationContext = struct {
         face_area: SurfaceMesh.FaceData(f32),
         face_normal: SurfaceMesh.FaceData(Vec3f),
     ) !QEMDecimationContext {
-        const vertex_position_simd = try sm.addData(.vertex, SimdVec4f, "__position_simd");
-        var it = vertex_position.data.constIterator();
-        while (it.next()) |elem| {
-            vertex_position_simd.data.valuePtr(elem.idx).* = vec.simdFromVec3f(elem.value_ptr.*);
-        }
-
-        var vertex_qem_simd = try sm.addData(.vertex, SimdMat4f, "__qem_simd");
-        try qem.computeVertexQEMsSimd(
+        var vertex_qem = try sm.addData(.vertex, Mat4f, "__qem");
+        try qem.computeVertexQEMs(
             sm,
-            vertex_position_simd,
+            vertex_position,
             vertex_area,
             vertex_tangent_basis,
             face_area,
             face_normal,
-            &vertex_qem_simd,
+            &vertex_qem,
         );
 
         return .{
             .surface_mesh = sm,
-            .vertex_position_simd = vertex_position_simd,
-            .vertex_qem_simd = vertex_qem_simd,
+            .vertex_position = vertex_position,
+            .vertex_qem = vertex_qem,
         };
     }
 
     pub fn deinit(qem_ctx: *QEMDecimationContext) void {
-        qem_ctx.surface_mesh.removeData(qem_ctx.vertex_position_simd);
-        qem_ctx.surface_mesh.removeData(qem_ctx.vertex_qem_simd);
+        qem_ctx.surface_mesh.removeData(qem_ctx.vertex_qem);
     }
 
-    pub fn writeBack(qem_ctx: *QEMDecimationContext, vertex_position: SurfaceMesh.VertexData(Vec3f)) !void {
-        var it = qem_ctx.vertex_position_simd.data.constIterator();
-        while (it.next()) |elem| {
-            vertex_position.data.valuePtr(elem.idx).* = vec.simdToVec3f(elem.value_ptr.*);
-        }
-    }
-
-    fn edgeCollapsePositionAndQuadric(qem_ctx: *QEMDecimationContext, edge: SurfaceMesh.Edge) struct { SimdVec4f, SimdMat4f } {
+    fn edgeCollapsePositionAndQuadric(qem_ctx: *QEMDecimationContext, edge: SurfaceMesh.Edge) struct { Vec3f, Mat4f } {
         const sm = qem_ctx.surface_mesh;
         const d = sm.dart(edge);
         const d1 = sm.phi1(d);
         const v1 = sm.vertex(d);
         const v2 = sm.vertex(d1);
 
-        const q = mat.simdAdd4f(
-            qem_ctx.vertex_qem_simd.value(v1),
-            qem_ctx.vertex_qem_simd.value(v2),
+        const q = mat.add(
+            qem_ctx.vertex_qem.value(v1),
+            qem_ctx.vertex_qem.value(v2),
         );
 
-        var p: ?SimdVec4f = null;
+        var p: ?Vec3f = null;
         if (!sm.isOrbitIncidentToBoundary(d, .edge)) {
             if (sm.isOrbitIncidentToBoundary(d, .vertex)) {
-                p = qem_ctx.vertex_position_simd.value(v1); // put on v1 if v1 is on boundary and v2 is not
+                p = qem_ctx.vertex_position.value(v1); // put on v1 if v1 is on boundary and v2 is not
             } else if (sm.isOrbitIncidentToBoundary(d1, .vertex)) {
-                p = qem_ctx.vertex_position_simd.value(v2); // put on v2 if v2 is on boundary and v1 is not
+                p = qem_ctx.vertex_position.value(v2); // put on v2 if v2 is on boundary and v1 is not
             }
         }
         if (p == null) {
-            p = qem.optimalPointSimd(q); // can still be null after this call if Q is not invertible
+            p = qem.optimalPoint(q); // can still be null after this call if Q is not invertible
         }
         if (p == null) {
             // if Q is not invertible, we choose the midpoint of the edge
-            p = (qem_ctx.vertex_position_simd.value(v1) + qem_ctx.vertex_position_simd.value(v2)) * @as(SimdVec4f, @splat(0.5));
+            p = vec.mulScalar(vec.add(qem_ctx.vertex_position.value(v1), qem_ctx.vertex_position.value(v2)), 0.5);
         }
         return .{ p.?, q };
     }
@@ -132,10 +118,10 @@ pub fn decimateQEM(
     const EdgeQueueUtil = struct {
         fn edgeCost(queue: *EdgeQueue, edge: SurfaceMesh.Edge) f32 {
             const p, const q = queue.context.qem_ctx.edgeCollapsePositionAndQuadric(edge);
-            const p_hom: SimdVec4f = .{ p[0], p[1], p[2], 1.0 };
+            const p_hom: Vec4f = .{ p[0], p[1], p[2], 1.0 };
             // cost = p^T * Q * p  (in f32!)
-            const qp = mat.simdMulVec4f(q, p_hom);
-            return vec.simdDot4f(p_hom, qp);
+            const qp = mat.mulVec(q, p_hom);
+            return vec.dot(p_hom, qp);
         }
         fn addEdgeToQueue(queue: *EdgeQueue, edge: SurfaceMesh.Edge, alloc: std.mem.Allocator) !void {
             try queue.push(alloc, .{ .edge = edge, .cost = edgeCost(queue, edge) });
@@ -234,8 +220,8 @@ pub fn decimateQEM(
         const v = sm.collapseEdge(edge);
 
         // Update the context data
-        qem_ctx.vertex_position_simd.valuePtr(v).* = p;
-        qem_ctx.vertex_qem_simd.valuePtr(v).* = q;
+        qem_ctx.vertex_position.valuePtr(v).* = p;
+        qem_ctx.vertex_qem.valuePtr(v).* = q;
 
         // Update the queue
         // - edges incident to v: their cost changed (new position & quadric of v) -> cost update (or insertion if collapsible)
@@ -260,6 +246,4 @@ pub fn decimateQEM(
 
         nb_removed_vertices += 1;
     }
-
-    try qem_ctx.writeBack(vertex_position);
 }

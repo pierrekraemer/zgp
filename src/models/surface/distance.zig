@@ -213,7 +213,7 @@ pub const HeatMethodContext = struct {
         face_area: SurfaceMesh.FaceData(f32),
         face_normal: SurfaceMesh.FaceData(Vec3f),
         diffusion_time: f32,
-        // it_ctx: ?intrinsic_triangulation.ITContext,
+        // it_ctx: ?intrinsic_triangulation.ITContext, // TODO: support intrinsic triangulation for heat method
     ) !HeatMethodContext {
         // Create consecutive indices for vertices
         var vertex_index = try sm.addData(.vertex, u32, "__heat_method_vertex_index");
@@ -346,31 +346,33 @@ pub const HeatMethodContext = struct {
         }
 
         // compute the gradient of heat_t on each face
-        try gradient.computeScalarFieldFaceGradients(
+        try gradient.computeVertexScalarFieldFaceGradients(
             hm_ctx.io,
             hm_ctx.surface_mesh,
             hm_ctx.vertex_position,
-            hm_ctx.vertex_heat,
             hm_ctx.face_area,
             hm_ctx.face_normal,
+            eigen.Scalar,
+            hm_ctx.vertex_heat,
             &hm_ctx.face_heat_grad,
         );
 
         // negate and normalize the face gradients
         var grad_it = hm_ctx.face_heat_grad.data.valueIterator();
         while (grad_it.next()) |g| {
-            g.* = vec.mulScalar3d(
-                vec.normalized3d(g.*),
+            g.* = vec.mulScalar(
+                vec.normalized(g.*),
                 -1.0,
             );
         }
 
         // compute the divergence of the face gradients at each vertex
-        try gradient.computeVectorFieldVertexDivergences(
+        try gradient.computeFaceVectorFieldVertexDivergences(
             hm_ctx.io,
             hm_ctx.surface_mesh,
             hm_ctx.halfedge_cotan_weight,
             hm_ctx.vertex_position,
+            eigen.Scalar,
             hm_ctx.face_heat_grad,
             &hm_ctx.vertex_heat_grad_div,
         );

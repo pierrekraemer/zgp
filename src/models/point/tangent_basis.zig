@@ -12,13 +12,13 @@ const geometry_utils = @import("../../geometry/utils.zig");
 pub fn computePointTangentBases(
     io: std.Io,
     pc: *PointCloud,
-    point_normal: PointCloud.CellData(Vec3f),
-    point_tangent_basis: PointCloud.CellData([2]Vec3f),
+    point_normal: PointCloud.PointData(Vec3f),
+    point_tangent_basis: PointCloud.PointData([2]Vec3f),
 ) !void {
     const Task = struct {
         point_cloud: *const PointCloud,
-        point_normal: PointCloud.CellData(Vec3f),
-        point_tangent_basis: PointCloud.CellData([2]Vec3f),
+        point_normal: PointCloud.PointData(Vec3f),
+        point_tangent_basis: PointCloud.PointData([2]Vec3f),
 
         pub fn run(t: *const @This(), point: PointCloud.Point) void {
             t.point_tangent_basis.valuePtr(point).* = geometry_utils.tangentBasis(t.point_normal.value(point));

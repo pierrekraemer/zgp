@@ -15,15 +15,15 @@ const geometry_utils = @import("../../geometry/utils.zig");
 // - out_angle is the angle between dir and the segment (b-a), in (-π, π], positive if segment b-a points to the left of dir
 // Returns null if dir is parallel to the segment or if the intersection occurs outside of the segment (with some epsilon tolerance).
 fn raySegmentIntersect(p: Vec2f, dir: Vec2f, a: Vec2f, b: Vec2f) ?struct { f32, f32, f32 } {
-    const seg = vec.sub2f(b, a);
-    const det = vec.cross2f(dir, seg);
+    const seg = vec.sub(b, a);
+    const det = vec.det(dir, seg);
     if (@abs(det) < geometry_utils.epsilon) return null;
-    const ap = vec.sub2f(a, p);
-    const t_ray = vec.cross2f(ap, seg) / det;
-    const t_seg = vec.cross2f(ap, dir) / det;
+    const ap = vec.sub(a, p);
+    const t_ray = vec.det(ap, seg) / det;
+    const t_seg = vec.det(ap, dir) / det;
     if (t_ray <= geometry_utils.epsilon) return null; // intersection occurs behind the current point
     if (t_seg < -geometry_utils.epsilon or t_seg > 1.0 + geometry_utils.epsilon) return null; // intersection occurs outside of the segment
-    const dot = vec.dot2f(dir, seg);
+    const dot = vec.dot(dir, seg);
     const out_angle = std.math.atan2(det, dot);
     return .{ t_ray, t_seg, out_angle };
 }
@@ -152,7 +152,7 @@ pub fn traceGeodesic(
                 };
                 if (t_ray > remaining_length + geometry_utils.epsilon) {
                     // the traced geodesic ends before reaching the edge of the triangle
-                    const p_end = vec.add2f(p, vec.mulScalar2f(in_face_dir, remaining_length));
+                    const p_end = vec.add2f(p, vec.mulScalar(in_face_dir, remaining_length));
                     remaining_length = 0.0;
                     current_sp = .{
                         .surface_mesh = sm,

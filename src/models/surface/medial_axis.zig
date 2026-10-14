@@ -19,29 +19,29 @@ pub fn shrinkingBall(
     p: Vec3f,
     n: Vec3f,
 ) ?Vec4f {
-    var r = if (sm_bvh.intersectedSurfacePoint(.{ .origin = p, .direction = vec.mulScalar3f(n, -1.0) })) |sp| blk: {
+    var r = if (sm_bvh.intersectedSurfacePoint(.{ .origin = p, .direction = vec.mulScalar(n, -1.0) })) |sp| blk: {
         const ip = sp.readData(Vec3f, .vertex, sm_bvh.vertex_position);
-        break :blk vec.norm3f(vec.sub3f(p, ip)) * 0.75;
+        break :blk vec.norm(vec.sub(p, ip)) * 0.75;
     } else {
         return null;
     };
-    var c = vec.sub3f(p, vec.mulScalar3f(n, r));
-    var q = vec.sub3f(p, vec.mulScalar3f(n, 2.0 * r));
+    var c = vec.sub(p, vec.mulScalar(n, r));
+    var q = vec.sub(p, vec.mulScalar(n, 2.0 * r));
     var j: u32 = 0;
     while (true) {
         const q_next = sm_bvh.closestPoint(c);
-        const dist = vec.norm3f(vec.sub3f(q_next, c));
-        if (@abs(dist - r) < 1e-4 or vec.norm3f(vec.sub3f(q_next, q)) < 1e-4) { // TODO: use a better epsilon?
+        const dist = vec.norm(vec.sub(q_next, c));
+        if (@abs(dist - r) < 1e-4 or vec.norm(vec.sub(q_next, q)) < 1e-4) { // TODO: use a better epsilon?
             break;
         }
         const r_next = blk: {
-            const qp = vec.sub3f(p, q_next);
-            const d = vec.norm3f(qp);
+            const qp = vec.sub(p, q_next);
+            const d = vec.norm(qp);
             const cos_theta = geometry_utils.cosAngle(n, qp);
             break :blk d / (2.0 * cos_theta);
         };
-        const c_next = vec.sub3f(p, vec.mulScalar3f(n, r_next));
-        const sep_angle = geometry_utils.angle(vec.sub3f(p, c_next), vec.sub3f(q_next, c_next));
+        const c_next = vec.sub(p, vec.mulScalar(n, r_next));
+        const sep_angle = geometry_utils.angle(vec.sub(p, c_next), vec.sub(q_next, c_next));
         if (j > 0 and sep_angle < 45.0 * std.math.pi / 180.0) { // TODO: use a configurable angle threshold?
             break;
         }
@@ -77,7 +77,7 @@ pub fn computeVertexShrinkingBalls(
             const n = t.vertex_normal.value(vertex);
             t.vertex_shrinking_ball.valuePtr(vertex).* = shrinkingBall(
                 t.sm_bvh,
-                vec.add3f(t.vertex_position.value(vertex), vec.mulScalar3f(n, -1e-4)),
+                vec.add(t.vertex_position.value(vertex), vec.mulScalar(n, -1e-4)),
                 n,
             );
         }
@@ -116,11 +116,11 @@ pub const VMASContext = struct {
 
     spheres: *PointCloud,
     // created data
-    sphere_center: PointCloud.CellData(Vec3f),
-    sphere_radius: PointCloud.CellData(f32),
-    sphere_cluster: PointCloud.CellData(std.ArrayList(SurfaceMesh.Vertex)),
-    sphere_error: PointCloud.CellData(f32),
-    sphere_neighbor_spheres: PointCloud.CellData(std.AutoArrayHashMapUnmanaged(PointCloud.Point, void)),
+    sphere_center: PointCloud.PointData(Vec3f),
+    sphere_radius: PointCloud.PointData(f32),
+    sphere_cluster: PointCloud.PointData(std.ArrayList(SurfaceMesh.Vertex)),
+    sphere_error: PointCloud.PointData(f32),
+    sphere_neighbor_spheres: PointCloud.PointData(std.AutoArrayHashMapUnmanaged(PointCloud.Point, void)),
 
     skeleton: *IncidenceGraph,
     // created data
@@ -138,7 +138,10 @@ pub const VMASContext = struct {
         face_area: SurfaceMesh.FaceData(f32),
         face_normal: SurfaceMesh.FaceData(Vec3f),
         spheres: *PointCloud,
+        sphere_center: PointCloud.PointData(Vec3f),
+        sphere_radius: PointCloud.PointData(f32),
         skeleton: *IncidenceGraph,
+        skeleton_vertex_position: IncidenceGraph.VertexData(Vec3f),
         line_quadric_epsilon: f32,
     ) !VMASContext {
         // create surface_mesh vertex data
@@ -150,16 +153,11 @@ pub const VMASContext = struct {
         spheres.clearRetainingCapacity();
 
         // create medial spheres PointCloud data
-        const sphere_center = try spheres.addData(Vec3f, "center");
-        const sphere_radius = try spheres.addData(f32, "radius");
         const sphere_cluster = try spheres.addData(std.ArrayList(SurfaceMesh.Vertex), "cluster");
         const sphere_error = try spheres.addData(f32, "error");
         const sphere_neighbor_spheres = try spheres.addData(std.AutoArrayHashMapUnmanaged(PointCloud.Point, void), "neighbor_spheres");
 
         skeleton.clearRetainingCapacity();
-
-        // create skeleton IncidenceGraph data
-        const skeleton_vertex_position = try skeleton.addData(.vertex, Vec3f, "position");
 
         try sqem.computeVertexSQEMs(
             io,
@@ -391,14 +389,14 @@ pub const VMASContext = struct {
                     // correct the optimal sphere on the medial axis
                     const s_center = .{ opt_s[0], opt_s[1], opt_s[2] };
                     const cp, const sp = vmas_ctx.surface_mesh_bvh.closestPointWithSurfacePoint(s_center);
-                    var cp_dir = vec.normalized3f(vec.sub3f(cp, s_center));
+                    var cp_dir = vec.normalized(vec.sub(cp, s_center));
                     const cp_normal = sp.readData(Vec3f, .face, vmas_ctx.face_normal);
-                    if (vec.dot3f(cp_dir, cp_normal) <= 0.0) {
-                        cp_dir = vec.mulScalar3f(cp_dir, -1.0);
+                    if (vec.dot(cp_dir, cp_normal) <= 0.0) {
+                        cp_dir = vec.mulScalar(cp_dir, -1.0);
                     }
                     const corrected_sphere = shrinkingBall(
                         vmas_ctx.surface_mesh_bvh,
-                        vec.add3f(cp, vec.mulScalar3f(cp_dir, -1e-4)),
+                        vec.add(cp, vec.mulScalar(cp_dir, -1e-4)),
                         cp_dir,
                     );
                     if (corrected_sphere) |cs| {
@@ -518,9 +516,9 @@ pub const VMASContext = struct {
             vmas_ctx.sphere_radius.valuePtr(s).* = ball[3];
         } else {
             const n = vmas_ctx.vertex_normal.value(worst_vertex.?);
-            vmas_ctx.sphere_center.valuePtr(s).* = vec.add3f(
+            vmas_ctx.sphere_center.valuePtr(s).* = vec.add(
                 vmas_ctx.vertex_position.value(worst_vertex.?),
-                vec.mulScalar3f(n, -0.01),
+                vec.mulScalar(n, -0.01),
             );
             vmas_ctx.sphere_radius.valuePtr(s).* = 0.01;
         }

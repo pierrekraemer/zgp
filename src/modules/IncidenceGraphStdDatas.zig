@@ -7,7 +7,7 @@ const zgp_log = std.log.scoped(.zgp);
 
 const c = @import("c");
 
-const AppContext = @import("../main.zig").AppContext;
+const AppContext = @import("../AppContext.zig");
 const Module = @import("Module.zig");
 const IncidenceGraph = @import("../models/incidenceGraph/IncidenceGraph.zig");
 const IncidenceGraphStore = @import("../models/IncidenceGraphStore.zig");
@@ -19,7 +19,7 @@ const types_utils = @import("../utils/types.zig");
 const vec = @import("../geometry/vec.zig");
 const Vec3f = vec.Vec3f;
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Incidence Graph Std Datas",
     .supported_models = .{ .incidence_graph = true },
@@ -28,13 +28,15 @@ module: Module = .{
     },
 },
 
-pub fn init(app_ctx: *AppContext) IncidenceGraphStdDatas {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(igsd: *IncidenceGraphStdDatas, app_ctx: *AppContext) !void {
+    igsd.app_ctx = app_ctx;
+    try app_ctx.incidence_graph_store.addListener(&igsd.module);
 }
 
-pub fn deinit(_: *IncidenceGraphStdDatas) void {}
+pub fn deinit(icsd: *IncidenceGraphStdDatas) void {
+    icsd.app_ctx.incidence_graph_store.removeListener(&icsd.module);
+}
 
 /// Part of the Module interface.
 /// Show a UI panel to control the standard datas of the selected IncidenceGraph.
@@ -92,29 +94,12 @@ pub fn leftPanel(m: *Module) void {
                     .unchanged => {},
                     .cleared => {
                         ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field_name, null));
-                        igsd.app_ctx.requestRedraw();
+                        igsd.app_ctx.view.requestRedraw();
                     },
                     .changed => |data| {
                         ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field_name, data));
-                        igsd.app_ctx.requestRedraw();
+                        igsd.app_ctx.view.requestRedraw();
                     },
-                }
-            }
-        }
-    }
-
-    c.ImGui_Separator();
-
-    if (c.ImGui_ButtonEx(c.ICON_FA_DATABASE ++ " Create missing std datas", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
-        const std_data_info = @typeInfo(IncidenceGraphStdData).@"union";
-        inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
-            if (@field(info.std_datas, field_name) == null) {
-                const maybe_data = ig.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
-                if (maybe_data) |data| {
-                    ig_store.setIncidenceGraphStdData(ig, @unionInit(IncidenceGraphStdData, field_name, data));
-                    igsd.app_ctx.requestRedraw();
-                } else |err| {
-                    zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
                 }
             }
         }
@@ -151,7 +136,7 @@ const StdDataComputation = struct {
     }
 
     // get the standard datas to read and the one to compute from the IncidenceGraphStdDatas of the given IncidenceGraph
-    pub fn compute(comptime self: *const StdDataComputation, app_ctx: *AppContext, ig: *IncidenceGraph) void {
+    fn compute(comptime self: *const StdDataComputation, app_ctx: *AppContext, ig: *IncidenceGraph) void {
         const info = app_ctx.incidence_graph_store.incidenceGraphInfo(ig);
         const func: *const self.ComputeFuncType() = @ptrCast(@alignCast(self.func));
         var args: std.meta.ArgsTuple(self.ComputeFuncType()) = undefined;
@@ -171,9 +156,9 @@ const StdDataComputation = struct {
 /// The order of declaration matters: some computations depend on the result of previous ones
 /// and the "Update outdated std datas" button of the IncidenceGraphStore
 /// computes them in the order of declaration.
-pub const std_data_computations: []const StdDataComputation = &.{};
+const std_data_computations: []const StdDataComputation = &.{};
 
-pub fn dataComputableAndUpToDate(
+fn dataComputableAndUpToDate(
     igs: *IncidenceGraphStore,
     ig: *IncidenceGraph,
     comptime tag: IncidenceGraphStdDataTag,

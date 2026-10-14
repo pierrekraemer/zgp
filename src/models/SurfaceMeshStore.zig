@@ -11,7 +11,7 @@ const imgui_utils = @import("../ui/imgui.zig");
 const types_utils = @import("../utils/types.zig");
 
 const Module = @import("../modules/Module.zig");
-const ModelSelection = @import("../main.zig").ModelSelection;
+const ModelSelection = @import("../AppContext.zig").ModelSelection;
 const SurfaceMesh = @import("surface/SurfaceMesh.zig");
 
 const Data = @import("../utils/data.zig").Data;
@@ -110,7 +110,7 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !SurfaceMeshStore {
         .data_vbo = .empty,
         .cell_set_ibo = .empty,
         .data_last_update = .empty,
-        .index_buffer_pool = try .init(io, allocator, 2048, 64, 32),
+        .index_buffer_pool = try .init(io, allocator, 1024, 64, 32),
     };
 }
 
@@ -152,6 +152,15 @@ pub fn addListener(sms: *SurfaceMeshStore, module: *Module) !void {
     try sms.listeners.append(sms.allocator, module);
 }
 
+pub fn removeListener(sms: *SurfaceMeshStore, module: *Module) void {
+    for (sms.listeners.items, 0..) |m, i| {
+        if (m == module) {
+            _ = sms.listeners.swapRemove(i);
+            return;
+        }
+    }
+}
+
 pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh {
     if (sms.surface_meshes.contains(name)) {
         return error.ModelNameAlreadyExists;
@@ -160,11 +169,25 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     // create and init the SurfaceMesh
     var sm = try sms.allocator.create(SurfaceMesh);
     errdefer sms.allocator.destroy(sm);
-    try sm.init(sms.allocator, &sms.index_buffer_pool);
+    try sm.init(sms.allocator, sms.io, &sms.index_buffer_pool);
     errdefer sm.deinit();
 
     // register the SurfaceMesh in the SurfaceMeshStore to make it available in the UI and for other modules
     try sms.registerSurfaceMesh(name, sm);
+
+    // create the standard datas for the SurfaceMesh
+    const info = sms.surface_meshes_info.getPtr(sm).?;
+    const std_data_info = @typeInfo(SurfaceMeshStdData).@"union";
+    inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
+        if (@field(info.std_datas, field_name) == null) {
+            const maybe_data = sm.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
+            if (maybe_data) |data| {
+                sms.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, data));
+            } else |err| {
+                zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
+            }
+        }
+    }
 
     return sm;
 }
@@ -183,6 +206,7 @@ pub fn registerSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8, sm: *Surfac
     // store the SurfaceMeshInfo in the map
     try sms.surface_meshes_info.put(sms.allocator, sm, .init());
 
+    // dispatch call to listeners
     for (sms.listeners.items) |module| {
         module.surfaceMeshCreated(sm);
     }
@@ -212,6 +236,7 @@ pub fn unregisterSurfaceMesh(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
         else => {},
     }
 
+    // dispatch call to listeners
     for (sms.listeners.items) |module| {
         module.surfaceMeshDestroyed(sm);
     }
@@ -249,13 +274,12 @@ pub fn surfaceMeshDataUpdated(
 
 pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) void {
     if (builtin.mode == .debug) {
-        const ok = sm.checkIntegrity() catch |err| {
+        const ok = sm.checkIntegrity() catch |err| blk: {
             zgp_log.err("Failed to check integrity after connectivity update: {}", .{err});
-            return;
+            break :blk false;
         };
         if (!ok) {
             zgp_log.err("SurfaceMesh integrity check failed after connectivity update", .{});
-            return;
         }
     }
 
@@ -274,19 +298,15 @@ pub fn surfaceMeshConnectivityUpdated(sms: *SurfaceMeshStore, sm: *SurfaceMesh) 
     // update the different primitives IBO
     info.points_ibo.fillFromSurfaceMesh(sm, .vertex, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill points IBO for SurfaceMesh: {}", .{err});
-        return;
     };
     info.lines_ibo.fillFromSurfaceMesh(sm, .edge, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill lines IBO for SurfaceMesh: {}", .{err});
-        return;
     };
     info.triangles_ibo.fillFromSurfaceMesh(sm, .face, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill triangles IBO for SurfaceMesh: {}", .{err});
-        return;
     };
     info.boundaries_ibo.fillFromSurfaceMeshBoundary(sm, sms.allocator) catch |err| {
         zgp_log.err("Failed to fill boundaries IBO for SurfaceMesh: {}", .{err});
-        return;
     };
 
     // update the cells sets
@@ -329,7 +349,6 @@ pub fn surfaceMeshCellSetUpdated(
     if (maybe_ibo) |ibo| {
         ibo.fillFromSurfaceMeshCellSlice(sm, cell_set.cells.items, sms.allocator) catch |err| {
             zgp_log.err("Failed to fill cell set IBO for SurfaceMesh: {}", .{err});
-            return;
         };
     }
 
@@ -715,6 +734,7 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
     }
 
     const sm = try sms.createSurfaceMesh(std.fs.path.basename(filename));
+    errdefer sms.destroySurfaceMesh(sm);
 
     var vertex_position = try sm.addData(.vertex, Vec3f, "position");
     var darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");

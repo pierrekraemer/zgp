@@ -1,444 +1,339 @@
 const std = @import("std");
+const assert = std.debug.assert;
 
-pub const Vec2f = [2]f32;
-pub const Vec3f = [3]f32;
-pub const Vec4f = [4]f32;
-
-pub const Vec2d = [2]f64;
-pub const Vec3d = [3]f64;
-pub const Vec4d = [4]f64;
-
-// ------------------------------- SIMD ------------------------------- //
-
-pub const SimdVec4f = @Vector(4, f32);
-pub const SimdVec4d = @Vector(4, f64);
-
-// -------------------------------------------------------------------- //
-
-pub const zero2f: Vec2f = @splat(0);
-pub const zero3f: Vec3f = @splat(0);
-pub const zero4f: Vec4f = @splat(0);
-
-pub const zero2d: Vec2d = @splat(0);
-pub const zero3d: Vec3d = @splat(0);
-pub const zero4d: Vec4d = @splat(0);
-
-pub fn vec3fFromVec3d(v: Vec3d) Vec3f {
-    return .{ @floatCast(v[0]), @floatCast(v[1]), @floatCast(v[2]) };
-}
-pub fn vec3dFromVec3f(v: Vec3f) Vec3d {
-    return .{ @floatCast(v[0]), @floatCast(v[1]), @floatCast(v[2]) };
-}
-pub fn vec4fFromVec4d(v: Vec4d) Vec4f {
-    return .{ @floatCast(v[0]), @floatCast(v[1]), @floatCast(v[2]), @floatCast(v[3]) };
-}
-pub fn vec4dFromVec4f(v: Vec4f) Vec4d {
-    return .{ @floatCast(v[0]), @floatCast(v[1]), @floatCast(v[2]), @floatCast(v[3]) };
+/// Vec are n-dimensional vectors represented as fixed-size arrays of scalars.
+pub fn Vec(comptime N: usize, comptime Scalar: type) type {
+    return [N]Scalar;
 }
 
-// ------------------------------- SIMD ------------------------------- //
+pub const Vec2f = Vec(2, f32);
+pub const Vec3f = Vec(3, f32);
+pub const Vec4f = Vec(4, f32);
 
-pub fn simdFromVec3f(v: Vec3f) SimdVec4f {
-    return .{ v[0], v[1], v[2], 0.0 };
+pub const Vec2d = Vec(2, f64);
+pub const Vec3d = Vec(3, f64);
+pub const Vec4d = Vec(4, f64);
+
+// Return the dimension of the given Vec type
+pub fn dim(comptime V: type) comptime_int {
+    const vec_info = @typeInfo(V);
+    if (vec_info != .array) {
+        @compileError("dim only supports array types");
+    }
+    return vec_info.array.len;
 }
-pub fn simdFromVec3d(v: Vec3d) SimdVec4d {
-    return .{ v[0], v[1], v[2], 0.0 };
+
+// Return the type of the components of the given Vec type
+pub fn ScalarTypeOf(comptime V: type) type {
+    const vec_info = @typeInfo(V);
+    if (vec_info != .array) {
+        @compileError("Scalar only supports array types");
+    }
+    return vec_info.array.child;
 }
 
-pub fn simdToVec3f(v: SimdVec4f) Vec3f {
-    return .{ v[0], v[1], v[2] };
+// // Return the SIMD representation type corresponding to the given Vec type
+// pub fn SIMDVecTypeOf(comptime V: type) type {
+//     return @Vector(dim(V), ScalarTypeOf(V));
+// }
+
+// Return a vec with each component set to the corresponding component of the given vec, casted to the given Scalar type
+// example usage:
+// const vf: Vec3f = ...
+// const vd: Vec3d = vec.cast(f64, v);
+pub fn cast(comptime SDest: type, v: anytype) Vec(dim(@TypeOf(v)), SDest) {
+    const V = @TypeOf(v);
+    const SSrc = ScalarTypeOf(V);
+    if (SSrc == SDest) {
+        return v;
+    }
+    var result: Vec(dim(V), SDest) = undefined;
+    for (0..dim(V)) |i| {
+        result[i] = switch (@typeInfo(SDest)) {
+            .float => switch (@typeInfo(SSrc)) {
+                .float => @floatCast(v[i]),
+                .int => @floatFromInt(v[i]),
+                else => @compileError("only supports array of float/int types"),
+            },
+            .int => switch (@typeInfo(SSrc)) {
+                .float => @intFromFloat(v[i]),
+                .int => @intCast(v[i]),
+                else => @compileError("only supports array of float/int types"),
+            },
+            else => @compileError("only supports array of float/int types"),
+        };
+    }
+    return result;
 }
-pub fn simdToVec3d(v: SimdVec4d) Vec3d {
-    return .{ v[0], v[1], v[2] };
+
+// Return a vec composed of the first d components of the given vec
+// example usage:
+// const v: Vec4f = ...
+// const v_truncated: Vec3f = vec.truncate(3, v);
+pub fn truncate(comptime d: usize, v: anytype) Vec(d, ScalarTypeOf(@TypeOf(v))) {
+    const V = @TypeOf(v);
+    assert(d <= dim(V));
+    var result: Vec(d, ScalarTypeOf(V)) = undefined;
+    for (0..d) |i| {
+        result[i] = v[i];
+    }
+    return result;
 }
 
-// Vec4f and Vec4d coerce naturally to SimdVec4f and SimdVec4d, resp.
-// so there are no helper functions for them.
+// Return a vec of the given type with all components set to zero
+// example usage: const v = vec.zero(Vec3f);
+pub fn zero(comptime V: type) V {
+    return @splat(0);
+}
 
-// -------------------------------------------------------------------- //
-
-pub fn splat2f(scalar: f32) Vec2f {
+// Return a vec of the given type with all components set to the given scalar value
+// example usage: const v = vec.splat(Vec3f, 1.0);
+pub fn splat(comptime V: type, scalar: ScalarTypeOf(V)) V {
     return @splat(scalar);
 }
-pub fn splat3f(scalar: f32) Vec3f {
-    return @splat(scalar);
-}
-pub fn splat4f(scalar: f32) Vec4f {
-    return @splat(scalar);
-}
-pub fn splat2d(scalar: f64) Vec2d {
-    return @splat(scalar);
-}
-pub fn splat3d(scalar: f64) Vec3d {
-    return @splat(scalar);
-}
-pub fn splat4d(scalar: f64) Vec4d {
-    return @splat(scalar);
+
+// Return a vec of the given type with each component set to a random value
+// example usage: const v = vec.random(Vec3f, r);
+pub fn random(comptime V: type, r: std.Random) V {
+    const S = ScalarTypeOf(V);
+    var result: V = undefined;
+    for (0..dim(V)) |i| {
+        result[i] = switch (@typeInfo(S)) {
+            .float => r.float(S),
+            .int => r.int(S),
+            else => @compileError("only supports array of float/int types"),
+        };
+    }
+    return result;
 }
 
-pub fn random2f(r: std.Random) Vec2f {
-    return .{ r.float(f32), r.float(f32) };
-}
-pub fn random3f(r: std.Random) Vec3f {
-    return .{ r.float(f32), r.float(f32), r.float(f32) };
-}
-pub fn random4f(r: std.Random) Vec4f {
-    return .{ r.float(f32), r.float(f32), r.float(f32), r.float(f32) };
-}
-pub fn random2d(r: std.Random) Vec2d {
-    return .{ r.float(f64), r.float(f64) };
-}
-pub fn random3d(r: std.Random) Vec3d {
-    return .{ r.float(f64), r.float(f64), r.float(f64) };
-}
-pub fn random4d(r: std.Random) Vec4d {
-    return .{ r.float(f64), r.float(f64), r.float(f64), r.float(f64) };
+// Return the result of the addition of two given vecs
+pub fn add(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(a));
+    // const av: SIMDVec = a;
+    // const bv: SIMDVec = b;
+    // return av + bv;
+    const V = @TypeOf(a);
+    var result: V = undefined;
+    for (0..dim(V)) |i| {
+        result[i] = a[i] + b[i];
+    }
+    return result;
 }
 
-pub fn add2f(a: Vec2f, b: Vec2f) Vec2f {
-    return .{ a[0] + b[0], a[1] + b[1] };
-}
-pub fn add3f(a: Vec3f, b: Vec3f) Vec3f {
-    return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2] };
-}
-pub fn add4f(a: Vec4f, b: Vec4f) Vec4f {
-    return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3] };
-}
-pub fn add2d(a: Vec2d, b: Vec2d) Vec2d {
-    return .{ a[0] + b[0], a[1] + b[1] };
-}
-pub fn add3d(a: Vec3d, b: Vec3d) Vec3d {
-    return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2] };
-}
-pub fn add4d(a: Vec4d, b: Vec4d) Vec4d {
-    return .{ a[0] + b[0], a[1] + b[1], a[2] + b[2], a[3] + b[3] };
+// Return the result of the subtraction of two given vecs
+pub fn sub(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(a));
+    // const av: SIMDVec = a;
+    // const bv: SIMDVec = b;
+    // return av - bv;
+    const V = @TypeOf(a);
+    var result: V = undefined;
+    for (0..dim(V)) |i| {
+        result[i] = a[i] - b[i];
+    }
+    return result;
 }
 
-pub fn sub2f(a: Vec2f, b: Vec2f) Vec2f {
-    return .{ a[0] - b[0], a[1] - b[1] };
-}
-pub fn sub3f(a: Vec3f, b: Vec3f) Vec3f {
-    return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };
-}
-pub fn sub4f(a: Vec4f, b: Vec4f) Vec4f {
-    return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3] };
-}
-pub fn sub2d(a: Vec2d, b: Vec2d) Vec2d {
-    return .{ a[0] - b[0], a[1] - b[1] };
-}
-pub fn sub3d(a: Vec3d, b: Vec3d) Vec3d {
-    return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2] };
-}
-pub fn sub4d(a: Vec4d, b: Vec4d) Vec4d {
-    return .{ a[0] - b[0], a[1] - b[1], a[2] - b[2], a[3] - b[3] };
+// Return the result of the multiplication of the given vec by the given scalar
+pub fn mulScalar(v: anytype, s: ScalarTypeOf(@TypeOf(v))) @TypeOf(v) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(v));
+    // const vv: SIMDVec = v;
+    // return vv * splat(SIMDVec, s);
+    const V = @TypeOf(v);
+    var result: V = undefined;
+    for (0..dim(V)) |i| {
+        result[i] = v[i] * s;
+    }
+    return result;
 }
 
-pub fn sum2f(v: Vec2f) f32 {
-    return v[0] + v[1];
-}
-pub fn sum3f(v: Vec3f) f32 {
-    return v[0] + v[1] + v[2];
-}
-pub fn sum4f(v: Vec4f) f32 {
-    return v[0] + v[1] + v[2] + v[3];
-}
-pub fn sum2d(v: Vec2d) f64 {
-    return v[0] + v[1];
-}
-pub fn sum3d(v: Vec3d) f64 {
-    return v[0] + v[1] + v[2];
-}
-pub fn sum4d(v: Vec4d) f64 {
-    return v[0] + v[1] + v[2] + v[3];
+// Return the result of the division of the given vec by the given scalar
+pub fn divScalar(v: anytype, s: ScalarTypeOf(@TypeOf(v))) @TypeOf(v) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(v));
+    // const vv: SIMDVec = v;
+    // return vv / splat(SIMDVec, s);
+    const V = @TypeOf(v);
+    var result: V = undefined;
+    for (0..dim(V)) |i| {
+        result[i] = v[i] / s;
+    }
+    return result;
 }
 
-pub fn mulScalar2f(v: Vec2f, s: f32) Vec2f {
-    return .{ v[0] * s, v[1] * s };
-}
-pub fn mulScalar3f(v: Vec3f, s: f32) Vec3f {
-    return .{ v[0] * s, v[1] * s, v[2] * s };
-}
-pub fn mulScalar4f(v: Vec4f, s: f32) Vec4f {
-    return .{ v[0] * s, v[1] * s, v[2] * s, v[3] * s };
-}
-pub fn mulScalar2d(v: Vec2d, s: f64) Vec2d {
-    return .{ v[0] * s, v[1] * s };
-}
-pub fn mulScalar3d(v: Vec3d, s: f64) Vec3d {
-    return .{ v[0] * s, v[1] * s, v[2] * s };
-}
-pub fn mulScalar4d(v: Vec4d, s: f64) Vec4d {
-    return .{ v[0] * s, v[1] * s, v[2] * s, v[3] * s };
+// Return the result of the component-wise multiplication of two given vecs
+pub fn componentwiseMul(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(a));
+    // const av: SIMDVec = a;
+    // const bv: SIMDVec = b;
+    // return av * bv;
+    const V = @TypeOf(a);
+    var result: V = undefined;
+    for (0..dim(V)) |i| {
+        result[i] = a[i] * b[i];
+    }
+    return result;
 }
 
-pub fn divScalar2f(v: Vec2f, s: f32) Vec2f {
-    return .{ v[0] / s, v[1] / s };
-}
-pub fn divScalar3f(v: Vec3f, s: f32) Vec3f {
-    return .{ v[0] / s, v[1] / s, v[2] / s };
-}
-pub fn divScalar4f(v: Vec4f, s: f32) Vec4f {
-    return .{ v[0] / s, v[1] / s, v[2] / s, v[3] / s };
-}
-pub fn divScalar2d(v: Vec2d, s: f64) Vec2d {
-    return .{ v[0] / s, v[1] / s };
-}
-pub fn divScalar3d(v: Vec3d, s: f64) Vec3d {
-    return .{ v[0] / s, v[1] / s, v[2] / s };
-}
-pub fn divScalar4d(v: Vec4d, s: f64) Vec4d {
-    return .{ v[0] / s, v[1] / s, v[2] / s, v[3] / s };
+// Return the result of the component-wise division of two given vecs
+pub fn componentwiseDiv(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(a));
+    // const av: SIMDVec = a;
+    // const bv: SIMDVec = b;
+    // return av / bv;
+    const V = @TypeOf(a);
+    var result: V = undefined;
+    for (0..dim(V)) |i| {
+        result[i] = a[i] / b[i];
+    }
+    return result;
 }
 
-pub fn componentwiseMul2f(a: Vec2f, b: Vec2f) Vec2f {
-    return .{ a[0] * b[0], a[1] * b[1] };
-}
-pub fn componentwiseMul3f(a: Vec3f, b: Vec3f) Vec3f {
-    return .{ a[0] * b[0], a[1] * b[1], a[2] * b[2] };
-}
-pub fn componentwiseMul4f(a: Vec4f, b: Vec4f) Vec4f {
-    return .{ a[0] * b[0], a[1] * b[1], a[2] * b[2], a[3] * b[3] };
-}
-pub fn componentwiseMul2d(a: Vec2d, b: Vec2d) Vec2d {
-    return .{ a[0] * b[0], a[1] * b[1] };
-}
-pub fn componentwiseMul3d(a: Vec3d, b: Vec3d) Vec3d {
-    return .{ a[0] * b[0], a[1] * b[1], a[2] * b[2] };
-}
-pub fn componentwiseMul4d(a: Vec4d, b: Vec4d) Vec4d {
-    return .{ a[0] * b[0], a[1] * b[1], a[2] * b[2], a[3] * b[3] };
+// Return the sum of the components of the given vec
+pub fn sumComponents(v: anytype) ScalarTypeOf(@TypeOf(v)) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(v));
+    // const vv: SIMDVec = v;
+    // return @reduce(.Add, vv);
+    const V = @TypeOf(v);
+    var result: ScalarTypeOf(V) = 0;
+    for (0..dim(V)) |i| {
+        result += v[i];
+    }
+    return result;
 }
 
-pub fn componentwiseDiv2f(a: Vec2f, b: Vec2f) Vec2f {
-    return .{ a[0] / b[0], a[1] / b[1] };
-}
-pub fn componentwiseDiv3f(a: Vec3f, b: Vec3f) Vec3f {
-    return .{ a[0] / b[0], a[1] / b[1], a[2] / b[2] };
-}
-pub fn componentwiseDiv4f(a: Vec4f, b: Vec4f) Vec4f {
-    return .{ a[0] / b[0], a[1] / b[1], a[2] / b[2], a[3] / b[3] };
-}
-pub fn componentwiseDiv2d(a: Vec2d, b: Vec2d) Vec2d {
-    return .{ a[0] / b[0], a[1] / b[1] };
-}
-pub fn componentwiseDiv3d(a: Vec3d, b: Vec3d) Vec3d {
-    return .{ a[0] / b[0], a[1] / b[1], a[2] / b[2] };
-}
-pub fn componentwiseDiv4d(a: Vec4d, b: Vec4d) Vec4d {
-    return .{ a[0] / b[0], a[1] / b[1], a[2] / b[2], a[3] / b[3] };
+// Return the sum of the absolute values of the components of the given vec
+pub fn sumComponentsAbs(v: anytype) ScalarTypeOf(@TypeOf(v)) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(v));
+    // const vv: SIMDVec = v;
+    // return @reduce(.Add, vv);
+    const V = @TypeOf(v);
+    var result: ScalarTypeOf(V) = 0;
+    for (0..dim(V)) |i| {
+        result += @abs(v[i]);
+    }
+    return result;
 }
 
-pub fn maxComponent2f(v: Vec2f) f32 {
-    return @max(v[0], v[1]);
-}
-pub fn maxComponent3f(v: Vec3f) f32 {
-    return @max(v[0], v[1], v[2]);
-}
-pub fn maxComponent4f(v: Vec4f) f32 {
-    return @max(v[0], v[1], v[2], v[3]);
-}
-pub fn maxComponent2d(v: Vec2d) f64 {
-    return @max(v[0], v[1]);
-}
-pub fn maxComponent3d(v: Vec3d) f64 {
-    return @max(v[0], v[1], v[2]);
-}
-pub fn maxComponent4d(v: Vec4d) f64 {
-    return @max(v[0], v[1], v[2], v[3]);
+// Return the value of the maximum component of the given vec
+pub fn maxComponent(v: anytype) ScalarTypeOf(@TypeOf(v)) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(v));
+    // const vv: SIMDVec = v;
+    // return @reduce(.Max, vv);
+    const V = @TypeOf(v);
+    var result: ScalarTypeOf(V) = v[0];
+    for (1..dim(V)) |i| {
+        if (v[i] > result) {
+            result = v[i];
+        }
+    }
+    return result;
 }
 
-pub fn minComponent2f(v: Vec2f) f32 {
-    return @min(v[0], v[1]);
-}
-pub fn minComponent3f(v: Vec3f) f32 {
-    return @min(v[0], v[1], v[2]);
-}
-pub fn minComponent4f(v: Vec4f) f32 {
-    return @min(v[0], v[1], v[2], v[3]);
-}
-pub fn minComponent2d(v: Vec2d) f64 {
-    return @min(v[0], v[1]);
-}
-pub fn minComponent3d(v: Vec3d) f64 {
-    return @min(v[0], v[1], v[2]);
-}
-pub fn minComponent4d(v: Vec4d) f64 {
-    return @min(v[0], v[1], v[2], v[3]);
+// Return the value of the minimum component of the given vec
+pub fn minComponent(v: anytype) ScalarTypeOf(@TypeOf(v)) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(v));
+    // const vv: SIMDVec = v;
+    // return @reduce(.Min, vv);
+    const V = @TypeOf(v);
+    var result: ScalarTypeOf(V) = v[0];
+    for (1..dim(V)) |i| {
+        if (v[i] < result) {
+            result = v[i];
+        }
+    }
+    return result;
 }
 
-pub fn componentwiseMax2f(a: Vec2f, b: Vec2f) Vec2f {
-    return .{ @max(a[0], b[0]), @max(a[1], b[1]) };
-}
-pub fn componentwiseMax3f(a: Vec3f, b: Vec3f) Vec3f {
-    return .{ @max(a[0], b[0]), @max(a[1], b[1]), @max(a[2], b[2]) };
-}
-pub fn componentwiseMax4f(a: Vec4f, b: Vec4f) Vec4f {
-    return .{ @max(a[0], b[0]), @max(a[1], b[1]), @max(a[2], b[2]), @max(a[3], b[3]) };
-}
-pub fn componentwiseMax2d(a: Vec2d, b: Vec2d) Vec2d {
-    return .{ @max(a[0], b[0]), @max(a[1], b[1]) };
-}
-pub fn componentwiseMax3d(a: Vec3d, b: Vec3d) Vec3d {
-    return .{ @max(a[0], b[0]), @max(a[1], b[1]), @max(a[2], b[2]) };
-}
-pub fn componentwiseMax4d(a: Vec4d, b: Vec4d) Vec4d {
-    return .{ @max(a[0], b[0]), @max(a[1], b[1]), @max(a[2], b[2]), @max(a[3], b[3]) };
+// Return a vec with each component set to the maximum of the corresponding components of the two given vecs
+pub fn componentwiseMax(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(a));
+    // const av: SIMDVec = a;
+    // const bv: SIMDVec = b;
+    // return @max(av, bv);
+    const V = @TypeOf(a);
+    var result: V = undefined;
+    for (0..dim(V)) |i| {
+        result[i] = @max(a[i], b[i]);
+    }
+    return result;
 }
 
-pub fn componentwiseMin2f(a: Vec2f, b: Vec2f) Vec2f {
-    return .{ @min(a[0], b[0]), @min(a[1], b[1]) };
-}
-pub fn componentwiseMin3f(a: Vec3f, b: Vec3f) Vec3f {
-    return .{ @min(a[0], b[0]), @min(a[1], b[1]), @min(a[2], b[2]) };
-}
-pub fn componentwiseMin4f(a: Vec4f, b: Vec4f) Vec4f {
-    return .{ @min(a[0], b[0]), @min(a[1], b[1]), @min(a[2], b[2]), @min(a[3], b[3]) };
-}
-pub fn componentwiseMin2d(a: Vec2d, b: Vec2d) Vec2d {
-    return .{ @min(a[0], b[0]), @min(a[1], b[1]) };
-}
-pub fn componentwiseMin3d(a: Vec3d, b: Vec3d) Vec3d {
-    return .{ @min(a[0], b[0]), @min(a[1], b[1]), @min(a[2], b[2]) };
-}
-pub fn componentwiseMin4d(a: Vec4d, b: Vec4d) Vec4d {
-    return .{ @min(a[0], b[0]), @min(a[1], b[1]), @min(a[2], b[2]), @min(a[3], b[3]) };
+// Return a vec with each component set to the minimum of the corresponding components of the two given vecs
+pub fn componentwiseMin(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(a));
+    // const av: SIMDVec = a;
+    // const bv: SIMDVec = b;
+    // return @min(av, bv);
+    const V = @TypeOf(a);
+    var result: V = undefined;
+    for (0..dim(V)) |i| {
+        result[i] = @min(a[i], b[i]);
+    }
+    return result;
 }
 
-pub fn dot2f(a: Vec2f, b: Vec2f) f32 {
-    return a[0] * b[0] + a[1] * b[1];
-}
-pub fn dot3f(a: Vec3f, b: Vec3f) f32 {
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-pub fn dot4f(a: Vec4f, b: Vec4f) f32 {
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
-}
-pub fn dot2d(a: Vec2d, b: Vec2d) f64 {
-    return a[0] * b[0] + a[1] * b[1];
-}
-pub fn dot3d(a: Vec3d, b: Vec3d) f64 {
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
-}
-pub fn dot4d(a: Vec4d, b: Vec4d) f64 {
-    return a[0] * b[0] + a[1] * b[1] + a[2] * b[2] + a[3] * b[3];
+// Return the result of the dot product of two given vecs
+pub fn dot(a: anytype, b: @TypeOf(a)) ScalarTypeOf(@TypeOf(a)) {
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(a));
+    // const av: SIMDVec = a;
+    // const bv: SIMDVec = b;
+    // return @reduce(.Add, av * bv);
+    const V = @TypeOf(a);
+    var result: ScalarTypeOf(V) = 0;
+    for (0..dim(V)) |i| {
+        result += a[i] * b[i];
+    }
+    return result;
 }
 
-// ------------------------------- SIMD ------------------------------- //
-
-pub fn simdDot4f(a: SimdVec4f, b: SimdVec4f) f32 {
-    return @reduce(.Add, a * b);
-}
-pub fn simdDot4d(a: SimdVec4d, b: SimdVec4d) f64 {
-    return @reduce(.Add, a * b);
+// Return the squared norm of the given vec
+pub fn squaredNorm(v: anytype) ScalarTypeOf(@TypeOf(v)) {
+    return dot(v, v);
 }
 
-// -------------------------------------------------------------------- //
-
-pub fn squaredNorm2f(v: Vec2f) f32 {
-    return dot2f(v, v);
-}
-pub fn squaredNorm3f(v: Vec3f) f32 {
-    return dot3f(v, v);
-}
-pub fn squaredNorm4f(v: Vec4f) f32 {
-    return dot4f(v, v);
-}
-pub fn squaredNorm2d(v: Vec2d) f64 {
-    return dot2d(v, v);
-}
-pub fn squaredNorm3d(v: Vec3d) f64 {
-    return dot3d(v, v);
-}
-pub fn squaredNorm4d(v: Vec4d) f64 {
-    return dot4d(v, v);
+// Return the norm of the given vec
+pub fn norm(v: anytype) ScalarTypeOf(@TypeOf(v)) {
+    const S = ScalarTypeOf(@TypeOf(v));
+    if (@typeInfo(S) != .float) {
+        @compileError("norm only supports float types");
+    }
+    return @sqrt(squaredNorm(v));
 }
 
-pub fn norm2f(v: Vec2f) f32 {
-    return @sqrt(squaredNorm2f(v));
-}
-pub fn norm3f(v: Vec3f) f32 {
-    return @sqrt(squaredNorm3f(v));
-}
-pub fn norm4f(v: Vec4f) f32 {
-    return @sqrt(squaredNorm4f(v));
-}
-pub fn norm2d(v: Vec2d) f64 {
-    return @sqrt(squaredNorm2d(v));
-}
-pub fn norm3d(v: Vec3d) f64 {
-    return @sqrt(squaredNorm3d(v));
-}
-pub fn norm4d(v: Vec4d) f64 {
-    return @sqrt(squaredNorm4d(v));
+// Return a normalized version of the given vec
+// If the input vec has norm 0, a zero vec of the same type is returned
+pub fn normalized(v: anytype) @TypeOf(v) {
+    const n = norm(v);
+    if (n == 0) return zero(@TypeOf(v));
+    return mulScalar(v, 1 / n);
 }
 
-pub fn normalized2f(v: Vec2f) Vec2f {
-    const n = norm2f(v);
-    if (n == 0) return zero2f;
-    return mulScalar2f(v, 1 / n);
-}
-pub fn normalized3f(v: Vec3f) Vec3f {
-    const n = norm3f(v);
-    if (n == 0) return zero3f;
-    return mulScalar3f(v, 1 / n);
-}
-pub fn normalized4f(v: Vec4f) Vec4f {
-    const n = norm4f(v);
-    if (n == 0) return zero4f;
-    return mulScalar4f(v, 1 / n);
-}
-pub fn normalized2d(v: Vec2d) Vec2d {
-    const n = norm2d(v);
-    if (n == 0) return zero2d;
-    return mulScalar2d(v, 1 / n);
-}
-pub fn normalized3d(v: Vec3d) Vec3d {
-    const n = norm3d(v);
-    if (n == 0) return zero3d;
-    return mulScalar3d(v, 1 / n);
-}
-pub fn normalized4d(v: Vec4d) Vec4d {
-    const n = norm4d(v);
-    if (n == 0) return zero4d;
-    return mulScalar4d(v, 1 / n);
-}
-
-pub fn cross2f(a: Vec2f, b: Vec2f) f32 {
+// Return the determinant of two given 2D vecs
+pub fn det(a: anytype, b: @TypeOf(a)) ScalarTypeOf(@TypeOf(a)) {
+    if (@typeInfo(@TypeOf(a)).array.len != 2) {
+        @compileError("det only supports 2D vectors");
+    }
     return a[0] * b[1] - a[1] * b[0];
 }
-pub fn cross2d(a: Vec2d, b: Vec2d) f64 {
-    return a[0] * b[1] - a[1] * b[0];
-}
-pub fn cross3f(a: Vec3f, b: Vec3f) Vec3f {
+
+// Return the cross product of two given 3D vecs
+pub fn cross(a: anytype, b: @TypeOf(a)) @TypeOf(a) {
+    if (@typeInfo(@TypeOf(a)).array.len != 3) {
+        @compileError("cross only supports 3D vectors");
+    }
+    // const Scalar = ScalarTypeOf(@TypeOf(a));
+    // const SIMDVec = SIMDVecTypeOf(@TypeOf(a));
+    // const av: SIMDVec = a;
+    // const bv: SIMDVec = b;
+    // const a_yzx = @shuffle(Scalar, av, undefined, @Vector(3, i32){ 1, 2, 0 });
+    // const b_yzx = @shuffle(Scalar, bv, undefined, @Vector(3, i32){ 1, 2, 0 });
+    // const a_zxy = @shuffle(Scalar, av, undefined, @Vector(3, i32){ 2, 0, 1 });
+    // const b_zxy = @shuffle(Scalar, bv, undefined, @Vector(3, i32){ 2, 0, 1 });
+    // return (a_yzx * b_zxy) - (a_zxy * b_yzx);
     return .{
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
         a[0] * b[1] - a[1] * b[0],
     };
 }
-pub fn cross3d(a: Vec3d, b: Vec3d) Vec3d {
-    return .{
-        a[1] * b[2] - a[2] * b[1],
-        a[2] * b[0] - a[0] * b[2],
-        a[0] * b[1] - a[1] * b[0],
-    };
-}
-
-// ------------------------------- SIMD ------------------------------- //
-
-pub fn simdCross4f(a: SimdVec4f, b: SimdVec4f) SimdVec4f {
-    const a_yzx = @shuffle(f32, a, undefined, @Vector(4, i32){ 1, 2, 0, 3 });
-    const b_yzx = @shuffle(f32, b, undefined, @Vector(4, i32){ 1, 2, 0, 3 });
-    const a_zxy = @shuffle(f32, a, undefined, @Vector(4, i32){ 2, 0, 1, 3 });
-    const b_zxy = @shuffle(f32, b, undefined, @Vector(4, i32){ 2, 0, 1, 3 });
-    return (a_yzx * b_zxy) - (a_zxy * b_yzx);
-}
-pub fn simdCross4d(a: SimdVec4d, b: SimdVec4d) SimdVec4d {
-    const a_yzx = @shuffle(f32, a, undefined, @Vector(4, i32){ 1, 2, 0, 3 });
-    const b_yzx = @shuffle(f32, b, undefined, @Vector(4, i32){ 1, 2, 0, 3 });
-    const a_zxy = @shuffle(f32, a, undefined, @Vector(4, i32){ 2, 0, 1, 3 });
-    const b_zxy = @shuffle(f32, b, undefined, @Vector(4, i32){ 2, 0, 1, 3 });
-    return (a_yzx * b_zxy) - (a_zxy * b_yzx);
-}
-
-// -------------------------------------------------------------------- //

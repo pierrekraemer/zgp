@@ -11,10 +11,10 @@ const SQEM = @import("../../geometry/SQEM.zig");
 /// TODO: should give an area to each point to weight the different terms of the SQEM instead of using a uniform weight of 1.0
 pub fn pointSQEM(
     point: PointCloud.Point,
-    point_position: PointCloud.CellData(Vec3f),
-    point_normal: PointCloud.CellData(Vec3f),
-    // point_area: PointCloud.CellData(f32),
-    point_tangent_basis: PointCloud.CellData([2]Vec3f),
+    point_position: PointCloud.PointData(Vec3f),
+    point_normal: PointCloud.PointData(Vec3f),
+    // point_area: PointCloud.PointData(f32),
+    point_tangent_basis: PointCloud.PointData([2]Vec3f),
     line_quadric_epsilon: f32,
 ) SQEM {
     var vsq = SQEM.zero;
@@ -37,22 +37,22 @@ pub fn pointSQEM(
 pub fn computePointSQEMs(
     io: std.Io,
     pc: *PointCloud,
-    point_position: PointCloud.CellData(Vec3f),
-    point_normal: PointCloud.CellData(Vec3f),
-    // point_area: PointCloud.CellData(f32),
-    point_tangent_basis: PointCloud.CellData([2]Vec3f),
+    point_position: PointCloud.PointData(Vec3f),
+    point_normal: PointCloud.PointData(Vec3f),
+    // point_area: PointCloud.PointData(f32),
+    point_tangent_basis: PointCloud.PointData([2]Vec3f),
     line_quadric_epsilon: f32,
-    point_sqem: *PointCloud.CellData(SQEM),
+    point_sqem: *PointCloud.PointData(SQEM),
 ) !void {
     const Task = struct {
         const Task = @This();
 
-        point_position: PointCloud.CellData(Vec3f),
-        point_normal: PointCloud.CellData(Vec3f),
-        // point_area: PointCloud.CellData(f32),
-        point_tangent_basis: PointCloud.CellData([2]Vec3f),
+        point_position: PointCloud.PointData(Vec3f),
+        point_normal: PointCloud.PointData(Vec3f),
+        // point_area: PointCloud.PointData(f32),
+        point_tangent_basis: PointCloud.PointData([2]Vec3f),
         line_quadric_epsilon: f32,
-        point_sqem: *PointCloud.CellData(SQEM),
+        point_sqem: *PointCloud.PointData(SQEM),
 
         pub fn run(t: *const Task, point: PointCloud.Point) void {
             t.point_sqem.valuePtr(point).* = pointSQEM(

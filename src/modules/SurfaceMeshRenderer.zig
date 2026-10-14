@@ -9,7 +9,7 @@ const c = @import("c");
 const imgui_utils = @import("../ui/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 
-const AppContext = @import("../main.zig").AppContext;
+const AppContext = @import("../AppContext.zig");
 const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfaceMeshStdData = @import("../models/SurfaceMeshStore.zig").SurfaceMeshStdData;
@@ -115,7 +115,7 @@ const SurfaceMeshRendererParameters = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Renderer",
     .supported_models = .{ .surface_mesh = true },
@@ -130,10 +130,10 @@ module: Module = .{
 },
 parameters: std.AutoHashMapUnmanaged(*SurfaceMesh, SurfaceMeshRendererParameters) = .empty,
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshRenderer {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(smr: *SurfaceMeshRenderer, app_ctx: *AppContext) !void {
+    smr.app_ctx = app_ctx;
+    try app_ctx.surface_mesh_store.addListener(&smr.module);
 }
 
 pub fn deinit(smr: *SurfaceMeshRenderer) void {
@@ -142,6 +142,7 @@ pub fn deinit(smr: *SurfaceMeshRenderer) void {
         entry.value_ptr.deinit();
     }
     smr.parameters.deinit(smr.app_ctx.allocator);
+    smr.app_ctx.surface_mesh_store.removeListener(&smr.module);
 }
 
 /// Part of the Module interface.
@@ -263,7 +264,7 @@ fn setSurfaceMeshDrawVerticesColorData(
     switch (@typeInfo(T)) {
         .float => {
             var min: f32 = std.math.floatMax(f32);
-            var max: f32 = std.math.floatMin(f32);
+            var max: f32 = -std.math.floatMax(f32);
             if (data) |d| {
                 min, max = d.data.minMaxValues(CompareScalarContext{}, compareScalar);
             }
@@ -301,7 +302,7 @@ fn setSurfaceMeshDrawVerticesColorData(
         },
         else => @compileError("SurfaceMeshRenderer bad vertex color data type"),
     }
-    smr.app_ctx.requestRedraw();
+    smr.app_ctx.view.requestRedraw();
 }
 
 fn setSurfaceMeshDrawFacesColorData(
@@ -315,13 +316,9 @@ fn setSurfaceMeshDrawFacesColorData(
     switch (@typeInfo(T)) {
         .float => {
             var min: f32 = std.math.floatMax(f32);
-            var max: f32 = std.math.floatMin(f32);
+            var max: f32 = -std.math.floatMax(f32);
             if (data) |d| {
-                var it = d.data.iterator();
-                while (it.next()) |elem| {
-                    if (elem.value_ptr.* < min) min = elem.value_ptr.*;
-                    if (elem.value_ptr.* > max) max = elem.value_ptr.*;
-                }
+                min, max = d.data.minMaxValues(CompareScalarContext{}, compareScalar);
             }
             switch (cell_type) {
                 .vertex => {
@@ -391,7 +388,7 @@ fn setSurfaceMeshDrawFacesColorData(
         },
         else => @compileError("SurfaceMeshRenderer bad color data type"),
     }
-    smr.app_ctx.requestRedraw();
+    smr.app_ctx.view.requestRedraw();
 }
 
 /// Part of the Module interface.
@@ -524,7 +521,7 @@ pub fn rightPanel(m: *Module) void {
 
     c.ImGui_SeparatorText("Vertices");
     if (c.ImGui_Checkbox("draw vertices", &p.draw_vertices)) {
-        smr.app_ctx.requestRedraw();
+        smr.app_ctx.view.requestRedraw();
     }
     if (p.draw_vertices) {
         c.ImGui_Text("Size");
@@ -533,7 +530,7 @@ pub fn rightPanel(m: *Module) void {
             // sync value to other point sphere shaders
             p.point_sphere_scalar_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
             p.point_sphere_rgb_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
-            smr.app_ctx.requestRedraw();
+            smr.app_ctx.view.requestRedraw();
         }
         c.ImGui_PopID();
         c.ImGui_Text("Color");
@@ -542,18 +539,18 @@ pub fn rightPanel(m: *Module) void {
             defer c.ImGui_EndGroup();
             if (c.ImGui_RadioButton("Global##DrawVerticesColorGlobal", p.draw_vertices_color.defined_on == .global)) {
                 p.draw_vertices_color.defined_on = .global;
-                smr.app_ctx.requestRedraw();
+                smr.app_ctx.view.requestRedraw();
             }
             c.ImGui_SameLine();
             if (c.ImGui_RadioButton("Per vertex##DrawVerticesColorPerVertex", p.draw_vertices_color.defined_on == .vertex)) {
                 p.draw_vertices_color.defined_on = .vertex;
-                smr.app_ctx.requestRedraw();
+                smr.app_ctx.view.requestRedraw();
             }
         }
         switch (p.draw_vertices_color.defined_on) {
             .global => {
                 if (c.ImGui_ColorEdit3("Global color##DrawVerticesColorGlobalEdit", &p.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
-                    smr.app_ctx.requestRedraw();
+                    smr.app_ctx.view.requestRedraw();
                 }
             },
             .vertex => {
@@ -562,12 +559,12 @@ pub fn rightPanel(m: *Module) void {
                     defer c.ImGui_EndGroup();
                     if (c.ImGui_RadioButton("Scalar##DrawVerticesColorVertexScalar", p.draw_vertices_color.type == .scalar)) {
                         p.draw_vertices_color.type = .scalar;
-                        smr.app_ctx.requestRedraw();
+                        smr.app_ctx.view.requestRedraw();
                     }
                     c.ImGui_SameLine();
                     if (c.ImGui_RadioButton("RGB##DrawVerticesColorVertexRGB", p.draw_vertices_color.type == .rgb)) {
                         p.draw_vertices_color.type = .rgb;
-                        smr.app_ctx.requestRedraw();
+                        smr.app_ctx.view.requestRedraw();
                     }
                 }
                 c.ImGui_PushID("DrawVerticesColorVertexData");
@@ -594,36 +591,36 @@ pub fn rightPanel(m: *Module) void {
 
     c.ImGui_SeparatorText("Edges");
     if (c.ImGui_Checkbox("draw edges", &p.draw_edges)) {
-        smr.app_ctx.requestRedraw();
+        smr.app_ctx.view.requestRedraw();
     }
     if (p.draw_edges) {
         if (c.ImGui_Checkbox("draw edges as cylinders", &p.draw_edges_as_cylinders)) {
-            smr.app_ctx.requestRedraw();
+            smr.app_ctx.view.requestRedraw();
         }
         if (p.draw_edges_as_cylinders) {
             c.ImGui_Text("Width (world)");
             c.ImGui_PushID("DrawEdgesWidth");
             if (c.ImGui_SliderFloatEx("", &p.line_cylinder_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                smr.app_ctx.requestRedraw();
+                smr.app_ctx.view.requestRedraw();
             }
             c.ImGui_PopID();
         } else {
             c.ImGui_Text("Width (screen)");
             c.ImGui_PushID("DrawEdgesWidth");
             if (c.ImGui_SliderFloatEx("", &p.line_shader_parameters.line_width, 0.1, 5.0, "%.1f", c.ImGuiSliderFlags_None)) {
-                smr.app_ctx.requestRedraw();
+                smr.app_ctx.view.requestRedraw();
             }
             c.ImGui_PopID();
         }
         if (c.ImGui_ColorEdit4("Global color##DrawEdgesColorGlobalEdit", &p.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
             p.line_shader_parameters.line_color = p.line_cylinder_shader_parameters.cylinder_color;
-            smr.app_ctx.requestRedraw();
+            smr.app_ctx.view.requestRedraw();
         }
     }
 
     c.ImGui_SeparatorText("Faces");
     if (c.ImGui_Checkbox("draw faces", &p.draw_faces)) {
-        smr.app_ctx.requestRedraw();
+        smr.app_ctx.view.requestRedraw();
     }
     if (p.draw_faces) {
         c.ImGui_Text("Color");
@@ -632,23 +629,23 @@ pub fn rightPanel(m: *Module) void {
             defer c.ImGui_EndGroup();
             if (c.ImGui_RadioButton("Global##DrawFacesColorGlobal", p.draw_faces_color.defined_on == .global)) {
                 p.draw_faces_color.defined_on = .global;
-                smr.app_ctx.requestRedraw();
+                smr.app_ctx.view.requestRedraw();
             }
             c.ImGui_SameLine();
             if (c.ImGui_RadioButton("Per vertex##DrawFacesColorPerVertex", p.draw_faces_color.defined_on == .vertex)) {
                 p.draw_faces_color.defined_on = .vertex;
-                smr.app_ctx.requestRedraw();
+                smr.app_ctx.view.requestRedraw();
             }
             c.ImGui_SameLine();
             if (c.ImGui_RadioButton("Per face##DrawFacesColorPerFace", p.draw_faces_color.defined_on == .face)) {
                 p.draw_faces_color.defined_on = .face;
-                smr.app_ctx.requestRedraw();
+                smr.app_ctx.view.requestRedraw();
             }
         }
         switch (p.draw_faces_color.defined_on) {
             .global => {
                 if (c.ImGui_ColorEdit4("Global color##DrawFacesColorGlobalEdit", &p.tri_flat_shader_parameters.vertex_color, c.ImGuiColorEditFlags_NoInputs)) {
-                    smr.app_ctx.requestRedraw();
+                    smr.app_ctx.view.requestRedraw();
                 }
             },
             .vertex => {
@@ -657,17 +654,17 @@ pub fn rightPanel(m: *Module) void {
                     defer c.ImGui_EndGroup();
                     if (c.ImGui_RadioButton("Scalar##DrawFacesColorVertexScalar", p.draw_faces_color.type == .scalar)) {
                         p.draw_faces_color.type = .scalar;
-                        smr.app_ctx.requestRedraw();
+                        smr.app_ctx.view.requestRedraw();
                     }
                     c.ImGui_SameLine();
                     if (c.ImGui_RadioButton("UV##DrawFacesColorVertexUV", p.draw_faces_color.type == .uv)) {
                         p.draw_faces_color.type = .uv;
-                        smr.app_ctx.requestRedraw();
+                        smr.app_ctx.view.requestRedraw();
                     }
                     c.ImGui_SameLine();
                     if (c.ImGui_RadioButton("RGB##DrawFacesColorVertexRGB", p.draw_faces_color.type == .rgb)) {
                         p.draw_faces_color.type = .rgb;
-                        smr.app_ctx.requestRedraw();
+                        smr.app_ctx.view.requestRedraw();
                     }
                 }
                 c.ImGui_PushID("DrawFacesColorVertexData");
@@ -679,12 +676,12 @@ pub fn rightPanel(m: *Module) void {
                             .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, f32, data),
                         }
                         if (c.ImGui_Checkbox("Draw isolines", &p.tri_flat_scalar_per_vertex_shader_parameters.draw_isolines)) {
-                            smr.app_ctx.requestRedraw();
+                            smr.app_ctx.view.requestRedraw();
                         }
                         c.ImGui_Text("Nb isolines");
                         c.ImGui_PushID("NbIsolines");
                         if (c.ImGui_SliderInt("", &p.tri_flat_scalar_per_vertex_shader_parameters.nb_isolines, 1, 100)) {
-                            smr.app_ctx.requestRedraw();
+                            smr.app_ctx.view.requestRedraw();
                         }
                         c.ImGui_PopID();
                     },
@@ -695,7 +692,7 @@ pub fn rightPanel(m: *Module) void {
                             .changed => |data| smr.setSurfaceMeshDrawFacesColorData(sm, .vertex, Vec2f, data),
                         }
                         if (c.ImGui_Checkbox("Radial", &p.tri_flat_uv_per_vertex_shader_parameters.radial)) {
-                            smr.app_ctx.requestRedraw();
+                            smr.app_ctx.view.requestRedraw();
                         }
                     },
                     .rgb => switch (imgui_utils.surfaceMeshCellDataComboBox(sm, .vertex, Vec3f, p.draw_faces_color.vertex_rgb_data)) {
@@ -712,12 +709,12 @@ pub fn rightPanel(m: *Module) void {
                     defer c.ImGui_EndGroup();
                     if (c.ImGui_RadioButton("Scalar##DrawFacesColorFaceScalar", p.draw_faces_color.type == .scalar)) {
                         p.draw_faces_color.type = .scalar;
-                        smr.app_ctx.requestRedraw();
+                        smr.app_ctx.view.requestRedraw();
                     }
                     c.ImGui_SameLine();
                     if (c.ImGui_RadioButton("RGB##DrawFacesColorFaceRGB", p.draw_faces_color.type == .rgb)) {
                         p.draw_faces_color.type = .rgb;
-                        smr.app_ctx.requestRedraw();
+                        smr.app_ctx.view.requestRedraw();
                     }
                 }
                 c.ImGui_PushID("DrawFacesColorFaceData");
@@ -743,17 +740,17 @@ pub fn rightPanel(m: *Module) void {
 
     c.ImGui_SeparatorText("Boundaries");
     if (c.ImGui_Checkbox("draw boundaries", &p.draw_boundaries)) {
-        smr.app_ctx.requestRedraw();
+        smr.app_ctx.view.requestRedraw();
     }
     if (p.draw_boundaries) {
         c.ImGui_Text("Width");
         c.ImGui_PushID("DrawBoundariesWidth");
         if (c.ImGui_SliderFloatEx("", &p.boundary_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-            smr.app_ctx.requestRedraw();
+            smr.app_ctx.view.requestRedraw();
         }
         c.ImGui_PopID();
         if (c.ImGui_ColorEdit4("Global color##DrawBoundariesColorGlobalEdit", &p.boundary_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
-            smr.app_ctx.requestRedraw();
+            smr.app_ctx.view.requestRedraw();
         }
     }
 }

@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 
 const typeId = @import("types.zig").typeId;
 
+const vec = @import("../geometry/vec.zig");
 pub const invalid_index = std.math.maxInt(u32);
 
 pub const DataGen = struct {
@@ -235,14 +236,15 @@ pub fn Data(comptime T: type) type {
             return .{ min, max };
         }
         pub fn meanValue(self: *const Self) T {
-            var sum: T = switch (@typeInfo(T)) {
+            const t_info = @typeInfo(T);
+            var sum: T = switch (t_info) {
                 .float, .int => 0,
                 .array => blk: {
-                    const elem_info = @typeInfo(@typeInfo(T).array.child);
-                    if (elem_info != .float and elem_info != .int) {
+                    const s_info = @typeInfo(vec.ScalarTypeOf(T));
+                    if (s_info != .float and s_info != .int) {
                         @compileError("meanValue only supports float, int, or array of float/int types");
                     }
-                    break :blk @splat(0);
+                    break :blk vec.zero(T);
                 },
                 else => @compileError("meanValue only supports float, int, or array of float/int types"),
             };
@@ -252,25 +254,16 @@ pub fn Data(comptime T: type) type {
             }
             var it = self.constIterator();
             while (it.next()) |elem| {
-                switch (@typeInfo(T)) {
+                switch (t_info) {
                     .float, .int => sum += elem.value_ptr.*,
-                    .array => {
-                        inline for (0..@typeInfo(T).array.len) |i| {
-                            sum[i] += elem.value_ptr.*[i];
-                        }
-                    },
+                    .array => sum = vec.add(sum, elem.value_ptr.*),
                     else => unreachable,
                 }
             }
-            return switch (@typeInfo(T)) {
+            return switch (t_info) {
                 .float => sum / @as(T, @floatFromInt(nb_elements)),
                 .int => sum / @as(T, @intCast(nb_elements)),
-                .array => blk: {
-                    inline for (0..@typeInfo(T).array.len) |i| {
-                        sum[i] = sum[i] / @as(@TypeOf(sum[i]), @floatFromInt(nb_elements));
-                    }
-                    break :blk sum;
-                },
+                .array => vec.divScalar(sum, @floatFromInt(nb_elements)),
                 else => unreachable,
             };
         }
@@ -279,6 +272,7 @@ pub fn Data(comptime T: type) type {
 
 pub const DataContainer = struct {
     allocator: std.mem.Allocator,
+    io: std.Io,
     datas: std.StringHashMapUnmanaged(*DataGen),
     markers: std.ArrayList(*Data(bool)),
     available_markers: std.ArrayList(*Data(bool)),
@@ -300,9 +294,12 @@ pub const DataContainer = struct {
     first_inactive_index: u32,
     // nb_inactive_indices is used to quickly check if there are any inactive indices and quickly compute nbElements
     nb_inactive_indices: u32,
+    // mutex for acquiring and releasing markers
+    mutex: std.Io.Mutex,
 
-    pub fn init(dc: *DataContainer, allocator: std.mem.Allocator) !void {
+    pub fn init(dc: *DataContainer, allocator: std.mem.Allocator, io: std.Io) !void {
         dc.allocator = allocator;
+        dc.io = io;
         dc.datas = .empty;
         dc.markers = try .initCapacity(allocator, 16);
         dc.available_markers = try .initCapacity(allocator, 16);
@@ -311,10 +308,12 @@ pub const DataContainer = struct {
         dc.nb_refs = try dc.addData(u32, "__nb_refs");
         dc.first_inactive_index = invalid_index;
         dc.nb_inactive_indices = 0;
+        dc.mutex = .init;
     }
 
     pub fn initFrom(dst: *DataContainer, src: *const DataContainer, copy_data: bool, allocator: std.mem.Allocator) !void {
         dst.allocator = allocator;
+        dst.io = src.io;
         dst.datas = .empty;
         dst.markers = try .initCapacity(dst.allocator, 16);
         dst.available_markers = try .initCapacity(dst.allocator, 16);
@@ -342,6 +341,7 @@ pub const DataContainer = struct {
         }
         dst.first_inactive_index = src.first_inactive_index;
         dst.nb_inactive_indices = src.nb_inactive_indices;
+        dst.mutex = .init;
     }
 
     pub fn deinit(dc: *DataContainer) void {
@@ -485,26 +485,33 @@ pub const DataContainer = struct {
         };
     }
 
-    // TODO: should probably better be thread-safe!
     pub fn acquireMarker(dc: *DataContainer) !*Data(bool) {
+        try dc.mutex.lock(dc.io);
+        // no defer unlock here, because we want to unlock as soon as possible
+
         if (dc.available_markers.pop()) |marker| {
+            dc.mutex.unlock(dc.io); // unlock mutex
             marker.fill(false); // reset the marker to false before reuse
             return marker;
         }
 
         // same as for addData, but the name is not used (the marker is not stored in the hashmap)
         const marker = try dc.allocator.create(Data(bool));
+        try dc.markers.append(dc.allocator, marker);
+        dc.mutex.unlock(dc.io); // unlock mutex
+
         marker.init("", dc);
         errdefer marker.data_gen.deinit(); // DataGen deinit calls Data(T) deinit, which also destroys the Data(T)
 
         try marker.data_gen.ensureSize(dc.size);
         marker.fill(false); // marker is filled with false before use
-        try dc.markers.append(dc.allocator, marker);
         return marker;
     }
 
     pub fn releaseMarker(dc: *DataContainer, marker: *Data(bool)) void {
         assert(marker.data_gen.container == dc); // check that this marker belongs to this container
+        dc.mutex.lockUncancelable(dc.io);
+        defer dc.mutex.unlock(dc.io);
         dc.available_markers.append(dc.allocator, marker) catch |err| {
             std.debug.print("Error releasing marker: {}\n", .{err});
         };

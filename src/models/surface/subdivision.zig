@@ -50,8 +50,8 @@ pub fn cutAllEdges(
     }
     for (edge_buffer.items) |e| {
         const d = sm.dart(e);
-        const new_pos = vec.mulScalar3f(
-            vec.add3f(
+        const new_pos = vec.mulScalar(
+            vec.add(
                 vertex_position.value(sm.vertex(d)),
                 vertex_position.value(sm.vertex(sm.phi1(d))),
             ),

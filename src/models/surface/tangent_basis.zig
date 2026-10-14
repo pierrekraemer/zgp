@@ -16,13 +16,13 @@ pub fn vertexTangentBasis(
 ) [2]Vec3f {
     const d = sm.dart(vertex);
     const n = vertex_normal.value(vertex);
-    var X = vec.sub3f(
+    var X = vec.sub(
         vertex_position.value(sm.vertex(sm.phi1(d))),
         vertex_position.value(vertex),
     );
     X = geometry_utils.removeComponent(X, n);
-    X = vec.normalized3f(X);
-    const Y = vec.cross3f(n, X);
+    X = vec.normalized(X);
+    const Y = vec.cross(n, X);
     return .{ X, Y };
 }
 

@@ -9,7 +9,7 @@ const zgp_log = std.log.scoped(.zgp);
 
 const c = @import("c");
 
-const AppContext = @import("../main.zig").AppContext;
+const AppContext = @import("../AppContext.zig");
 const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfaceMeshStdData = @import("../models/SurfaceMeshStore.zig").SurfaceMeshStdData;
@@ -75,7 +75,7 @@ const SelectionAction = enum {
     remove,
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Selection",
     .supported_models = .{ .surface_mesh = true },
@@ -93,13 +93,13 @@ surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, SelectionData) = .em
 
 selecting: bool = false,
 hovered_cell_index: ?u32 = null,
-hovered_cell_ibo: IBO,
+hovered_cell_ibo: IBO = undefined,
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshSelection {
-    return .{
-        .app_ctx = app_ctx,
-        .hovered_cell_ibo = .init(),
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(sms: *SurfaceMeshSelection, app_ctx: *AppContext) !void {
+    sms.app_ctx = app_ctx;
+    try app_ctx.surface_mesh_store.addListener(&sms.module);
+    sms.hovered_cell_ibo = .init();
 }
 
 pub fn deinit(sms: *SurfaceMeshSelection) void {
@@ -108,6 +108,8 @@ pub fn deinit(sms: *SurfaceMeshSelection) void {
         sd.deinit();
     }
     sms.surface_meshes_data.deinit(sms.app_ctx.allocator);
+    sms.hovered_cell_ibo.deinit();
+    sms.app_ctx.surface_mesh_store.removeListener(&sms.module);
 }
 
 /// Part of the Module interface.
@@ -203,7 +205,7 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
     if (sms.selecting and sms.hovered_cell_index != null) {
         const modState = c.SDL_GetModState();
         const action: SelectionAction = if (modState & c.SDL_KMOD_SHIFT != 0) .remove else .add;
-        const cell_type = sd.selecting_cell_type;
+        const cell_type = if (sd.selection_mode == .within_sphere) .vertex else sd.selecting_cell_type;
         switch (cell_type) {
             .vertex => {
                 const sphere_radius_backup = sd.point_sphere_shader_parameters.sphere_radius;
@@ -259,7 +261,7 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
             .face => {
                 const vertex_color_backup = sd.tri_flat_shader_parameters.vertex_color;
                 const vertex_color: Vec4f = switch (action) {
-                    .add => vec.mulScalar4f(vertex_color_backup, 0.75),
+                    .add => vec.mulScalar(vertex_color_backup, 0.75),
                     .remove => blk: {
                         const opposite_color = color.perceptualOppositeRGB(.{ vertex_color_backup[0], vertex_color_backup[1], vertex_color_backup[2] });
                         break :blk .{ opposite_color[0], opposite_color[1], opposite_color[2], 0.75 };
@@ -307,7 +309,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                         continue :sw c.SDL_EVENT_MOUSE_MOTION; // goto mouse motion case to update hovered cell
                     }
                 },
-                c.SDLK_LSHIFT, c.SDLK_RSHIFT => sms.app_ctx.requestRedraw(), // shift toggles between add and remove
+                c.SDLK_LSHIFT, c.SDLK_RSHIFT => sms.app_ctx.view.requestRedraw(), // shift toggles between add and remove
                 else => {},
             }
             break :blk false;
@@ -318,9 +320,9 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                     sms.selecting = false;
                     sms.hovered_cell_index = null;
                     sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{});
-                    sms.app_ctx.requestRedraw();
+                    sms.app_ctx.view.requestRedraw();
                 },
-                c.SDLK_LSHIFT, c.SDLK_RSHIFT => sms.app_ctx.requestRedraw(), // shift toggles between add and remove
+                c.SDLK_LSHIFT, c.SDLK_RSHIFT => sms.app_ctx.view.requestRedraw(), // shift toggles between add and remove
                 else => {},
             }
             break :blk false;
@@ -377,7 +379,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                     if (sms.hovered_cell_index == null) {
                         sms.hovered_cell_ibo.fillFromIndexSlice(&.{}, &.{});
                     }
-                    sms.app_ctx.requestRedraw();
+                    sms.app_ctx.view.requestRedraw();
                     break :blk true;
                 }
             }
@@ -421,36 +423,36 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                                         .face => sm_store.surfaceMeshCellSetUpdated(sm, .face, sd.selected_face_set.?),
                                         else => unreachable,
                                     }
-                                    sms.app_ctx.requestRedraw();
+                                    sms.app_ctx.view.requestRedraw();
                                 },
                                 .within_sphere => {
                                     const info = sm_store.surfaceMeshInfo(sm);
                                     if (info.std_datas.vertex_position) |vertex_position| {
-                                        var vertices: std.ArrayList(SurfaceMesh.Vertex) = .empty;
-                                        defer vertices.deinit(sm.allocator);
-                                        var edges: std.ArrayList(SurfaceMesh.Edge) = .empty;
-                                        defer edges.deinit(sm.allocator);
-                                        var faces: std.ArrayList(SurfaceMesh.Face) = .empty;
-                                        defer faces.deinit(sm.allocator);
-                                        selection.cellsWithinSphereAroundVertex(sm, .{ .index = idx }, sd.selection_radius, vertex_position, &vertices, &edges, &faces) catch |err| {
+                                        var sel_ctx: selection.WithinSphereSelectionContext = .{};
+                                        sel_ctx.init(sm, vertex_position, sd.selection_radius) catch |err| {
+                                            std.debug.print("Failed to initialize selection context: {}\n", .{err});
+                                            break :blk false;
+                                        };
+                                        defer sel_ctx.deinit();
+                                        sel_ctx.cellsWithinSphereAroundVertex(.{ .index = idx }) catch |err| {
                                             std.debug.print("Failed to select cells within sphere: {}\\n", .{err});
                                             break :blk false;
                                         };
                                         switch (action) {
                                             .add => switch (sd.selecting_cell_type) {
-                                                .vertex => for (vertices.items) |cell_in_sphere| {
+                                                .vertex => for (sel_ctx.vertex_buffer.items) |cell_in_sphere| {
                                                     sd.selected_vertex_set.?.add(cell_in_sphere) catch |err| {
                                                         std.debug.print("Failed to add vertex to vertex_set: {}\n", .{err});
                                                         break :blk false;
                                                     };
                                                 },
-                                                .edge => for (edges.items) |cell_in_sphere| {
+                                                .edge => for (sel_ctx.edge_buffer.items) |cell_in_sphere| {
                                                     sd.selected_edge_set.?.add(cell_in_sphere) catch |err| {
                                                         std.debug.print("Failed to add edge to edge_set: {}\n", .{err});
                                                         break :blk false;
                                                     };
                                                 },
-                                                .face => for (faces.items) |cell_in_sphere| {
+                                                .face => for (sel_ctx.face_buffer.items) |cell_in_sphere| {
                                                     sd.selected_face_set.?.add(cell_in_sphere) catch |err| {
                                                         std.debug.print("Failed to add face to face_set: {}\n", .{err});
                                                         break :blk false;
@@ -459,13 +461,13 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                                                 else => unreachable,
                                             },
                                             .remove => switch (sd.selecting_cell_type) {
-                                                .vertex => for (vertices.items) |cell_in_sphere| {
+                                                .vertex => for (sel_ctx.vertex_buffer.items) |cell_in_sphere| {
                                                     sd.selected_vertex_set.?.remove(cell_in_sphere);
                                                 },
-                                                .edge => for (edges.items) |cell_in_sphere| {
+                                                .edge => for (sel_ctx.edge_buffer.items) |cell_in_sphere| {
                                                     sd.selected_edge_set.?.remove(cell_in_sphere);
                                                 },
-                                                .face => for (faces.items) |cell_in_sphere| {
+                                                .face => for (sel_ctx.face_buffer.items) |cell_in_sphere| {
                                                     sd.selected_face_set.?.remove(cell_in_sphere);
                                                 },
                                                 else => unreachable,
@@ -477,7 +479,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                                             .face => sm_store.surfaceMeshCellSetUpdated(sm, .face, sd.selected_face_set.?),
                                             else => unreachable,
                                         }
-                                        sms.app_ctx.requestRedraw();
+                                        sms.app_ctx.view.requestRedraw();
                                     }
                                 },
                             }
@@ -492,7 +494,7 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
         c.SDL_EVENT_MOUSE_WHEEL => blk: {
             if (sms.selecting and sd.selection_mode == .within_sphere) {
                 sd.selection_radius += event.wheel.y * 0.001;
-                sms.app_ctx.requestRedraw();
+                sms.app_ctx.view.requestRedraw();
                 break :blk true;
             }
             break :blk false;
@@ -554,7 +556,7 @@ pub fn rightPanel(m: *Module) void {
                 },
                 else => unreachable,
             }
-            sms.app_ctx.requestRedraw();
+            sms.app_ctx.view.requestRedraw();
         }
     }
 
@@ -597,7 +599,7 @@ pub fn rightPanel(m: *Module) void {
                 }
             }
             UiData.cell_set_name_buf = @splat(0);
-            sms.app_ctx.requestRedraw();
+            sms.app_ctx.view.requestRedraw();
         }
         if (disabled) {
             imgui_utils.tooltip("Requires a cell set name");
@@ -624,7 +626,7 @@ pub fn rightPanel(m: *Module) void {
                             .face => sd.selected_face_set = null,
                             else => unreachable,
                         }
-                        sms.app_ctx.requestRedraw();
+                        sms.app_ctx.view.requestRedraw();
                     },
                     .changed => |cell_set| {
                         switch (cell_type) {
@@ -633,7 +635,7 @@ pub fn rightPanel(m: *Module) void {
                             .face => sd.selected_face_set = cell_set,
                             else => unreachable,
                         }
-                        sms.app_ctx.requestRedraw();
+                        sms.app_ctx.view.requestRedraw();
                     },
                 }
             }
@@ -655,7 +657,7 @@ pub fn rightPanel(m: *Module) void {
                 if (c.ImGui_Button(if (!disabled) "Clear selection" else "No selection to clear")) {
                     vertex_set.clear();
                     sm_store.surfaceMeshCellSetUpdated(sm, .vertex, vertex_set);
-                    sms.app_ctx.requestRedraw();
+                    sms.app_ctx.view.requestRedraw();
                 }
                 if (disabled) {
                     c.ImGui_EndDisabled();
@@ -677,7 +679,7 @@ pub fn rightPanel(m: *Module) void {
                 if (c.ImGui_Button(if (!disabled) "Clear selection" else "No selection to clear")) {
                     edge_set.clear();
                     sm_store.surfaceMeshCellSetUpdated(sm, .edge, edge_set);
-                    sms.app_ctx.requestRedraw();
+                    sms.app_ctx.view.requestRedraw();
                 }
                 if (disabled) {
                     c.ImGui_EndDisabled();
@@ -699,7 +701,7 @@ pub fn rightPanel(m: *Module) void {
                 if (c.ImGui_Button(if (!disabled) "Clear selection" else "No selection to clear")) {
                     face_set.clear();
                     sm_store.surfaceMeshCellSetUpdated(sm, .face, face_set);
-                    sms.app_ctx.requestRedraw();
+                    sms.app_ctx.view.requestRedraw();
                 }
                 if (disabled) {
                     c.ImGui_EndDisabled();
@@ -718,27 +720,27 @@ pub fn rightPanel(m: *Module) void {
             c.ImGui_Text("Size");
             c.ImGui_PushID("DrawSelectedVerticesSize");
             if (c.ImGui_SliderFloatEx("", &sd.point_sphere_shader_parameters.sphere_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                sms.app_ctx.requestRedraw();
+                sms.app_ctx.view.requestRedraw();
             }
             c.ImGui_PopID();
             if (c.ImGui_ColorEdit3("Color##SelectedVerticesColorEdit", &sd.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
-                sms.app_ctx.requestRedraw();
+                sms.app_ctx.view.requestRedraw();
             }
         },
         .edge => {
             c.ImGui_Text("Size");
             c.ImGui_PushID("DrawSelectedEdgesSize");
             if (c.ImGui_SliderFloatEx("", &sd.line_cylinder_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                sms.app_ctx.requestRedraw();
+                sms.app_ctx.view.requestRedraw();
             }
             c.ImGui_PopID();
             if (c.ImGui_ColorEdit3("Color##SelectedEdgesColorEdit", &sd.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
-                sms.app_ctx.requestRedraw();
+                sms.app_ctx.view.requestRedraw();
             }
         },
         .face => {
             if (c.ImGui_ColorEdit4("Global color##SelectedFacesColorEdit", &sd.tri_flat_shader_parameters.vertex_color, c.ImGuiColorEditFlags_NoInputs)) {
-                sms.app_ctx.requestRedraw();
+                sms.app_ctx.view.requestRedraw();
             }
         },
         else => unreachable,

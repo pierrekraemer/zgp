@@ -9,7 +9,7 @@ const c = @import("c");
 const imgui_utils = @import("../ui/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 
-const AppContext = @import("../main.zig").AppContext;
+const AppContext = @import("../AppContext.zig");
 const Module = @import("Module.zig");
 const IncidenceGraph = @import("../models/incidenceGraph/IncidenceGraph.zig");
 const IncidenceGraphStdData = @import("../models/IncidenceGraphStore.zig").IncidenceGraphStdData;
@@ -110,7 +110,7 @@ const IncidenceGraphRendererParameters = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Incidence Graph Renderer",
     .supported_models = .{ .incidence_graph = true },
@@ -125,10 +125,10 @@ module: Module = .{
 },
 parameters: std.AutoHashMapUnmanaged(*IncidenceGraph, IncidenceGraphRendererParameters) = .empty,
 
-pub fn init(app_ctx: *AppContext) IncidenceGraphRenderer {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(igr: *IncidenceGraphRenderer, app_ctx: *AppContext) !void {
+    igr.app_ctx = app_ctx;
+    try app_ctx.incidence_graph_store.addListener(&igr.module);
 }
 
 pub fn deinit(igr: *IncidenceGraphRenderer) void {
@@ -137,6 +137,7 @@ pub fn deinit(igr: *IncidenceGraphRenderer) void {
         entry.value_ptr.deinit();
     }
     igr.parameters.deinit(igr.app_ctx.allocator);
+    igr.app_ctx.incidence_graph_store.removeListener(&igr.module);
 }
 
 /// Part of the Module interface.
@@ -253,7 +254,7 @@ fn setIncidenceGraphDrawVerticesColorData(
     switch (@typeInfo(T)) {
         .float => {
             var min: f32 = std.math.floatMax(f32);
-            var max: f32 = std.math.floatMin(f32);
+            var max: f32 = -std.math.floatMax(f32);
             if (data) |d| {
                 min, max = d.data.minMaxValues(CompareScalarContext{}, compareScalar);
             }
@@ -291,7 +292,7 @@ fn setIncidenceGraphDrawVerticesColorData(
         },
         else => @compileError("IncidenceGraphRenderer bad vertex color data type"),
     }
-    igr.app_ctx.requestRedraw();
+    igr.app_ctx.view.requestRedraw();
 }
 
 fn setIncidenceGraphDrawFacesColorData(
@@ -305,13 +306,9 @@ fn setIncidenceGraphDrawFacesColorData(
     switch (@typeInfo(T)) {
         .float => {
             var min: f32 = std.math.floatMax(f32);
-            var max: f32 = std.math.floatMin(f32);
+            var max: f32 = -std.math.floatMax(f32);
             if (data) |d| {
-                var it = d.data.iterator();
-                while (it.next()) |elem| {
-                    if (elem.value_ptr.* < min) min = elem.value_ptr.*;
-                    if (elem.value_ptr.* > max) max = elem.value_ptr.*;
-                }
+                min, max = d.data.minMaxValues(CompareScalarContext{}, compareScalar);
             }
             switch (cell_type) {
                 .vertex => {
@@ -367,7 +364,7 @@ fn setIncidenceGraphDrawFacesColorData(
         },
         else => @compileError("IncidenceGraphRenderer bad color data type"),
     }
-    igr.app_ctx.requestRedraw();
+    igr.app_ctx.view.requestRedraw();
 }
 
 /// Part of the Module interface.
@@ -481,7 +478,7 @@ pub fn rightPanel(m: *Module) void {
 
     c.ImGui_SeparatorText("Vertices");
     if (c.ImGui_Checkbox("draw vertices", &p.draw_vertices)) {
-        igr.app_ctx.requestRedraw();
+        igr.app_ctx.view.requestRedraw();
     }
     if (p.draw_vertices) {
         c.ImGui_Text("Size");
@@ -490,7 +487,7 @@ pub fn rightPanel(m: *Module) void {
             // sync value to other point sphere shaders
             p.point_sphere_scalar_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
             p.point_sphere_rgb_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
-            igr.app_ctx.requestRedraw();
+            igr.app_ctx.view.requestRedraw();
         }
         c.ImGui_PopID();
         c.ImGui_Text("Color");
@@ -499,18 +496,18 @@ pub fn rightPanel(m: *Module) void {
             defer c.ImGui_EndGroup();
             if (c.ImGui_RadioButton("Global##DrawVerticesColorGlobal", p.draw_vertices_color.defined_on == .global)) {
                 p.draw_vertices_color.defined_on = .global;
-                igr.app_ctx.requestRedraw();
+                igr.app_ctx.view.requestRedraw();
             }
             c.ImGui_SameLine();
             if (c.ImGui_RadioButton("Per vertex##DrawVerticesColorPerVertex", p.draw_vertices_color.defined_on == .vertex)) {
                 p.draw_vertices_color.defined_on = .vertex;
-                igr.app_ctx.requestRedraw();
+                igr.app_ctx.view.requestRedraw();
             }
         }
         switch (p.draw_vertices_color.defined_on) {
             .global => {
                 if (c.ImGui_ColorEdit3("Global color##DrawVerticesColorGlobalEdit", &p.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
-                    igr.app_ctx.requestRedraw();
+                    igr.app_ctx.view.requestRedraw();
                 }
             },
             .vertex => {
@@ -519,12 +516,12 @@ pub fn rightPanel(m: *Module) void {
                     defer c.ImGui_EndGroup();
                     if (c.ImGui_RadioButton("Scalar##DrawVerticesColorVertexScalar", p.draw_vertices_color.type == .scalar)) {
                         p.draw_vertices_color.type = .scalar;
-                        igr.app_ctx.requestRedraw();
+                        igr.app_ctx.view.requestRedraw();
                     }
                     c.ImGui_SameLine();
                     if (c.ImGui_RadioButton("RGB##DrawVerticesColorVertexRGB", p.draw_vertices_color.type == .rgb)) {
                         p.draw_vertices_color.type = .rgb;
-                        igr.app_ctx.requestRedraw();
+                        igr.app_ctx.view.requestRedraw();
                     }
                 }
                 c.ImGui_PushID("DrawVerticesColorVertexData");
@@ -548,35 +545,35 @@ pub fn rightPanel(m: *Module) void {
 
     c.ImGui_SeparatorText("Edges");
     if (c.ImGui_Checkbox("draw edges", &p.draw_edges)) {
-        igr.app_ctx.requestRedraw();
+        igr.app_ctx.view.requestRedraw();
     }
     if (p.draw_edges) {
         if (c.ImGui_Checkbox("draw edges as cylinders", &p.draw_edges_as_cylinders)) {
-            igr.app_ctx.requestRedraw();
+            igr.app_ctx.view.requestRedraw();
         }
         if (p.draw_edges_as_cylinders) {
             c.ImGui_Text("Width (world)");
             c.ImGui_PushID("DrawEdgesWidth");
             if (c.ImGui_SliderFloatEx("", &p.line_cylinder_shader_parameters.cylinder_radius, 0.0001, 0.1, "%.4f", c.ImGuiSliderFlags_Logarithmic)) {
-                igr.app_ctx.requestRedraw();
+                igr.app_ctx.view.requestRedraw();
             }
             c.ImGui_PopID();
         } else {
             c.ImGui_Text("Width (screen)");
             c.ImGui_PushID("DrawEdgesWidth");
             if (c.ImGui_SliderFloatEx("", &p.line_shader_parameters.line_width, 0.1, 5.0, "%.1f", c.ImGuiSliderFlags_None)) {
-                igr.app_ctx.requestRedraw();
+                igr.app_ctx.view.requestRedraw();
             }
             c.ImGui_PopID();
         }
         if (c.ImGui_ColorEdit4("Global color##DrawEdgesColorGlobalEdit", &p.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
-            igr.app_ctx.requestRedraw();
+            igr.app_ctx.view.requestRedraw();
         }
     }
 
     c.ImGui_SeparatorText("Faces");
     if (c.ImGui_Checkbox("draw faces", &p.draw_faces)) {
-        igr.app_ctx.requestRedraw();
+        igr.app_ctx.view.requestRedraw();
     }
     if (p.draw_faces) {
         c.ImGui_Text("Color");
@@ -585,23 +582,23 @@ pub fn rightPanel(m: *Module) void {
             defer c.ImGui_EndGroup();
             if (c.ImGui_RadioButton("Global##DrawFacesColorGlobal", p.draw_faces_color.defined_on == .global)) {
                 p.draw_faces_color.defined_on = .global;
-                igr.app_ctx.requestRedraw();
+                igr.app_ctx.view.requestRedraw();
             }
             c.ImGui_SameLine();
             if (c.ImGui_RadioButton("Per vertex##DrawFacesColorPerVertex", p.draw_faces_color.defined_on == .vertex)) {
                 p.draw_faces_color.defined_on = .vertex;
-                igr.app_ctx.requestRedraw();
+                igr.app_ctx.view.requestRedraw();
             }
             c.ImGui_SameLine();
             if (c.ImGui_RadioButton("Per face##DrawFacesColorPerFace", p.draw_faces_color.defined_on == .face)) {
                 p.draw_faces_color.defined_on = .face;
-                igr.app_ctx.requestRedraw();
+                igr.app_ctx.view.requestRedraw();
             }
         }
         switch (p.draw_faces_color.defined_on) {
             .global => {
                 if (c.ImGui_ColorEdit4("Global color##DrawFacesColorGlobalEdit", &p.tri_flat_shader_parameters.vertex_color, c.ImGuiColorEditFlags_NoInputs)) {
-                    igr.app_ctx.requestRedraw();
+                    igr.app_ctx.view.requestRedraw();
                 }
             },
             .vertex => {
@@ -610,12 +607,12 @@ pub fn rightPanel(m: *Module) void {
                     defer c.ImGui_EndGroup();
                     if (c.ImGui_RadioButton("Scalar##DrawFacesColorVertexScalar", p.draw_faces_color.type == .scalar)) {
                         p.draw_faces_color.type = .scalar;
-                        igr.app_ctx.requestRedraw();
+                        igr.app_ctx.view.requestRedraw();
                     }
                     c.ImGui_SameLine();
                     if (c.ImGui_RadioButton("RGB##DrawFacesColorVertexRGB", p.draw_faces_color.type == .rgb)) {
                         p.draw_faces_color.type = .rgb;
-                        igr.app_ctx.requestRedraw();
+                        igr.app_ctx.view.requestRedraw();
                     }
                 }
                 c.ImGui_PushID("DrawFacesColorVertexData");
@@ -627,12 +624,12 @@ pub fn rightPanel(m: *Module) void {
                             .changed => |data| igr.setIncidenceGraphDrawFacesColorData(ig, .vertex, f32, data),
                         }
                         if (c.ImGui_Checkbox("Draw isolines", &p.tri_flat_scalar_per_vertex_shader_parameters.draw_isolines)) {
-                            igr.app_ctx.requestRedraw();
+                            igr.app_ctx.view.requestRedraw();
                         }
                         c.ImGui_Text("Nb isolines");
                         c.ImGui_PushID("NbIsolines");
                         if (c.ImGui_SliderInt("", &p.tri_flat_scalar_per_vertex_shader_parameters.nb_isolines, 1, 100)) {
-                            igr.app_ctx.requestRedraw();
+                            igr.app_ctx.view.requestRedraw();
                         }
                         c.ImGui_PopID();
                     },
@@ -650,12 +647,12 @@ pub fn rightPanel(m: *Module) void {
                     defer c.ImGui_EndGroup();
                     if (c.ImGui_RadioButton("Scalar##DrawFacesColorFaceScalar", p.draw_faces_color.type == .scalar)) {
                         p.draw_faces_color.type = .scalar;
-                        igr.app_ctx.requestRedraw();
+                        igr.app_ctx.view.requestRedraw();
                     }
                     c.ImGui_SameLine();
                     if (c.ImGui_RadioButton("RGB##DrawFacesColorFaceRGB", p.draw_faces_color.type == .rgb)) {
                         p.draw_faces_color.type = .rgb;
-                        igr.app_ctx.requestRedraw();
+                        igr.app_ctx.view.requestRedraw();
                     }
                 }
                 c.ImGui_PushID("DrawFacesColorFaceData");

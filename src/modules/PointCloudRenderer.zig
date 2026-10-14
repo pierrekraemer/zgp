@@ -9,7 +9,7 @@ const c = @import("c");
 const imgui_utils = @import("../ui/imgui.zig");
 const imgui_log = std.log.scoped(.imgui);
 
-const AppContext = @import("../main.zig").AppContext;
+const AppContext = @import("../AppContext.zig");
 const Module = @import("Module.zig");
 const PointCloud = @import("../models/point/PointCloud.zig");
 const PointCloudStdData = @import("../models/PointCloudStore.zig").PointCloudStdData;
@@ -39,8 +39,8 @@ const ColorType = enum {
 const ColorParameters = struct {
     defined_on: ColorDefinedOn,
     type: ColorType = .rgb,
-    point_scalar_data: ?PointCloud.CellData(f32) = null, // data used if defined_on is point & type is scalar
-    point_rgb_data: ?PointCloud.CellData(Vec3f) = null, // data used if defined_on is point & type is rgb
+    point_scalar_data: ?PointCloud.PointData(f32) = null, // data used if defined_on is point & type is scalar
+    point_rgb_data: ?PointCloud.PointData(Vec3f) = null, // data used if defined_on is point & type is rgb
 };
 
 const RadiusDefinedOn = enum {
@@ -89,7 +89,7 @@ const PointCloudRendererParameters = struct {
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Point Cloud Renderer",
     .supported_models = .{ .point_cloud = true },
@@ -104,10 +104,10 @@ module: Module = .{
 },
 parameters: std.AutoHashMapUnmanaged(*PointCloud, PointCloudRendererParameters) = .empty,
 
-pub fn init(app_ctx: *AppContext) PointCloudRenderer {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(pcr: *PointCloudRenderer, app_ctx: *AppContext) !void {
+    pcr.app_ctx = app_ctx;
+    try app_ctx.point_cloud_store.addListener(&pcr.module);
 }
 
 pub fn deinit(pcr: *PointCloudRenderer) void {
@@ -116,6 +116,7 @@ pub fn deinit(pcr: *PointCloudRenderer) void {
         entry.value_ptr.deinit();
     }
     pcr.parameters.deinit(pcr.app_ctx.allocator);
+    pcr.app_ctx.point_cloud_store.removeListener(&pcr.module);
 }
 
 /// Part of the Module interface.
@@ -211,13 +212,13 @@ fn setPointCloudDrawPointsColorData(
     pcr: *PointCloudRenderer,
     point_cloud: *PointCloud,
     T: type,
-    data: ?PointCloud.CellData(T),
+    data: ?PointCloud.PointData(T),
 ) void {
     const p = pcr.parameters.getPtr(point_cloud) orelse return;
     switch (@typeInfo(T)) {
         .float => {
             var min: f32 = std.math.floatMax(f32);
-            var max: f32 = std.math.floatMin(f32);
+            var max: f32 = -std.math.floatMax(f32);
             if (data) |d| {
                 min, max = d.data.minMaxValues(CompareScalarContext{}, compareScalar);
             }
@@ -251,7 +252,7 @@ fn setPointCloudDrawPointsColorData(
         },
         else => @compileError("PointCloudRenderer bad vertex color data type"),
     }
-    pcr.app_ctx.requestRedraw();
+    pcr.app_ctx.view.requestRedraw();
 }
 
 /// Part of the Module interface.
@@ -335,7 +336,7 @@ pub fn rightPanel(m: *Module) void {
 
     const p = pcr.parameters.getPtr(pc).?;
     if (c.ImGui_Checkbox("draw points", &p.draw_points)) {
-        pcr.app_ctx.requestRedraw();
+        pcr.app_ctx.view.requestRedraw();
     }
     if (p.draw_points) {
         c.ImGui_Text("Size");
@@ -344,12 +345,12 @@ pub fn rightPanel(m: *Module) void {
             defer c.ImGui_EndGroup();
             if (c.ImGui_RadioButton("Global##DrawPointsRadiusGlobal", p.draw_points_radius.defined_on == .global)) {
                 p.draw_points_radius.defined_on = .global;
-                pcr.app_ctx.requestRedraw();
+                pcr.app_ctx.view.requestRedraw();
             }
             c.ImGui_SameLine();
             if (c.ImGui_RadioButton("Per point##DrawPointsRadiusPerPoint", p.draw_points_radius.defined_on == .point)) {
                 p.draw_points_radius.defined_on = .point;
-                pcr.app_ctx.requestRedraw();
+                pcr.app_ctx.view.requestRedraw();
             }
         }
         switch (p.draw_points_radius.defined_on) {
@@ -359,7 +360,7 @@ pub fn rightPanel(m: *Module) void {
                     // sync value to other point sphere shaders
                     p.point_sphere_scalar_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
                     p.point_sphere_rgb_per_vertex_shader_parameters.sphere_radius = p.point_sphere_shader_parameters.sphere_radius;
-                    pcr.app_ctx.requestRedraw();
+                    pcr.app_ctx.view.requestRedraw();
                 }
                 c.ImGui_PopID();
             },
@@ -374,12 +375,12 @@ pub fn rightPanel(m: *Module) void {
             defer c.ImGui_EndGroup();
             if (c.ImGui_RadioButton("Global##DrawPointsColorGlobal", p.draw_points_color.defined_on == .global)) {
                 p.draw_points_color.defined_on = .global;
-                pcr.app_ctx.requestRedraw();
+                pcr.app_ctx.view.requestRedraw();
             }
             c.ImGui_SameLine();
             if (c.ImGui_RadioButton("Per point##DrawPointsColorPerPoint", p.draw_points_color.defined_on == .point)) {
                 p.draw_points_color.defined_on = .point;
-                pcr.app_ctx.requestRedraw();
+                pcr.app_ctx.view.requestRedraw();
             }
         }
         switch (p.draw_points_color.defined_on) {
@@ -387,7 +388,7 @@ pub fn rightPanel(m: *Module) void {
                 if (c.ImGui_ColorEdit3("Global color##DrawPointsColorGlobalEdit", &p.point_sphere_shader_parameters.sphere_color, c.ImGuiColorEditFlags_NoInputs)) {
                     // sync value to other point sphere shaders
                     p.point_sphere_radius_per_vertex_shader_parameters.sphere_color = p.point_sphere_shader_parameters.sphere_color;
-                    pcr.app_ctx.requestRedraw();
+                    pcr.app_ctx.view.requestRedraw();
                 }
             },
             .point => {
@@ -396,12 +397,12 @@ pub fn rightPanel(m: *Module) void {
                     defer c.ImGui_EndGroup();
                     if (c.ImGui_RadioButton("Scalar##DrawPointsColorPointScalar", p.draw_points_color.type == .scalar)) {
                         p.draw_points_color.type = .scalar;
-                        pcr.app_ctx.requestRedraw();
+                        pcr.app_ctx.view.requestRedraw();
                     }
                     c.ImGui_SameLine();
                     if (c.ImGui_RadioButton("RGB##DrawPointsColorPointRGB", p.draw_points_color.type == .rgb)) {
                         p.draw_points_color.type = .rgb;
-                        pcr.app_ctx.requestRedraw();
+                        pcr.app_ctx.view.requestRedraw();
                     }
                 }
                 c.ImGui_PushID("DrawPointsColorPointData");

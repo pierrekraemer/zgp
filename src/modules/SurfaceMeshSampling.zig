@@ -9,7 +9,7 @@ const zgp_log = std.log.scoped(.zgp);
 
 const c = @import("c");
 
-const AppContext = @import("../main.zig").AppContext;
+const AppContext = @import("../AppContext.zig");
 const Module = @import("Module.zig");
 const SurfaceMesh = @import("../models/surface/SurfaceMesh.zig");
 const SurfacePoint = @import("../models/surface/SurfacePoint.zig");
@@ -29,18 +29,17 @@ const SamplingData = struct {
     surface_mesh: *SurfaceMesh,
 
     samples: *PointCloud = undefined,
-    sample_position: PointCloud.CellData(Vec3f) = undefined,
-    sample_surface_point: PointCloud.CellData(SurfacePoint) = undefined,
+    sample_position: PointCloud.PointData(Vec3f) = undefined,
+    sample_surface_point: PointCloud.PointData(SurfacePoint) = undefined,
     initialized: bool = false,
 
     fn init(sd: *SamplingData, pointcloud_name: []const u8) !void {
         if (!sd.initialized) {
             // create samples PointCloud & data
             sd.samples = try sd.app_ctx.point_cloud_store.createPointCloud(pointcloud_name);
-            sd.sample_position = try sd.samples.addData(Vec3f, "position");
+            const info = sd.app_ctx.point_cloud_store.pointCloudInfo(sd.samples);
+            sd.sample_position = info.std_datas.position.?;
             sd.sample_surface_point = try sd.samples.addData(SurfacePoint, "surface_point");
-            sd.app_ctx.point_cloud_store.setPointCloudStdData(sd.samples, .{ .position = sd.sample_position });
-
             sd.initialized = true;
         } else {
             sd.samples.clearRetainingCapacity();
@@ -70,9 +69,9 @@ const SamplingData = struct {
         const Task = struct {
             const Task = @This();
 
-            surface_point: PointCloud.CellData(SurfacePoint),
+            surface_point: PointCloud.PointData(SurfacePoint),
             src_data: SurfaceMesh.CellData(cell_type, T),
-            dst_data: PointCloud.CellData(T),
+            dst_data: PointCloud.PointData(T),
 
             pub fn run(t: *const Task, point: PointCloud.Point) void {
                 t.dst_data.valuePtr(point).* = t.surface_point.value(point).readData(T, cell_type, t.src_data);
@@ -90,11 +89,11 @@ const SamplingData = struct {
         });
 
         sd.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, T, dst_data);
-        sd.app_ctx.requestRedraw();
+        sd.app_ctx.view.requestRedraw();
     }
 };
 
-app_ctx: *AppContext,
+app_ctx: *AppContext = undefined,
 module: Module = .{
     .name = "Surface Mesh Sampling",
     .supported_models = .{ .surface_mesh = true },
@@ -107,14 +106,17 @@ module: Module = .{
 },
 surface_meshes_data: std.AutoHashMapUnmanaged(*SurfaceMesh, SamplingData) = .empty,
 
-pub fn init(app_ctx: *AppContext) SurfaceMeshSampling {
-    return .{
-        .app_ctx = app_ctx,
-    };
+/// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
+pub fn init(sms: *SurfaceMeshSampling, app_ctx: *AppContext) !void {
+    sms.app_ctx = app_ctx;
+    try app_ctx.point_cloud_store.addListener(&sms.module);
+    try app_ctx.surface_mesh_store.addListener(&sms.module);
 }
 
 pub fn deinit(sms: *SurfaceMeshSampling) void {
     sms.surface_meshes_data.deinit(sms.app_ctx.allocator);
+    sms.app_ctx.point_cloud_store.removeListener(&sms.module);
+    sms.app_ctx.surface_mesh_store.removeListener(&sms.module);
 }
 
 /// Part of the Module interface.
@@ -185,7 +187,7 @@ fn uniformSampling(
     sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, Vec3f, sd.sample_position);
 
-    sms.app_ctx.requestRedraw();
+    sms.app_ctx.view.requestRedraw();
 }
 
 fn poissonDiskSampling(
@@ -219,7 +221,7 @@ fn poissonDiskSampling(
     sms.app_ctx.point_cloud_store.pointCloudConnectivityUpdated(sd.samples);
     sms.app_ctx.point_cloud_store.pointCloudDataUpdated(sd.samples, Vec3f, sd.sample_position);
 
-    sms.app_ctx.requestRedraw();
+    sms.app_ctx.view.requestRedraw();
 }
 
 /// Part of the Module interface.
