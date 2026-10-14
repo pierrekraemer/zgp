@@ -214,8 +214,8 @@ pub fn isotropicRemeshing(
             const dd = sm.phi2(d);
             const vd = sm.vertex(d);
             const vdd = sm.vertex(dd);
-            const new_pos = vec.mulScalar3f(
-                vec.add3f(
+            const new_pos = vec.mulScalar(
+                vec.add(
                     vertex_position.value(vd),
                     vertex_position.value(vdd),
                 ),
@@ -300,8 +300,8 @@ pub fn isotropicRemeshing(
             }
             if (!sm.canCollapseEdge(edge)) continue;
 
-            var new_pos = vec.mulScalar3f(
-                vec.add3f(vertex_position.value(v1), vertex_position.value(v2)),
+            var new_pos = vec.mulScalar(
+                vec.add(vertex_position.value(v1), vertex_position.value(v2)),
                 0.5,
             );
             if (!sm.isOrbitIncidentToBoundary(d, .edge)) {
@@ -381,26 +381,26 @@ pub fn isotropicRemeshing(
             if (sm.isOrbitIncidentToBoundary(vd, .vertex) or (preserve_features and feature_vertex.isMarked(vertex))) {
                 continue;
             }
-            var q = vec.zero3f;
+            var q = vec.zero(Vec3f);
             var w: f32 = 0.0;
             if (adaptive and iteration > 0) {
                 var dart_it = sm.vertexDartIterator(vd);
                 while (dart_it.next()) |d| {
                     const f = sm.face(d);
                     var avg_sizing_field: f32 = 0.0;
-                    var avg_position = vec.zero3f;
+                    var avg_position = vec.zero(Vec3f);
                     var count: u32 = 0;
                     var face_dart_it = sm.faceDartIterator(d);
                     while (face_dart_it.next()) |fd| {
                         const iv = sm.vertex(fd);
                         avg_sizing_field += vertex_sizing_field.value(iv);
-                        avg_position = vec.add3f(avg_position, vertex_position.value(iv));
+                        avg_position = vec.add(avg_position, vertex_position.value(iv));
                         count += 1;
                     }
                     avg_sizing_field /= @floatFromInt(count);
-                    avg_position = vec.divScalar3f(avg_position, @floatFromInt(count));
+                    avg_position = vec.divScalar(avg_position, @floatFromInt(count));
                     const a = face_area.value(f) * avg_sizing_field;
-                    q = vec.add3f(q, vec.mulScalar3f(avg_position, a));
+                    q = vec.add(q, vec.mulScalar(avg_position, a));
                     w += a;
                 }
             } else {
@@ -408,24 +408,24 @@ pub fn isotropicRemeshing(
                 while (dart_it.next()) |d| {
                     const nv = sm.vertex(sm.phi1(d));
                     const a = vertex_area.value(nv);
-                    q = vec.add3f(
+                    q = vec.add(
                         q,
-                        vec.mulScalar3f(vertex_position.value(nv), a),
+                        vec.mulScalar(vertex_position.value(nv), a),
                     );
                     w += a;
                 }
             }
             if (w > 0.0) {
-                q = vec.divScalar3f(q, w);
+                q = vec.divScalar(q, w);
                 const n = vertex_normal.value(vertex);
                 const p = vertex_position.value(vertex);
-                vertex_position.valuePtr(vertex).* = sm_bvh.closestPoint(vec.add3f(
+                vertex_position.valuePtr(vertex).* = sm_bvh.closestPoint(vec.add(
                     q,
-                    vec.mulScalar3f(
+                    vec.mulScalar(
                         n,
-                        vec.dot3f(
+                        vec.dot(
                             n,
-                            vec.sub3f(p, q),
+                            vec.sub(p, q),
                         ),
                     ),
                 ));

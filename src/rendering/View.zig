@@ -236,13 +236,13 @@ pub fn viewToWorldZ(view: *const View, x: f32, y: f32, z: f32) ?Vec3f {
         z * 2.0 - 1.0,
         1.0,
     };
-    var p_view = mat.mulVec4f(view.camera.projection_matrix_inv, p_ndc);
+    var p_view = mat.mulVec(view.camera.projection_matrix_inv, p_ndc);
     if (p_view[3] == 0.0) {
         gl_log.err("Cannot divide by zero w component", .{});
         return null;
     }
-    p_view = vec.divScalar4f(p_view, p_view[3]);
-    const p_world_f = mat.mulVec4f(view.camera.view_matrix_inv, p_view);
+    p_view = vec.divScalar(p_view, p_view[3]);
+    const p_world_f = mat.mulVec(view.camera.view_matrix_inv, p_view);
     return .{ p_world_f[0], p_world_f[1], p_world_f[2] };
 }
 
@@ -275,7 +275,7 @@ pub fn viewToWorldRayIfGeometry(view: *const View, x: f32, y: f32) ?Ray {
     const pwp = viewToWorld(view, x, y);
     return if (pwp == null) null else .{
         .origin = view.camera.position,
-        .direction = vec.normalized3f(vec.sub3f(pwp.?, view.camera.position)),
+        .direction = vec.normalized(vec.sub(pwp.?, view.camera.position)),
     };
 }
 
@@ -292,7 +292,7 @@ pub fn viewToWorldRay(view: *const View, x: f32, y: f32) Ray {
         view.camera.position[1] + view.camera.look_dir[1],
         view.camera.position[2] + view.camera.look_dir[2],
     };
-    const direction = vec.normalized3f(vec.sub3f(far_world, near_world));
+    const direction = vec.normalized(vec.sub(far_world, near_world));
 
     return switch (view.camera.projection_type) {
         .perspective => .{
@@ -308,12 +308,12 @@ pub fn viewToWorldRay(view: *const View, x: f32, y: f32) Ray {
 
 pub fn worldToView(view: *const View, world_pos: Vec3f) ?Vec3f {
     const p_world: Vec4f = .{ world_pos[0], world_pos[1], world_pos[2], 1.0 };
-    const p_clip = mat.mulVec4f(view.camera.projection_matrix, mat.mulVec4f(view.camera.view_matrix, p_world));
+    const p_clip = mat.mulVec(view.camera.projection_matrix, mat.mulVec(view.camera.view_matrix, p_world));
     if (p_clip[3] == 0.0) {
         gl_log.err("Cannot divide by zero w component", .{});
         return null;
     }
-    const p_ndc = vec.divScalar4f(p_clip, p_clip[3]);
+    const p_ndc = vec.divScalar(p_clip, p_clip[3]);
     return .{
         ((p_ndc[0] + 1.0) / 2.0) * @as(f32, @floatFromInt(view.width)),
         ((1.0 - p_ndc[1]) / 2.0) * @as(f32, @floatFromInt(view.height)),

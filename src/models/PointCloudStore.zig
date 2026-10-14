@@ -27,10 +27,10 @@ const kdtree = @import("../geometry/kdtree.zig");
 
 /// This struct defines the standard datas of a PointCloud
 pub const PointCloudStdDatas = struct {
-    position: ?PointCloud.CellData(Vec3f) = null,
-    normal: ?PointCloud.CellData(Vec3f) = null,
-    radius: ?PointCloud.CellData(f32) = null,
-    // color: ?PointCloud.CellData(Vec3f) = null,
+    position: ?PointCloud.PointData(Vec3f) = null,
+    normal: ?PointCloud.PointData(Vec3f) = null,
+    radius: ?PointCloud.PointData(f32) = null,
+    // color: ?PointCloud.PointData(Vec3f) = null,
 };
 /// This tagged union is generated from the PointCloudStdDatas struct and allows to
 /// easily provide a single data entry to the setPointCloudStdData function
@@ -89,7 +89,7 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !PointCloudStore {
         .point_clouds_info = .empty,
         .data_vbo = .empty,
         .data_last_update = .empty,
-        .point_buffer_pool = try .init(io, allocator, 2048, 64, 32),
+        .point_buffer_pool = try .init(io, allocator, 1024, 64, 32),
     };
 }
 
@@ -224,7 +224,7 @@ pub fn pointCloudDataUpdated(
     pcs: *PointCloudStore,
     pc: *PointCloud,
     comptime T: type,
-    data: PointCloud.CellData(T),
+    data: PointCloud.PointData(T),
 ) void {
     // if it exists, update the VBO with the data
     const maybe_vbo = pcs.data_vbo.getPtr(data.gen());
@@ -259,7 +259,7 @@ pub fn pointCloudConnectivityUpdated(pcs: *PointCloudStore, pc: *PointCloud) voi
 pub fn dataVBO(
     pcs: *PointCloudStore,
     comptime T: type,
-    data: PointCloud.CellData(T),
+    data: PointCloud.PointData(T),
 ) VBO {
     const vbo = pcs.data_vbo.getOrPut(pcs.allocator, data.gen()) catch |err| {
         zgp_log.err("Failed to get or add VBO in the registry: {}", .{err});

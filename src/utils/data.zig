@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 
 const typeId = @import("types.zig").typeId;
 
+const vec = @import("../geometry/vec.zig");
 pub const invalid_index = std.math.maxInt(u32);
 
 pub const DataGen = struct {
@@ -235,14 +236,15 @@ pub fn Data(comptime T: type) type {
             return .{ min, max };
         }
         pub fn meanValue(self: *const Self) T {
-            var sum: T = switch (@typeInfo(T)) {
+            const t_info = @typeInfo(T);
+            var sum: T = switch (t_info) {
                 .float, .int => 0,
                 .array => blk: {
-                    const elem_info = @typeInfo(@typeInfo(T).array.child);
-                    if (elem_info != .float and elem_info != .int) {
+                    const s_info = @typeInfo(vec.ScalarTypeOf(T));
+                    if (s_info != .float and s_info != .int) {
                         @compileError("meanValue only supports float, int, or array of float/int types");
                     }
-                    break :blk @splat(0);
+                    break :blk vec.zero(T);
                 },
                 else => @compileError("meanValue only supports float, int, or array of float/int types"),
             };
@@ -252,25 +254,16 @@ pub fn Data(comptime T: type) type {
             }
             var it = self.constIterator();
             while (it.next()) |elem| {
-                switch (@typeInfo(T)) {
+                switch (t_info) {
                     .float, .int => sum += elem.value_ptr.*,
-                    .array => {
-                        inline for (0..@typeInfo(T).array.len) |i| {
-                            sum[i] += elem.value_ptr.*[i];
-                        }
-                    },
+                    .array => sum = vec.add(sum, elem.value_ptr.*),
                     else => unreachable,
                 }
             }
-            return switch (@typeInfo(T)) {
+            return switch (t_info) {
                 .float => sum / @as(T, @floatFromInt(nb_elements)),
                 .int => sum / @as(T, @intCast(nb_elements)),
-                .array => blk: {
-                    inline for (0..@typeInfo(T).array.len) |i| {
-                        sum[i] = sum[i] / @as(@TypeOf(sum[i]), @floatFromInt(nb_elements));
-                    }
-                    break :blk sum;
-                },
+                .array => vec.divScalar(sum, @floatFromInt(nb_elements)),
                 else => unreachable,
             };
         }

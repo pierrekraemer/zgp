@@ -39,9 +39,9 @@ const ParameterizationData = struct {
     // samples are SurfacePoints that lie on the underlying SurfaceMesh (snapped to vertices, for now)
     // each sample gives rise to a local parameterization patch
     samples: ?*PointCloud = null,
-    sample_surface_point: PointCloud.CellData(SurfacePoint) = undefined, // for each sample, the corresponding SurfacePoint on the underlying SurfaceMesh
-    sample_position: PointCloud.CellData(Vec3f) = undefined, // optional, only useful for inspection of the samples
-    sample_color: PointCloud.CellData(Vec3f) = undefined, // optional, only useful for inspection of the samples
+    sample_surface_point: PointCloud.PointData(SurfacePoint) = undefined, // for each sample, the corresponding SurfacePoint on the underlying SurfaceMesh
+    sample_position: PointCloud.PointData(Vec3f) = undefined, // optional, only useful for inspection of the samples
+    sample_color: PointCloud.PointData(Vec3f) = undefined, // optional, only useful for inspection of the samples
 
     // the samples SurfaceMesh is a triangulation of the samples
     // it is computed as the dual of the discrete geodesic Voronoi diagram of the samples, computed on the Delaunay intrinsic triangulation of the underlying SurfaceMesh
@@ -89,9 +89,9 @@ const ParameterizationData = struct {
             return .{
                 .samples = .{ invalid_index, invalid_index, invalid_index },
                 .uvs = .{
-                    .{ vec.zero2f, vec.zero2f, vec.zero2f },
-                    .{ vec.zero2f, vec.zero2f, vec.zero2f },
-                    .{ vec.zero2f, vec.zero2f, vec.zero2f },
+                    .{ vec.zero(Vec2f), vec.zero(Vec2f), vec.zero(Vec2f) },
+                    .{ vec.zero(Vec2f), vec.zero(Vec2f), vec.zero(Vec2f) },
+                    .{ vec.zero(Vec2f), vec.zero(Vec2f), vec.zero(Vec2f) },
                 },
                 .distance_to_boundary = .{
                     .{ 0.0, 0.0, 0.0 },
@@ -128,10 +128,10 @@ const ParameterizationData = struct {
             var buf: [64]u8 = undefined;
             const pc_name = std.fmt.bufPrint(&buf, "{s}_param_samples", .{pd.app_ctx.surface_mesh_store.surfaceMeshName(pd.surface_mesh).?}) catch "__param_samples";
             pd.samples = try pd.app_ctx.point_cloud_store.createPointCloud(pc_name);
-            pd.sample_position = try pd.samples.?.addData(Vec3f, "position");
+            const info = pd.app_ctx.point_cloud_store.pointCloudInfo(pd.samples.?);
+            pd.sample_position = info.std_datas.position.?; // the PointCloud has just been created, its std datas are available
             pd.sample_surface_point = try pd.samples.?.addData(SurfacePoint, "surface_point");
             pd.sample_color = try pd.samples.?.addData(Vec3f, "color");
-            pd.app_ctx.point_cloud_store.setPointCloudStdData(pd.samples.?, .{ .position = pd.sample_position });
         }
 
         const t = std.Io.Timestamp.now(pd.app_ctx.io, .real);
@@ -258,10 +258,10 @@ const ParameterizationData = struct {
             var buf: [64]u8 = undefined;
             const ssm_name = std.fmt.bufPrint(&buf, "{s}_param_ssm", .{pd.app_ctx.surface_mesh_store.surfaceMeshName(pd.surface_mesh).?}) catch "__param_ssm";
             pd.samples_surface_mesh = try pd.app_ctx.surface_mesh_store.createSurfaceMesh(ssm_name);
-            pd.ssm_vertex_position = try pd.samples_surface_mesh.?.addData(.vertex, Vec3f, "position");
+            const info = pd.app_ctx.surface_mesh_store.surfaceMeshInfo(pd.samples_surface_mesh.?);
+            pd.ssm_vertex_position = info.std_datas.vertex_position.?; // the SurfaceMesh has just been created, its std datas are available
             pd.ssm_vertex_sample = try pd.samples_surface_mesh.?.addData(.vertex, PointCloud.Point, "sample");
             pd.ssm_edge_path = try pd.samples_surface_mesh.?.addData(.edge, std.ArrayList(SurfaceMesh.Dart), "edge_path");
-            pd.app_ctx.surface_mesh_store.setSurfaceMeshStdData(pd.samples_surface_mesh.?, .{ .vertex_position = pd.ssm_vertex_position });
         }
 
         const t = std.Io.Timestamp.now(pd.app_ctx.io, .real);
@@ -660,7 +660,7 @@ const ParameterizationData = struct {
 
                 // the UV coordinate of pointed_v is the UV coordinate of v + the vector from v to pointed_v in the tangent space of the origin vertex
                 const l = pd.it_ctx.?.intrinsic_edge_length.value(pd.it_ctx.?.intrinsic_surface_mesh.edge(d_info.dart));
-                const uv = vec.add2f(d_info.uv, .{
+                const uv = vec.add(d_info.uv, .{
                     l * std.math.cos(d_info.global_angle),
                     l * std.math.sin(d_info.global_angle),
                 });
@@ -732,10 +732,10 @@ const ParameterizationData = struct {
                 }
                 const new_origin_uv = current_patch_uv.value(farthest_v);
                 for (patch_vertices.items) |v| {
-                    current_patch_uv.valuePtr(v).* = vec.sub2f(current_patch_uv.value(v), new_origin_uv);
+                    current_patch_uv.valuePtr(v).* = vec.sub(current_patch_uv.value(v), new_origin_uv);
                     // commented out version normalizes the distance smoothly to 0 at the boundary and 1 at the farthest vertex, even if the farthest vertex is not the origin vertex
                     // not useful now that the origin of the patch is re-centered on the farthest vertex
-                    current_patch_distance_to_boundary.valuePtr(v).* /= farthest_dist; // / (current_patch_distance_to_boundary.value(v) + vec.norm2f(current_patch_uv.value(v)));
+                    current_patch_distance_to_boundary.valuePtr(v).* /= farthest_dist; // / (current_patch_distance_to_boundary.value(v) + vec.norm(current_patch_uv.value(v)));
                 }
             }
 
@@ -775,6 +775,10 @@ const ParameterizationData = struct {
 
     // this function is called when the underlying SurfaceMesh is destroyed
     fn surfaceMeshDestroyed(pd: *ParameterizationData) !void {
+        if (pd.it_ctx) |*it_ctx| {
+            it_ctx.deinit();
+            pd.it_ctx = null;
+        }
         if (pd.samples_surface_mesh) |ssm| {
             pd.app_ctx.surface_mesh_store.destroySurfaceMesh(ssm); // triggers the samplesSurfaceMeshDestroyed function
         }
@@ -815,6 +819,7 @@ module: Module = .{
     .vtable = &.{
         .surfaceMeshCreated = surfaceMeshCreated,
         .surfaceMeshDestroyed = surfaceMeshDestroyed,
+        .surfaceMeshConnectivityUpdated = surfaceMeshConnectivityUpdated,
         .pointCloudDestroyed = pointCloudDestroyed,
         .rightPanel = rightPanel,
     },
@@ -887,6 +892,18 @@ pub fn surfaceMeshDestroyed(m: *Module, surface_mesh: *SurfaceMesh) void {
     };
     // remove the ParameterizationData from the hashmap
     _ = smp.surface_meshes_data.remove(surface_mesh);
+}
+
+/// Part of the Module interface.
+/// The intrinsic triangulation is built from the connectivity of the underlying SurfaceMesh:
+/// discard it when the connectivity changes so that it gets rebuilt on the next use.
+pub fn surfaceMeshConnectivityUpdated(m: *Module, surface_mesh: *SurfaceMesh) void {
+    const smp: *SurfaceMeshParameterization = @alignCast(@fieldParentPtr("module", m));
+    const pd = smp.surface_meshes_data.getPtr(surface_mesh) orelse return;
+    if (pd.it_ctx) |*it_ctx| {
+        it_ctx.deinit();
+        pd.it_ctx = null;
+    }
 }
 
 /// Part of the Module interface.

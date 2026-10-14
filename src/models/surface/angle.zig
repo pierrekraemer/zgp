@@ -16,8 +16,8 @@ pub fn cornerAngle(
     const d = sm.dart(corner);
     const p1 = vertex_position.value(sm.vertex(d));
     return geometry_utils.angle(
-        vec.sub3f(vertex_position.value(sm.vertex(sm.phi1(d))), p1),
-        vec.sub3f(vertex_position.value(sm.vertex(sm.phi_1(d))), p1),
+        vec.sub(vertex_position.value(sm.vertex(sm.phi1(d))), p1),
+        vec.sub(vertex_position.value(sm.vertex(sm.phi_1(d))), p1),
     );
 }
 
@@ -116,14 +116,14 @@ pub fn edgeDihedralAngle(
     const n1 = face_normal.value(sm.face(d));
     const n2 = face_normal.value(sm.face(d2));
     return std.math.atan2(
-        vec.dot3f(
-            vec.normalized3f(vec.sub3f(
+        vec.dot(
+            vec.normalized(vec.sub(
                 vertex_position.value(sm.vertex(d2)),
                 vertex_position.value(sm.vertex(d)),
             )),
-            vec.cross3f(n1, n2),
+            vec.cross(n1, n2),
         ),
-        vec.dot3f(n1, n2),
+        vec.dot(n1, n2),
     );
 }
 

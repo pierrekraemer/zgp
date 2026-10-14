@@ -110,10 +110,10 @@ pub fn leftPanel(m: *Module) void {
 /// The function must have the following signature:
 /// fn(
 ///     pc: *PointCloud,
-///     read_data_1: PointCloud.CellData(...),
-///     read_data_2: PointCloud.CellData(...),
+///     read_data_1: PointCloud.PointData(...),
+///     read_data_2: PointCloud.PointData(...),
 ///     ...
-///     computed_data: PointCloud.CellData(...),
+///     computed_data: PointCloud.PointData(...),
 /// ) !void
 const StdDataComputation = struct {
     reads: []const PointCloudStdDataTag,

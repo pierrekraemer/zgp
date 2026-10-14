@@ -66,14 +66,14 @@ pub const Parameters = struct {
 
     pub fn draw(p: *Parameters, view_matrix: Mat4f, projection_matrix: Mat4f) void {
         // Compute view-projection (P * V) and its inverse
-        const view_proj = mat.mul4f(projection_matrix, view_matrix);
+        const view_proj = mat.mul(projection_matrix, view_matrix);
         // Use Eigen (double precision) to invert, same as View.viewToWorldZ
-        const view_proj_d = mat.mat4dFromMat4f(view_proj);
+        const view_proj_d = mat.cast(f64, view_proj);
         const inv_view_proj_d = eigen.computeInverse4d(view_proj_d) orelse {
             gl_log.err("Cannot invert view-projection matrix", .{});
             return;
         };
-        const inv_view_proj = mat.mat4fFromMat4d(inv_view_proj_d);
+        const inv_view_proj = mat.cast(f32, inv_view_proj_d);
 
         gl.UseProgram(p.shader.program.index);
         defer gl.UseProgram(0);

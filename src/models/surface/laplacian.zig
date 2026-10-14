@@ -21,10 +21,10 @@ pub fn halfedgeCotanWeight(
     const p1 = vertex_position.value(sm.vertex(d));
     const p2 = vertex_position.value(sm.vertex(sm.phi1(d)));
     const p3 = vertex_position.value(sm.vertex(sm.phi_1(d)));
-    const vecR = vec.sub3f(p1, p3);
-    const vecL = vec.sub3f(p2, p3);
+    const vecR = vec.sub(p1, p3);
+    const vecL = vec.sub(p2, p3);
     // cotan(theta_i^jk) = (u . v) / ||u x v||
-    return 0.5 * (vec.dot3f(vecR, vecL) / vec.norm3f(vec.cross3f(vecR, vecL)));
+    return 0.5 * (vec.dot(vecR, vecL) / vec.norm(vec.cross(vecR, vecL)));
     // cotan(theta_i^jk) = (|ij|2 + |ik|2 - |jk|2) / (4 * Area(ijk))
 }
 

@@ -261,7 +261,7 @@ pub fn draw(m: *Module, view_matrix: Mat4f, projection_matrix: Mat4f) void {
             .face => {
                 const vertex_color_backup = sd.tri_flat_shader_parameters.vertex_color;
                 const vertex_color: Vec4f = switch (action) {
-                    .add => vec.mulScalar4f(vertex_color_backup, 0.75),
+                    .add => vec.mulScalar(vertex_color_backup, 0.75),
                     .remove => blk: {
                         const opposite_color = color.perceptualOppositeRGB(.{ vertex_color_backup[0], vertex_color_backup[1], vertex_color_backup[2] });
                         break :blk .{ opposite_color[0], opposite_color[1], opposite_color[2], 0.75 };

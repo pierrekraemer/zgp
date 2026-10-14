@@ -32,18 +32,22 @@ const MedialAxisData = struct {
     pub fn initVMASContext(
         mad: *MedialAxisData,
         point_cloud_kdtree: *kdtree.PointsKDTree,
-        point_position: PointCloud.CellData(Vec3f),
-        point_normal: PointCloud.CellData(Vec3f),
+        point_position: PointCloud.PointData(Vec3f),
+        point_normal: PointCloud.PointData(Vec3f),
         line_quadric_epsilon: f32,
     ) !void {
         assert(mad.vmas_ctx == null);
         assert(point_cloud_kdtree.point_cloud == mad.point_cloud and point_cloud_kdtree.initialized);
 
         var buf: [64]u8 = undefined;
+
         const spheres_name = std.fmt.bufPrintSentinel(&buf, "{s}_spheres", .{mad.app_ctx.point_cloud_store.pointCloudName(mad.point_cloud).?}, 0) catch "__spheres";
         mad.spheres = try mad.app_ctx.point_cloud_store.createPointCloud(spheres_name);
+        const spheres_info = mad.app_ctx.point_cloud_store.pointCloudInfo(mad.spheres);
+
         const skeleton_name = std.fmt.bufPrintSentinel(&buf, "{s}_skeleton", .{mad.app_ctx.point_cloud_store.pointCloudName(mad.point_cloud).?}, 0) catch "__skeleton";
         mad.skeleton = try mad.app_ctx.incidence_graph_store.createIncidenceGraph(skeleton_name);
+        const skeleton_info = mad.app_ctx.incidence_graph_store.incidenceGraphInfo(mad.skeleton);
 
         mad.vmas_ctx = try .init(
             mad.app_ctx.allocator,
@@ -53,7 +57,10 @@ const MedialAxisData = struct {
             point_position,
             point_normal,
             mad.spheres,
+            spheres_info.std_datas.position.?, // the PointCloud has just been created, its std datas are available
+            spheres_info.std_datas.radius.?,
             mad.skeleton,
+            skeleton_info.std_datas.vertex_position.?, // the IncidenceGraph has just been created, its std datas are available
             line_quadric_epsilon,
         );
 

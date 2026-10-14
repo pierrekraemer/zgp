@@ -13,7 +13,7 @@ const geometry_utils = @import("../../geometry/utils.zig");
 pub fn generateConvexHull(
     allocator: std.mem.Allocator,
     pc: *const PointCloud,
-    point_position: PointCloud.CellData(Vec3f),
+    point_position: PointCloud.PointData(Vec3f),
     sm: *SurfaceMesh,
     vertex_position: *SurfaceMesh.VertexData(Vec3f),
 ) !void {
@@ -51,7 +51,7 @@ pub fn generateConvexHull(
     var selected_points_index: [2]u32 = undefined;
     for (0..6) |i| {
         for (i + 1..6) |j| {
-            const dist = vec.squaredNorm3f(vec.sub3f(extreme_points[i], extreme_points[j]));
+            const dist = vec.squaredNorm(vec.sub(extreme_points[i], extreme_points[j]));
             if (dist > max_dist) {
                 max_dist = dist;
                 selected_points_index = .{ @intCast(i), @intCast(j) };

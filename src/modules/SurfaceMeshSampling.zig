@@ -29,18 +29,17 @@ const SamplingData = struct {
     surface_mesh: *SurfaceMesh,
 
     samples: *PointCloud = undefined,
-    sample_position: PointCloud.CellData(Vec3f) = undefined,
-    sample_surface_point: PointCloud.CellData(SurfacePoint) = undefined,
+    sample_position: PointCloud.PointData(Vec3f) = undefined,
+    sample_surface_point: PointCloud.PointData(SurfacePoint) = undefined,
     initialized: bool = false,
 
     fn init(sd: *SamplingData, pointcloud_name: []const u8) !void {
         if (!sd.initialized) {
             // create samples PointCloud & data
             sd.samples = try sd.app_ctx.point_cloud_store.createPointCloud(pointcloud_name);
-            sd.sample_position = try sd.samples.addData(Vec3f, "position");
+            const info = sd.app_ctx.point_cloud_store.pointCloudInfo(sd.samples);
+            sd.sample_position = info.std_datas.position.?;
             sd.sample_surface_point = try sd.samples.addData(SurfacePoint, "surface_point");
-            sd.app_ctx.point_cloud_store.setPointCloudStdData(sd.samples, .{ .position = sd.sample_position });
-
             sd.initialized = true;
         } else {
             sd.samples.clearRetainingCapacity();
@@ -70,9 +69,9 @@ const SamplingData = struct {
         const Task = struct {
             const Task = @This();
 
-            surface_point: PointCloud.CellData(SurfacePoint),
+            surface_point: PointCloud.PointData(SurfacePoint),
             src_data: SurfaceMesh.CellData(cell_type, T),
-            dst_data: PointCloud.CellData(T),
+            dst_data: PointCloud.PointData(T),
 
             pub fn run(t: *const Task, point: PointCloud.Point) void {
                 t.dst_data.valuePtr(point).* = t.surface_point.value(point).readData(T, cell_type, t.src_data);

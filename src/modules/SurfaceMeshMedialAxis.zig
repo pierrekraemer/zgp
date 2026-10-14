@@ -46,10 +46,14 @@ const MedialAxisData = struct {
         assert(surface_mesh_bvh.surface_mesh == mad.surface_mesh and surface_mesh_bvh.initialized);
 
         var buf: [64]u8 = undefined;
+
         const spheres_name = std.fmt.bufPrintSentinel(&buf, "{s}_spheres", .{mad.app_ctx.surface_mesh_store.surfaceMeshName(mad.surface_mesh).?}, 0) catch "__spheres";
         mad.spheres = try mad.app_ctx.point_cloud_store.createPointCloud(spheres_name);
+        const spheres_info = mad.app_ctx.point_cloud_store.pointCloudInfo(mad.spheres);
+
         const skeleton_name = std.fmt.bufPrintSentinel(&buf, "{s}_skeleton", .{mad.app_ctx.surface_mesh_store.surfaceMeshName(mad.surface_mesh).?}, 0) catch "__skeleton";
         mad.skeleton = try mad.app_ctx.incidence_graph_store.createIncidenceGraph(skeleton_name);
+        const skeleton_info = mad.app_ctx.incidence_graph_store.incidenceGraphInfo(mad.skeleton);
 
         mad.vmas_ctx = try .init(
             mad.app_ctx.allocator,
@@ -63,7 +67,10 @@ const MedialAxisData = struct {
             face_area,
             face_normal,
             mad.spheres,
+            spheres_info.std_datas.position.?, // the PointCloud has just been created, its std datas are available
+            spheres_info.std_datas.radius.?,
             mad.skeleton,
+            skeleton_info.std_datas.vertex_position.?, // the IncidenceGraph has just been created, its std datas are available
             line_quadric_epsilon,
         );
 

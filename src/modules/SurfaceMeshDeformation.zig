@@ -104,7 +104,7 @@ use_intrinsic_delaunay: bool = false,
 dragging: bool = false,
 drag_z: f32 = 0,
 rotating: bool = false,
-rotate_pivot: Vec3f = vec.zero3f,
+rotate_pivot: Vec3f = vec.zero(Vec3f),
 
 /// Modules are default-constructed in AppContext init function, and then initialized in AppContext wireUp function.
 pub fn init(smd: *SurfaceMeshDeformation, app_ctx: *AppContext) !void {
@@ -182,11 +182,11 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                     smd.dragging = true;
                 },
                 c.SDLK_R => {
-                    smd.rotate_pivot = vec.zero3f;
+                    smd.rotate_pivot = vec.zero(Vec3f);
                     for (dd.handle_vertex_set.?.cells.items) |v| {
-                        smd.rotate_pivot = vec.add3f(smd.rotate_pivot, info.std_datas.vertex_position.?.value(v));
+                        smd.rotate_pivot = vec.add(smd.rotate_pivot, info.std_datas.vertex_position.?.value(v));
                     }
-                    smd.rotate_pivot = vec.mulScalar3f(
+                    smd.rotate_pivot = vec.mulScalar(
                         smd.rotate_pivot,
                         1.0 / @as(f32, @floatFromInt(dd.handle_vertex_set.?.cells.items.len)),
                     );
@@ -209,11 +209,11 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                 const p_now = view.viewToWorldZ(event.motion.x, event.motion.y, smd.drag_z);
                 const p_prev = view.viewToWorldZ(event.motion.x - event.motion.xrel, event.motion.y - event.motion.yrel, smd.drag_z);
                 if (p_now != null and p_prev != null) {
-                    const tr = vec.sub3f(p_now.?, p_prev.?);
+                    const tr = vec.sub(p_now.?, p_prev.?);
                     // Translate handle vertices
                     for (dd.handle_vertex_set.?.cells.items) |v| {
                         const pos = info.std_datas.vertex_position.?.valuePtr(v);
-                        pos.* = vec.add3f(pos.*, tr);
+                        pos.* = vec.add(pos.*, tr);
                     }
                     if (smd.deformation_mode == .ARAP) {
                         dd.arap_ctx.?.solve() catch |err| {
@@ -227,17 +227,17 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                 }
             } else if (smd.rotating) {
                 const screen_axis4: Vec4f = .{ -event.motion.yrel, -event.motion.xrel, 0.0, 0.0 };
-                const angle = vec.norm4f(screen_axis4) * 0.01; // TODO: normalize with window dimensions
-                const world_axis4 = mat.preMulVec4f(screen_axis4, smd.app_ctx.view.camera.view_matrix);
-                const world_axis3: Vec3f = vec.normalized3f(.{ world_axis4[0], world_axis4[1], world_axis4[2] });
+                const angle = vec.norm(screen_axis4) * 0.01; // TODO: normalize with window dimensions
+                const world_axis4 = mat.preMulVec(smd.app_ctx.view.camera.view_matrix, screen_axis4);
+                const world_axis3: Vec3f = vec.normalized(Vec3f{ world_axis4[0], world_axis4[1], world_axis4[2] });
                 const rot = mat.rotMat3FromNormalizedAxisAndAngle(world_axis3, angle);
                 for (dd.handle_vertex_set.?.cells.items) |v| {
                     const pos = info.std_datas.vertex_position.?.valuePtr(v);
-                    pos.* = vec.add3f(
+                    pos.* = vec.add(
                         smd.rotate_pivot,
-                        mat.preMulVec3f(
-                            vec.sub3f(pos.*, smd.rotate_pivot),
+                        mat.preMulVec(
                             rot,
+                            vec.sub(pos.*, smd.rotate_pivot),
                         ),
                     );
                 }

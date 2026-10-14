@@ -187,10 +187,10 @@ pub const ParallelPointTaskRunner = struct {
 };
 
 // ------------------------------------------------------------------------- //
-// Cell Data
+// Point Data
 // ------------------------------------------------------------------------- //
 
-pub fn CellData(comptime T: type) type {
+pub fn PointData(comptime T: type) type {
     return struct {
         pub const DataType = T;
 
@@ -222,23 +222,23 @@ pub fn CellData(comptime T: type) type {
 
 /// Creates a new data array of the type `T`.
 /// The `name` must be unique for the creation to succeed.
-pub fn addData(pc: *PointCloud, comptime T: type, name: []const u8) !CellData(T) {
+pub fn addData(pc: *PointCloud, comptime T: type, name: []const u8) !PointData(T) {
     return .{ .data = try pc.point_data.addData(T, name) };
 }
 
 /// Returns a handle to the data array of the type `T` if it exists with the given name, otherwise returns null.
-pub fn getData(pc: *PointCloud, comptime T: type, name: []const u8) ?CellData(T) {
+pub fn getData(pc: *PointCloud, comptime T: type, name: []const u8) ?PointData(T) {
     return if (pc.point_data.getData(T, name)) |d| .{ .point_cloud = pc, .data = d } else null;
 }
 
 /// Returns a handle to the data array of the type `T` if it exists with the given name, otherwise creates a new data array of the type `T`,
 /// and returns a handle to it, along with a boolean indicating whether the data array was newly created (true) or already existed (false).
-pub fn getOrAddData(pc: *PointCloud, comptime T: type, name: []const u8) !struct { CellData(T), bool } {
+pub fn getOrAddData(pc: *PointCloud, comptime T: type, name: []const u8) !struct { PointData(T), bool } {
     const d, const created = try pc.point_data.getOrAddData(T, name);
     return .{ .{ .data = d }, created };
 }
 
-/// Remove the given CellData.
+/// Remove the given PointData.
 pub fn removeData(pc: *PointCloud, cell_data: anytype) void {
     pc.point_data.removeData(cell_data.gen());
 }

@@ -19,8 +19,8 @@ pub fn uniformlySamplePointsOnSurface(
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     face_area: SurfaceMesh.FaceData(f32),
     pc: *PointCloud,
-    sample_position: *PointCloud.CellData(Vec3f),
-    sample_surface_point: *PointCloud.CellData(SurfacePoint),
+    sample_position: *PointCloud.PointData(Vec3f),
+    sample_surface_point: *PointCloud.PointData(SurfacePoint),
     nb_points: usize,
 ) !void {
     if (sm.nbCells(.face) == 0) return;
@@ -54,14 +54,14 @@ pub fn poissonDiskSamplePointsOnSurface(
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     face_normal: SurfaceMesh.FaceData(Vec3f),
     pc: *PointCloud,
-    sample_position: *PointCloud.CellData(Vec3f),
-    sample_surface_point: *PointCloud.CellData(SurfacePoint),
+    sample_position: *PointCloud.PointData(Vec3f),
+    sample_surface_point: *PointCloud.PointData(SurfacePoint),
     poisson_radius: f32,
 ) !void {
     if (sm.nbCells(.face) == 0) return;
 
     const bb_min, const bb_max = geometry_utils.boundingBox(vertex_position.data);
-    const center = vec.mulScalar3f(vec.add3f(bb_min, bb_max), 0.5);
+    const center = vec.mulScalar(vec.add(bb_min, bb_max), 0.5);
 
     const grid_unit_size = poisson_radius / @sqrt(3.0);
     var grid: std.AutoHashMapUnmanaged([3]i32, PointCloud.Point) = .empty;
@@ -86,7 +86,7 @@ pub fn poissonDiskSamplePointsOnSurface(
         sample_position.valuePtr(p).* = pos;
         try active_points.append(allocator, sp); // add the SurfacePoint to the active list
         // compute the grid coordinates of the point with respect to the center of the bounding box
-        const pos_grid_coord = vec.divScalar3f(vec.sub3f(pos, center), grid_unit_size);
+        const pos_grid_coord = vec.divScalar(vec.sub(pos, center), grid_unit_size);
         const grid_idx: [3]i32 = .{
             @intFromFloat(pos_grid_coord[0]),
             @intFromFloat(pos_grid_coord[1]),
@@ -102,11 +102,11 @@ pub fn poissonDiskSamplePointsOnSurface(
         const f_dart = sp.type.face.dart; // active point are face SurfacePoints
         const f = sm.face(f_dart);
         // compute the tangent basis of the face
-        const f_basis_X: Vec3f = vec.normalized3f(vec.sub3f(
+        const f_basis_X: Vec3f = vec.normalized(vec.sub(
             vertex_position.value(sm.vertex(f_dart)),
             vertex_position.value(sm.vertex(sm.phi1(f_dart))),
         ));
-        const f_basis_Y: Vec3f = vec.normalized3f(vec.cross3f(face_normal.value(f), f_basis_X));
+        const f_basis_Y: Vec3f = vec.normalized(vec.cross(face_normal.value(f), f_basis_X));
         const pos = sp.readData(Vec3f, .vertex, vertex_position);
         var new_point_added = false;
         // 20 attempts to find a valid candidate point around the current point
@@ -115,14 +115,14 @@ pub fn poissonDiskSamplePointsOnSurface(
             const angle = random.float(f32) * std.math.pi * 2.0;
             const dist = random.float(f32) * poisson_radius + poisson_radius; // TODO: benchmark the effect of different (smallest ?) annulus radius
             // compute the candidate point in the tangent space of the face
-            const candidate_pos_tangent = vec.add3f(pos, vec.add3f(
-                vec.mulScalar3f(f_basis_X, dist * @cos(angle)),
-                vec.mulScalar3f(f_basis_Y, dist * @sin(angle)),
+            const candidate_pos_tangent = vec.add(pos, vec.add(
+                vec.mulScalar(f_basis_X, dist * @cos(angle)),
+                vec.mulScalar(f_basis_Y, dist * @sin(angle)),
             ));
             // project it to its closest point (with its SurfacePoint) on the surface
             const candidate_pos, const candidate_sp = sm_bvh.closestPointWithSurfacePoint(candidate_pos_tangent);
             // compute the grid coordinates of the candidate point
-            const candidate_pos_grid_coord = vec.divScalar3f(vec.sub3f(candidate_pos, center), grid_unit_size);
+            const candidate_pos_grid_coord = vec.divScalar(vec.sub(candidate_pos, center), grid_unit_size);
             // check if the candidate point is valid
             const candidate_pos_grid_idx: [3]i32 = .{
                 @intFromFloat(candidate_pos_grid_coord[0]),
@@ -143,7 +143,7 @@ pub fn poissonDiskSamplePointsOnSurface(
                             @as(i32, @intFromFloat(candidate_pos_grid_coord[2])) + @as(i32, @intCast(z)) - 2,
                         };
                         if (grid.get(grid_idx)) |p| { // if it is occupied
-                            if (vec.norm3f(vec.sub3f(candidate_pos, sample_position.value(p))) < poisson_radius) { // and its content is too close to the candidate point
+                            if (vec.norm(vec.sub(candidate_pos, sample_position.value(p))) < poisson_radius) { // and its content is too close to the candidate point
                                 candidate_is_valid = false; // it is not valid
                                 break :blk;
                             }

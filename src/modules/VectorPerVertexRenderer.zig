@@ -28,7 +28,7 @@ const Mat4f = mat.Mat4f;
 
 const VertexVectorData = union(enum) {
     surface_mesh: ?SurfaceMesh.VertexData(Vec3f),
-    point_cloud: ?PointCloud.CellData(Vec3f),
+    point_cloud: ?PointCloud.PointData(Vec3f),
 };
 
 const VectorPerVertexRendererParameters = struct {
@@ -173,7 +173,7 @@ pub fn surfaceMeshStdDataChanged(
 fn setPointCloudVectorData(
     vpvr: *VectorPerVertexRenderer,
     point_cloud: *PointCloud,
-    vertex_vector: ?PointCloud.CellData(Vec3f),
+    vertex_vector: ?PointCloud.PointData(Vec3f),
 ) void {
     const p = vpvr.point_cloud_parameters.getPtr(point_cloud) orelse return;
     p.vertex_vector.point_cloud = vertex_vector;

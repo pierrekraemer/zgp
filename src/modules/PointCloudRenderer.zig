@@ -39,8 +39,8 @@ const ColorType = enum {
 const ColorParameters = struct {
     defined_on: ColorDefinedOn,
     type: ColorType = .rgb,
-    point_scalar_data: ?PointCloud.CellData(f32) = null, // data used if defined_on is point & type is scalar
-    point_rgb_data: ?PointCloud.CellData(Vec3f) = null, // data used if defined_on is point & type is rgb
+    point_scalar_data: ?PointCloud.PointData(f32) = null, // data used if defined_on is point & type is scalar
+    point_rgb_data: ?PointCloud.PointData(Vec3f) = null, // data used if defined_on is point & type is rgb
 };
 
 const RadiusDefinedOn = enum {
@@ -212,7 +212,7 @@ fn setPointCloudDrawPointsColorData(
     pcr: *PointCloudRenderer,
     point_cloud: *PointCloud,
     T: type,
-    data: ?PointCloud.CellData(T),
+    data: ?PointCloud.PointData(T),
 ) void {
     const p = pcr.parameters.getPtr(point_cloud) orelse return;
     switch (@typeInfo(T)) {

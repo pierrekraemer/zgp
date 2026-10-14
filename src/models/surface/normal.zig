@@ -15,7 +15,7 @@ pub fn faceNormal(
     vertex_position: SurfaceMesh.VertexData(Vec3f),
 ) Vec3f {
     var dart_it = sm.faceDartIterator(sm.dart(face));
-    var normal = vec.zero3f;
+    var normal = vec.zero(Vec3f);
     while (dart_it.next()) |dF| {
         var d = dF;
         const p1 = vertex_position.value(sm.vertex(d));
@@ -23,7 +23,7 @@ pub fn faceNormal(
         const p2 = vertex_position.value(sm.vertex(d));
         d = sm.phi1(d);
         const p3 = vertex_position.value(sm.vertex(d));
-        normal = vec.add3f(
+        normal = vec.add(
             normal,
             geometry_utils.triangleNormal(p1, p2, p3),
         );
@@ -32,7 +32,7 @@ pub fn faceNormal(
             break;
         }
     }
-    return vec.normalized3f(normal);
+    return vec.normalized(normal);
 }
 
 /// Compute the normals of all faces of the given SurfaceMesh
@@ -76,20 +76,20 @@ pub fn vertexNormal(
     corner_angle: SurfaceMesh.CornerData(f32),
     face_normal: SurfaceMesh.FaceData(Vec3f),
 ) Vec3f {
-    var normal = vec.zero3f;
+    var normal = vec.zero(Vec3f);
     var dart_it = sm.vertexDartIterator(sm.dart(vertex));
     while (dart_it.next()) |d| {
         if (!sm.isBoundaryDart(d)) {
-            normal = vec.add3f(
+            normal = vec.add(
                 normal,
-                vec.mulScalar3f(
+                vec.mulScalar(
                     face_normal.value(sm.face(d)),
                     corner_angle.value(sm.corner(d)),
                 ),
             );
         }
     }
-    return vec.normalized3f(normal);
+    return vec.normalized(normal);
 }
 
 /// Compute the normals of all vertices of the given SurfaceMesh

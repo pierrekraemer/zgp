@@ -68,7 +68,7 @@ fn computeVertexCurvatures(
     edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
     edge_length: SurfaceMesh.EdgeData(f32),
     face_area: SurfaceMesh.FaceData(f32),
-    vertex_neighborhood_radius: f32,
+    radius_ratio: f32,
     vertex_curvature: *curvature.SurfaceMeshCurvatureDatas,
 ) !void {
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
@@ -81,7 +81,7 @@ fn computeVertexCurvatures(
         edge_dihedral_angle,
         edge_length,
         face_area,
-        vertex_neighborhood_radius,
+        radius_ratio,
         vertex_curvature,
     );
 
@@ -107,7 +107,7 @@ pub fn rightClickMenu(m: *Module) void {
     const info = sm_store.surfaceMeshInfo(sm);
 
     const UiData = struct {
-        var vertex_neighborhood_radius: f32 = 1.5;
+        var radius_ratio: f32 = 1.5;
     };
 
     const style = c.ImGui_GetStyle();
@@ -180,9 +180,9 @@ pub fn rightClickMenu(m: *Module) void {
             if (disabled) {
                 c.ImGui_BeginDisabled(true);
             }
-            c.ImGui_Text("Neighborhood ratio (w.r.t. mean edge length)");
-            c.ImGui_PushID("Neighborhood ratio");
-            _ = c.ImGui_SliderFloatEx("", &UiData.vertex_neighborhood_radius, 1.0, 10.0, "%.1f", c.ImGuiSliderFlags_Logarithmic);
+            c.ImGui_Text("Radius ratio (w.r.t. mean edge length)");
+            c.ImGui_PushID("Radius ratio");
+            _ = c.ImGui_SliderFloatEx("", &UiData.radius_ratio, 1.0, 10.0, "%.1f", c.ImGuiSliderFlags_Logarithmic);
             c.ImGui_PopID();
             if (c.ImGui_ButtonEx(c.ICON_FA_GEAR ++ " Compute curvatures", c.ImVec2{ .x = c.ImGui_GetContentRegionAvail().x, .y = 0.0 })) {
                 smc.computeVertexCurvatures(
@@ -192,7 +192,7 @@ pub fn rightClickMenu(m: *Module) void {
                     info.std_datas.edge_dihedral_angle.?,
                     info.std_datas.edge_length.?,
                     info.std_datas.face_area.?,
-                    UiData.vertex_neighborhood_radius,
+                    UiData.radius_ratio,
                     curvature_datas,
                 ) catch |err| {
                     std.debug.print("Error computing curvatures: {}\n", .{err});

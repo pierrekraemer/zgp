@@ -13,8 +13,8 @@ pub fn edgeLength(
     vertex_position: SurfaceMesh.VertexData(Vec3f),
 ) f32 {
     const d = sm.dart(edge);
-    return vec.norm3f(
-        vec.sub3f(
+    return vec.norm(
+        vec.sub(
             vertex_position.value(sm.vertex(sm.phi1(d))),
             vertex_position.value(sm.vertex(d)),
         ),

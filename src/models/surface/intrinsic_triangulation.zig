@@ -177,7 +177,7 @@ pub const ITContext = struct {
         const p0: Vec2f = .{ l30, 0.0 };
         const p2 = geometry_utils.layoutTriangleVertex(p3, p0, l02, l23);
         const p1 = geometry_utils.layoutTriangleVertex(p2, p0, l01, l12);
-        const l13 = vec.norm2f(vec.sub2f(p3, p1));
+        const l13 = vec.norm(vec.sub(p3, p1));
 
         // flip the edge
         it_ctx.intrinsic_surface_mesh.flipEdge(edge);
@@ -898,11 +898,11 @@ pub const ITContext = struct {
         };
 
         // compute the direction vector from the barycenter to the circumcenter
-        const src_dir = vec.sub2f(src_circumcenter, src_barycenter);
+        const src_dir = vec.sub(src_circumcenter, src_barycenter);
         // compute the angle of the direction vector in the tangent space of the source triangle
         const dir_angle = std.math.atan2(
             vec.cross2f(src_p2d[1], src_dir),
-            vec.dot2f(src_p2d[1], src_dir),
+            vec.dot(src_p2d[1], src_dir),
         );
 
         // trace on the intrinsic mesh from the barycenter of the triangle to the circumcenter
@@ -919,7 +919,7 @@ pub const ITContext = struct {
                 },
             },
             dir_angle,
-            vec.norm2f(src_dir),
+            vec.norm(src_dir),
             it_ctx.intrinsic_corner_angle,
             it_ctx.intrinsic_edge_length,
             null,
@@ -959,9 +959,9 @@ pub const ITContext = struct {
         };
 
         // compute the lengths of the three new edges created by splitting the destination intrinsic triangle at the circumcenter
-        const dst_l_v0c = vec.norm2f(vec.sub2f(dst_circumcenter, dst_p2d[0]));
-        const dst_l_v1c = vec.norm2f(vec.sub2f(dst_circumcenter, dst_p2d[1]));
-        const dst_l_v2c = vec.norm2f(vec.sub2f(dst_circumcenter, dst_p2d[2]));
+        const dst_l_v0c = vec.norm(vec.sub(dst_circumcenter, dst_p2d[0]));
+        const dst_l_v1c = vec.norm(vec.sub(dst_circumcenter, dst_p2d[1]));
+        const dst_l_v2c = vec.norm(vec.sub(dst_circumcenter, dst_p2d[2]));
 
         // grab the Dart on the other side of the first edge of the destination triangle
         const dst_d2 = it_ctx.intrinsic_surface_mesh.phi2(dst_d);

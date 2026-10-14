@@ -57,12 +57,12 @@ pub fn init(
 pub fn updateViewMatrix(c: *Camera) void {
     c.view_matrix = mat.lookAt(c.position, c.look_dir, c.up_dir);
     c.view_matrix_inv = blk: {
-        const m_view = mat.mat4dFromMat4f(c.view_matrix);
+        const m_view = mat.cast(f64, c.view_matrix);
         const m_view_inv = eigen.computeInverse4d(m_view) orelse {
             gl_log.err("Cannot invert view matrix", .{});
-            break :blk mat.identity4f;
+            break :blk mat.identity(Mat4f);
         };
-        break :blk mat.mat4fFromMat4d(m_view_inv);
+        break :blk mat.cast(f32, m_view_inv);
     };
 }
 
@@ -72,42 +72,42 @@ pub fn updateProjectionMatrix(c: *Camera) void {
         .orthographic => mat.orthographic(c.aspect_ratio * -c.view_matrix[3][2], -c.view_matrix[3][2], 0.01, 5.0),
     };
     c.projection_matrix_inv = blk: {
-        const m_proj = mat.mat4dFromMat4f(c.projection_matrix);
+        const m_proj = mat.cast(f64, c.projection_matrix);
         const m_proj_inv = eigen.computeInverse4d(m_proj) orelse {
             gl_log.err("Cannot invert projection matrix", .{});
-            break :blk mat.identity4f;
+            break :blk mat.identity(Mat4f);
         };
-        break :blk mat.mat4fFromMat4d(m_proj_inv);
+        break :blk mat.cast(f32, m_proj_inv);
     };
 }
 
 pub fn lookAtPivotPosition(c: *Camera) void {
-    c.look_dir = vec.normalized3f(vec.sub3f(c.pivot_position, c.position)); // TODO: handle case where position == pivot_position
+    c.look_dir = vec.normalized(vec.sub(c.pivot_position, c.position)); // TODO: handle case where position == pivot_position
     c.updateViewMatrix();
 }
 
 pub fn rotateFromScreenVec(c: *Camera, screen_vec: Vec2f) void {
     const screen_axis4: Vec4f = .{ screen_vec[1], screen_vec[0], 0.0, 0.0 };
-    const angle = vec.norm4f(screen_axis4) * 0.01; // TODO: normalize with window dimensions
-    const world_axis4 = mat.preMulVec4f(screen_axis4, c.view_matrix);
-    const world_axis3: Vec3f = vec.normalized3f(.{ world_axis4[0], world_axis4[1], world_axis4[2] });
+    const angle = vec.norm(screen_axis4) * 0.01; // TODO: normalize with window dimensions
+    const world_axis4 = mat.preMulVec(c.view_matrix, screen_axis4);
+    const world_axis3 = vec.normalized(Vec3f{ world_axis4[0], world_axis4[1], world_axis4[2] });
     const rot = mat.rotMat3FromNormalizedAxisAndAngle(world_axis3, angle);
-    c.position = vec.add3f(
+    c.position = vec.add(
         c.pivot_position,
-        mat.preMulVec3f(
-            vec.sub3f(c.position, c.pivot_position),
+        mat.preMulVec(
             rot,
+            vec.sub(c.position, c.pivot_position),
         ),
     );
-    c.look_dir = mat.preMulVec3f(c.look_dir, rot);
-    c.up_dir = mat.preMulVec3f(c.up_dir, rot);
+    c.look_dir = mat.preMulVec(rot, c.look_dir);
+    c.up_dir = mat.preMulVec(rot, c.up_dir);
     c.updateViewMatrix();
 }
 
 pub fn translateFromScreenVec(c: *Camera, screen_vec: Vec2f) void {
     const screen_tr4: Vec4f = .{ -screen_vec[0] * 0.001, screen_vec[1] * 0.001, 0.0, 0.0 }; // TODO: normalize with window dimensions
-    const world_tr4 = mat.preMulVec4f(screen_tr4, c.view_matrix);
-    c.position = vec.add3f(
+    const world_tr4 = mat.preMulVec(c.view_matrix, screen_tr4);
+    c.position = vec.add(
         c.position,
         .{ world_tr4[0], world_tr4[1], world_tr4[2] },
     );
@@ -115,6 +115,6 @@ pub fn translateFromScreenVec(c: *Camera, screen_vec: Vec2f) void {
 }
 
 pub fn moveForward(c: *Camera, distance: f32) void {
-    c.position = vec.add3f(c.position, vec.mulScalar3f(c.look_dir, distance));
+    c.position = vec.add(c.position, vec.mulScalar(c.look_dir, distance));
     c.updateViewMatrix();
 }

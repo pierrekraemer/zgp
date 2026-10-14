@@ -41,7 +41,7 @@ pub fn vertexCurvature(
 ) !VertexCurvatureValues {
     const p = vertex_position.value(vertex);
     const n = vertex_normal.value(vertex);
-    var tensor = mat.zero3f;
+    var tensor = mat.zero(Mat3f);
     var area: f32 = 0.0;
 
     // collect the cells in a sphere of the given radius around the vertex
@@ -49,14 +49,14 @@ pub fn vertexCurvature(
     // accumulate edge contributions to the curvature tensor
     for (sel_ctx.edge_buffer.items) |e| {
         const d = sm.dart(e);
-        const ev = vec.sub3f(
+        const ev = vec.sub(
             vertex_position.value(sm.vertex(sm.phi1(d))),
             vertex_position.value(sm.vertex(d)),
         );
-        tensor = mat.add3f(
+        tensor = mat.add(
             tensor,
-            mat.mulScalar3f(
-                mat.outerProduct3f(ev, ev),
+            mat.mulScalar(
+                mat.outerProduct(ev, ev),
                 edge_dihedral_angle.value(e) / edge_length.value(e),
             ),
         );
@@ -70,15 +70,15 @@ pub fn vertexCurvature(
         const p1 = vertex_position.value(sm.vertex(d));
         const p2 = vertex_position.value(sm.vertex(sm.phi1(d)));
         const p3 = vertex_position.value(sm.vertex(sm.phi_1(d)));
-        const ev = vec.sub3f(p2, p1);
+        const ev = vec.sub(p2, p1);
         _, const tp1p2 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p1, p2) orelse continue;
         // we know that p1 is inside the sphere and p2 is outside, so tp1p2 is the coordinate of the intersection point
         assert(tp1p2 >= 0.0 and tp1p2 <= 1.0);
         const e = sm.edge(d);
-        tensor = mat.add3f(
+        tensor = mat.add(
             tensor,
-            mat.mulScalar3f(
-                mat.outerProduct3f(ev, ev),
+            mat.mulScalar(
+                mat.outerProduct(ev, ev),
                 tp1p2 * edge_dihedral_angle.value(e) / edge_length.value(e),
             ),
         );
@@ -97,11 +97,11 @@ pub fn vertexCurvature(
         }
     }
 
-    tensor = mat.mulScalar3f(tensor, 1.0 / area);
-    const proj = mat.sub3f(mat.identity3f, mat.outerProduct3f(n, n));
-    tensor = mat.mul3f(proj, mat.mul3f(tensor, proj));
+    tensor = mat.mulScalar(tensor, 1.0 / area);
+    const proj = mat.sub(mat.identity(Mat3f), mat.outerProduct(n, n));
+    tensor = mat.mul(proj, mat.mul(tensor, proj));
 
-    const evals, const evecs = eigen.eigenSolver(mat.mat3dFromMat3f(tensor));
+    const evals, const evecs = eigen.eigenSolver(mat.cast(f64, tensor));
 
     // Eigen values sorting:
     // 1) The eigenvector associated to the smallest absolute eigenvalue is the normal direction.
@@ -124,9 +124,9 @@ pub fn vertexCurvature(
 
     return .{
         .kmin = @floatCast(evals[imin]),
-        .Kmin = vec.vec3fFromVec3d(evecs[imin]),
+        .Kmin = vec.cast(f32, evecs[imin]),
         .kmax = @floatCast(evals[imax]),
-        .Kmax = vec.vec3fFromVec3d(evecs[imax]),
+        .Kmax = vec.cast(f32, evecs[imax]),
     };
 }
 
@@ -140,7 +140,7 @@ pub fn computeVertexCurvatures(
     edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
     edge_length: SurfaceMesh.EdgeData(f32),
     face_area: SurfaceMesh.FaceData(f32),
-    vertex_neighborhood_ratio: f32, // this value is multiplied by the mean edge length to get the neighborhood radius for each vertex
+    radius_ratio: f32, // this value is multiplied by the mean edge length to get the neighborhood radius for each vertex
     vertex_curvature: *SurfaceMeshCurvatureDatas,
 ) !void {
     const Task = struct {
@@ -150,12 +150,12 @@ pub fn computeVertexCurvatures(
         edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
         edge_length: SurfaceMesh.EdgeData(f32),
         face_area: SurfaceMesh.FaceData(f32),
-        vertex_neighborhood_radius: f32,
+        neighborhood_radius: f32,
         vertex_curvature: *SurfaceMeshCurvatureDatas,
 
         pub fn run(t: *const @This(), sel_ctx: *selection.WithinSphereSelectionContext, vertex: SurfaceMesh.Vertex) void {
             if (!sel_ctx.initialized) {
-                sel_ctx.init(t.surface_mesh, t.vertex_position, t.vertex_neighborhood_radius) catch |err| {
+                sel_ctx.init(t.surface_mesh, t.vertex_position, t.neighborhood_radius) catch |err| {
                     zgp_log.err("Failed to initialize selection context for vertex curvature computation: {}", .{err});
                     return;
                 };
@@ -169,7 +169,7 @@ pub fn computeVertexCurvatures(
                 t.edge_length,
                 t.face_area,
                 sel_ctx,
-            ) catch VertexCurvatureValues{ .kmin = 0.0, .Kmin = vec.zero3f, .kmax = 0.0, .Kmax = vec.zero3f };
+            ) catch VertexCurvatureValues{ .kmin = 0.0, .Kmin = vec.zero(Vec3f), .kmax = 0.0, .Kmax = vec.zero(Vec3f) };
             t.vertex_curvature.vertex_kmin.?.valuePtr(vertex).* = curvature_values.kmin;
             t.vertex_curvature.vertex_Kmin.?.valuePtr(vertex).* = curvature_values.Kmin;
             t.vertex_curvature.vertex_kmax.?.valuePtr(vertex).* = curvature_values.kmax;
@@ -186,7 +186,7 @@ pub fn computeVertexCurvatures(
         .edge_dihedral_angle = edge_dihedral_angle,
         .edge_length = edge_length,
         .face_area = face_area,
-        .vertex_neighborhood_radius = edge_length.data.meanValue() * vertex_neighborhood_ratio,
+        .neighborhood_radius = edge_length.data.meanValue() * radius_ratio,
         .vertex_curvature = vertex_curvature,
     });
 }
@@ -199,14 +199,15 @@ pub fn vertexGaussianCurvature(
     corner_angle: SurfaceMesh.CornerData(f32),
 ) f32 {
     var base: f32 = std.math.tau;
-    if (sm.isIncidentToBoundary(vertex)) {
+    const d = sm.dart(vertex);
+    if (sm.isOrbitIncidentToBoundary(d, .vertex)) {
         base = std.math.pi;
     }
     var angle_sum: f32 = 0.0;
-    var dart_it = sm.cellDartIterator(vertex);
-    while (dart_it.next()) |d| {
-        if (!sm.isBoundaryDart(d)) {
-            angle_sum += corner_angle.value(sm.corner(d));
+    var dart_it = sm.vertexDartIterator(d);
+    while (dart_it.next()) |vd| {
+        if (!sm.isBoundaryDart(vd)) {
+            angle_sum += corner_angle.value(sm.corner(vd));
         }
     }
     return base - angle_sum;

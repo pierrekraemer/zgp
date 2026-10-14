@@ -167,8 +167,8 @@ pub fn pointCloudListBox(
 pub fn pointCloudDataComboBox(
     point_cloud: *const PointCloud,
     comptime T: type,
-    selected_data: ?PointCloud.CellData(T),
-) SelectionResult(PointCloud.CellData(T)) {
+    selected_data: ?PointCloud.PointData(T),
+) SelectionResult(PointCloud.PointData(T)) {
     if (c.ImGui_BeginCombo("", if (selected_data) |data| data.name().ptr else "-- none --", 0)) {
         defer c.ImGui_EndCombo();
         const is_none_selected = selected_data == null;
