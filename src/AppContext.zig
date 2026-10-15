@@ -42,6 +42,7 @@ const VectorPerVertexRenderer = @import("modules/VectorPerVertexRenderer.zig");
 
 const SurfaceMeshDistance = @import("modules/SurfaceMeshDistance.zig");
 const SurfaceMeshCurvature = @import("modules/SurfaceMeshCurvature.zig");
+const SurfaceMeshFiltering = @import("modules/SurfaceMeshFiltering.zig");
 const SurfaceMeshDirectionField = @import("modules/SurfaceMeshDirectionField.zig");
 const SurfaceMeshSelection = @import("modules/SurfaceMeshSelection.zig");
 const SurfaceMeshDeformation = @import("modules/SurfaceMeshDeformation.zig");
@@ -79,6 +80,7 @@ incidence_graph_renderer: IncidenceGraphRenderer = .{},
 vector_per_vertex_renderer: VectorPerVertexRenderer = .{},
 surface_mesh_distance: SurfaceMeshDistance = .{},
 surface_mesh_curvature: SurfaceMeshCurvature = .{},
+surface_mesh_filtering: SurfaceMeshFiltering = .{},
 surface_mesh_direction_field: SurfaceMeshDirectionField = .{},
 surface_mesh_selection: SurfaceMeshSelection = .{},
 surface_mesh_deformation: SurfaceMeshDeformation = .{},
@@ -121,6 +123,7 @@ pub fn wireUp(app_ctx: *AppContext) !void {
     try app_ctx.vector_per_vertex_renderer.init(app_ctx);
     try app_ctx.surface_mesh_distance.init(app_ctx);
     try app_ctx.surface_mesh_curvature.init(app_ctx);
+    try app_ctx.surface_mesh_filtering.init(app_ctx);
     try app_ctx.surface_mesh_direction_field.init(app_ctx);
     try app_ctx.surface_mesh_selection.init(app_ctx);
     try app_ctx.surface_mesh_deformation.init(app_ctx);
@@ -141,6 +144,7 @@ pub fn wireUp(app_ctx: *AppContext) !void {
     try app_ctx.modules.append(app_ctx.allocator, &app_ctx.vector_per_vertex_renderer.module);
     try app_ctx.modules.append(app_ctx.allocator, &app_ctx.surface_mesh_distance.module);
     try app_ctx.modules.append(app_ctx.allocator, &app_ctx.surface_mesh_curvature.module);
+    try app_ctx.modules.append(app_ctx.allocator, &app_ctx.surface_mesh_filtering.module);
     try app_ctx.modules.append(app_ctx.allocator, &app_ctx.surface_mesh_direction_field.module);
     try app_ctx.modules.append(app_ctx.allocator, &app_ctx.surface_mesh_selection.module);
     try app_ctx.modules.append(app_ctx.allocator, &app_ctx.surface_mesh_deformation.module);
@@ -170,6 +174,7 @@ pub fn deinit(app_ctx: *AppContext) void {
     app_ctx.vector_per_vertex_renderer.deinit();
     app_ctx.surface_mesh_distance.deinit();
     app_ctx.surface_mesh_curvature.deinit();
+    app_ctx.surface_mesh_filtering.deinit();
     app_ctx.surface_mesh_direction_field.deinit();
     app_ctx.surface_mesh_selection.deinit();
     app_ctx.surface_mesh_deformation.deinit();
@@ -197,7 +202,8 @@ pub fn readArgs(app_ctx: *AppContext, args: CLIArgs) !void {
         const t = std.Io.Timestamp.now(app_ctx.io, .real);
 
         const sm = try app_ctx.surface_mesh_store.loadSurfaceMeshFromFile(mesh_file);
-        const vertex_position = sm.getData(.vertex, Vec3f, "position").?;
+        const info = app_ctx.surface_mesh_store.surfaceMeshInfo(sm);
+        const vertex_position = info.std_datas.vertex_position.?;
 
         if (args.normalize) {
             // scale the mesh position in the range [0, 1] and center it on the origin
@@ -207,9 +213,6 @@ pub fn readArgs(app_ctx: *AppContext, args: CLIArgs) !void {
         if (args.center) {
             geometry_utils.centerAround(vertex_position.data, vec.zero(Vec3f));
         }
-
-        // TODO: why not configure this Data as standard Data directly in the loadSurfaceMeshFromFile function?
-        app_ctx.surface_mesh_store.setSurfaceMeshStdData(sm, .{ .vertex_position = vertex_position });
 
         app_ctx.surface_mesh_store.surfaceMeshDataUpdated(sm, .vertex, Vec3f, vertex_position);
         app_ctx.surface_mesh_store.surfaceMeshConnectivityUpdated(sm);

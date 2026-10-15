@@ -8,20 +8,23 @@ extern "C"
 {
 #endif /* __cplusplus */
 
-    void mulSparseMatrixScalar(const void *mat, SCALAR scalar, void *matOut);
-    void addSparseMatrices(const void *matA, const void *matB, void *matOut);
-
     void *createSparseMatrix(INDEX rows, INDEX cols);
     void *createSparseMatrixFromTriplets(INDEX rows, INDEX cols,
                                          const void *triplets,
                                          INDEX nb_triplets);
     void *createDiagonalSparseMatrixFromArray(const SCALAR *diag_vals, INDEX size);
-    void solveSymmetricSparseLinearSystem(const void *mat, const SCALAR *b, SCALAR *x, INDEX size);
     void destroySparseMatrix(void *mat);
+
+    void mulSparseMatrixScalar(const void *mat, SCALAR scalar, void *matOut);
+    void addSparseMatrices(const void *matA, const void *matB, void *matOut);
+
+    void directSolveSymmetricSparseLinearSystem(const void *mat, const SCALAR *b, SCALAR *x, INDEX size);
+    void iterativeSolveSymmetricSparseLinearSystem(const void *mat, const SCALAR *b, SCALAR *x, INDEX size, INDEX max_iterations, SCALAR tolerance);
+    void iterativeSolveSymmetricSparseLinearSystemMultipleRHS(const void *mat, const void *matb, void *matx, INDEX max_iterations, SCALAR tolerance);
 
     void *factorizeSymmetricSparseMatrix(const void *mat);
     void solveWithFactorizedMatrix(const void *solver, const SCALAR *b, SCALAR *x, INDEX size);
-    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const void *matb, void *matx, INDEX size, INDEX nb_rhs);
+    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const void *matb, void *matx);
     void destroyFactorizedMatrix(void *solver);
 
 #ifdef __cplusplus

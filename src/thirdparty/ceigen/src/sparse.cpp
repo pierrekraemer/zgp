@@ -8,21 +8,6 @@ using Triplet = Eigen::Triplet<SCALAR, INDEX>;
 
 extern "C"
 {
-    void mulSparseMatrixScalar(const void *mat, SCALAR scalar, void *matOut)
-    {
-        const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
-        SparseMatrix *sparseMatOut = static_cast<SparseMatrix *>(matOut);
-        *sparseMatOut = scalar * (*sparseMat);
-    }
-
-    void addSparseMatrices(const void *matA, const void *matB, void *matOut)
-    {
-        const SparseMatrix *sparseMatA = static_cast<const SparseMatrix *>(matA);
-        const SparseMatrix *sparseMatB = static_cast<const SparseMatrix *>(matB);
-        SparseMatrix *sparseMatOut = static_cast<SparseMatrix *>(matOut);
-        *sparseMatOut = (*sparseMatA) + (*sparseMatB);
-    }
-
     void *createSparseMatrix(INDEX rows, INDEX cols)
     {
         return new SparseMatrix(rows, cols);
@@ -48,7 +33,28 @@ extern "C"
         return new SparseMatrix(diag.asDiagonal());
     }
 
-    void solveSymmetricSparseLinearSystem(const void *mat, const SCALAR *b, SCALAR *x, INDEX size)
+    void destroySparseMatrix(void *mat)
+    {
+        SparseMatrix *sparseMat = static_cast<SparseMatrix *>(mat);
+        delete sparseMat;
+    }
+
+    void mulSparseMatrixScalar(const void *mat, SCALAR scalar, void *matOut)
+    {
+        const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
+        SparseMatrix *sparseMatOut = static_cast<SparseMatrix *>(matOut);
+        *sparseMatOut = scalar * (*sparseMat);
+    }
+
+    void addSparseMatrices(const void *matA, const void *matB, void *matOut)
+    {
+        const SparseMatrix *sparseMatA = static_cast<const SparseMatrix *>(matA);
+        const SparseMatrix *sparseMatB = static_cast<const SparseMatrix *>(matB);
+        SparseMatrix *sparseMatOut = static_cast<SparseMatrix *>(matOut);
+        *sparseMatOut = (*sparseMatA) + (*sparseMatB);
+    }
+
+    void directSolveSymmetricSparseLinearSystem(const void *mat, const SCALAR *b, SCALAR *x, INDEX size)
     {
         const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
         Eigen::Map<const Vector> bVec(b, size);
@@ -58,10 +64,30 @@ extern "C"
         xVec = solver.solve(bVec);
     }
 
-    void destroySparseMatrix(void *mat)
+    void iterativeSolveSymmetricSparseLinearSystem(const void *mat, const SCALAR *b, SCALAR *x, INDEX size, INDEX max_iterations, SCALAR tolerance)
     {
-        SparseMatrix *sparseMat = static_cast<SparseMatrix *>(mat);
-        delete sparseMat;
+        const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
+        Eigen::Map<const Vector> bVec(b, size);
+        Eigen::Map<Vector> xVec(x, size);
+
+        Eigen::ConjugateGradient<SparseMatrix, Eigen::Lower | Eigen::Upper> solver;
+        solver.setMaxIterations(max_iterations);
+        solver.setTolerance(tolerance);
+        solver.compute(*sparseMat);
+        xVec = solver.solve(bVec);
+    }
+
+    void iterativeSolveSymmetricSparseLinearSystemMultipleRHS(const void *mat, const void *matb, void *matx, INDEX max_iterations, SCALAR tolerance)
+    {
+        const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
+        const DenseMatrix *bMat = static_cast<const DenseMatrix *>(matb);
+        DenseMatrix *xMat = static_cast<DenseMatrix *>(matx);
+
+        Eigen::ConjugateGradient<SparseMatrix, Eigen::Lower | Eigen::Upper> solver;
+        solver.setMaxIterations(max_iterations);
+        solver.setTolerance(tolerance);
+        solver.compute(*sparseMat);
+        *xMat = solver.solve(*bMat);
     }
 
     void *factorizeSymmetricSparseMatrix(const void *mat)
@@ -79,7 +105,7 @@ extern "C"
         xVec = ldlt->solve(bVec);
     }
 
-    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const void *matb, void *matx, INDEX size, INDEX nb_rhs)
+    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const void *matb, void *matx)
     {
         const auto *ldlt = static_cast<const Eigen::SimplicialLDLT<SparseMatrix> *>(solver);
         const DenseMatrix *bMat = static_cast<const DenseMatrix *>(matb);

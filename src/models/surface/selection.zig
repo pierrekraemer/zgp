@@ -18,14 +18,12 @@ pub const WithinSphereSelectionContext = struct {
     edge_buffer: std.ArrayList(SurfaceMesh.Edge) = undefined,
     face_buffer: std.ArrayList(SurfaceMesh.Face) = undefined,
     crossed_dart_buffer: std.ArrayList(SurfaceMesh.Dart) = undefined,
-    radius: f32 = 0.025,
     initialized: bool = false,
 
     pub fn init(
         sel_ctx: *WithinSphereSelectionContext,
         sm: *SurfaceMesh,
         vertex_position: SurfaceMesh.VertexData(Vec3f),
-        radius: f32,
     ) !void {
         assert(!sel_ctx.initialized);
         sel_ctx.sm = sm;
@@ -35,7 +33,6 @@ pub const WithinSphereSelectionContext = struct {
         sel_ctx.edge_buffer = try .initCapacity(sm.allocator, 32);
         sel_ctx.face_buffer = try .initCapacity(sm.allocator, 32);
         sel_ctx.crossed_dart_buffer = try .initCapacity(sm.allocator, 32);
-        sel_ctx.radius = radius;
         sel_ctx.initialized = true;
     }
 
@@ -89,10 +86,10 @@ pub const WithinSphereSelectionContext = struct {
     }
 
     // Collect all cells within a sphere of given radius around the given vertex
-    // and store them in the given buffers.
     pub fn cellsWithinSphereAroundVertex(
         sel_ctx: *WithinSphereSelectionContext,
         vertex: SurfaceMesh.Vertex,
+        radius: f32,
     ) !void {
         sel_ctx.reset();
 
@@ -110,7 +107,7 @@ pub const WithinSphereSelectionContext = struct {
                 }
                 const nv = sel_ctx.sm.vertex(d2);
                 const nvp = sel_ctx.vertex_position.value(nv);
-                if (geometry_utils.pointInSphere(nvp, p, sel_ctx.radius)) {
+                if (geometry_utils.pointInSphere(nvp, p, radius)) {
                     try sel_ctx.includeVertex(nv);
                 } else {
                     try sel_ctx.crossed_dart_buffer.append(sel_ctx.sm.allocator, d);

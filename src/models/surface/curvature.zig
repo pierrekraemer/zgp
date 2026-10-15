@@ -37,6 +37,7 @@ pub fn vertexCurvature(
     edge_dihedral_angle: SurfaceMesh.EdgeData(f32),
     edge_length: SurfaceMesh.EdgeData(f32),
     face_area: SurfaceMesh.FaceData(f32),
+    neighborhood_radius: f32,
     sel_ctx: *selection.WithinSphereSelectionContext,
 ) !VertexCurvatureValues {
     const p = vertex_position.value(vertex);
@@ -45,7 +46,7 @@ pub fn vertexCurvature(
     var area: f32 = 0.0;
 
     // collect the cells in a sphere of the given radius around the vertex
-    try sel_ctx.cellsWithinSphereAroundVertex(vertex);
+    try sel_ctx.cellsWithinSphereAroundVertex(vertex, neighborhood_radius);
     // accumulate edge contributions to the curvature tensor
     for (sel_ctx.edge_buffer.items) |e| {
         const d = sm.dart(e);
@@ -71,7 +72,7 @@ pub fn vertexCurvature(
         const p2 = vertex_position.value(sm.vertex(sm.phi1(d)));
         const p3 = vertex_position.value(sm.vertex(sm.phi_1(d)));
         const ev = vec.sub(p2, p1);
-        _, const tp1p2 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p1, p2) orelse continue;
+        _, const tp1p2 = geometry_utils.intersectionSphereSegment(p, neighborhood_radius, p1, p2) orelse continue;
         // we know that p1 is inside the sphere and p2 is outside, so tp1p2 is the coordinate of the intersection point
         assert(tp1p2 >= 0.0 and tp1p2 <= 1.0);
         const e = sm.edge(d);
@@ -85,12 +86,12 @@ pub fn vertexCurvature(
         if (!sm.isBoundaryDart(d)) {
             const farea = face_area.value(sm.face(d));
             // we know that p1 is inside the sphere and p2 is outside
-            if (geometry_utils.pointInSphere(p3, p, sel_ctx.radius)) { // p3 is inside the sphere
-                _, const tp3p2 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p3, p2) orelse continue;
+            if (geometry_utils.pointInSphere(p3, p, neighborhood_radius)) { // p3 is inside the sphere
+                _, const tp3p2 = geometry_utils.intersectionSphereSegment(p, neighborhood_radius, p3, p2) orelse continue;
                 assert(tp3p2 >= 0.0 and tp3p2 <= 1.0);
                 area += (tp1p2 + tp3p2 - tp1p2 * tp3p2) * farea;
             } else { // p3 is outside the sphere
-                _, const tp1p3 = geometry_utils.intersectionSphereSegment(p, sel_ctx.radius, p1, p3) orelse continue;
+                _, const tp1p3 = geometry_utils.intersectionSphereSegment(p, neighborhood_radius, p1, p3) orelse continue;
                 assert(tp1p3 >= 0.0 and tp1p3 <= 1.0);
                 area += (tp1p2 * tp1p3) * farea;
             }
@@ -155,7 +156,7 @@ pub fn computeVertexCurvatures(
 
         pub fn run(t: *const @This(), sel_ctx: *selection.WithinSphereSelectionContext, vertex: SurfaceMesh.Vertex) void {
             if (!sel_ctx.initialized) {
-                sel_ctx.init(t.surface_mesh, t.vertex_position, t.neighborhood_radius) catch |err| {
+                sel_ctx.init(t.surface_mesh, t.vertex_position) catch |err| {
                     zgp_log.err("Failed to initialize selection context for vertex curvature computation: {}", .{err});
                     return;
                 };
@@ -168,6 +169,7 @@ pub fn computeVertexCurvatures(
                 t.edge_dihedral_angle,
                 t.edge_length,
                 t.face_area,
+                t.neighborhood_radius,
                 sel_ctx,
             ) catch VertexCurvatureValues{ .kmin = 0.0, .Kmin = vec.zero(Vec3f), .kmax = 0.0, .Kmax = vec.zero(Vec3f) };
             t.vertex_curvature.vertex_kmin.?.valuePtr(vertex).* = curvature_values.kmin;

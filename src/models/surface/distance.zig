@@ -268,7 +268,7 @@ pub const HeatMethodContext = struct {
         const mean_edge_length = edge_length.data.meanValue();
         const t = mean_edge_length * mean_edge_length * diffusion_time;
 
-        // compute H = A - t * Lc
+        // compute H = A - t · Lc
         var H: SparseMatrix = .init(@intCast(nb_vertices), @intCast(nb_vertices));
         defer H.deinit();
         Lc.mulScalar(@floatCast(-t), H);
@@ -335,7 +335,7 @@ pub const HeatMethodContext = struct {
             hm_ctx.heat_0.items[idx] = 1.0; // set source vertices heat to 1.0
         }
 
-        // solve H * heat_t = heat_0 (heat diffusion)
+        // solve H · heat_t = heat_0 (heat diffusion)
         hm_ctx.factorized_H.solve(hm_ctx.heat_0.items, hm_ctx.heat_t.items);
 
         // store heat_t in a vertex data
@@ -384,7 +384,7 @@ pub const HeatMethodContext = struct {
             hm_ctx.div.items[idx] = @floatCast(hm_ctx.vertex_heat_grad_div.value(v));
         }
 
-        // solve L * dist = div (Poisson equation)
+        // solve L · dist = div (Poisson equation)
         hm_ctx.factorized_L.solve(hm_ctx.div.items, hm_ctx.dist.items);
 
         // shift distance values s.t. min distance is 0.0 and store them in vertex_distance

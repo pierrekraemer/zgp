@@ -299,7 +299,7 @@ pub const ARAPContext = struct {
                 if (fi == invalid_index) return; // constrained vertex
                 var solved_row: [3]eigen.Scalar = undefined;
                 t.solve_mat.getRow(@intCast(fi), &solved_row);
-                t.vertex_position.valuePtr(v).* = vec.cast(f32, Vec3d{ solved_row[0], solved_row[1], solved_row[2] });
+                t.vertex_position.valuePtr(v).* = vec.cast(f32, solved_row);
             }
         };
 
@@ -328,8 +328,8 @@ pub const ARAPContext = struct {
                 .rhs_mat = arap_ctx.rhs_mat,
             });
 
-            // Solve L * x = rhs
-            arap_ctx.factorized_L.solveMultipleRHS(arap_ctx.rhs_mat, arap_ctx.solve_mat, 3);
+            // Solve L · x = rhs
+            arap_ctx.factorized_L.solveMultipleRHS(arap_ctx.rhs_mat, arap_ctx.solve_mat);
 
             // Write solved positions back
             pctr.reset();

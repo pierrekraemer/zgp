@@ -153,12 +153,8 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     const std_data_info = @typeInfo(PointCloudStdData).@"union";
     inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
         if (@field(info.std_datas, field_name) == null) {
-            const maybe_data = pc.addData(@typeInfo(field_type).optional.child.DataType, field_name);
-            if (maybe_data) |data| {
-                pcs.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field_name, data));
-            } else |err| {
-                zgp_log.err("Error adding {s} ({s}) data: {}", .{ field_name, @typeName(@typeInfo(field_type).optional.child.DataType), err });
-            }
+            const data = try pc.addData(@typeInfo(field_type).optional.child.DataType, field_name);
+            pcs.setPointCloudStdData(pc, @unionInit(PointCloudStdData, field_name, data));
         }
     }
 

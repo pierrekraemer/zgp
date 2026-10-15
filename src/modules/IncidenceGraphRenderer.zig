@@ -567,6 +567,7 @@ pub fn rightPanel(m: *Module) void {
             c.ImGui_PopID();
         }
         if (c.ImGui_ColorEdit4("Global color##DrawEdgesColorGlobalEdit", &p.line_cylinder_shader_parameters.cylinder_color, c.ImGuiColorEditFlags_NoInputs)) {
+            p.line_shader_parameters.line_color = p.line_cylinder_shader_parameters.cylinder_color;
             igr.app_ctx.view.requestRedraw();
         }
     }

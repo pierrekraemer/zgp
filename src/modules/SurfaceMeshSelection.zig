@@ -429,12 +429,12 @@ pub fn sdlEvent(m: *Module, event: *const c.SDL_Event) bool {
                                     const info = sm_store.surfaceMeshInfo(sm);
                                     if (info.std_datas.vertex_position) |vertex_position| {
                                         var sel_ctx: selection.WithinSphereSelectionContext = .{};
-                                        sel_ctx.init(sm, vertex_position, sd.selection_radius) catch |err| {
+                                        sel_ctx.init(sm, vertex_position) catch |err| {
                                             std.debug.print("Failed to initialize selection context: {}\n", .{err});
                                             break :blk false;
                                         };
                                         defer sel_ctx.deinit();
-                                        sel_ctx.cellsWithinSphereAroundVertex(.{ .index = idx }) catch |err| {
+                                        sel_ctx.cellsWithinSphereAroundVertex(.{ .index = idx }, sd.selection_radius) catch |err| {
                                             std.debug.print("Failed to select cells within sphere: {}\\n", .{err});
                                             break :blk false;
                                         };

@@ -49,16 +49,6 @@ pub fn ScalarTypeOf(comptime M: type) type {
     return vec.ScalarTypeOf(VectorTypeOf(M));
 }
 
-// // Return the SIMD representation type corresponding to the vectors that compose the given Mat type
-// pub fn SIMDVecTypeOf(comptime M: type) type {
-//     return vec.SIMDVecTypeOf(VectorTypeOf(M));
-// }
-
-// // Return the SIMD representation type corresponding to the given Mat type
-// pub fn SIMDMatTypeOf(comptime M: type) type {
-//     return [dim(M)]SIMDVecTypeOf(M);
-// }
-
 // Return a matrix with each coeff set to the corresponding coeff of the given matrix, casted to the given Scalar type
 pub fn cast(comptime S: type, m: anytype) Mat(dim(@TypeOf(m)), S) {
     const M = @TypeOf(m);

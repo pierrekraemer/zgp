@@ -121,8 +121,16 @@ pub const SparseMatrix = struct {
         c.addSparseMatrices(sm.matrix.?, other.matrix.?, result.matrix.?);
     }
 
-    pub fn solveSymmetricSparseLinearSystem(sm: SparseMatrix, b: []const Scalar, x: []Scalar) void {
-        c.solveSymmetricSparseLinearSystem(sm.matrix.?, b.ptr, x.ptr, @intCast(b.len));
+    pub fn directSolveSymmetricSparseLinearSystem(sm: SparseMatrix, b: []const Scalar, x: []Scalar) void {
+        c.directSolveSymmetricSparseLinearSystem(sm.matrix.?, b.ptr, x.ptr, @intCast(b.len));
+    }
+
+    pub fn iterativeSolveSymmetricSparseLinearSystem(sm: SparseMatrix, b: []const Scalar, x: []Scalar, max_iterations: Index, tolerance: Scalar) void {
+        c.iterativeSolveSymmetricSparseLinearSystem(sm.matrix.?, b.ptr, x.ptr, @intCast(b.len), max_iterations, tolerance);
+    }
+
+    pub fn iterativeSolveSymmetricSparseLinearSystemMultipleRHS(sm: SparseMatrix, b: DenseMatrix, x: DenseMatrix, max_iterations: Index, tolerance: Scalar) void {
+        c.iterativeSolveSymmetricSparseLinearSystemMultipleRHS(sm.matrix.?, b.matrix.?, x.matrix.?, max_iterations, tolerance);
     }
 };
 
@@ -151,7 +159,7 @@ pub const FactorizedSparseMatrix = struct {
         c.solveWithFactorizedMatrix(fsm.solver.?, b.ptr, x.ptr, fsm.size);
     }
 
-    pub fn solveMultipleRHS(fsm: FactorizedSparseMatrix, b: DenseMatrix, x: DenseMatrix, nb_rhs: usize) void {
-        c.solveWithFactorizedMatrixMultipleRHS(fsm.solver.?, b.matrix.?, x.matrix.?, fsm.size, @intCast(nb_rhs));
+    pub fn solveMultipleRHS(fsm: FactorizedSparseMatrix, b: DenseMatrix, x: DenseMatrix) void {
+        c.solveWithFactorizedMatrixMultipleRHS(fsm.solver.?, b.matrix.?, x.matrix.?);
     }
 };

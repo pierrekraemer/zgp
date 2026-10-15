@@ -180,12 +180,8 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     const std_data_info = @typeInfo(SurfaceMeshStdData).@"union";
     inline for (std_data_info.field_names, std_data_info.field_types) |field_name, field_type| {
         if (@field(info.std_datas, field_name) == null) {
-            const maybe_data = sm.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
-            if (maybe_data) |data| {
-                sms.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, data));
-            } else |err| {
-                zgp_log.err("Error adding {s} ({s}: {s}) data: {}", .{ field_name, @tagName(@typeInfo(field_type).optional.child.CellType), @typeName(@typeInfo(field_type).optional.child.DataType), err });
-            }
+            const data = try sm.addData(@typeInfo(field_type).optional.child.CellType, @typeInfo(field_type).optional.child.DataType, field_name);
+            sms.setSurfaceMeshStdData(sm, @unionInit(SurfaceMeshStdData, field_name, data));
         }
     }
 
@@ -736,7 +732,8 @@ pub fn loadSurfaceMeshFromFile(sms: *SurfaceMeshStore, filename: []const u8) !*S
     const sm = try sms.createSurfaceMesh(std.fs.path.basename(filename));
     errdefer sms.destroySurfaceMesh(sm);
 
-    var vertex_position = try sm.addData(.vertex, Vec3f, "position");
+    const info = sms.surface_meshes_info.getPtr(sm).?;
+    var vertex_position = info.std_datas.vertex_position.?;
     var darts_of_vertex = try sm.addData(.vertex, std.ArrayList(SurfaceMesh.Dart), "darts_of_vertex");
     defer sm.removeData(darts_of_vertex);
     var darts_array_lists_arena = std.heap.ArenaAllocator.init(sms.allocator);
