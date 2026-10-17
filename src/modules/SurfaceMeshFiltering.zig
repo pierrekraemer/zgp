@@ -39,9 +39,9 @@ fn vectorDiscrepancy(comptime T: type) fn (a: T, b: T) f64 {
 const FilteringData = struct {
     scalar_data_to_filter: ?SurfaceMesh.VertexData(f32) = null,
     vector_data_to_filter: ?SurfaceMesh.VertexData(Vec3f) = null,
-    sigma_r: f32 = 1.0, // data discrepancy above which smoothing is damped
-    sigma_g: f32 = 0.3, // sine of the slope angle above which smoothing is damped
-    time_step_factor: f32 = 1.0, // time step = factor * mean_edge_length^2
+    sensitivity_r: f32 = 1.0, // multiplied by the mean data discrepancy over the edges
+    angle_g_deg: f32 = 40.0, // slope between an edge and the tangent plane in degrees
+    smoothing_radius: f32 = 2.0, // in mean edge lengths
 };
 
 app_ctx: *AppContext = undefined,
@@ -134,17 +134,19 @@ pub fn rightClickMenu(m: *Module) void {
                 }
                 c.ImGui_PopID();
 
-                c.ImGui_Text("Data discrepancy threshold");
-                c.ImGui_PushID("SigmaR");
-                _ = c.ImGui_SliderFloatEx("", &fd.sigma_r, 0.01, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
+                c.ImGui_Text("Smoothing radius (in mean edge lengths)");
+                c.ImGui_PushID("SmoothingRadius");
+                _ = c.ImGui_SliderFloatEx("", &fd.smoothing_radius, 0.5, 20.0, "%.1f", c.ImGuiSliderFlags_Logarithmic);
                 c.ImGui_PopID();
-                c.ImGui_Text("Geometry threshold (slope)");
-                c.ImGui_PushID("SigmaG");
-                _ = c.ImGui_SliderFloatEx("", &fd.sigma_g, 0.01, 1.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
+                c.ImGui_Text("Feature angle (degrees)");
+                c.ImGui_PushID("FeatureAngle");
+                _ = c.ImGui_SliderFloatEx("", &fd.angle_g_deg, 5.0, 90.0, "%.0f", c.ImGuiSliderFlags_None);
+                imgui_utils.tooltip("Smoothing is damped across edges that have a slope w.r.t. the tangent plane greater than this angle (lower = more sensitive to features)");
                 c.ImGui_PopID();
-                c.ImGui_Text("Time step");
-                c.ImGui_PushID("TimeStep");
-                _ = c.ImGui_SliderFloatEx("", &fd.time_step_factor, 0.01, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
+                c.ImGui_Text("Data sensitivity (* mean difference)");
+                c.ImGui_PushID("DataSensitivity");
+                _ = c.ImGui_SliderFloatEx("", &fd.sensitivity_r, 0.1, 10.0, "%.2f", c.ImGuiSliderFlags_Logarithmic);
+                imgui_utils.tooltip("Smoothing is damped across edges that have a difference in data greater than this value multiplied by the mean difference over all edges (lower = more sensitive to features)");
                 c.ImGui_PopID();
 
                 const disabled =
@@ -168,9 +170,9 @@ pub fn rightClickMenu(m: *Module) void {
                         info.std_datas.vertex_normal.?,
                         info.std_datas.vertex_area.?,
                         info.std_datas.edge_length.?,
-                        fd.sigma_r,
-                        fd.sigma_g,
-                        fd.time_step_factor,
+                        fd.sensitivity_r,
+                        std.math.degreesToRadians(fd.angle_g_deg),
+                        fd.smoothing_radius,
                         t,
                         if (t == f32) scalarDiscrepancy(f32) else vectorDiscrepancy(Vec3f),
                         (if (t == f32) &fd.scalar_data_to_filter.? else &fd.vector_data_to_filter.?),

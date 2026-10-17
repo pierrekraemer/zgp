@@ -95,9 +95,9 @@ pub fn anisotropicLaplacianFiltering(
     vertex_normal: SurfaceMesh.VertexData(Vec3f),
     vertex_area: SurfaceMesh.VertexData(f32),
     edge_length: SurfaceMesh.EdgeData(f32),
-    sigma_r: f64,
-    sigma_g: f64,
-    time_step_factor: f64,
+    sensitivity_r: f64, // data discrepancy scale, relative to the mean data discrepancy over the edges
+    angle_g: f64, // geometry scale: slope angle (radians) between an edge and the tangent plane of its endpoints
+    smoothing_radius: f64, // spatial extent of the smoothing, in mean edge lengths
     comptime T: type,
     discrepancy: fn (T, T) f64,
     vertex_data: *SurfaceMesh.VertexData(T),
@@ -107,10 +107,9 @@ pub fn anisotropicLaplacianFiltering(
 
     // solve (A - t · Lc(f)) x = A · f, where:
     // - A is the mass matrix (vertex areas)
-    // - Lc(f) is the (negative semi-definite) cotangent Laplacian weighted by a range kernel based on the discrepancy between vertex data
-    // - t is the time step (time_step_factor * mean_edge_length^2)
+    // - Lc(f) is the (negative semi-definite) cotangent Laplacian anisotropically weighted by a range kernel based on the discrepancy between vertex data
+    // - t is the time step (smoothing_radius^2 / 2 * mean_edge_length^2, i.e. the heat kernel has a standard deviation of smoothing_radius * mean_edge_length)
     // - f is the input vertex data (scalar or vector)
-    // - x is the filtered vertex data
 
     // Create consecutive indices for vertices
     var vertex_index = try sm.addData(.vertex, u32, "__filtering_vertex_index");
@@ -123,8 +122,24 @@ pub fn anisotropicLaplacianFiltering(
 
     // WARNING: use eigen.Scalar (f64) for matrix coefficients
 
-    // setup Laplacian matrix Lc
     const nb_edges = sm.nbCells(.edge);
+    // infer the data range scale from the data: sigma_r = sensitivity_r * mean discrepancy over the edges
+    var mean_discrepancy: f64 = 0.0;
+    var e_it = sm.edgeIterator();
+    while (e_it.next()) |edge| {
+        const d = sm.dart(edge);
+        mean_discrepancy += discrepancy(
+            vertex_data.value(sm.vertex(d)),
+            vertex_data.value(sm.vertex(sm.phi1(d))),
+        );
+    }
+    if (nb_edges > 0) {
+        mean_discrepancy /= @floatFromInt(nb_edges);
+    }
+    // if data is constant, there is nothing to preserve, any positive sigma gives uniform weights
+    const sigma_r = @max(sensitivity_r * mean_discrepancy, std.math.floatEps(f64));
+
+    // setup weigthted Laplacian matrix Lc(f)
     var triplets = try std.ArrayList(SparseMatrix.Triplet).initCapacity(allocator, 4 * nb_edges);
     defer triplets.deinit(allocator);
     var edge_it = sm.edgeIterator();
@@ -137,15 +152,16 @@ pub fn anisotropicLaplacianFiltering(
         const w_ij: eigen.Scalar = @floatCast(laplacian.edgeCotanWeight(sm, edge, halfedge_cotan_weight));
         // compute range kernel based on discrepancy between vertex data
         const Wr = rangeKernel(discrepancy(vertex_data.value(vi), vertex_data.value(vj)), sigma_r);
-        // geometric kernel: slope of the edge w.r.t. the tangent plane of each endpoint (sin of the angle between the edge and the tangent plane),
-        // symmetrized by averaging the squared slopes seen from both endpoints
+        // geometric kernel: angle between the edge and the tangent plane of each endpoint,
+        // symmetrized by averaging the squared slopes (sines) seen from both endpoints
         const e: Vec3d = vec.cast(f64, vec.sub(vertex_position.value(vj), vertex_position.value(vi)));
         const e_sqnorm = vec.squaredNorm(e);
         const Wg = if (e_sqnorm > 0.0) blk: {
             const hi = vec.dot(vec.cast(f64, vertex_normal.value(vi)), e);
             const hj = vec.dot(vec.cast(f64, vertex_normal.value(vj)), e);
             const slope_sq = 0.5 * (hi * hi + hj * hj) / e_sqnorm;
-            break :blk rangeKernel(std.math.sqrt(slope_sq), sigma_g);
+            const slope_angle = std.math.asin(@min(1.0, std.math.sqrt(slope_sq)));
+            break :blk rangeKernel(slope_angle, angle_g);
         } else 1.0;
         const W = Wr * Wg * w_ij;
         // off-diagonal
@@ -170,9 +186,9 @@ pub fn anisotropicLaplacianFiltering(
     var A: SparseMatrix = .initDiagonalFromArray(massCoeffs.items);
     defer A.deinit();
 
-    // compute time step t = time_step_factor * mean_edge_length^2
+    // compute time step t = smoothing_radius^2 / 2 * mean_edge_length^2
     const mean_edge_length = edge_length.data.meanValue();
-    const t = time_step_factor * mean_edge_length * mean_edge_length;
+    const t = 0.5 * smoothing_radius * smoothing_radius * mean_edge_length * mean_edge_length;
 
     // compute F = A - t · Lc(f)
     var F: SparseMatrix = .init(@intCast(nb_vertices), @intCast(nb_vertices));
@@ -189,7 +205,7 @@ pub fn anisotropicLaplacianFiltering(
         .array => eigen.DenseMatrix.init(@intCast(nb_vertices), @intCast(vec.dim(T))),
         else => unreachable,
     };
-    var solve = switch (t_info) {
+    var res = switch (t_info) {
         .float => blk: {
             var a: std.ArrayList(f64) = .empty;
             try a.resize(allocator, nb_vertices);
@@ -199,25 +215,28 @@ pub fn anisotropicLaplacianFiltering(
         else => unreachable,
     };
 
-    // copy vertex data to rhs
+    // initialize rhs = A · f, where f is the input vertex data
+    // and initialize res to f as an initial guess for the solver
     vertex_it.reset();
     while (vertex_it.next()) |v| {
         const idx = vertex_index.value(v);
         const area: eigen.Scalar = @floatCast(vertex_area.value(v));
         if (t_info == .float) {
+            res.items[idx] = @floatCast(vertex_data.value(v));
             rhs.items[idx] = area * @as(eigen.Scalar, @floatCast(vertex_data.value(v)));
         } else if (t_info == .array) {
             var rhs_val_f64: [3]eigen.Scalar = vec.cast(f64, vertex_data.value(v));
+            res.setRow(@intCast(idx), &rhs_val_f64);
             for (&rhs_val_f64) |*c| c.* *= area;
             rhs.setRow(@intCast(idx), &rhs_val_f64);
         }
     }
 
-    // solve F · solve = rhs
+    // solve F · res = rhs
     if (t_info == .float) {
-        F.iterativeSolveSymmetricSparseLinearSystem(rhs.items, solve.items, 1000, 1e-6);
+        F.iterativeSolveSymmetricSparseLinearSystem(rhs.items, res.items, 1000, 1e-6);
     } else if (t_info == .array) {
-        F.iterativeSolveSymmetricSparseLinearSystemMultipleRHS(rhs, solve, 1000, 1e-6);
+        F.iterativeSolveSymmetricSparseLinearSystemMultipleRHS(rhs, res, 1000, 1e-6);
     }
 
     // copy filtered data back to vertex_data
@@ -225,11 +244,11 @@ pub fn anisotropicLaplacianFiltering(
     while (vertex_it.next()) |v| {
         const idx = vertex_index.value(v);
         if (t_info == .float) {
-            vertex_data.valuePtr(v).* = @floatCast(solve.items[idx]);
+            vertex_data.valuePtr(v).* = @floatCast(res.items[idx]);
         } else if (t_info == .array) {
-            var solve_val_f64: [3]eigen.Scalar = undefined;
-            solve.getRow(@intCast(idx), &solve_val_f64);
-            vertex_data.valuePtr(v).* = vec.cast(vec.ScalarTypeOf(T), solve_val_f64);
+            var res_val_f64: [3]eigen.Scalar = undefined;
+            res.getRow(@intCast(idx), &res_val_f64);
+            vertex_data.valuePtr(v).* = vec.cast(vec.ScalarTypeOf(T), res_val_f64);
         }
     }
 }

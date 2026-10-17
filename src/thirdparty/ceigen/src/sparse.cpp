@@ -74,7 +74,7 @@ extern "C"
         solver.setMaxIterations(max_iterations);
         solver.setTolerance(tolerance);
         solver.compute(*sparseMat);
-        xVec = solver.solve(bVec);
+        xVec = solver.solveWithGuess(bVec, xVec);
     }
 
     void iterativeSolveSymmetricSparseLinearSystemMultipleRHS(const void *mat, const void *matb, void *matx, INDEX max_iterations, SCALAR tolerance)
@@ -87,7 +87,7 @@ extern "C"
         solver.setMaxIterations(max_iterations);
         solver.setTolerance(tolerance);
         solver.compute(*sparseMat);
-        *xMat = solver.solve(*bMat);
+        *xMat = solver.solveWithGuess(*bMat, *xMat);
     }
 
     void *factorizeSymmetricSparseMatrix(const void *mat)
