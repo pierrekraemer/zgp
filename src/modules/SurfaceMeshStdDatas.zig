@@ -191,7 +191,7 @@ const StdDataComputation = struct {
         inline for (self.reads, 0..self.reads.len) |read_tag, i| {
             params[i + 2] = @typeInfo(@FieldType(SurfaceMeshStore.SurfaceMeshStdDatas, @tagName(read_tag))).optional.child;
         }
-        params[nbparams - 1] = @typeInfo(@FieldType(SurfaceMeshStore.SurfaceMeshStdDatas, @tagName(self.computes))).optional.child;
+        params[nbparams - 1] = *@typeInfo(@FieldType(SurfaceMeshStore.SurfaceMeshStdDatas, @tagName(self.computes))).optional.child;
         return @Fn(&params, &@splat(.{}), anyerror!void, .{ .@"callconv" = .auto });
     }
 
@@ -206,7 +206,7 @@ const StdDataComputation = struct {
         inline for (self.reads, 0..) |reads_tag, i| {
             args[i + 2] = @field(info.std_datas, @tagName(reads_tag)).?;
         }
-        args[self.reads.len + 2] = @field(info.std_datas, @tagName(self.computes)).?;
+        args[self.reads.len + 2] = &@field(info.std_datas, @tagName(self.computes)).?;
         @call(.auto, func, args) catch |err| {
             std.debug.print("Error computing {s}: {}\n", .{ @tagName(self.computes), err });
         };
