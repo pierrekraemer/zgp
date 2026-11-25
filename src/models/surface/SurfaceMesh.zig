@@ -17,7 +17,15 @@
 //! Halfedges and corners do not have their own index & DataContainers: since they are single darts,
 //! their index is that of the dart, and their datas are stored in the dart DataContainer.
 //!
-//! TODO: talk about boundary management
+//! Open boundaries are explicitly closed by virtual boundary faces: each boundary loop
+//! is represented as a phi1-cycle of darts marked with `boundary = true` and phi2-sewn
+//! to the interior border darts. This ensures every dart has a distinct phi2-opposite
+//! and keeps orbit traversals uniform. Boundary darts are associated with valid vertex
+//! and edge cells, but boundary faces are not indexed in `face_data` (their darts have
+//! `face.index == invalid_index`). Cell representative darts are never boundary darts.
+//! Note that dart, halfedge, corner, and vertex/edge orbit iterators all yield boundary
+//! darts, so callers must check `isBoundaryDart(d)` whenever an interior dart is required
+//! (e.g. before accessing `face(d)`).
 
 const SurfaceMesh = @This();
 

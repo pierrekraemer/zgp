@@ -196,17 +196,14 @@ pub fn CellMarker(comptime cell_type: CellType) type {
             cm.incidence_graph.dataContainerPtr(cell_type).releaseMarker(cm.marker);
         }
 
-        pub fn mark(cm: *@This(), c: Cell) void {
-            assert(c.cellType() == cell_type);
-            cm.marker.valuePtr(c.index()).* = true;
+        pub fn mark(cm: *@This(), c: Cell(cell_type)) void {
+            cm.marker.valuePtr(c.index).* = true;
         }
-        pub fn unmark(cm: *@This(), c: Cell) void {
-            assert(c.cellType() == cell_type);
-            cm.marker.valuePtr(c.index()).* = false;
+        pub fn unmark(cm: *@This(), c: Cell(cell_type)) void {
+            cm.marker.valuePtr(c.index).* = false;
         }
-        pub fn isMarked(cm: *@This(), c: Cell) bool {
-            assert(c.cellType() == cell_type);
-            return cm.marker.value(c.index());
+        pub fn isMarked(cm: *@This(), c: Cell(cell_type)) bool {
+            return cm.marker.value(c.index);
         }
 
         pub fn reset(cm: *@This()) void {

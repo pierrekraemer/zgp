@@ -21,6 +21,7 @@ const intrinsic_triangulation = @import("../models/surface/intrinsic_triangulati
 
 const DeformationMode = enum {
     DirectManipulation,
+    Sculpting,
     ARAP,
 };
 

@@ -280,7 +280,7 @@ pub fn PriorityQueue(
         }
 
         pub const Iterator = struct {
-            queue: *PriorityQueue(T, Context, compareFn),
+            queue: *PriorityQueue(T, Context, compareFn, setElemIndexFn),
             count: usize,
 
             pub fn next(it: *Iterator) ?T {

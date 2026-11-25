@@ -228,7 +228,7 @@ pub fn addData(pc: *PointCloud, comptime T: type, name: []const u8) !PointData(T
 
 /// Returns a handle to the data array of the type `T` if it exists with the given name, otherwise returns null.
 pub fn getData(pc: *PointCloud, comptime T: type, name: []const u8) ?PointData(T) {
-    return if (pc.point_data.getData(T, name)) |d| .{ .point_cloud = pc, .data = d } else null;
+    return if (pc.point_data.getData(T, name)) |d| .{ .data = d } else null;
 }
 
 /// Returns a handle to the data array of the type `T` if it exists with the given name, otherwise creates a new data array of the type `T`,
