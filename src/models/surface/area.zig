@@ -35,7 +35,6 @@ pub fn faceArea(
 /// Compute the areas of all faces of the given SurfaceMesh
 /// and store them in the given face_area data.
 pub fn computeFaceAreas(
-    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     face_area: *SurfaceMesh.FaceData(f32),
@@ -54,9 +53,8 @@ pub fn computeFaceAreas(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelFaceTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelFaceTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .face_area = face_area,
@@ -82,7 +80,6 @@ pub fn faceAreaIntrinsic(
 /// and store them in the given face_area data.
 /// This version uses intrinsic geometry (edge lengths) instead of extrinsic vertex positions.
 pub fn computeFaceAreasIntrinsic(
-    io: std.Io,
     sm: *SurfaceMesh,
     edge_length: SurfaceMesh.EdgeData(f32),
     face_area: *SurfaceMesh.FaceData(f32),
@@ -101,9 +98,8 @@ pub fn computeFaceAreasIntrinsic(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelFaceTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelFaceTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .edge_length = edge_length,
         .face_area = face_area,

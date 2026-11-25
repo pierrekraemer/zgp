@@ -51,7 +51,6 @@ const MedialAxisData = struct {
 
         mad.vmas_ctx = try .init(
             mad.app_ctx.allocator,
-            mad.app_ctx.io,
             mad.point_cloud,
             point_cloud_kdtree,
             point_position,

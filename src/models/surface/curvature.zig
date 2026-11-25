@@ -134,7 +134,6 @@ pub fn vertexCurvature(
 /// Compute the principal curvatures magnitudes and directions of all vertices of the given SurfaceMesh
 /// and store the results in the given datas (which are supposed to be not null).
 pub fn computeVertexCurvatures(
-    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     vertex_normal: SurfaceMesh.VertexData(Vec3f),
@@ -181,7 +180,7 @@ pub fn computeVertexCurvatures(
 
     var pctr: SurfaceMesh.ParallelVertexTaskRunnerWithContext(selection.WithinSphereSelectionContext) = try .init(sm);
     defer pctr.deinit();
-    try pctr.run(io, Task{
+    try pctr.run(Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_normal = vertex_normal,
@@ -218,7 +217,6 @@ pub fn vertexGaussianCurvature(
 /// Compute the Gaussian curvatures of all vertices of the given SurfaceMesh
 /// and store the results in the given vertex_gaussian_curvature data.
 pub fn computeVertexGaussianCurvatures(
-    io: std.Io,
     sm: *SurfaceMesh,
     corner_angle: SurfaceMesh.CornerData(f32),
     vertex_gaussian_curvature: *SurfaceMesh.VertexData(f32),
@@ -237,9 +235,8 @@ pub fn computeVertexGaussianCurvatures(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .corner_angle = corner_angle,
         .vertex_gaussian_curvature = vertex_gaussian_curvature,

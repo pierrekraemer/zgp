@@ -24,7 +24,6 @@ pub fn cornerAngle(
 /// Compute the angles of all corners of the given SurfaceMesh
 /// and store them in the given corner_angle data.
 pub fn computeCornerAngles(
-    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     corner_angle: *SurfaceMesh.CornerData(f32),
@@ -43,9 +42,8 @@ pub fn computeCornerAngles(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCornerTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelCornerTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .corner_angle = corner_angle,
@@ -71,7 +69,6 @@ pub fn cornerAngleIntrinsic(
 /// and store them in the given corner_angle data.
 /// This version uses intrinsic geometry (edge lengths) instead of extrinsic vertex positions.
 pub fn computeCornerAnglesIntrinsic(
-    io: std.Io,
     sm: *SurfaceMesh,
     edge_length: SurfaceMesh.EdgeData(f32),
     corner_angle: *SurfaceMesh.CornerData(f32),
@@ -90,9 +87,8 @@ pub fn computeCornerAnglesIntrinsic(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelCornerTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelCornerTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .edge_length = edge_length,
         .corner_angle = corner_angle,
@@ -131,7 +127,6 @@ pub fn edgeDihedralAngle(
 /// and store them in the given edge_dihedral_angle data.
 /// Face normals are assumed to be normalized.
 pub fn computeEdgeDihedralAngles(
-    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     face_normal: SurfaceMesh.FaceData(Vec3f),
@@ -153,9 +148,8 @@ pub fn computeEdgeDihedralAngles(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelEdgeTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelEdgeTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .face_normal = face_normal,

@@ -57,7 +57,6 @@ pub fn shrinkingBall(
 
 /// Compute the shrinking balls for all points of the given PointCloud
 pub fn computePointShrinkingBalls(
-    io: std.Io,
     pc: *PointCloud,
     pc_kdtree: *kdtree.PointsKDTree,
     point_position: PointCloud.PointData(Vec3f),
@@ -83,9 +82,8 @@ pub fn computePointShrinkingBalls(
         }
     };
 
-    var pctr: PointCloud.ParallelPointTaskRunner = try .init(pc);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: PointCloud.ParallelPointTaskRunner = try .init(pc);
+    try pctr.run(Task{
         .point_cloud = pc,
         .pc_kdtree = pc_kdtree,
         .point_position = point_position,
@@ -97,7 +95,6 @@ pub fn computePointShrinkingBalls(
 /// Context for computing medial axis of a PointCloud using the Variational Medial Axis Skeleton (VMAS) method.
 pub const VMASContext = struct {
     allocator: std.mem.Allocator,
-    io: std.Io,
 
     point_cloud: *PointCloud,
     // given data
@@ -129,7 +126,6 @@ pub const VMASContext = struct {
     // the provided spheres PointCloud and skeleton IncidenceGraph will be cleared and filled with new data
     pub fn init(
         allocator: std.mem.Allocator,
-        io: std.Io,
         point_cloud: *PointCloud,
         point_cloud_kdtree: *kdtree.PointsKDTree,
         point_position: PointCloud.PointData(Vec3f),
@@ -161,7 +157,6 @@ pub const VMASContext = struct {
         skeleton.clearRetainingCapacity();
 
         try tangent_basis.computePointTangentBases(
-            io,
             point_cloud,
             point_normal,
             point_tangent_basis,
@@ -180,7 +175,6 @@ pub const VMASContext = struct {
         }
 
         try sqem.computePointSQEMs(
-            io,
             point_cloud,
             point_position,
             point_normal,
@@ -192,7 +186,6 @@ pub const VMASContext = struct {
 
         // compute points shrinking balls
         try computePointShrinkingBalls(
-            io,
             point_cloud,
             point_cloud_kdtree,
             point_position,
@@ -202,7 +195,6 @@ pub const VMASContext = struct {
 
         return .{
             .allocator = allocator,
-            .io = io,
 
             .point_cloud = point_cloud,
             .point_cloud_kdtree = point_cloud_kdtree,
@@ -298,7 +290,6 @@ pub const VMASContext = struct {
 
     pub fn updatePointSQEMs(vmas_ctx: *VMASContext, line_quadric_epsilon: f32) !void {
         try sqem.computePointSQEMs(
-            vmas_ctx.io,
             vmas_ctx.point_cloud,
             vmas_ctx.point_position,
             vmas_ctx.point_normal,

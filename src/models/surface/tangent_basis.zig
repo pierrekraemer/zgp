@@ -29,7 +29,6 @@ pub fn vertexTangentBasis(
 /// Compute the tangent bases of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_tangent_basis data.
 pub fn computeVertexTangentBases(
-    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     vertex_normal: SurfaceMesh.VertexData(Vec3f),
@@ -51,9 +50,8 @@ pub fn computeVertexTangentBases(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_normal = vertex_normal,

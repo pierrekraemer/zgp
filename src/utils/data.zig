@@ -485,6 +485,196 @@ pub const DataContainer = struct {
         };
     }
 
+    const max_parallel_workers = 32;
+    const min_parallel_chunk_size: u32 = 64;
+    const max_parallel_chunk_size: u32 = 1024;
+
+    /// Runs a per-index task in parallel over all active indices of a DataContainer
+    /// using an atomic chunk cursor (with a dense fast-path when there are no inactive slots).
+    /// The `task` must expose a `run(self: *Self / *const Self, index: u32) void` function.
+    pub const ParallelIndexTaskRunner = struct {
+        dc: *const DataContainer,
+        nb_workers: usize,
+
+        pub fn init(dc: *const DataContainer) !ParallelIndexTaskRunner {
+            const cpu_count = try std.Thread.getCpuCount();
+            return initWithWorkerCount(dc, @min(cpu_count, max_parallel_workers));
+        }
+
+        pub fn initWithWorkerCount(dc: *const DataContainer, nb_workers: usize) !ParallelIndexTaskRunner {
+            if (nb_workers == 0 or nb_workers > max_parallel_workers) {
+                return error.InvalidWorkerCount;
+            }
+            return .{
+                .dc = dc,
+                .nb_workers = nb_workers,
+            };
+        }
+
+        fn workerFn(comptime Task: type) fn (*Task, *std.atomic.Value(u32), u32, u32, ?*const Data(bool)) void {
+            return struct {
+                fn f(
+                    task: *Task,
+                    next_index: *std.atomic.Value(u32),
+                    size: u32,
+                    chunk_size: u32,
+                    is_active: ?*const Data(bool),
+                ) void {
+                    while (true) {
+                        const start = next_index.fetchAdd(chunk_size, .monotonic);
+                        if (start >= size) break;
+                        const end = @min(start + chunk_size, size);
+                        if (is_active) |active| {
+                            for (start..end) |idx| {
+                                const index: u32 = @intCast(idx);
+                                if (active.value(index)) {
+                                    task.run(index);
+                                }
+                            }
+                        } else {
+                            for (start..end) |idx| {
+                                task.run(@intCast(idx));
+                            }
+                        }
+                    }
+                }
+            }.f;
+        }
+
+        pub fn run(runner: *const ParallelIndexTaskRunner, task: anytype) !void {
+            const size = runner.dc.size;
+            if (size == 0) return;
+
+            const io = runner.dc.io;
+            const target_chunks: u32 = @intCast(runner.nb_workers * 8);
+            const chunk_size = std.math.clamp(
+                (size + target_chunks - 1) / target_chunks,
+                min_parallel_chunk_size,
+                max_parallel_chunk_size,
+            );
+            const total_chunks = (size + chunk_size - 1) / chunk_size;
+            const effective_workers = @min(runner.nb_workers, @as(usize, total_chunks));
+
+            const is_active: ?*const Data(bool) = if (runner.dc.nb_inactive_indices == 0) null else runner.dc.is_active;
+            var next_index: std.atomic.Value(u32) = .init(0);
+            var wg: std.Io.Group = .init;
+
+            const Task = @TypeOf(task);
+            const task_ptr: *Task = @constCast(&task);
+            const worker = workerFn(Task);
+
+            for (1..effective_workers) |_| {
+                wg.async(io, worker, .{ task_ptr, &next_index, size, chunk_size, is_active });
+            }
+            // Calling thread participates as worker 0
+            worker(task_ptr, &next_index, size, chunk_size, is_active);
+
+            try wg.await(io);
+        }
+    };
+
+    /// Runs a per-index task in parallel over all active indices of a DataContainer,
+    /// providing each worker thread with its own persistent `Context` instance.
+    /// `Context` must expose an `initialized: bool` field and a `deinit(self: *Context) void` function.
+    /// The `task` must expose a `run(self: *Self / *const Self, ctx: *Context, index: u32) void` function.
+    pub fn ParallelIndexTaskRunnerWithContext(comptime Context: type) type {
+        return struct {
+            dc: *const DataContainer,
+            contexts: [max_parallel_workers]Context,
+            nb_workers: usize,
+
+            pub fn init(dc: *const DataContainer) !@This() {
+                const cpu_count = try std.Thread.getCpuCount();
+                return initWithWorkerCount(dc, @min(cpu_count, max_parallel_workers));
+            }
+
+            pub fn initWithWorkerCount(dc: *const DataContainer, nb_workers: usize) !@This() {
+                if (nb_workers == 0 or nb_workers > max_parallel_workers) {
+                    return error.InvalidWorkerCount;
+                }
+                var runner: @This() = .{
+                    .dc = dc,
+                    .contexts = undefined,
+                    .nb_workers = nb_workers,
+                };
+                for (0..nb_workers) |worker| {
+                    runner.contexts[worker].initialized = false;
+                }
+                return runner;
+            }
+
+            pub fn deinit(runner: *@This()) void {
+                for (0..runner.nb_workers) |worker| {
+                    if (runner.contexts[worker].initialized) {
+                        runner.contexts[worker].deinit();
+                    }
+                }
+            }
+
+            fn workerFn(comptime Task: type) fn (*Task, *Context, *std.atomic.Value(u32), u32, u32, ?*const Data(bool)) void {
+                return struct {
+                    fn f(
+                        task: *Task,
+                        ctx: *Context,
+                        next_index: *std.atomic.Value(u32),
+                        size: u32,
+                        chunk_size: u32,
+                        is_active: ?*const Data(bool),
+                    ) void {
+                        while (true) {
+                            const start = next_index.fetchAdd(chunk_size, .monotonic);
+                            if (start >= size) break;
+                            const end = @min(start + chunk_size, size);
+                            if (is_active) |active| {
+                                for (start..end) |idx| {
+                                    const index: u32 = @intCast(idx);
+                                    if (active.value(index)) {
+                                        task.run(ctx, index);
+                                    }
+                                }
+                            } else {
+                                for (start..end) |idx| {
+                                    task.run(ctx, @intCast(idx));
+                                }
+                            }
+                        }
+                    }
+                }.f;
+            }
+
+            pub fn run(runner: *@This(), task: anytype) !void {
+                const size = runner.dc.size;
+                if (size == 0) return;
+
+                const io = runner.dc.io;
+                const target_chunks: u32 = @intCast(runner.nb_workers * 8);
+                const chunk_size = std.math.clamp(
+                    (size + target_chunks - 1) / target_chunks,
+                    min_parallel_chunk_size,
+                    max_parallel_chunk_size,
+                );
+                const total_chunks = (size + chunk_size - 1) / chunk_size;
+                const effective_workers = @min(runner.nb_workers, @as(usize, total_chunks));
+
+                const is_active: ?*const Data(bool) = if (runner.dc.nb_inactive_indices == 0) null else runner.dc.is_active;
+                var next_index: std.atomic.Value(u32) = .init(0);
+                var wg: std.Io.Group = .init;
+
+                const Task = @TypeOf(task);
+                const task_ptr: *Task = @constCast(&task);
+                const worker = workerFn(Task);
+
+                for (1..effective_workers) |worker_idx| {
+                    wg.async(io, worker, .{ task_ptr, &runner.contexts[worker_idx], &next_index, size, chunk_size, is_active });
+                }
+                // Calling thread participates as worker 0
+                worker(task_ptr, &runner.contexts[0], &next_index, size, chunk_size, is_active);
+
+                try wg.await(io);
+            }
+        };
+    }
+
     pub fn acquireMarker(dc: *DataContainer) !*Data(bool) {
         try dc.mutex.lock(dc.io);
         // no defer unlock here, because we want to unlock as soon as possible

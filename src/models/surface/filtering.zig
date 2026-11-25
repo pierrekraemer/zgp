@@ -50,7 +50,6 @@ pub fn faceDataVertexAverage(
 }
 
 pub fn computeFaceDataVertexAverages(
-    io: std.Io,
     sm: *SurfaceMesh,
     comptime T: type,
     face_data: SurfaceMesh.FaceData(T),
@@ -71,9 +70,8 @@ pub fn computeFaceDataVertexAverages(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .face_data = face_data,
         .vertex_data = vertex_data,

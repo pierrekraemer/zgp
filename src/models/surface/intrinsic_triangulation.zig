@@ -21,7 +21,6 @@ const geodesic = @import("geodesic.zig");
 
 pub const ITContext = struct {
     allocator: std.mem.Allocator,
-    io: std.Io,
 
     // the extrinsic SurfaceMesh is the triangular mesh on which the intrinsic triangulation is built
     // it is considered as read-only, and its geometry is not modified by the intrinsic triangulation module
@@ -60,7 +59,6 @@ pub const ITContext = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        io: std.Io,
         random: std.Random,
         extrinsic_surface_mesh: *SurfaceMesh,
         extrinsic_edge_length: SurfaceMesh.EdgeData(f32),
@@ -84,11 +82,11 @@ pub const ITContext = struct {
         // WARNING: direct raw data copy is only possible because the indices coincide after cloning
         intrinsic_edge_length.data.copyFrom(extrinsic_edge_length.data);
         // compute intrinsic corner angles (could be copied from extrinsic corner angles)
-        try angle.computeCornerAnglesIntrinsic(io, intrinsic_surface_mesh, intrinsic_edge_length, &intrinsic_corner_angle);
+        try angle.computeCornerAnglesIntrinsic(intrinsic_surface_mesh, intrinsic_edge_length, &intrinsic_corner_angle);
         // compute intrinsic face areas
-        try area.computeFaceAreasIntrinsic(io, intrinsic_surface_mesh, intrinsic_edge_length, &intrinsic_face_area);
+        try area.computeFaceAreasIntrinsic(intrinsic_surface_mesh, intrinsic_edge_length, &intrinsic_face_area);
         // compute intrinsic halfedge cotan weights
-        try laplacian.computeHalfedgeCotanWeightsIntrinsic(io, intrinsic_surface_mesh, intrinsic_edge_length, intrinsic_face_area, &intrinsic_halfedge_cotan_weight);
+        try laplacian.computeHalfedgeCotanWeightsIntrinsic(intrinsic_surface_mesh, intrinsic_edge_length, intrinsic_face_area, &intrinsic_halfedge_cotan_weight);
 
         // initialize intrinsic vertex extrinsic SurfacePoint (all are initially of vertex type, i.e. sit on extrinsic vertices)
         // initialize intrinsic halfedge extrinsic SurfacePoint angle (expressed in the underlying SurfacePoint tangent space)
@@ -121,7 +119,6 @@ pub const ITContext = struct {
 
         return .{
             .allocator = allocator,
-            .io = io,
 
             .extrinsic_surface_mesh = extrinsic_surface_mesh,
             .extrinsic_edge_length = extrinsic_edge_length,

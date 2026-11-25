@@ -76,7 +76,7 @@ Open mesh borders are explicitly closed by **virtual boundary faces** during `sm
 - **Typed Cell Data**: `CellData(cell_type, T)` (`HalfedgeData`, `CornerData`, `VertexData`, `EdgeData`, `FaceData`) via `addData`, `addDataWithUniqueRandomName`, `getData`, `getOrAddData`, `removeData`.
 - **CellSets**: `CellSet(cell_type)` (`VertexSet`, `EdgeSet`, `FaceSet`) managed via `addCellSet`, `getCellSet`, `getOrAddCellSet`, `removeCellSet`. Backed by a `CellMarker` + `ArrayList` of cells; `cs.update()` rebuilds the list after topology edits (called automatically in `SurfaceMeshStore.surfaceMeshConnectivityUpdated`).
 - **Cloning**: `clone(allocator)` copies topology + all cell data (not markers or CellSets); `cloneWithoutCellData(allocator)` copies only topology and container slot layout (used by `ITContext` to keep matching vertex indices).
-- **Parallel Runners**: `ParallelCellTaskRunner(cell_type)` and `ParallelCellTaskRunnerWithContext(cell_type, Context)` (`ParallelHalfedge/Corner/Vertex/Edge/FaceTaskRunner*`).
+- **Parallel Runners**: `ParallelCellTaskRunner(cell_type)` and `ParallelCellTaskRunnerWithContext(cell_type, Context)` (`ParallelHalfedge/Corner/Vertex/Edge/FaceTaskRunner*`), thin wrappers around `DataContainer.ParallelIndexTaskRunner*`.
 - **Integrity Check**: `sm.checkIntegrity()` verifies $\phi_1$/$\phi_{-1}$/$\phi_2$ consistency, boundary face invariants, orbit-to-cell bijection, non-boundary representative darts, minimum dart counts (vertex $\ge 2$, edge $= 2$, face $\ge 3$), and `nb_refs` accuracy. Automatically executed in `.debug` builds by `SurfaceMeshStore.loadSurfaceMeshFromFile` and `surfaceMeshConnectivityUpdated`.
 
 ### Low-Level / Creation Operators

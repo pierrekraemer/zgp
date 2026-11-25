@@ -74,7 +74,6 @@ fn computeVertexCurvatures(
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
     try curvature.computeVertexCurvatures(
-        smc.app_ctx.io,
         sm,
         vertex_position,
         vertex_normal,

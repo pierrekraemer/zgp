@@ -9,12 +9,11 @@
 `PointCloud` is a lightweight wrapper over a single `DataContainer`:
 
 - **Element type**: `pub const Point = u32;` (index into `point_data: DataContainer`).
-- **Shared buffer pool**: `point_buffer_pool: *BufferPool(Point)`, owned by `PointCloudStore`.
-- **Lifecycle**: `init(allocator, io, point_buffer_pool)`, `deinit()`, `clearRetainingCapacity()`.
+- **Lifecycle**: `init(allocator, io)`, `deinit()`, `clearRetainingCapacity()`.
 - **Point management**: `addPoint()`, `removePoint(p)`, `nbPoints()`.
 - **Iteration**: `pointIterator()` yields active `Point` indices (skipping inactive slots).
 - **Typed point data**: `PointData(T)` wrapping `*Data(T)` (`value`, `valuePtr`, `name`, `gen`), managed via `addData`, `getData`, `getOrAddData`, `removeData`.
-- **Parallelism**: `ParallelPointTaskRunner` implements the same double-buffered `BufferPool` + dual `std.Io.Group` scheme as `SurfaceMesh.ParallelCellTaskRunner`.
+- **Parallelism**: `ParallelPointTaskRunner` and `ParallelPointTaskRunnerWithContext(Context)` delegate to `DataContainer.ParallelIndexTaskRunner*`.
 
 ### Standard Datas & Spatial Index (via [`PointCloudStore`](../../src/models/PointCloudStore.zig))
 - **Standard datas**: `position: ?PointData(Vec3f)`, `normal: ?PointData(Vec3f)`, `radius: ?PointData(f32)`.

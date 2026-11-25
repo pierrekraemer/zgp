@@ -157,7 +157,6 @@ pub fn rightPanel(m: *Module) void {
         };
         defer sm.removeData(face_gradient);
         gradient.computeVertexScalarFieldFaceGradients(
-            smdf.app_ctx.io,
             sm,
             info.std_datas.vertex_position.?,
             info.std_datas.face_area.?,
@@ -170,7 +169,6 @@ pub fn rightPanel(m: *Module) void {
             break :blk;
         };
         filtering.computeFaceDataVertexAverages(
-            smdf.app_ctx.io,
             sm,
             Vec3f,
             face_gradient,

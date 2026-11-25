@@ -8,7 +8,7 @@
 
 ### Cells & Containers
 - **`CellIndex = u32`**, **`CellType = enum { vertex, edge, face }`**, typed **`Cell(cell_type)`** aliases `Vertex`, `Edge`, `Face`.
-- Three `DataContainer`s (`vertex_data`, `edge_data`, `face_data`) plus a shared `index_buffer_pool: *BufferPool(u32)` owned by `IncidenceGraphStore`.
+- Three `DataContainer`s (`vertex_data`, `edge_data`, `face_data`).
 
 ### Explicit Incidence Storage
 
@@ -23,7 +23,7 @@ Unlike `SurfaceMesh`'s dart-based combinatorial map, `IncidenceGraph` stores inc
 | `face_incident_edges_dir` | `face_data` | `std.ArrayList(bool)` | Orientation flag per boundary edge of the face |
 
 ### Core API
-- **Lifecycle**: `init(allocator, io, index_buffer_pool)`, `deinit()` (frees all nested `ArrayList`s before tearing down containers), `clearRetainingCapacity()`.
+- **Lifecycle**: `init(allocator, io)`, `deinit()` (frees all nested `ArrayList`s before tearing down containers), `clearRetainingCapacity()`.
 - **Cell creation**:
   - `addVertex() !Vertex`
   - `addEdge(v0, v1) !Edge` (updates both vertices' `vertex_incident_edges`)

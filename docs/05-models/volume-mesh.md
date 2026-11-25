@@ -9,7 +9,7 @@
 When implemented, `VolumeMesh` is expected to follow the same layered conventions as [`SurfaceMesh`](surface-mesh.md):
 
 1. **Model (`src/models/volume/VolumeMesh.zig`)**:
-   - 3-dimensional combinatorial map (3-map adding the $\phi_3$ involution across shared faces between adjacent volumes) backed by `DataContainer`s (`dart_data`, `vertex_data`, `edge_data`, `face_data`, `volume_data`) and a shared `BufferPool(u32)`.
+   - 3-dimensional combinatorial map (3-map adding the $\phi_3$ involution across shared faces between adjacent volumes) backed by `DataContainer`s (`dart_data`, `vertex_data`, `edge_data`, `face_data`, `volume_data`).
 2. **Store (`src/models/VolumeMeshStore.zig`)**:
    - Central owner and observer hub matching [`SurfaceMeshStore.zig`](../../src/models/SurfaceMeshStore.zig): `VolumeMeshStdDatas` / `VolumeMeshStdData`, `VolumeMeshInfo`, `data_vbo`, `data_last_update`, primitive IBOs, and `leftPanel`.
 3. **AppContext, Modules & UI**:

@@ -992,7 +992,6 @@ pub fn rightPanel(m: *Module) void {
             if (pd.it_ctx == null) {
                 pd.it_ctx = intrinsic_triangulation.ITContext.init(
                     smp.app_ctx.allocator,
-                    smp.app_ctx.io,
                     smp.app_ctx.rng.random(),
                     sm,
                     info.std_datas.edge_length.?,

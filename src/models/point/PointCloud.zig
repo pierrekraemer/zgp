@@ -4,14 +4,10 @@ const PointCloud = @This();
 const std = @import("std");
 const assert = std.debug.assert;
 
-const zgp_log = std.log.scoped(.zgp);
-
 const data = @import("../../utils/data.zig");
 const DataContainer = data.DataContainer;
 const DataGen = data.DataGen;
 const Data = data.Data;
-
-const BufferPool = @import("../../utils/BufferPool.zig").BufferPool;
 
 // ------------------------------------------------------------------------- //
 // Basic types
@@ -24,8 +20,6 @@ pub const Point = u32;
 // ------------------------------------------------------------------------- //
 
 allocator: std.mem.Allocator,
-io: std.Io,
-point_buffer_pool: *BufferPool(Point), // the BufferPool is shared between PointClouds (owned by the PointCloudStore)
 
 point_data: DataContainer,
 
@@ -33,9 +27,8 @@ point_data: DataContainer,
 // Initialization, deinitialization
 // ------------------------------------------------------------------------- //
 
-pub fn init(pc: *PointCloud, allocator: std.mem.Allocator, io: std.Io, point_buffer_pool: *BufferPool(Point)) !void {
+pub fn init(pc: *PointCloud, allocator: std.mem.Allocator, io: std.Io) !void {
     pc.allocator = allocator;
-    pc.point_buffer_pool = point_buffer_pool;
     try pc.point_data.init(allocator, io);
 }
 
@@ -79,112 +72,50 @@ pub fn pointIterator(pc: *const PointCloud) PointIterator {
 // Parallel Cell Task Runner
 // ------------------------------------------------------------------------- //
 
-/// A ParallelPointTaskRunner allows to run tasks on the points in parallel.
-/// The `run` function takes a Task as an argument which is expected to expose a `run` function that takes a point as argument.
-/// The main thread iterates over the points and fills buffers, in a double-buffering scheme.
-/// Once the first group of buffers is filled, threads are spawned to run the task on these buffers, with a WaitGroup to track the completion of the tasks on this group of buffers.
-/// Meanwhile, the main thread continues to iterate over the points and fills the other group of buffers.
-/// Once the second group of buffers is filled, threads are spawned to run the task on these buffers, with a WaitGroup to track the completion of the tasks on this group of buffers.
-/// This process is repeated until all points have been processed.
+/// A ParallelPointTaskRunner runs tasks on the points in parallel,
+/// delegating work scheduling to `DataContainer.ParallelIndexTaskRunner`.
+/// The `task` must expose a `run(self: *Self / *const Self, point: Point) void` function.
 pub const ParallelPointTaskRunner = struct {
-    const PointBuffer = BufferPool(Point).Buffer;
-    const max_workers = 32;
+    dc_runner: DataContainer.ParallelIndexTaskRunner,
 
-    point_cloud: *PointCloud,
-    iterator: PointIterator,
-    // manage two groups of buffers to be able to run tasks on one group while filling the other
-    buffers: [2][max_workers]PointBuffer,
-    nb_workers: usize,
-    // one Group per group of buffers to be able to wait for the completion of tasks on each group independently
-    wg: [2]std.Io.Group,
-
-    pub fn init(pc: *PointCloud) !@This() {
-        return initWithWorkerCount(pc, try std.Thread.getCpuCount());
+    pub fn init(pc: *const PointCloud) !ParallelPointTaskRunner {
+        return .{ .dc_runner = try .init(&pc.point_data) };
     }
 
-    pub fn initWithWorkerCount(pc: *PointCloud, nb_workers: usize) !@This() {
-        if (nb_workers == 0 or nb_workers > max_workers) {
-            return error.InvalidWorkerCount;
-        }
-
-        var pctr: @This() = .{
-            .point_cloud = pc,
-            .iterator = pointIterator(pc),
-            .buffers = undefined,
-            .nb_workers = nb_workers,
-            .wg = .{ .init, .init },
-        };
-
-        for (0..2) |group| {
-            for (0..nb_workers) |worker| {
-                pctr.buffers[group][worker] = try pc.point_buffer_pool.acquire();
-            }
-        }
-
-        return pctr;
+    pub fn initWithWorkerCount(pc: *const PointCloud, nb_workers: usize) !ParallelPointTaskRunner {
+        return .{ .dc_runner = try .initWithWorkerCount(&pc.point_data, nb_workers) };
     }
 
-    pub fn deinit(pctr: *ParallelPointTaskRunner) void {
-        for (0..2) |i| {
-            for (pctr.buffers[i][0..pctr.nb_workers]) |*buffer| {
-                buffer.release() catch |err| {
-                    zgp_log.warn("Failed to release buffer: {}", .{err});
-                };
-            }
-        }
-    }
-
-    pub fn reset(pctr: *ParallelPointTaskRunner) void {
-        pctr.iterator.reset();
-    }
-
-    fn runTaskOnBuffer(Task: type) fn (*const Task, []Point) void {
-        return struct {
-            fn f(task: *const Task, buf: []Point) void {
-                for (buf) |cell| task.run(cell);
-            }
-        }.f;
-    }
-
-    // The `task` must expose a `run(self: *Self, point: Point) void` function
-    pub fn run(pptr: *ParallelPointTaskRunner, io: std.Io, task: anytype) !void {
-        var current_buf_group: usize = 0;
-        var current_buf_index: usize = 0;
-        var current_index_in_buffer: usize = 0;
-        while (pptr.iterator.next()) |p| {
-            // add point to current buffer of current buffer group
-            pptr.buffers[current_buf_group][current_buf_index].data[current_index_in_buffer] = p;
-            current_index_in_buffer += 1;
-            // if the current buffer is full, run the task on it and switch to the next buffer of the current buffer group
-            if (current_index_in_buffer == pptr.buffers[current_buf_group][current_buf_index].data.len) {
-                pptr.wg[current_buf_group].async(
-                    io,
-                    runTaskOnBuffer(@TypeOf(task)),
-                    .{ &task, pptr.buffers[current_buf_group][current_buf_index].data },
-                );
-                current_buf_index += 1;
-                current_index_in_buffer = 0;
-            }
-            // if we have used all the buffers of the current buffer group, switch to the next buffer group
-            if (current_buf_index == pptr.nb_workers) {
-                current_buf_group = (current_buf_group + 1) % 2;
-                // threads working on this buffer group are waited on before we can reuse the buffers of this group
-                try pptr.wg[current_buf_group].await(io);
-                current_buf_index = 0;
-            }
-        }
-        // run the task on the last potentially partially filled buffer and wait for the threads to finish
-        if (current_index_in_buffer > 0) {
-            pptr.wg[current_buf_group].async(
-                io,
-                runTaskOnBuffer(@TypeOf(task)),
-                .{ &task, pptr.buffers[current_buf_group][current_buf_index].data[0..current_index_in_buffer] },
-            );
-        }
-        try pptr.wg[0].await(io);
-        try pptr.wg[1].await(io);
+    pub fn run(pptr: *const ParallelPointTaskRunner, task: anytype) !void {
+        try pptr.dc_runner.run(task);
     }
 };
+
+/// A ParallelPointTaskRunnerWithContext runs tasks on the points in parallel,
+/// giving each worker its own `Context` via `DataContainer.ParallelIndexTaskRunnerWithContext`.
+/// `Context` must have an `initialized: bool` field and a `deinit(self: *Context) void` function.
+/// The `task` must expose a `run(self: *Self / *const Self, ctx: *Context, point: Point) void` function.
+pub fn ParallelPointTaskRunnerWithContext(comptime Context: type) type {
+    return struct {
+        dc_runner: DataContainer.ParallelIndexTaskRunnerWithContext(Context),
+
+        pub fn init(pc: *const PointCloud) !@This() {
+            return .{ .dc_runner = try .init(&pc.point_data) };
+        }
+
+        pub fn initWithWorkerCount(pc: *const PointCloud, nb_workers: usize) !@This() {
+            return .{ .dc_runner = try .initWithWorkerCount(&pc.point_data, nb_workers) };
+        }
+
+        pub fn deinit(pptr: *@This()) void {
+            pptr.dc_runner.deinit();
+        }
+
+        pub fn run(pptr: *@This(), task: anytype) !void {
+            try pptr.dc_runner.run(task);
+        }
+    };
+}
 
 // ------------------------------------------------------------------------- //
 // Point Data

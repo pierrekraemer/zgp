@@ -31,7 +31,6 @@ pub fn halfedgeCotanWeight(
 /// Compute the cotan weights of all halfedges of the given SurfaceMesh
 /// and store them in the given halfedge_cotan_weight data.
 pub fn computeHalfedgeCotanWeights(
-    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     halfedge_cotan_weight: *SurfaceMesh.HalfedgeData(f32),
@@ -50,9 +49,8 @@ pub fn computeHalfedgeCotanWeights(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelHalfedgeTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelHalfedgeTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .halfedge_cotan_weight = halfedge_cotan_weight,
@@ -84,7 +82,6 @@ pub fn halfedgeCotanWeightIntrinsic(
 /// and store them in the given halfedge_cotan_weight data.
 /// This version uses intrinsic geometry (edge lengths and face areas) instead of extrinsic vertex positions.
 pub fn computeHalfedgeCotanWeightsIntrinsic(
-    io: std.Io,
     sm: *SurfaceMesh,
     edge_length: SurfaceMesh.EdgeData(f32),
     face_area: SurfaceMesh.FaceData(f32),
@@ -106,9 +103,8 @@ pub fn computeHalfedgeCotanWeightsIntrinsic(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelHalfedgeTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelHalfedgeTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .edge_length = edge_length,
         .face_area = face_area,

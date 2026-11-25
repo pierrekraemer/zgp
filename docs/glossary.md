@@ -20,8 +20,8 @@ This glossary defines the canonical terms used across the `zgp` codebase and doc
 - **`Data(T)`** (`src/utils/data.zig`): A single typed `ArrayList(T)` attribute column owned by a `DataContainer`, synchronized in length with the container's `size`.
 - **`DataGen`** (`src/utils/data.zig`): Type-erased interface header embedded inside every `Data(T)`. Holds `name`, owning `container`, comptime `type_id`, and a `VTable` (`deinit`, `ensureSize`, `clearRetainingCapacity`, `clone`). Used as the map key for GPU `VBO` caches and `data_last_update` timestamps in stores.
 - **Marker** (`DataContainer.acquireMarker`, `DartMarker`, `CellMarker`): A pooled, thread-safely acquired `*Data(bool)` array automatically cleared on acquisition and reused on release (`defer marker.deinit()`).
-- **`BufferPool(T)`** (`src/utils/BufferPool.zig`): Thread-safe LIFO pool of fixed-size slices owned by each Store and shared across all models in that store.
-- **`Parallel*TaskRunner`** (`SurfaceMesh.ParallelCellTaskRunner`, `ParallelCellTaskRunnerWithContext`, `PointCloud.ParallelPointTaskRunner`): Double-buffered work-batching runner using `BufferPool` and two `std.Io.Group`s to evaluate per-cell or per-point tasks across worker threads.
+- **`BufferPool(T)`** (`src/utils/BufferPool.zig`): Thread-safe LIFO pool of fixed-size slices (general utility, currently unused by models/stores).
+- **`Parallel*TaskRunner`** (`DataContainer.ParallelIndexTaskRunner*`, wrapped by `SurfaceMesh.ParallelCellTaskRunner*` and `PointCloud.ParallelPointTaskRunner*`): Atomic chunk-stealing runner over `[0, dc.size)` using `std.atomic.Value(u32)` and a single `std.Io.Group` (with a dense fast-path when `nb_inactive_indices == 0`) to evaluate per-cell or per-point tasks across worker threads.
 
 ---
 

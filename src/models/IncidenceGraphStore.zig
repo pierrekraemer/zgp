@@ -18,7 +18,6 @@ const IncidenceGraph = @import("incidenceGraph/IncidenceGraph.zig");
 
 const Data = @import("../utils/data.zig").Data;
 const DataGen = @import("../utils/data.zig").DataGen;
-const BufferPool = @import("../utils/BufferPool.zig").BufferPool;
 
 const VBO = @import("../rendering/VBO.zig");
 const IBO = @import("../rendering/IBO.zig");
@@ -78,8 +77,6 @@ data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
 // updated upon calls to incidenceGraphDataUpdated
 data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.Io.Timestamp),
 
-index_buffer_pool: BufferPool(u32),
-
 pub fn init(io: std.Io, allocator: std.mem.Allocator) !IncidenceGraphStore {
     return .{
         .io = io,
@@ -89,7 +86,6 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !IncidenceGraphStore {
         .incidence_graphs_info = .empty,
         .data_vbo = .empty,
         .data_last_update = .empty,
-        .index_buffer_pool = try .init(io, allocator, 1024, 64, 32),
     };
 }
 
@@ -117,8 +113,6 @@ pub fn deinit(igs: *IncidenceGraphStore) void {
     igs.data_vbo.deinit(igs.allocator);
 
     igs.data_last_update.deinit(igs.allocator);
-
-    igs.index_buffer_pool.deinit();
 }
 
 pub fn addListener(igs: *IncidenceGraphStore, module: *Module) !void {
@@ -142,7 +136,7 @@ pub fn createIncidenceGraph(igs: *IncidenceGraphStore, name: []const u8) !*Incid
     // create and init the IncidenceGraph
     const ig = try igs.allocator.create(IncidenceGraph);
     errdefer igs.allocator.destroy(ig);
-    try ig.init(igs.allocator, igs.io, &igs.index_buffer_pool);
+    try ig.init(igs.allocator, igs.io);
     errdefer ig.deinit();
 
     // register the IncidenceGraph in the IncidenceGraphStore to make it available in the UI and for other modules

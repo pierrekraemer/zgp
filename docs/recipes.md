@@ -26,7 +26,7 @@ Quick, repeatable checklists for common extension tasks in `zgp`.
 ## 2. Add a New `SurfaceMesh` Algorithm
 
 1. **Keep it pure under `src/models/surface/<algo>.zig`**:
-   - Accept `*SurfaceMesh` (or `*const SurfaceMesh`), explicit `CellData` / `CellSet` / `TrianglesBVH` handles, and any needed `allocator` / `io`. Do **not** import `AppContext`, `ui/`, or `rendering/`.
+   - Accept `*SurfaceMesh` (or `*const SurfaceMesh`), explicit `CellData` / `CellSet` / `TrianglesBVH` handles, and any needed `allocator`. Do **not** import `AppContext`, `ui/`, or `rendering/`.
 2. **Follow `SurfaceMesh` & `DataContainer` conventions**:
    - Name temporary cell attributes with a `__<algo>_*` prefix and clean them up with `defer sm.removeData(tmp);`.
    - Clean up markers with `defer marker.deinit();`.
@@ -70,7 +70,7 @@ Quick, repeatable checklists for common extension tasks in `zgp`.
 ## 5. Add a New Model Type (e.g., `VolumeMesh`)
 
 When implementing a new model family such as [`VolumeMesh`](05-models/volume-mesh.md):
-1. Implement the core model struct in `src/models/<kind>/<Model>.zig` using `DataContainer`s and a shared `BufferPool`.
+1. Implement the core model struct in `src/models/<kind>/<Model>.zig` using `DataContainer`s.
 2. Implement `src/models/<Model>Store.zig` mirroring `SurfaceMeshStore.zig` (`*StdDatas`, `*StdData`, `*Info`, `data_vbo`, `data_last_update`, `listeners`, `leftPanel`).
 3. Add the new variant to `AppContext.ModelSelection` and `Module.SupportedModels`, plus lifecycle/update hooks to `Module.VTable`.
 4. Add `imgui.<model>ListBox` and `<model>CellDataComboBox` helpers in `src/ui/imgui.zig`.

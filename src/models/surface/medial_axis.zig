@@ -59,7 +59,6 @@ pub fn shrinkingBall(
 
 /// Compute the shrinking balls for all vertices of the given SurfaceMesh
 pub fn computeVertexShrinkingBalls(
-    io: std.Io,
     sm: *SurfaceMesh,
     sm_bvh: *bvh.TrianglesBVH,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
@@ -83,9 +82,8 @@ pub fn computeVertexShrinkingBalls(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .sm_bvh = sm_bvh,
         .vertex_position = vertex_position,
@@ -97,7 +95,6 @@ pub fn computeVertexShrinkingBalls(
 /// Context for computing medial axis of a SurfaceMesh using the Variational Medial Axis Skeleton (VMAS) method.
 pub const VMASContext = struct {
     allocator: std.mem.Allocator,
-    io: std.Io,
 
     surface_mesh: *SurfaceMesh,
     // given data
@@ -128,7 +125,6 @@ pub const VMASContext = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        io: std.Io,
         surface_mesh: *SurfaceMesh,
         surface_mesh_bvh: *bvh.TrianglesBVH,
         vertex_position: SurfaceMesh.VertexData(Vec3f),
@@ -160,7 +156,6 @@ pub const VMASContext = struct {
         skeleton.clearRetainingCapacity();
 
         try sqem.computeVertexSQEMs(
-            io,
             surface_mesh,
             vertex_position,
             vertex_area,
@@ -172,7 +167,6 @@ pub const VMASContext = struct {
         );
 
         try computeVertexShrinkingBalls(
-            io,
             surface_mesh,
             surface_mesh_bvh,
             vertex_position,
@@ -182,7 +176,6 @@ pub const VMASContext = struct {
 
         return .{
             .allocator = allocator,
-            .io = io,
 
             .surface_mesh = surface_mesh,
             .surface_mesh_bvh = surface_mesh_bvh,
@@ -272,7 +265,6 @@ pub const VMASContext = struct {
 
     pub fn updateVertexSQEMs(vmas_ctx: *VMASContext, line_quadric_epsilon: f32) !void {
         try sqem.computeVertexSQEMs(
-            vmas_ctx.io,
             vmas_ctx.surface_mesh,
             vmas_ctx.vertex_position,
             vmas_ctx.vertex_area,

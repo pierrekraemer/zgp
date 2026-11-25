@@ -42,7 +42,6 @@ const DistanceData = struct {
 
         dd.hm_ctx = try .init(
             dd.app_ctx.allocator,
-            dd.app_ctx.io,
             dd.surface_mesh,
             halfedge_cotan_weight,
             vertex_position,

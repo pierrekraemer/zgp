@@ -109,7 +109,7 @@ Modules store a back-pointer `app_ctx: *AppContext` and register `&self.module` 
 Destruction runs in reverse dependency order:
 1. `deinit()` all 19 modules (unsubscribing listeners and freeing per-model parameters/contexts).
 2. Free `modules` list.
-3. `deinit()` all three stores (destroying owned models, `*Info` BVH/KDTree/IBOs, VBOs, and `BufferPool`s).
+3. `deinit()` all three stores (destroying owned models, `*Info` BVH/KDTree/IBOs, and VBOs).
 4. `Shader.deinitRegistry()` (deleting all compiled OpenGL shader programs while the GL context is still alive).
 5. `view.deinit()` and finally `window.deinit()` (destroying the GL context and SDL window).
 

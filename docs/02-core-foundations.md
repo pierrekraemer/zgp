@@ -67,27 +67,24 @@ DataContainer
 
 ---
 
-## 2. `BufferPool` & Double-Buffered Parallel Task Runners
+## 2. Parallel Task Runners & `BufferPool`
+
+### Atomic Chunk-Stealing `ParallelIndexTaskRunner` (`src/utils/data.zig`)
+
+Parallel per-element iteration lives directly on `DataContainer` (`DataContainer.ParallelIndexTaskRunner` and `DataContainer.ParallelIndexTaskRunnerWithContext(Context)`) and is wrapped with typed cell/point handles by `SurfaceMesh.ParallelCellTaskRunner*` and `PointCloud.ParallelPointTaskRunner*`:
+
+1. `run(task)` uses the `DataContainer`'s stored `dc.io`, computes a dynamic chunk size (`clamp(ceil(size / (nb_workers * 8)), 64, 1024)`), and caps `effective_workers = @min(nb_workers, total_chunks)` (with `init()` clamping `std.Thread.getCpuCount()` to `max_workers = 32`).
+2. Workers share a stack-local `next_index: std.atomic.Value(u32)` cursor and a single `std.Io.Group`, claiming `[start, end)` index ranges via `fetchAdd(chunk_size, .monotonic)` until `start >= size`.
+3. `effective_workers - 1` workers are spawned on `wg.async(...)` while the calling thread participates directly as worker `0`.
+4. **Dense fast-path**: When `dc.nb_inactive_indices == 0`, workers iterate `start..end` directly without touching `dc.is_active`; otherwise they query `dc.is_active.value(idx)` linearly.
+5. `ParallelIndexTaskRunner` owns no heap/buffer resources and therefore requires no `deinit()` or `reset()`. For tasks needing per-worker scratch state (e.g., `WithinSphereSelectionContext` in `curvature.zig`), `ParallelIndexTaskRunnerWithContext(Context)` keeps 1 `Context` per worker (requiring `initialized: bool` and `deinit(*Self) void`, destroyed in `runner.deinit()`).
 
 ### `BufferPool(T)` ([`src/utils/BufferPool.zig`](../src/utils/BufferPool.zig))
 
-A thread-safe LIFO pool of fixed-size slices (`[]T`), guarded by `std.Io.Mutex`:
-- Initialized in each model store (`init(io, allocator, 1024, 64, 32)` → 32 pre-allocated buffers of 1024 elements, max cached 64) and shared by pointer across all models in that store.
-- `acquire()` pops from `free_list` or allocates a fresh slice outside the lock, returning `Buffer { data: []T, pool }`.
-- Buffers are returned "dirty" (contents are not zeroed).
+A standalone thread-safe LIFO pool of fixed-size slices (`[]T`), guarded by `std.Io.Mutex` (kept available as a general utility; currently unused by models/stores):
+- `init(io, allocator, buffer_size, max_pool_size, init_pool_size)` pre-allocates `init_pool_size` slices of length `buffer_size`.
+- `acquire()` pops from `free_list` or allocates a fresh slice outside the lock, returning `Buffer { data: []T, pool }` ("dirty", not zeroed).
 - `Buffer.release()` returns the slice to `free_list` if below `max_pool_size`, else frees it. Note `release()` returns `!void` and `deinit()` only frees idle buffers currently in `free_list`.
-
-### Double-Buffered `Parallel*TaskRunner` Pattern
-
-Used by `SurfaceMesh.ParallelCellTaskRunner(cell_type)`, `SurfaceMesh.ParallelCellTaskRunnerWithContext(cell_type, Context)`, and `PointCloud.ParallelPointTaskRunner`:
-
-1. Acquires `2 × nb_workers` buffers (up to `max_workers = 32`, defaulting to `std.Thread.getCpuCount()`) organized into two buffer groups (`group 0` and `group 1`), each paired with a `std.Io.Group` (`wg[0]`, `wg[1]`).
-2. The main thread iterates cells/points and fills buffers in the active group.
-3. As soon as a buffer fills (1024 indices), it schedules `wg[group].async(io, ...)` to run `task.run(cell)` (or `task.run(ctx, cell)`) over that slice.
-4. When all `nb_workers` buffers in the active group are dispatched, it flips `group = (group + 1) % 2` and awaits the previous batch on that group (`try wg[group].await(io)`) before reusing its buffers.
-5. After iteration ends, it dispatches any partially filled buffer and awaits both `wg[0]` and `wg[1]`.
-
-For tasks needing thread-local scratch memory (e.g., `WithinSphereSelectionContext` in `curvature.zig`), `ParallelCellTaskRunnerWithContext` provides a per-buffer-slot `Context` struct (requiring `initialized: bool` and `deinit(*Self) void`).
 
 ---
 

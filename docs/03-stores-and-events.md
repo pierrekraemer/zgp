@@ -21,12 +21,10 @@ Every store follows the exact same structural blueprint:
 4. **Timestamp Tracking (`data_last_update`)**:
    - Maps `*const DataGen` → `std.Io.Timestamp`, refreshed on every `store.*DataUpdated(...)` call.
    - Enables reactive staleness checks across `*StdDatas` modules, BVH buttons, and KDTree buttons without manual dirty flags scattered across algorithms.
-5. **Shared Parallel Buffer Pool**:
-   - Owns a `BufferPool` (`u32` or `PointCloud.Point`, sized `1024 × 64`, 32 pre-allocated) passed by pointer to every model created in that store.
-6. **Observer Pattern (`listeners: ArrayList(*Module)`)**:
+5. **Observer Pattern (`listeners: ArrayList(*Module)`)**:
    - Modules call `store.addListener(&self.module)` in `init` and `store.removeListener(&self.module)` in `deinit`.
    - Stores broadcast lifecycle and mutation events to every registered listener.
-7. **Store Left-Panel UI (`leftPanel`)**:
+6. **Store Left-Panel UI (`leftPanel`)**:
    - Rendered in `AppContext.mainUI` whenever a model of that store's type is selected: shows cell counts table, a "Create cell data" modal (`bool`, `u32`, `f32`, `Vec3f`), Build/Update BVH or KDTree button (green when up to date, red when stale relative to positions), and a Delete button.
 
 ---
@@ -39,7 +37,6 @@ Every store follows the exact same structural blueprint:
 | **Spatial Index in `*Info`** | `TrianglesBVH` (`bvh`, `bvh_last_update`) | `PointsKDTree` (`kdtree`, `kdtree_last_update`) | None |
 | **Primitive IBOs in `*Info`** | `points_ibo`, `lines_ibo`, `triangles_ibo`, `boundaries_ibo` | `points_ibo` | `points_ibo`, `lines_ibo`, `triangles_ibo` |
 | **CellSet IBO Cache** | `cell_set_ibo` | — | — |
-| **Buffer Pool Element** | `u32` | `PointCloud.Point` (`u32`) | `u32` |
 | **File Loading** | `loadSurfaceMeshFromFile` (`.off` implemented; `.obj`/`.ply` stubbed) | `loadPointCloudFromFile` (stub) | `loadIncidenceGraphFromFile` (stub) |
 | **Debug Integrity Check** | `sm.checkIntegrity()` on load & `surfaceMeshConnectivityUpdated` | — | — |
 

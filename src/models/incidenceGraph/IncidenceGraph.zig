@@ -9,8 +9,6 @@ const DataContainer = data.DataContainer;
 const DataGen = data.DataGen;
 const Data = data.Data;
 
-const BufferPool = @import("../../utils/BufferPool.zig").BufferPool;
-
 // ------------------------------------------------------------------------- //
 // Basic types
 // ------------------------------------------------------------------------- //
@@ -51,8 +49,6 @@ pub fn cellType(C: type) CellType {
 // ------------------------------------------------------------------------- //
 
 allocator: std.mem.Allocator,
-io: std.Io,
-index_buffer_pool: *BufferPool(u32), // the BufferPool is shared between IncidenceGraphs (owned by the IncidenceGraphStore)
 
 vertex_data: DataContainer,
 edge_data: DataContainer,
@@ -81,9 +77,8 @@ pub fn dataContainerPtr(ig: anytype, cell_type: CellType) if (@typeInfo(@TypeOf(
 // Initialization, deinitialization
 // ------------------------------------------------------------------------- //
 
-pub fn init(ig: *IncidenceGraph, allocator: std.mem.Allocator, io: std.Io, index_buffer_pool: *BufferPool(u32)) !void {
+pub fn init(ig: *IncidenceGraph, allocator: std.mem.Allocator, io: std.Io) !void {
     ig.allocator = allocator;
-    ig.index_buffer_pool = index_buffer_pool;
     try ig.vertex_data.init(allocator, io);
     try ig.edge_data.init(allocator, io);
     try ig.face_data.init(allocator, io);

@@ -88,7 +88,6 @@ fn remesh(
 
     try remeshing.isotropicRemeshing(
         smc.app_ctx.allocator,
-        smc.app_ctx.io,
         sm,
         sm_bvh,
         edge_length_factor,
@@ -151,7 +150,7 @@ fn generateConvexHull(
     const t = std.Io.Timestamp.now(smc.app_ctx.io, .real);
 
     var pc: PointCloud = undefined;
-    try pc.init(smc.app_ctx.allocator, smc.app_ctx.io, &smc.app_ctx.point_cloud_store.point_buffer_pool);
+    try pc.init(smc.app_ctx.allocator, smc.app_ctx.io);
     defer pc.deinit();
     const point_position = try pc.addData(Vec3f, "position");
     var vertex_it = sm.vertexIterator();

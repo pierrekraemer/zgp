@@ -35,7 +35,6 @@ pub fn pointSQEM(
 /// Compute the SQEMs of all points of the given PointCloud
 /// and store them in the given point_sqem data.
 pub fn computePointSQEMs(
-    io: std.Io,
     pc: *PointCloud,
     point_position: PointCloud.PointData(Vec3f),
     point_normal: PointCloud.PointData(Vec3f),
@@ -66,9 +65,8 @@ pub fn computePointSQEMs(
         }
     };
 
-    var pctr: PointCloud.ParallelPointTaskRunner = try .init(pc);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: PointCloud.ParallelPointTaskRunner = try .init(pc);
+    try pctr.run(Task{
         .point_position = point_position,
         .point_normal = point_normal,
         // .point_area = point_area,

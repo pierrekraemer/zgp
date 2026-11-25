@@ -40,7 +40,6 @@ pub fn vertexSQEM(
 /// Compute the SQEMs of all vertices of the given SurfaceMesh
 /// and store them in the given vertex_sqem data.
 pub fn computeVertexSQEMs(
-    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     vertex_area: SurfaceMesh.VertexData(f32),
@@ -74,9 +73,8 @@ pub fn computeVertexSQEMs(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_area = vertex_area,

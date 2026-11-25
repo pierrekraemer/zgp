@@ -179,7 +179,6 @@ pub fn multiSourceDijkstraDistancesAndSources(
 /// Context for computing geodesic distances on a SurfaceMesh using the heat method.
 pub const HeatMethodContext = struct {
     allocator: std.mem.Allocator,
-    io: std.Io,
 
     surface_mesh: *SurfaceMesh,
     halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
@@ -204,7 +203,6 @@ pub const HeatMethodContext = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        io: std.Io,
         sm: *SurfaceMesh,
         halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
         vertex_position: SurfaceMesh.VertexData(Vec3f),
@@ -287,7 +285,6 @@ pub const HeatMethodContext = struct {
 
         return .{
             .allocator = allocator,
-            .io = io,
             .surface_mesh = sm,
             .halfedge_cotan_weight = halfedge_cotan_weight,
             .vertex_position = vertex_position,
@@ -347,7 +344,6 @@ pub const HeatMethodContext = struct {
 
         // compute the gradient of heat_t on each face
         try gradient.computeVertexScalarFieldFaceGradients(
-            hm_ctx.io,
             hm_ctx.surface_mesh,
             hm_ctx.vertex_position,
             hm_ctx.face_area,
@@ -368,7 +364,6 @@ pub const HeatMethodContext = struct {
 
         // compute the divergence of the face gradients at each vertex
         try gradient.computeFaceVectorFieldVertexDivergences(
-            hm_ctx.io,
             hm_ctx.surface_mesh,
             hm_ctx.halfedge_cotan_weight,
             hm_ctx.vertex_position,

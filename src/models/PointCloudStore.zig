@@ -16,7 +16,6 @@ const PointCloud = @import("point/PointCloud.zig");
 
 const Data = @import("../utils/data.zig").Data;
 const DataGen = @import("../utils/data.zig").DataGen;
-const BufferPool = @import("../utils/BufferPool.zig").BufferPool;
 
 const VBO = @import("../rendering/VBO.zig");
 const IBO = @import("../rendering/IBO.zig");
@@ -78,8 +77,6 @@ data_vbo: std.AutoHashMapUnmanaged(*const DataGen, VBO),
 // updated upon calls to pointCloudDataUpdated
 data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.Io.Timestamp),
 
-point_buffer_pool: BufferPool(PointCloud.Point),
-
 pub fn init(io: std.Io, allocator: std.mem.Allocator) !PointCloudStore {
     return .{
         .io = io,
@@ -89,7 +86,6 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !PointCloudStore {
         .point_clouds_info = .empty,
         .data_vbo = .empty,
         .data_last_update = .empty,
-        .point_buffer_pool = try .init(io, allocator, 1024, 64, 32),
     };
 }
 
@@ -117,8 +113,6 @@ pub fn deinit(pcs: *PointCloudStore) void {
     pcs.data_vbo.deinit(pcs.allocator);
 
     pcs.data_last_update.deinit(pcs.allocator);
-
-    pcs.point_buffer_pool.deinit();
 }
 
 pub fn addListener(pcs: *PointCloudStore, module: *Module) !void {
@@ -142,7 +136,7 @@ pub fn createPointCloud(pcs: *PointCloudStore, name: []const u8) !*PointCloud {
     // create and init the PointCloud
     const pc = try pcs.allocator.create(PointCloud);
     errdefer pcs.allocator.destroy(pc);
-    try pc.init(pcs.allocator, pcs.io, &pcs.point_buffer_pool);
+    try pc.init(pcs.allocator, pcs.io);
     errdefer pc.deinit();
 
     // register the PointCloud in the PointCloudStore to make it available in the UI and for other modules

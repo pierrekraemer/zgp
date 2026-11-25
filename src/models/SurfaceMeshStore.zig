@@ -16,7 +16,6 @@ const SurfaceMesh = @import("surface/SurfaceMesh.zig");
 
 const Data = @import("../utils/data.zig").Data;
 const DataGen = @import("../utils/data.zig").DataGen;
-const BufferPool = @import("../utils/BufferPool.zig").BufferPool;
 
 const VBO = @import("../rendering/VBO.zig");
 const IBO = @import("../rendering/IBO.zig");
@@ -98,8 +97,6 @@ cell_set_ibo: std.AutoHashMapUnmanaged(*const SurfaceMesh.CellSetGen, IBO),
 // updated upon calls to surfaceMeshDataUpdated
 data_last_update: std.AutoHashMapUnmanaged(*const DataGen, std.Io.Timestamp),
 
-index_buffer_pool: BufferPool(u32),
-
 pub fn init(io: std.Io, allocator: std.mem.Allocator) !SurfaceMeshStore {
     return .{
         .io = io,
@@ -110,7 +107,6 @@ pub fn init(io: std.Io, allocator: std.mem.Allocator) !SurfaceMeshStore {
         .data_vbo = .empty,
         .cell_set_ibo = .empty,
         .data_last_update = .empty,
-        .index_buffer_pool = try .init(io, allocator, 1024, 64, 32),
     };
 }
 
@@ -144,8 +140,6 @@ pub fn deinit(sms: *SurfaceMeshStore) void {
     sms.cell_set_ibo.deinit(sms.allocator);
 
     sms.data_last_update.deinit(sms.allocator);
-
-    sms.index_buffer_pool.deinit();
 }
 
 pub fn addListener(sms: *SurfaceMeshStore, module: *Module) !void {
@@ -169,7 +163,7 @@ pub fn createSurfaceMesh(sms: *SurfaceMeshStore, name: []const u8) !*SurfaceMesh
     // create and init the SurfaceMesh
     var sm = try sms.allocator.create(SurfaceMesh);
     errdefer sms.allocator.destroy(sm);
-    try sm.init(sms.allocator, sms.io, &sms.index_buffer_pool);
+    try sm.init(sms.allocator, sms.io);
     errdefer sm.deinit();
 
     // register the SurfaceMesh in the SurfaceMeshStore to make it available in the UI and for other modules

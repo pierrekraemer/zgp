@@ -45,7 +45,6 @@ fn edgeShouldFlip(sm: *const SurfaceMesh, edge: SurfaceMesh.Edge) bool {
 /// The given dependent datas will be updated accordingly after remeshing.
 pub fn isotropicRemeshing(
     allocator: std.mem.Allocator,
-    io: std.Io,
     sm: *SurfaceMesh,
     sm_bvh: *bvh.TrianglesBVH,
     edge_length_factor: f32,
@@ -170,8 +169,8 @@ pub fn isotropicRemeshing(
         if (!adaptive and iteration > 0) break;
 
         // remove "flat" degree-3 vertices
-        try normal.computeFaceNormals(io, sm, vertex_position.*, face_normal);
-        try angle.computeEdgeDihedralAngles(io, sm, vertex_position.*, face_normal.*, edge_dihedral_angle);
+        try normal.computeFaceNormals(sm, vertex_position.*, face_normal);
+        try angle.computeEdgeDihedralAngles(sm, vertex_position.*, face_normal.*, edge_dihedral_angle);
         vertex_it.reset();
         while (vertex_it.nextSafe()) |vertex| {
             const d = sm.dart(vertex);
@@ -370,11 +369,11 @@ pub fn isotropicRemeshing(
         // tangential relaxation
         // first, update datas needed for relaxation after remeshing operations
         try length.computeEdgeLengths(sm, vertex_position.*, edge_length);
-        try angle.computeCornerAngles(io, sm, vertex_position.*, corner_angle);
-        try area.computeFaceAreas(io, sm, vertex_position.*, face_area);
-        try normal.computeFaceNormals(io, sm, vertex_position.*, face_normal);
+        try angle.computeCornerAngles(sm, vertex_position.*, corner_angle);
+        try area.computeFaceAreas(sm, vertex_position.*, face_area);
+        try normal.computeFaceNormals(sm, vertex_position.*, face_normal);
         try area.computeVertexAreas(sm, face_area.*, vertex_area);
-        try normal.computeVertexNormals(io, sm, corner_angle.*, face_normal.*, vertex_normal);
+        try normal.computeVertexNormals(sm, corner_angle.*, face_normal.*, vertex_normal);
         vertex_it.reset();
         while (vertex_it.next()) |vertex| {
             const vd = sm.dart(vertex);
@@ -436,14 +435,13 @@ pub fn isotropicRemeshing(
         if (adaptive and (iteration == 0)) {
             // first, update data needed for sizing field computation
             try length.computeEdgeLengths(sm, vertex_position.*, edge_length);
-            try angle.computeCornerAngles(io, sm, vertex_position.*, corner_angle);
-            try area.computeFaceAreas(io, sm, vertex_position.*, face_area);
-            try normal.computeFaceNormals(io, sm, vertex_position.*, face_normal);
-            try angle.computeEdgeDihedralAngles(io, sm, vertex_position.*, face_normal.*, edge_dihedral_angle);
+            try angle.computeCornerAngles(sm, vertex_position.*, corner_angle);
+            try area.computeFaceAreas(sm, vertex_position.*, face_area);
+            try normal.computeFaceNormals(sm, vertex_position.*, face_normal);
+            try angle.computeEdgeDihedralAngles(sm, vertex_position.*, face_normal.*, edge_dihedral_angle);
             try area.computeVertexAreas(sm, face_area.*, vertex_area);
-            try normal.computeVertexNormals(io, sm, corner_angle.*, face_normal.*, vertex_normal);
+            try normal.computeVertexNormals(sm, corner_angle.*, face_normal.*, vertex_normal);
             try curvature.computeVertexCurvatures(
-                io,
                 sm,
                 vertex_position.*,
                 vertex_normal.*,

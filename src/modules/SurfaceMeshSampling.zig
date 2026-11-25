@@ -80,9 +80,8 @@ const SamplingData = struct {
 
         const dst_data, _ = try sd.samples.getOrAddData(T, src_data.name());
 
-        var pctr: PointCloud.ParallelPointTaskRunner = try .init(sd.samples);
-        defer pctr.deinit();
-        try pctr.run(sd.app_ctx.io, Task{
+        const pctr: PointCloud.ParallelPointTaskRunner = try .init(sd.samples);
+        try pctr.run(Task{
             .surface_point = sd.sample_surface_point,
             .src_data = src_data,
             .dst_data = dst_data,

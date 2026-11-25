@@ -45,7 +45,6 @@ pub fn vertexScalarFieldFaceGradient(
 /// and store them in the given face_gradient data.
 /// The faces of the SurfaceMesh are assumed to be triangular.
 pub fn computeVertexScalarFieldFaceGradients(
-    io: std.Io,
     sm: *SurfaceMesh,
     vertex_position: SurfaceMesh.VertexData(Vec3f),
     face_area: SurfaceMesh.FaceData(f32),
@@ -75,9 +74,8 @@ pub fn computeVertexScalarFieldFaceGradients(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelFaceTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelFaceTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .vertex_position = vertex_position,
         .vertex_scalar_field = vertex_scalar_field,
@@ -124,7 +122,6 @@ pub fn faceVectorFieldVertexDivergence(
 /// The given vector field and its computed divergence are of type f64 for improved precision.
 /// The faces of the SurfaceMesh are assumed to be triangular.
 pub fn computeFaceVectorFieldVertexDivergences(
-    io: std.Io,
     sm: *SurfaceMesh,
     halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
     vertex_position: SurfaceMesh.VertexData(Vec3f),
@@ -151,9 +148,8 @@ pub fn computeFaceVectorFieldVertexDivergences(
         }
     };
 
-    var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
-    defer pctr.deinit();
-    try pctr.run(io, Task{
+    const pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
+    try pctr.run(Task{
         .surface_mesh = sm,
         .halfedge_cotan_weight = halfedge_cotan_weight,
         .vertex_position = vertex_position,

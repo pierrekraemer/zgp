@@ -93,8 +93,6 @@ pub fn computeVertexOneRingRotation(
 
 /// ARAP deformation context.
 pub const ARAPContext = struct {
-    io: std.Io,
-
     surface_mesh: *SurfaceMesh, // the original SurfaceMesh
     vertex_position: SurfaceMesh.VertexData(Vec3f), // defined on the original SurfaceMesh, updated by the ARAP solver
 
@@ -126,7 +124,6 @@ pub const ARAPContext = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-        io: std.Io,
         sm: *SurfaceMesh,
         vertex_position: SurfaceMesh.VertexData(Vec3f),
         halfedge_cotan_weight: SurfaceMesh.HalfedgeData(f32),
@@ -198,7 +195,6 @@ pub const ARAPContext = struct {
         const solve_mat: eigen.DenseMatrix = .init(@intCast(nb_free), 3);
 
         return .{
-            .io = io,
             .surface_mesh = sm,
             .vertex_position = vertex_position,
             .vertex_position_rest = vertex_position_rest,
@@ -303,12 +299,11 @@ pub const ARAPContext = struct {
             }
         };
 
-        var pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(arap_ctx.compute_surface_mesh);
-        defer pctr.deinit();
+        const pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(arap_ctx.compute_surface_mesh);
 
         for (0..@intCast(arap_ctx.nb_iterations)) |_| {
             // compute best-fit rotation for each vertex
-            try pctr.run(arap_ctx.io, ComputeVertexRotationTask{
+            try pctr.run(ComputeVertexRotationTask{
                 .surface_mesh = arap_ctx.compute_surface_mesh,
                 .halfedge_cotan_weight = arap_ctx.compute_halfedge_cotan_weight,
                 .vertex_position_rest = arap_ctx.vertex_position_rest,
@@ -317,8 +312,7 @@ pub const ARAPContext = struct {
             });
 
             // prepare the right-hand side matrix (nb_free x 3)
-            pctr.reset();
-            try pctr.run(arap_ctx.io, SetupVertexRHSTask{
+            try pctr.run(SetupVertexRHSTask{
                 .surface_mesh = arap_ctx.compute_surface_mesh,
                 .halfedge_cotan_weight = arap_ctx.compute_halfedge_cotan_weight,
                 .vertex_position_rest = arap_ctx.vertex_position_rest,
@@ -332,8 +326,7 @@ pub const ARAPContext = struct {
             arap_ctx.factorized_L.solveMultipleRHS(arap_ctx.rhs_mat, arap_ctx.solve_mat);
 
             // Write solved positions back
-            pctr.reset();
-            try pctr.run(arap_ctx.io, WriteSolvedPositionsTask{
+            try pctr.run(WriteSolvedPositionsTask{
                 .surface_mesh = arap_ctx.compute_surface_mesh,
                 .free_vertex_index = arap_ctx.free_vertex_index,
                 .solve_mat = arap_ctx.solve_mat,
