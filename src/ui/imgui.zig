@@ -13,7 +13,29 @@ const IncidenceGraph = @import("../models/incidenceGraph/IncidenceGraph.zig");
 
 const Data = @import("../utils/data.zig").Data;
 
+const imgui_log = std.log.scoped(.imgui);
+
 // const icons_glyph_ranges = [_]c.ImWchar{ c.ICON_MIN_FA, c.ICON_MAX_FA, 0 };
+
+/// Resolve a font filename relative to `SDL_GetBasePath()` (`../share/zgp/fonts/<name>`),
+/// falling back to `src/ui/<name>` (for `zig build run`, which executes from `.zig-cache`).
+fn resolveFontPath(buf: []u8, filename: []const u8) ?[:0]const u8 {
+    if (c.SDL_GetBasePath()) |base_ptr| {
+        const base_path = std.mem.span(base_ptr);
+        if (std.fmt.bufPrintSentinel(buf, "{s}../share/zgp/fonts/{s}", .{ base_path, filename }, 0)) |path| {
+            if (c.SDL_GetPathInfo(path.ptr, null)) {
+                return path;
+            }
+        } else |_| {}
+    }
+    if (std.fmt.bufPrintSentinel(buf, "src/ui/{s}", .{filename}, 0)) |fallback| {
+        if (c.SDL_GetPathInfo(fallback.ptr, null)) {
+            return fallback;
+        }
+    } else |_| {}
+    imgui_log.err("Could not find font file '{s}'", .{filename});
+    return null;
+}
 
 pub fn init(sdl_window: *c.SDL_Window, gl_context: c.SDL_GLContext) void {
     _ = c.CIMGUI_CHECKVERSION();
@@ -34,8 +56,12 @@ pub fn init(sdl_window: *c.SDL_Window, gl_context: c.SDL_GLContext) void {
     const imio = c.ImGui_GetIO();
     imio.*.ConfigFlags = c.ImGuiConfigFlags_NavEnableKeyboard | c.ImGuiConfigFlags_DockingEnable | c.ImGuiConfigFlags_ViewportsEnable;
 
+    var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+
     // _ = c.ImFontAtlas_AddFontDefaultVector(imio.*.Fonts, null);
-    _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/ui/DroidSans.ttf", font_size, null, null);
+    if (resolveFontPath(&path_buf, "DroidSans.ttf")) |path| {
+        _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, path.ptr, font_size, null, null);
+    }
     var font_config: c.ImFontConfig = .{
         .Name = @import("std").mem.zeroes([40]u8),
         .FontData = null,
@@ -71,8 +97,12 @@ pub fn init(sdl_window: *c.SDL_Window, gl_context: c.SDL_GLContext) void {
     font_config.RasterizerMultiply = 1.0;
     font_config.RasterizerDensity = 1.0;
     font_config.ExtraSizeScale = 1.0;
-    _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/ui/fa-regular-400.ttf", font_size, &font_config, null);
-    _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, "src/ui/fa-solid-900.ttf", font_size, &font_config, null);
+    if (resolveFontPath(&path_buf, "fa-regular-400.ttf")) |path| {
+        _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, path.ptr, font_size, &font_config, null);
+    }
+    if (resolveFontPath(&path_buf, "fa-solid-900.ttf")) |path| {
+        _ = c.ImFontAtlas_AddFontFromFileTTF(imio.*.Fonts, path.ptr, font_size, &font_config, null);
+    }
 
     const shader_version = switch (gl.info.api) {
         .gl => (

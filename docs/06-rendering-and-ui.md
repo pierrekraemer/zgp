@@ -92,7 +92,7 @@ All 17 shader wrappers follow one consistent pattern:
 - Exposes `Window.errify(val)` to convert SDL return values (`bool`, nullable pointer, ints) into `error{SdlError}!T`.
 
 ### `imgui` ([`src/ui/imgui.zig`](../src/ui/imgui.zig))
-- `init(sdl_window, gl_context)`: Configures Dark theme, loads `src/ui/DroidSans.ttf` (16px) merged with FontAwesome 7 (`fa-regular-400.ttf`, `fa-solid-900.ttf`), enables keyboard nav, docking, and multi-viewports, and initializes `cImGui_ImplSDL3` + `cImGui_ImplOpenGL3` (`#version 410 core`).
+- `init(sdl_window, gl_context)`: Configures Dark theme, loads `DroidSans.ttf` (16px) merged with FontAwesome 7 (`fa-regular-400.ttf`, `fa-solid-900.ttf`) from `<SDL_GetBasePath()>/../share/zgp/fonts/` (installed by `build.zig`, with a `src/ui/` fallback for `zig build run`), enables keyboard nav, docking, and multi-viewports, and initializes `cImGui_ImplSDL3` + `cImGui_ImplOpenGL3` (`#version 410 core`).
 - Provides reusable domain widgets returning `SelectionResult(T) = union(enum) { unchanged, cleared, changed: T }`:
   - Model list boxes: `pointCloudListBox`, `surfaceMeshListBox`, `incidenceGraphListBox` (clicking the active item returns `.cleared`).
   - Typed data combo boxes (filtered by `typedDataIterator(T)`): `pointCloudDataComboBox`, `surfaceMeshCellDataComboBox`, `incidenceGraphCellDataComboBox`.

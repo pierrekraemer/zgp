@@ -131,6 +131,10 @@ pub fn build(b: *std.Build) void {
     exe.root_module.addIncludePath(b.path("src"));
     b.installArtifact(exe);
 
+    b.installFile("src/ui/DroidSans.ttf", "share/zgp/fonts/DroidSans.ttf");
+    b.installFile("src/ui/fa-regular-400.ttf", "share/zgp/fonts/fa-regular-400.ttf");
+    b.installFile("src/ui/fa-solid-900.ttf", "share/zgp/fonts/fa-solid-900.ttf");
+
     // RUN CMD
 
     const run_cmd = b.addRunArtifact(exe);

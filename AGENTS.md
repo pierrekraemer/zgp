@@ -12,9 +12,9 @@ Compact reference for AI agents working on **zgp** (Zig Geometry Processing). Re
   - `ceigen` — Eigen C wrapper (`f64` scalar, `i32` index, column-major). Wrapped in `src/geometry/eigen.zig`.
   - `clibacc` — `libacc` BVH & KD-Tree C wrapper (`f32` scalar, `u32` index). Wrapped in `src/geometry/bvh.zig` & `kdtree.zig`.
   - `predicates` — Shewchuk exact geometric predicates (**single precision `float`**; requires `exactinit()` before use).
-- **Commands** (run from repo root so `src/ui/*.ttf` relative font paths resolve):
-  - Build: `zig build`
-  - Run: `zig build run -- [-n] [-c] <mesh.off> [...]`
+- **Commands**:
+  - Build: `zig build` (installs binary to `zig-out/bin/zgp` and fonts to `zig-out/share/zgp/fonts/`)
+  - Run: `./zig-out/bin/zgp [-n] [-c] <mesh.off> [...]` or `zig build run -- [-n] [-c] <mesh.off> [...]`
   - Test: `zig build test`
 
 ---

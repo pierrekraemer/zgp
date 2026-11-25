@@ -1,34 +1,33 @@
 # zgp — Zig Geometry Processing
 
-**zgp** is an interactive 3D geometry processing framework and viewer written in **Zig (`0.17.0`)**, built around SDL3, OpenGL 4.1 Core, and Dear ImGui (`cimgui`), with native C/C++ bindings for Eigen (`ceigen`), `libacc` (`clibacc`), and Shewchuk's exact geometric predicates (`predicates`).
+**zgp** is a 3D geometry processing framework and interactive viewer written in **Zig**.
+The viewer is built around SDL3, OpenGL 4.1 Core, and Dear ImGui.
 
 It provides a modular, event-driven architecture for inspecting, rendering, and processing multiple geometric model families:
 - **Surface Meshes** (`SurfaceMesh`) — 2-manifold combinatorial maps with a broad suite of differential geometry, remeshing, decimation, geodesic, deformation, medial axis, sampling, and parameterization algorithms.
-- **Point Clouds** (`PointCloud`) — attribute-rich point sets with KD-tree queries, convex hull construction, tangent basis estimation, SQEM, and variational medial axis computation.
+- **Point Clouds** (`PointCloud`) — attribute-rich point sets with KD-tree queries, convex hull construction, tangent basis estimation, SQEM, and medial axis computation.
 - **Incidence Graphs** (`IncidenceGraph`) — non-manifold cellular complexes (vertices, edges, faces) used for skeletons and general topological graphs.
-- **Volume Meshes** (`VolumeMesh`) — planned (stubbed).
+- **Volume Meshes** (`VolumeMesh`) — planned.
 
 ---
 
 ## Building & Running
 
-Requires **Zig 0.17.0** (see [`build.zig.zon`](build.zig.zon)).
+- Install zig:
+https://ziglang.org/download/
 
+- Clone the repo
+
+- Build the application
+  - debug: `$ zig build`
+  - fast: `$ zig build -Doptimize=fast`
+
+- Execute: 
 ```sh
-# Build the application
-zig build
-
-# Run with one or more surface mesh files (.off)
-# Flags (must precede file paths):
-#   -n   Normalize mesh positions to unit bounding-box extent
-#   -c   Center mesh around the origin
-zig build run -- -n -c path/to/mesh.off
-
-# Run unit tests
-zig build test
+# -n Normalize mesh positions to unit bounding-box extent
+# -c Center mesh around the origin
+$ ./zig-out/bin/zgp -n -c path/to/mesh.off
 ```
-
-> **Note:** `imgui.zig` loads fonts from relative paths under `src/ui/` (`DroidSans.ttf`, `fa-regular-400.ttf`, `fa-solid-900.ttf`), so run the executable from the repository root.
 
 ---
 
