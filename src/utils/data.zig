@@ -114,10 +114,18 @@ pub fn Data(comptime T: type) type {
             }
         }
 
-        pub fn copyFrom(self: *Self, src: *const Self) void {
-            assert(self.data_gen.type_id == src.data_gen.type_id);
-            assert(self.storage.items.len == src.storage.items.len);
-            @memcpy(self.storage.items, src.storage.items);
+        pub fn copyFrom(self: *Self, other: *const Self) void {
+            assert(self.data_gen.container == other.data_gen.container);
+            assert(self.storage.items.len == other.storage.items.len);
+            if (self == other) return;
+            @memcpy(self.storage.items, other.storage.items);
+        }
+
+        pub fn swap(self: *Self, other: *Self) void {
+            assert(self.data_gen.container == other.data_gen.container);
+            assert(self.storage.items.len == other.storage.items.len);
+            if (self == other) return;
+            std.mem.swap(std.ArrayList(T), &self.storage, &other.storage);
         }
 
         pub const Iterator = BaseIterator(*Self, *T);

@@ -368,67 +368,100 @@ pub fn isotropicRemeshing(
 
         // tangential relaxation
         // first, update datas needed for relaxation after remeshing operations
-        try length.computeEdgeLengths(sm, vertex_position.*, edge_length);
         try angle.computeCornerAngles(sm, vertex_position.*, corner_angle);
         try area.computeFaceAreas(sm, vertex_position.*, face_area);
         try normal.computeFaceNormals(sm, vertex_position.*, face_normal);
         try area.computeVertexAreas(sm, face_area.*, vertex_area);
         try normal.computeVertexNormals(sm, corner_angle.*, face_normal.*, vertex_normal);
-        vertex_it.reset();
-        while (vertex_it.next()) |vertex| {
-            const vd = sm.dart(vertex);
-            if (sm.isOrbitIncidentToBoundary(vd, .vertex) or (preserve_features and feature_vertex.isMarked(vertex))) {
-                continue;
-            }
-            var q = vec.zero(Vec3f);
-            var w: f32 = 0.0;
-            if (adaptive and iteration > 0) {
-                var dart_it = sm.vertexDartIterator(vd);
-                while (dart_it.next()) |d| {
-                    const f = sm.face(d);
-                    var avg_sizing_field: f32 = 0.0;
-                    var avg_position = vec.zero(Vec3f);
-                    var count: u32 = 0;
-                    var face_dart_it = sm.faceDartIterator(d);
-                    while (face_dart_it.next()) |fd| {
-                        const iv = sm.vertex(fd);
-                        avg_sizing_field += vertex_sizing_field.value(iv);
-                        avg_position = vec.add(avg_position, vertex_position.value(iv));
-                        count += 1;
+
+        {
+            var vertex_position_new = try sm.addData(.vertex, Vec3f, "__vertex_position_new");
+            defer sm.removeData(vertex_position_new);
+
+            const RelaxVertexTask = struct {
+                sm: *const SurfaceMesh,
+                sm_bvh: *const bvh.TrianglesBVH,
+                preserve_features: bool,
+                use_adaptive: bool,
+                feature_vertex: *const SurfaceMesh.VertexMarker,
+                vertex_position: SurfaceMesh.VertexData(Vec3f),
+                vertex_normal: SurfaceMesh.VertexData(Vec3f),
+                vertex_area: SurfaceMesh.VertexData(f32),
+                face_area: SurfaceMesh.FaceData(f32),
+                vertex_sizing_field: SurfaceMesh.VertexData(f32),
+                vertex_position_new: *SurfaceMesh.VertexData(Vec3f),
+
+                pub fn run(t: *const @This(), vertex: SurfaceMesh.Vertex) void {
+                    const p = t.vertex_position.value(vertex);
+                    const vd = t.sm.dart(vertex);
+                    if (t.sm.isOrbitIncidentToBoundary(vd, .vertex) or
+                        (t.preserve_features and t.feature_vertex.isMarked(vertex)))
+                    {
+                        t.vertex_position_new.valuePtr(vertex).* = p;
+                        return;
                     }
-                    avg_sizing_field /= @floatFromInt(count);
-                    avg_position = vec.divScalar(avg_position, @floatFromInt(count));
-                    const a = face_area.value(f) * avg_sizing_field;
-                    q = vec.add(q, vec.mulScalar(avg_position, a));
-                    w += a;
+
+                    var q = vec.zero(Vec3f);
+                    var w: f32 = 0.0;
+                    if (t.use_adaptive) {
+                        var dart_it = t.sm.vertexDartIterator(vd);
+                        while (dart_it.next()) |d| {
+                            const f = t.sm.face(d);
+                            var avg_sizing_field: f32 = 0.0;
+                            var avg_position = vec.zero(Vec3f);
+                            var count: u32 = 0;
+                            var face_dart_it = t.sm.faceDartIterator(d);
+                            while (face_dart_it.next()) |fd| {
+                                const iv = t.sm.vertex(fd);
+                                avg_sizing_field += t.vertex_sizing_field.value(iv);
+                                avg_position = vec.add(avg_position, t.vertex_position.value(iv));
+                                count += 1;
+                            }
+                            avg_sizing_field /= @floatFromInt(count);
+                            avg_position = vec.divScalar(avg_position, @floatFromInt(count));
+                            const a = t.face_area.value(f) * avg_sizing_field;
+                            q = vec.add(q, vec.mulScalar(avg_position, a));
+                            w += a;
+                        }
+                    } else {
+                        var dart_it = t.sm.vertexDartIterator(vd);
+                        while (dart_it.next()) |d| {
+                            const nv = t.sm.vertex(t.sm.phi1(d));
+                            const a = t.vertex_area.value(nv);
+                            q = vec.add(q, vec.mulScalar(t.vertex_position.value(nv), a));
+                            w += a;
+                        }
+                    }
+
+                    if (w > 0.0) {
+                        q = vec.divScalar(q, w);
+                        const n = t.vertex_normal.value(vertex);
+                        t.vertex_position_new.valuePtr(vertex).* = t.sm_bvh.closestPoint(vec.add(
+                            q,
+                            vec.mulScalar(n, vec.dot(n, vec.sub(p, q))),
+                        ));
+                    } else {
+                        t.vertex_position_new.valuePtr(vertex).* = p;
+                    }
                 }
-            } else {
-                var dart_it = sm.vertexDartIterator(vd);
-                while (dart_it.next()) |d| {
-                    const nv = sm.vertex(sm.phi1(d));
-                    const a = vertex_area.value(nv);
-                    q = vec.add(
-                        q,
-                        vec.mulScalar(vertex_position.value(nv), a),
-                    );
-                    w += a;
-                }
-            }
-            if (w > 0.0) {
-                q = vec.divScalar(q, w);
-                const n = vertex_normal.value(vertex);
-                const p = vertex_position.value(vertex);
-                vertex_position.valuePtr(vertex).* = sm_bvh.closestPoint(vec.add(
-                    q,
-                    vec.mulScalar(
-                        n,
-                        vec.dot(
-                            n,
-                            vec.sub(p, q),
-                        ),
-                    ),
-                ));
-            }
+            };
+
+            const pctr: SurfaceMesh.ParallelVertexTaskRunner = try .init(sm);
+            try pctr.run(RelaxVertexTask{
+                .sm = sm,
+                .sm_bvh = sm_bvh,
+                .preserve_features = preserve_features,
+                .use_adaptive = adaptive and iteration > 0,
+                .feature_vertex = &feature_vertex,
+                .vertex_position = vertex_position.*,
+                .vertex_normal = vertex_normal.*,
+                .vertex_area = vertex_area.*,
+                .face_area = face_area.*,
+                .vertex_sizing_field = vertex_sizing_field,
+                .vertex_position_new = &vertex_position_new,
+            });
+
+            vertex_position.data.swap(vertex_position_new.data);
         }
 
         // in the adaptive case, compute a curvature-based sizing field at the end of iterations 0

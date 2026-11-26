@@ -471,7 +471,7 @@ pub const DartMarker = struct {
         // assert(dm.isMarked(d));
         dm.marker.valuePtr(d).* = false;
     }
-    pub fn isMarked(dm: *DartMarker, d: Dart) bool {
+    pub fn isMarked(dm: *const DartMarker, d: Dart) bool {
         return dm.marker.value(d);
     }
 
@@ -516,7 +516,7 @@ pub fn CellMarker(comptime cell_type: CellType) type {
         pub fn unmark(cm: *@This(), c: Cell(cell_type)) void {
             cm.marker.valuePtr(c.index).* = false;
         }
-        pub fn isMarked(cm: *@This(), c: Cell(cell_type)) bool {
+        pub fn isMarked(cm: *const @This(), c: Cell(cell_type)) bool {
             return cm.marker.value(c.index);
         }
 
