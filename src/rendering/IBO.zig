@@ -19,6 +19,7 @@ const Primitive = enum {
 // (1 index per point, 2 indices per line, 3 indices per triangle, etc.)
 index: c_uint = 0,
 nb_indices: usize = 0,
+allocated_bytes: usize = 0,
 
 primitive: Primitive = undefined,
 
@@ -29,6 +30,7 @@ primitive: Primitive = undefined,
 // so that data associated to the cell corresponding to a primitive can be accessed in the shader via PrimitiveID and a texture buffer
 cell_index_buffer_index: c_uint = 0,
 cell_index_buffer_nb_indices: usize = 0,
+cell_index_buffer_allocated_bytes: usize = 0,
 
 pub fn init() IBO {
     var i: IBO = .{};
@@ -42,32 +44,45 @@ pub fn deinit(i: *IBO) void {
         gl.DeleteBuffers(1, (&i.index)[0..1]);
         i.index = 0;
         i.nb_indices = 0;
+        i.allocated_bytes = 0;
     }
     if (i.cell_index_buffer_index != 0) {
         gl.DeleteBuffers(1, (&i.cell_index_buffer_index)[0..1]);
         i.cell_index_buffer_index = 0;
         i.cell_index_buffer_nb_indices = 0;
+        i.cell_index_buffer_allocated_bytes = 0;
     }
 }
 
 pub fn fillFromIndexSlice(i: *IBO, indices: []const u32, cell_indices: []const u32) void {
     i.nb_indices = indices.len;
-    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, i.index);
-    gl.BufferData(
-        gl.ELEMENT_ARRAY_BUFFER,
-        @intCast(i.nb_indices * @sizeOf(u32)),
-        indices.ptr,
-        gl.STATIC_DRAW,
-    );
     i.cell_index_buffer_nb_indices = cell_indices.len;
-    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, i.cell_index_buffer_index);
-    gl.BufferData(
-        gl.ELEMENT_ARRAY_BUFFER,
-        @intCast(i.cell_index_buffer_nb_indices * @sizeOf(u32)),
-        cell_indices.ptr,
-        gl.STATIC_DRAW,
-    );
-    gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
+
+    const index_bytes = indices.len * @sizeOf(u32);
+    if (index_bytes > 0) {
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, i.index);
+        if (index_bytes <= i.allocated_bytes) {
+            gl.BufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, @intCast(index_bytes), indices.ptr);
+        } else {
+            gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, @intCast(index_bytes), indices.ptr, gl.STATIC_DRAW);
+            i.allocated_bytes = index_bytes;
+        }
+    }
+
+    const cell_index_bytes = cell_indices.len * @sizeOf(u32);
+    if (cell_index_bytes > 0) {
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, i.cell_index_buffer_index);
+        if (cell_index_bytes <= i.cell_index_buffer_allocated_bytes) {
+            gl.BufferSubData(gl.ELEMENT_ARRAY_BUFFER, 0, @intCast(cell_index_bytes), cell_indices.ptr);
+        } else {
+            gl.BufferData(gl.ELEMENT_ARRAY_BUFFER, @intCast(cell_index_bytes), cell_indices.ptr, gl.STATIC_DRAW);
+            i.cell_index_buffer_allocated_bytes = cell_index_bytes;
+        }
+    }
+
+    if (index_bytes > 0 or cell_index_bytes > 0) {
+        gl.BindBuffer(gl.ELEMENT_ARRAY_BUFFER, 0);
+    }
 }
 
 // TODO: PointCloud, SurfaceMesh & IncidenceGraph types should not really be here

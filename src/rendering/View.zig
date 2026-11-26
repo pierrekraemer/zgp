@@ -127,7 +127,12 @@ pub fn draw(view: *View, modules: []*Module) void {
         }
         if (view.show_grid) {
             gl.DepthMask(gl.FALSE);
-            view.infinite_grid_parameters.draw(view.camera.view_matrix, view.camera.projection_matrix);
+            view.infinite_grid_parameters.draw(
+                view.camera.view_matrix,
+                view.camera.projection_matrix,
+                view.camera.view_matrix_inv,
+                view.camera.projection_matrix_inv,
+            );
             gl.DepthMask(gl.TRUE);
         }
         gl.Disable(gl.DEPTH_TEST);

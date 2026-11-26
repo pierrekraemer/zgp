@@ -2,7 +2,6 @@ uniform mat4 u_inv_view_proj;
 
 out vec3 v_near;
 out vec3 v_far;
-out mat4 v_proj;
 
 // Reconstruct a world-space point from NDC xy + a given NDC z, using the
 // inverse view-projection matrix.
@@ -27,9 +26,6 @@ void main() {
     // Unproject the near and far plane points to get ray origin and direction
     v_near = unproject(ndc_pos.x, ndc_pos.y, -1.0);
     v_far  = unproject(ndc_pos.x, ndc_pos.y,  1.0);
-
-    // Pass the projection matrix for depth reconstruction in the fragment shader
-    v_proj = u_inv_view_proj; // actually we re-pass inv_view_proj for depth calc; see fs.glsl
 
     gl_Position = vec4(ndc_pos, 0.0, 1.0);
 }

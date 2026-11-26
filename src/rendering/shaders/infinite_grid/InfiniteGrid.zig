@@ -5,11 +5,8 @@ const gl = @import("gl");
 
 const Shader = @import("../../Shader.zig");
 const VAO = @import("../../VAO.zig");
-const eigen = @import("../../../geometry/eigen.zig");
 const mat = @import("../../../geometry/mat.zig");
 const Mat4f = mat.Mat4f;
-
-const gl_log = std.log.scoped(.infinite_grid);
 
 var global_instance: ?InfiniteGrid = null;
 fn init_global() void {
@@ -26,8 +23,6 @@ program: Shader,
 
 inv_view_proj_uniform: c_int = undefined,
 view_proj_uniform: c_int = undefined,
-near_uniform: c_int = undefined,
-far_uniform: c_int = undefined,
 
 fn init() !InfiniteGrid {
     var ig: InfiniteGrid = .{
@@ -43,8 +38,6 @@ fn init() !InfiniteGrid {
 
     ig.inv_view_proj_uniform = gl.GetUniformLocation(ig.program.index, "u_inv_view_proj");
     ig.view_proj_uniform = gl.GetUniformLocation(ig.program.index, "u_view_proj");
-    ig.near_uniform = gl.GetUniformLocation(ig.program.index, "u_near");
-    ig.far_uniform = gl.GetUniformLocation(ig.program.index, "u_far");
 
     return ig;
 }
@@ -64,24 +57,21 @@ pub const Parameters = struct {
         p.vao.deinit();
     }
 
-    pub fn draw(p: *Parameters, view_matrix: Mat4f, projection_matrix: Mat4f) void {
-        // Compute view-projection (P * V) and its inverse
+    pub fn draw(
+        p: *Parameters,
+        view_matrix: Mat4f,
+        projection_matrix: Mat4f,
+        view_matrix_inv: Mat4f,
+        projection_matrix_inv: Mat4f,
+    ) void {
         const view_proj = mat.mul(projection_matrix, view_matrix);
-        // Use Eigen (double precision) to invert, same as View.viewToWorldZ
-        const view_proj_d = mat.cast(f64, view_proj);
-        const inv_view_proj_d = eigen.computeInverse4d(view_proj_d) orelse {
-            gl_log.err("Cannot invert view-projection matrix", .{});
-            return;
-        };
-        const inv_view_proj = mat.cast(f32, inv_view_proj_d);
+        const inv_view_proj = mat.mul(view_matrix_inv, projection_matrix_inv);
 
         gl.UseProgram(p.shader.program.index);
         defer gl.UseProgram(0);
 
         gl.UniformMatrix4fv(p.shader.inv_view_proj_uniform, 1, gl.FALSE, @ptrCast(&inv_view_proj));
         gl.UniformMatrix4fv(p.shader.view_proj_uniform, 1, gl.FALSE, @ptrCast(&view_proj));
-        gl.Uniform1f(p.shader.near_uniform, 0.01);
-        gl.Uniform1f(p.shader.far_uniform, 5.0);
 
         gl.BindVertexArray(p.vao.index);
         defer gl.BindVertexArray(0);

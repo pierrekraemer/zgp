@@ -22,7 +22,7 @@ Rather than re-rendering 3D geometry on every ImGui frame, `View` renders the 3D
 
 - Supports `.perspective` and `.orthographic` projections (toggleable from the `Camera` menu bar).
 - Stores `position`, `look_dir`, `up_dir`, `pivot_position`, and cached `view_matrix`, `view_matrix_inv`, `projection_matrix`, `projection_matrix_inv` (inverses computed in `f64` via `eigen.computeInverse4d`).
-- **Hardcoded clip planes**: `near = 0.01`, `far = 5.0` (mirrored in `InfiniteGrid.zig`).
+- **Hardcoded clip planes**: `near = 0.01`, `far = 5.0`.
 - **Default mouse controls** (handled in `View.sdlEvent` when neither ImGui nor an active module consumed the event):
   - **Left Drag**: Orbit around `pivot_position` (`rotateFromScreenVec`).
   - **Shift + Left Drag**: Pan camera (`translateFromScreenVec`).
@@ -66,7 +66,7 @@ All 17 shader wrappers follow one consistent pattern:
 | Shader | Stages | Primitive | Vertex Attribs / Buffers | Purpose |
 |---|---|---|---|---|
 | `FullscreenTexture` | VS, FS | `DrawArrays(3)` | `Texture2D` | Blits `View.screen_color_tex` to default framebuffer. |
-| `InfiniteGrid` | VS, FS | `DrawArrays(6)` | — | Alpha-blended world XZ ground grid (`u_near = 0.01`, `u_far = 5.0`). |
+| `InfiniteGrid` | VS, FS | `DrawArrays(6)` | — | Alpha-blended world XZ ground grid. |
 | `Line` | VS, GS, FS | `.lines` | `position` | Screen-space-width colored lines (`viewport_size`, `line_width`). |
 | `LineCylinder` | VS, GS, FS | `.lines` | `position` | Lit 3D cylinders for edges, boundaries, and selected edges. |
 | `PointSphere` | VS, GS, FS | `.points` | `position` | Lit 3D spheres with uniform radius & color. |

@@ -5,8 +5,6 @@ in vec3 v_near;
 in vec3 v_far;
 
 uniform mat4 u_view_proj;
-uniform float u_near;
-uniform float u_far;
 
 out vec4 f_color;
 
