@@ -1,44 +1,17 @@
 #include "dense.h"
 #include <eigen/Eigen/Dense>
 
-using DenseMatrix = Eigen::Matrix<SCALAR, Eigen::Dynamic, Eigen::Dynamic>;
-using Vector = Eigen::Matrix<SCALAR, Eigen::Dynamic, 1>;
+using DenseMatrix = Eigen::Matrix<ceigen_scalar, Eigen::Dynamic, Eigen::Dynamic>;
+using Vector = Eigen::Matrix<ceigen_scalar, Eigen::Dynamic, 1>;
 
-extern "C"
-{
-    void *createDenseMatrix(INDEX rows, INDEX cols)
-    {
-        DenseMatrix *denseMat = new DenseMatrix(rows, cols);
-        denseMat->setZero();
-        return denseMat;
-    }
-
-    void destroyDenseMatrix(void *mat)
-    {
-        DenseMatrix *denseMat = static_cast<DenseMatrix *>(mat);
-        delete denseMat;
-    }
-
-    void getDenseMatrixRow(const void *mat, INDEX row, SCALAR *row_vals, INDEX size)
-    {
-        const DenseMatrix *denseMat = static_cast<const DenseMatrix *>(mat);
-        Eigen::Map<Vector> rowVec(row_vals, size);
-        rowVec = denseMat->row(row).transpose();
-    }
-
-    void setDenseMatrixRow(void *mat, INDEX row, const SCALAR *row_vals, INDEX size)
-    {
-        DenseMatrix *denseMat = static_cast<DenseMatrix *>(mat);
-        Eigen::Map<const Vector> rowVec(row_vals, size);
-        denseMat->row(row) = rowVec.transpose();
-    }
-
-    void solveDenseLeastSquares(const void *matA, const SCALAR *b, SCALAR *x, INDEX rows, INDEX cols)
-    {
-        const DenseMatrix *denseMatA = static_cast<const DenseMatrix *>(matA);
-        Eigen::Map<const Vector> bVec(b, rows);
-        Eigen::Map<Vector> xVec(x, cols);
-        Eigen::LDLT<DenseMatrix> solver(denseMatA->transpose() * (*denseMatA));
-        xVec = solver.solve(denseMatA->transpose() * bVec);
-    }
+extern "C" {
+void ceigen_solveDenseLeastSquares(const ceigen_scalar *matA,
+                                   const ceigen_scalar *b, ceigen_scalar *x,
+                                   ceigen_index rows, ceigen_index cols) {
+  Eigen::Map<const DenseMatrix> denseMatA(matA, rows, cols);
+  Eigen::Map<const Vector> bVec(b, rows);
+  Eigen::Map<Vector> xVec(x, cols);
+  Eigen::LDLT<DenseMatrix> solver(denseMatA.transpose() * denseMatA);
+  xVec = solver.solve(denseMatA.transpose() * bVec);
+}
 }

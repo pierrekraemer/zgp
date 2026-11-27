@@ -2,17 +2,23 @@
 
 #include <stdbool.h>
 
-#define SCALAR double
+#include "ceigen_types.h"
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif /* __cplusplus */
 
-    void computeInverseWithCheck4d(const SCALAR (*mat)[16], SCALAR (*inv)[16], bool *invertible);
-    void solveSymmetricLinearSystem4d(const SCALAR (*mat)[16], const SCALAR (*b)[4], SCALAR (*x)[4]);
-    void eigenSolver3d(const SCALAR (*mat)[9], SCALAR (*eigenvalues)[3], SCALAR (*eigenvectors)[9]);
-    void svd3d(const SCALAR (*mat)[9], SCALAR (*U)[9], SCALAR (*S)[3], SCALAR (*V)[9]);
+void ceigen_computeInverseWithCheck4d(const ceigen_scalar (*mat)[16],
+                                      ceigen_scalar (*inv)[16],
+                                      bool *invertible);
+void ceigen_solveSymmetricLinearSystem4d(const ceigen_scalar (*mat)[16],
+                                         const ceigen_scalar (*b)[4],
+                                         ceigen_scalar (*x)[4]);
+void ceigen_eigenSolver3d(const ceigen_scalar (*mat)[9],
+                          ceigen_scalar (*eigenvalues)[3],
+                          ceigen_scalar (*eigenvectors)[9]);
+void ceigen_svd3d(const ceigen_scalar (*mat)[9], ceigen_scalar (*U)[9],
+                  ceigen_scalar (*S)[3], ceigen_scalar (*V)[9]);
 
 #ifdef __cplusplus
 }

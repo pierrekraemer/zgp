@@ -1,31 +1,58 @@
 #pragma once
 
-#define SCALAR double
-#define INDEX int
+#include "ceigen_types.h"
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif /* __cplusplus */
 
-    void *createSparseMatrix(INDEX rows, INDEX cols);
-    void *createSparseMatrixFromTriplets(INDEX rows, INDEX cols,
-                                         const void *triplets,
-                                         INDEX nb_triplets);
-    void *createDiagonalSparseMatrixFromArray(const SCALAR *diag_vals, INDEX size);
-    void destroySparseMatrix(void *mat);
+typedef struct CEigenSparseMatrix CEigenSparseMatrix;
+typedef struct CEigenFactorizedSparseMatrix CEigenFactorizedSparseMatrix;
 
-    void mulSparseMatrixScalar(const void *mat, SCALAR scalar, void *matOut);
-    void addSparseMatrices(const void *matA, const void *matB, void *matOut);
+typedef struct CEigenTriplet {
+  ceigen_index row;
+  ceigen_index col;
+  ceigen_scalar value;
+} CEigenTriplet;
 
-    void directSolveSymmetricSparseLinearSystem(const void *mat, const SCALAR *b, SCALAR *x, INDEX size);
-    void iterativeSolveSymmetricSparseLinearSystem(const void *mat, const SCALAR *b, SCALAR *x, INDEX size, INDEX max_iterations, SCALAR tolerance);
-    void iterativeSolveSymmetricSparseLinearSystemMultipleRHS(const void *mat, const void *matb, void *matx, INDEX max_iterations, SCALAR tolerance);
+CEigenSparseMatrix *ceigen_createSparseMatrix(ceigen_index rows,
+                                              ceigen_index cols);
+CEigenSparseMatrix *
+ceigen_createSparseMatrixFromTriplets(ceigen_index rows, ceigen_index cols,
+                                      const CEigenTriplet *triplets,
+                                      ceigen_index nb_triplets);
+CEigenSparseMatrix *
+ceigen_createDiagonalSparseMatrixFromArray(const ceigen_scalar *diag_vals,
+                                           ceigen_index size);
+void ceigen_destroySparseMatrix(CEigenSparseMatrix *mat);
 
-    void *factorizeSymmetricSparseMatrix(const void *mat);
-    void solveWithFactorizedMatrix(const void *solver, const SCALAR *b, SCALAR *x, INDEX size);
-    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const void *matb, void *matx);
-    void destroyFactorizedMatrix(void *solver);
+void ceigen_mulSparseMatrixScalar(const CEigenSparseMatrix *mat,
+                                  ceigen_scalar scalar,
+                                  CEigenSparseMatrix *matOut);
+void ceigen_addSparseMatrices(const CEigenSparseMatrix *matA,
+                              const CEigenSparseMatrix *matB,
+                              CEigenSparseMatrix *matOut);
+
+void ceigen_directSolveSymmetricSparseLinearSystem(
+    const CEigenSparseMatrix *mat, const ceigen_scalar *b, ceigen_scalar *x,
+    ceigen_index size);
+void ceigen_iterativeSolveSymmetricSparseLinearSystem(
+    const CEigenSparseMatrix *mat, const ceigen_scalar *b, ceigen_scalar *x,
+    ceigen_index size, ceigen_index max_iterations, ceigen_scalar tolerance);
+void ceigen_iterativeSolveSymmetricSparseLinearSystemMultipleRHS(
+    const CEigenSparseMatrix *mat, const ceigen_scalar *b, ceigen_scalar *x,
+    ceigen_index rows, ceigen_index cols, ceigen_index max_iterations,
+    ceigen_scalar tolerance);
+
+CEigenFactorizedSparseMatrix *
+ceigen_factorizeSymmetricSparseMatrix(const CEigenSparseMatrix *mat);
+void ceigen_solveWithFactorizedMatrix(
+    const CEigenFactorizedSparseMatrix *solver, const ceigen_scalar *b,
+    ceigen_scalar *x, ceigen_index size);
+void ceigen_solveWithFactorizedMatrixMultipleRHS(
+    const CEigenFactorizedSparseMatrix *solver, const ceigen_scalar *b,
+    ceigen_scalar *x, ceigen_index rows, ceigen_index cols);
+void ceigen_destroyFactorizedMatrix(CEigenFactorizedSparseMatrix *solver);
 
 #ifdef __cplusplus
 }

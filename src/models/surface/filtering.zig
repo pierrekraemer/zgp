@@ -200,18 +200,20 @@ pub fn anisotropicLaplacianFiltering(
             try a.resize(allocator, nb_vertices);
             break :blk a;
         },
-        .array => eigen.DenseMatrix.init(@intCast(nb_vertices), @intCast(vec.dim(T))),
+        .array => try eigen.DenseMatrix.init(allocator, @intCast(nb_vertices), @intCast(vec.dim(T))),
         else => unreachable,
     };
+    defer rhs.deinit(allocator);
     var res = switch (t_info) {
         .float => blk: {
             var a: std.ArrayList(f64) = .empty;
             try a.resize(allocator, nb_vertices);
             break :blk a;
         },
-        .array => eigen.DenseMatrix.init(@intCast(nb_vertices), @intCast(vec.dim(T))),
+        .array => try eigen.DenseMatrix.init(allocator, @intCast(nb_vertices), @intCast(vec.dim(T))),
         else => unreachable,
     };
+    defer res.deinit(allocator);
 
     // initialize rhs = A · f, where f is the input vertex data
     // and initialize res to f as an initial guess for the solver
@@ -234,7 +236,7 @@ pub fn anisotropicLaplacianFiltering(
     if (t_info == .float) {
         F.iterativeSolveSymmetricSparseLinearSystem(rhs.items, res.items, 1000, 1e-6);
     } else if (t_info == .array) {
-        F.iterativeSolveSymmetricSparseLinearSystemMultipleRHS(rhs, res, 1000, 1e-6);
+        F.iterativeSolveSymmetricSparseLinearSystemMultipleRHS(&rhs, &res, 1000, 1e-6);
     }
 
     // copy filtered data back to vertex_data

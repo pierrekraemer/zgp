@@ -1,19 +1,14 @@
 #pragma once
 
-#define SCALAR double
-#define INDEX int
+#include "ceigen_types.h"
 
 #ifdef __cplusplus
-extern "C"
-{
+extern "C" {
 #endif /* __cplusplus */
 
-    void *createDenseMatrix(INDEX rows, INDEX cols);
-    void destroyDenseMatrix(void *mat);
-
-    void getDenseMatrixRow(const void *mat, INDEX row, SCALAR *row_vals, INDEX size);
-    void setDenseMatrixRow(void *mat, INDEX row, const SCALAR *row_vals, INDEX size);
-    void solveDenseLeastSquares(const void *matA, const SCALAR *b, SCALAR *x, INDEX rows, INDEX cols);
+void ceigen_solveDenseLeastSquares(const ceigen_scalar *matA,
+                                   const ceigen_scalar *b, ceigen_scalar *x,
+                                   ceigen_index rows, ceigen_index cols);
 
 #ifdef __cplusplus
 }

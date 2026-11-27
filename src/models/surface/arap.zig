@@ -93,6 +93,7 @@ pub fn computeVertexOneRingRotation(
 
 /// ARAP deformation context.
 pub const ARAPContext = struct {
+    allocator: std.mem.Allocator,
     surface_mesh: *SurfaceMesh, // the original SurfaceMesh
     vertex_position: SurfaceMesh.VertexData(Vec3f), // defined on the original SurfaceMesh, updated by the ARAP solver
 
@@ -188,13 +189,16 @@ pub const ARAPContext = struct {
         // initialize Laplacian sparse matrix and factorize it
         var L: SparseMatrix = .initFromTriplets(@intCast(nb_free), @intCast(nb_free), triplets.items);
         defer L.deinit();
-        const factorized_L: FactorizedSparseMatrix = .init(L, @intCast(nb_free));
+        var factorized_L: FactorizedSparseMatrix = .init(L, @intCast(nb_free));
+        errdefer factorized_L.deinit();
 
         // pre-allocate buffers for the right-hand side and solution matrices (nb_free x 3)
-        const rhs_mat: eigen.DenseMatrix = .init(@intCast(nb_free), 3);
-        const solve_mat: eigen.DenseMatrix = .init(@intCast(nb_free), 3);
+        var rhs_mat: eigen.DenseMatrix = try .init(allocator, @intCast(nb_free), 3);
+        errdefer rhs_mat.deinit(allocator);
+        const solve_mat: eigen.DenseMatrix = try .init(allocator, @intCast(nb_free), 3);
 
         return .{
+            .allocator = allocator,
             .surface_mesh = sm,
             .vertex_position = vertex_position,
             .vertex_position_rest = vertex_position_rest,
@@ -210,8 +214,8 @@ pub const ARAPContext = struct {
     }
 
     pub fn deinit(arap_ctx: *ARAPContext) void {
-        arap_ctx.solve_mat.deinit();
-        arap_ctx.rhs_mat.deinit();
+        arap_ctx.solve_mat.deinit(arap_ctx.allocator);
+        arap_ctx.rhs_mat.deinit(arap_ctx.allocator);
         arap_ctx.factorized_L.deinit();
         arap_ctx.surface_mesh.removeData(arap_ctx.free_vertex_index);
         arap_ctx.surface_mesh.removeData(arap_ctx.vertex_rotation);
@@ -247,9 +251,9 @@ pub const ARAPContext = struct {
             vertex_position: SurfaceMesh.VertexData(Vec3f),
             vertex_rotation: SurfaceMesh.VertexData(Vec4f),
             free_vertex_index: SurfaceMesh.VertexData(u32),
-            rhs_mat: eigen.DenseMatrix,
+            rhs_mat: *eigen.DenseMatrix,
 
-            pub fn run(t: *@This(), v: SurfaceMesh.Vertex) void {
+            pub fn run(t: *const @This(), v: SurfaceMesh.Vertex) void {
                 const fi = t.free_vertex_index.value(v);
                 if (fi == invalid_index) return; // constrained vertex
 
@@ -287,10 +291,10 @@ pub const ARAPContext = struct {
         const WriteSolvedPositionsTask = struct {
             surface_mesh: *const SurfaceMesh,
             free_vertex_index: SurfaceMesh.VertexData(u32),
-            solve_mat: eigen.DenseMatrix,
+            solve_mat: *const eigen.DenseMatrix,
             vertex_position: *SurfaceMesh.VertexData(Vec3f),
 
-            pub fn run(t: *@This(), v: SurfaceMesh.Vertex) void {
+            pub fn run(t: *const @This(), v: SurfaceMesh.Vertex) void {
                 const fi = t.free_vertex_index.value(v);
                 if (fi == invalid_index) return; // constrained vertex
                 var solved_row: [3]eigen.Scalar = undefined;
@@ -319,17 +323,17 @@ pub const ARAPContext = struct {
                 .vertex_position = arap_ctx.vertex_position,
                 .vertex_rotation = arap_ctx.vertex_rotation,
                 .free_vertex_index = arap_ctx.free_vertex_index,
-                .rhs_mat = arap_ctx.rhs_mat,
+                .rhs_mat = &arap_ctx.rhs_mat,
             });
 
             // Solve L · x = rhs
-            arap_ctx.factorized_L.solveMultipleRHS(arap_ctx.rhs_mat, arap_ctx.solve_mat);
+            arap_ctx.factorized_L.solveMultipleRHS(&arap_ctx.rhs_mat, &arap_ctx.solve_mat);
 
             // Write solved positions back
             try pctr.run(WriteSolvedPositionsTask{
                 .surface_mesh = arap_ctx.compute_surface_mesh,
                 .free_vertex_index = arap_ctx.free_vertex_index,
-                .solve_mat = arap_ctx.solve_mat,
+                .solve_mat = &arap_ctx.solve_mat,
                 .vertex_position = &arap_ctx.vertex_position,
             });
         }

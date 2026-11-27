@@ -1,121 +1,141 @@
 #include "sparse.h"
 #include <eigen/Eigen/Sparse>
+#include <utility>
 
-using SparseMatrix = Eigen::SparseMatrix<SCALAR, Eigen::ColMajor, INDEX>;
-using DenseMatrix = Eigen::Matrix<SCALAR, Eigen::Dynamic, Eigen::Dynamic>;
-using Vector = Eigen::Matrix<SCALAR, Eigen::Dynamic, 1>;
-using Triplet = Eigen::Triplet<SCALAR, INDEX>;
+using SparseMatrix = Eigen::SparseMatrix<ceigen_scalar, Eigen::ColMajor, ceigen_index>;
+using DenseMatrix = Eigen::Matrix<ceigen_scalar, Eigen::Dynamic, Eigen::Dynamic>;
+using Vector = Eigen::Matrix<ceigen_scalar, Eigen::Dynamic, 1>;
 
-extern "C"
-{
-    void *createSparseMatrix(INDEX rows, INDEX cols)
-    {
-        return new SparseMatrix(rows, cols);
-    }
+struct CEigenTripletIterator {
+  const CEigenTriplet *ptr;
 
-    void *createSparseMatrixFromTriplets(INDEX rows, INDEX cols,
-                                         const void *triplets,
-                                         INDEX nb_triplets)
-    {
-        const Triplet *triplets_ptr = static_cast<const Triplet *>(triplets);
-        SparseMatrix *mat = new SparseMatrix(rows, cols);
-        std::vector<Triplet> triplets_vec;
-        triplets_vec.reserve(nb_triplets);
-        for (INDEX i = 0; i < nb_triplets; i++)
-            triplets_vec.push_back(triplets_ptr[i]);
-        mat->setFromTriplets(triplets_vec.begin(), triplets_vec.end());
-        return mat;
-    }
+  ceigen_index row() const { return ptr->row; }
+  ceigen_index col() const { return ptr->col; }
+  ceigen_scalar value() const { return ptr->value; }
 
-    void *createDiagonalSparseMatrixFromArray(const SCALAR *diag_vals, INDEX size)
-    {
-        Eigen::Map<const Vector> diag(diag_vals, size);
-        return new SparseMatrix(diag.asDiagonal());
-    }
+  const CEigenTripletIterator &operator*() const { return *this; }
+  const CEigenTripletIterator *operator->() const { return this; }
+  CEigenTripletIterator &operator++() {
+    ++ptr;
+    return *this;
+  }
+  bool operator==(const CEigenTripletIterator &other) const {
+    return ptr == other.ptr;
+  }
+  bool operator!=(const CEigenTripletIterator &other) const {
+    return ptr != other.ptr;
+  }
+};
 
-    void destroySparseMatrix(void *mat)
-    {
-        SparseMatrix *sparseMat = static_cast<SparseMatrix *>(mat);
-        delete sparseMat;
-    }
+struct CEigenSparseMatrix {
+  SparseMatrix inner;
+  template <typename... Args>
+  explicit CEigenSparseMatrix(Args &&...args)
+      : inner(std::forward<Args>(args)...) {}
+};
 
-    void mulSparseMatrixScalar(const void *mat, SCALAR scalar, void *matOut)
-    {
-        const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
-        SparseMatrix *sparseMatOut = static_cast<SparseMatrix *>(matOut);
-        *sparseMatOut = scalar * (*sparseMat);
-    }
+struct CEigenFactorizedSparseMatrix {
+  Eigen::SimplicialLDLT<SparseMatrix> inner;
+  explicit CEigenFactorizedSparseMatrix(const SparseMatrix &mat) : inner(mat) {}
+};
 
-    void addSparseMatrices(const void *matA, const void *matB, void *matOut)
-    {
-        const SparseMatrix *sparseMatA = static_cast<const SparseMatrix *>(matA);
-        const SparseMatrix *sparseMatB = static_cast<const SparseMatrix *>(matB);
-        SparseMatrix *sparseMatOut = static_cast<SparseMatrix *>(matOut);
-        *sparseMatOut = (*sparseMatA) + (*sparseMatB);
-    }
+extern "C" {
+CEigenSparseMatrix *ceigen_createSparseMatrix(ceigen_index rows,
+                                              ceigen_index cols) {
+  return new CEigenSparseMatrix(rows, cols);
+}
 
-    void directSolveSymmetricSparseLinearSystem(const void *mat, const SCALAR *b, SCALAR *x, INDEX size)
-    {
-        const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
-        Eigen::Map<const Vector> bVec(b, size);
-        Eigen::Map<Vector> xVec(x, size);
+CEigenSparseMatrix *
+ceigen_createSparseMatrixFromTriplets(ceigen_index rows, ceigen_index cols,
+                                      const CEigenTriplet *triplets,
+                                      ceigen_index nb_triplets) {
+  auto *mat = new CEigenSparseMatrix(rows, cols);
+  if (nb_triplets > 0)
+    mat->inner.setFromTriplets(CEigenTripletIterator{triplets},
+                               CEigenTripletIterator{triplets + nb_triplets});
+  return mat;
+}
 
-        Eigen::SimplicialLDLT<SparseMatrix> solver(*sparseMat);
-        xVec = solver.solve(bVec);
-    }
+CEigenSparseMatrix *
+ceigen_createDiagonalSparseMatrixFromArray(const ceigen_scalar *diag_vals,
+                                           ceigen_index size) {
+  Eigen::Map<const Vector> diag(diag_vals, size);
+  return new CEigenSparseMatrix(diag.asDiagonal());
+}
 
-    void iterativeSolveSymmetricSparseLinearSystem(const void *mat, const SCALAR *b, SCALAR *x, INDEX size, INDEX max_iterations, SCALAR tolerance)
-    {
-        const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
-        Eigen::Map<const Vector> bVec(b, size);
-        Eigen::Map<Vector> xVec(x, size);
+void ceigen_destroySparseMatrix(CEigenSparseMatrix *mat) { delete mat; }
 
-        Eigen::ConjugateGradient<SparseMatrix, Eigen::Lower | Eigen::Upper> solver;
-        solver.setMaxIterations(max_iterations);
-        solver.setTolerance(tolerance);
-        solver.compute(*sparseMat);
-        xVec = solver.solveWithGuess(bVec, xVec);
-    }
+void ceigen_mulSparseMatrixScalar(const CEigenSparseMatrix *mat,
+                                  ceigen_scalar scalar,
+                                  CEigenSparseMatrix *matOut) {
+  matOut->inner = scalar * mat->inner;
+}
 
-    void iterativeSolveSymmetricSparseLinearSystemMultipleRHS(const void *mat, const void *matb, void *matx, INDEX max_iterations, SCALAR tolerance)
-    {
-        const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
-        const DenseMatrix *bMat = static_cast<const DenseMatrix *>(matb);
-        DenseMatrix *xMat = static_cast<DenseMatrix *>(matx);
+void ceigen_addSparseMatrices(const CEigenSparseMatrix *matA,
+                              const CEigenSparseMatrix *matB,
+                              CEigenSparseMatrix *matOut) {
+  matOut->inner = matA->inner + matB->inner;
+}
 
-        Eigen::ConjugateGradient<SparseMatrix, Eigen::Lower | Eigen::Upper> solver;
-        solver.setMaxIterations(max_iterations);
-        solver.setTolerance(tolerance);
-        solver.compute(*sparseMat);
-        *xMat = solver.solveWithGuess(*bMat, *xMat);
-    }
+void ceigen_directSolveSymmetricSparseLinearSystem(
+    const CEigenSparseMatrix *mat, const ceigen_scalar *b, ceigen_scalar *x,
+    ceigen_index size) {
+  Eigen::Map<const Vector> bVec(b, size);
+  Eigen::Map<Vector> xVec(x, size);
 
-    void *factorizeSymmetricSparseMatrix(const void *mat)
-    {
-        const SparseMatrix *sparseMat = static_cast<const SparseMatrix *>(mat);
-        auto *solver = new Eigen::SimplicialLDLT<SparseMatrix>(*sparseMat);
-        return solver;
-    }
+  Eigen::SimplicialLDLT<SparseMatrix> solver(mat->inner);
+  xVec = solver.solve(bVec);
+}
 
-    void solveWithFactorizedMatrix(const void *solver, const SCALAR *b, SCALAR *x, INDEX size)
-    {
-        const auto *ldlt = static_cast<const Eigen::SimplicialLDLT<SparseMatrix> *>(solver);
-        Eigen::Map<const Vector> bVec(b, size);
-        Eigen::Map<Vector> xVec(x, size);
-        xVec = ldlt->solve(bVec);
-    }
+void ceigen_iterativeSolveSymmetricSparseLinearSystem(
+    const CEigenSparseMatrix *mat, const ceigen_scalar *b, ceigen_scalar *x,
+    ceigen_index size, ceigen_index max_iterations, ceigen_scalar tolerance) {
+  Eigen::Map<const Vector> bVec(b, size);
+  Eigen::Map<Vector> xVec(x, size);
 
-    void solveWithFactorizedMatrixMultipleRHS(const void *solver, const void *matb, void *matx)
-    {
-        const auto *ldlt = static_cast<const Eigen::SimplicialLDLT<SparseMatrix> *>(solver);
-        const DenseMatrix *bMat = static_cast<const DenseMatrix *>(matb);
-        DenseMatrix *xMat = static_cast<DenseMatrix *>(matx);
-        *xMat = ldlt->solve(*bMat);
-    }
+  Eigen::ConjugateGradient<SparseMatrix, Eigen::Lower | Eigen::Upper> solver;
+  solver.setMaxIterations(max_iterations);
+  solver.setTolerance(tolerance);
+  solver.compute(mat->inner);
+  xVec = solver.solveWithGuess(bVec, xVec);
+}
 
-    void destroyFactorizedMatrix(void *solver)
-    {
-        auto *ldlt = static_cast<Eigen::SimplicialLDLT<SparseMatrix> *>(solver);
-        delete ldlt;
-    }
+void ceigen_iterativeSolveSymmetricSparseLinearSystemMultipleRHS(
+    const CEigenSparseMatrix *mat, const ceigen_scalar *b, ceigen_scalar *x,
+    ceigen_index rows, ceigen_index cols, ceigen_index max_iterations,
+    ceigen_scalar tolerance) {
+  Eigen::Map<const DenseMatrix> bMat(b, rows, cols);
+  Eigen::Map<DenseMatrix> xMat(x, rows, cols);
+
+  Eigen::ConjugateGradient<SparseMatrix, Eigen::Lower | Eigen::Upper> solver;
+  solver.setMaxIterations(max_iterations);
+  solver.setTolerance(tolerance);
+  solver.compute(mat->inner);
+  xMat = solver.solveWithGuess(bMat, xMat);
+}
+
+CEigenFactorizedSparseMatrix *
+ceigen_factorizeSymmetricSparseMatrix(const CEigenSparseMatrix *mat) {
+  return new CEigenFactorizedSparseMatrix(mat->inner);
+}
+
+void ceigen_solveWithFactorizedMatrix(
+    const CEigenFactorizedSparseMatrix *solver, const ceigen_scalar *b,
+    ceigen_scalar *x, ceigen_index size) {
+  Eigen::Map<const Vector> bVec(b, size);
+  Eigen::Map<Vector> xVec(x, size);
+  xVec = solver->inner.solve(bVec);
+}
+
+void ceigen_solveWithFactorizedMatrixMultipleRHS(
+    const CEigenFactorizedSparseMatrix *solver, const ceigen_scalar *b,
+    ceigen_scalar *x, ceigen_index rows, ceigen_index cols) {
+  Eigen::Map<const DenseMatrix> bMat(b, rows, cols);
+  Eigen::Map<DenseMatrix> xMat(x, rows, cols);
+  xMat = solver->inner.solve(bMat);
+}
+
+void ceigen_destroyFactorizedMatrix(CEigenFactorizedSparseMatrix *solver) {
+  delete solver;
+}
 }
