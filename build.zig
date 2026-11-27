@@ -19,6 +19,8 @@ fn addIncludePathsToTranslateC(translate_c: *const Translator, lib: *std.Build.S
 pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
+    const debug_deps = b.option(bool, "debug-deps", "Build C/C++ dependencies in debug mode when zgp is built in debug mode") orelse false;
+    const deps_optimize: std.lang.Optimize = if (!debug_deps and optimize == .debug) .fast else optimize;
 
     // EXE MODULE
 
@@ -48,7 +50,7 @@ pub fn build(b: *std.Build) void {
 
     const predicates_dep = b.dependency("predicates", .{
         .target = target,
-        .optimize = optimize,
+        .optimize = deps_optimize,
         // .lto = lto,
     });
     const predicates_lib = predicates_dep.artifact("predicates");
@@ -60,7 +62,7 @@ pub fn build(b: *std.Build) void {
 
     const ceigen_dep = b.dependency("ceigen", .{
         .target = target,
-        .optimize = optimize,
+        .optimize = deps_optimize,
         // .lto = lto,
     });
     const ceigen_lib = ceigen_dep.artifact("ceigen");
@@ -72,7 +74,7 @@ pub fn build(b: *std.Build) void {
 
     const clibacc_dep = b.dependency("clibacc", .{
         .target = target,
-        .optimize = optimize,
+        .optimize = deps_optimize,
         // .lto = lto,
     });
     const clibacc_lib = clibacc_dep.artifact("clibacc");
@@ -94,7 +96,7 @@ pub fn build(b: *std.Build) void {
 
     const sdl_dep = b.dependency("sdl", .{
         .target = target,
-        .optimize = optimize,
+        .optimize = deps_optimize,
         // .lto = lto,
         //.preferred_linkage = .static,
         //.strip = null,
@@ -111,7 +113,7 @@ pub fn build(b: *std.Build) void {
 
     const cimgui_dep = b.dependency("cimgui_zig", .{
         .target = target,
-        .optimize = optimize,
+        .optimize = deps_optimize,
         // .lto = lto,
         .platforms = &[_]cimgui.Platform{.sdl3},
         .renderers = &[_]cimgui.Renderer{.opengl3},

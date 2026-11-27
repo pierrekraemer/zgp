@@ -21,6 +21,7 @@ pub fn build(b: *std.Build) void {
         .files = &.{
             "predicates.c",
         },
+        .flags = &.{"-ffp-contract=off"},
     });
     lib.installHeadersDirectory(
         b.path("include"),
